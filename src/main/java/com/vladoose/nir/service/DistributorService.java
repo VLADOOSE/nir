@@ -1,16 +1,38 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.Distributor;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.DistributorRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Service
 public class DistributorService {
-    private final DistributorRepository repo;
-    public DistributorService(DistributorRepository repo){ this.repo = repo; }
-    public List<Distributor> list(){ return repo.findAll(); }
-    public Distributor create(Distributor d){ d.setId(null); return repo.save(d); }
-    public Distributor update(Long id, Distributor d){ d.setId(id); return repo.save(d); }
-    public void delete(Long id){ repo.deleteById(id); }
+
+    private final DistributorRepository repository;
+
+    public DistributorService(DistributorRepository repository) {
+        this.repository = repository;
+    }
+
+    public List<Distributor> findAll() {
+        return repository.findAll();
+    }
+
+    public Distributor findById(Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Дистрибьютор не найден: id=" + id));
+    }
+
+    @Transactional
+    public Distributor save(Distributor distributor) {
+        return repository.save(distributor);
+    }
+
+    @Transactional
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+    }
 }

@@ -3,20 +3,19 @@ spring:
     url: jdbc:postgresql://localhost:5432/nirdb
     username: postgres
     password: admin
+
+  sql:
+    init:
+      mode: always
+
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+
   jpa:
     show-sql: true
     hibernate:
-      ddl-auto: update    # dev; на прод - flyway
-  mail:
-    host: smtp.example.com
-    port: 587
-    username: your@email.com
-    password: email_password
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls.enable: true
+      ddl-auto: none    # schema.sql управляет схемой
 
 server:
   port: 8080

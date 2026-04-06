@@ -1,6 +1,28 @@
 package com.vladoose.nir.repository;
 
-import org.springframework.data.jpa.repository.JpaRepository;
 import com.vladoose.nir.entity.MedEquipment;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long> {}
+import java.math.BigDecimal;
+import java.util.List;
+
+public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long> {
+
+    @Query("SELECT e FROM MedEquipment e WHERE " +
+           "(:equipType IS NULL OR e.equipType = :equipType) AND " +
+           "(:maxLength IS NULL OR e.lengthMm <= :maxLength) AND " +
+           "(:maxWidth IS NULL OR e.widthMm <= :maxWidth) AND " +
+           "(:maxHeight IS NULL OR e.heightMm <= :maxHeight) AND " +
+           "(:maxWeight IS NULL OR e.weightKg <= :maxWeight) AND " +
+           "(:maxCost IS NULL OR e.cost <= :maxCost) " +
+           "ORDER BY e.cost ASC")
+    List<MedEquipment> findMatchingEquipment(
+            @Param("equipType") String equipType,
+            @Param("maxLength") Integer maxLength,
+            @Param("maxWidth") Integer maxWidth,
+            @Param("maxHeight") Integer maxHeight,
+            @Param("maxWeight") BigDecimal maxWeight,
+            @Param("maxCost") Integer maxCost);
+}

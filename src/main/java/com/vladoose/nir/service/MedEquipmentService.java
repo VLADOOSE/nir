@@ -1,6 +1,8 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.MedEquipment;
+import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,13 +10,45 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
-@Transactional
 public class MedEquipmentService {
-    private final MedEquipmentRepository repo;
-    public MedEquipmentService(MedEquipmentRepository repo) { this.repo = repo; }
-    public List<MedEquipment> findAll() { return repo.findAll(); }
-    public MedEquipment findById(Long id) { return repo.findById(id).orElseThrow(() -> new RuntimeException("Not found")); }
-    public MedEquipment create(MedEquipment e) { e.setMedEquipId(null); return repo.save(e); }
-    public MedEquipment update(Long id, MedEquipment e) { MedEquipment ex = findById(id); ex.setName(e.getName()); ex.setSpec(e.getSpec()); ex.setCost(e.getCost()); ex.setManufact(e.getManufact()); return repo.save(ex); }
-    public void delete(Long id) { repo.deleteById(id); }
+
+    private final MedEquipmentRepository repository;
+
+    public MedEquipmentService(MedEquipmentRepository repository) {
+        this.repository = repository;
+    }
+
+    public List<MedEquipment> findAll() {
+        return repository.findAll();
+    }
+
+    public MedEquipment findById(Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Оборудование не найдено: id=" + id));
+    }
+
+    @Transactional
+    public MedEquipment save(MedEquipment equipment) {
+        return repository.save(equipment);
+    }
+
+    @Transactional
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+    }
+
+    public List<MedEquipment> findMatchingForLot(TenderLot lot) {
+        Integer maxCost = lot.getMaxCost() != null
+                ? lot.getMaxCost().intValue()
+                : null;
+
+        return repository.findMatchingEquipment(
+                lot.getEquipType(),
+                lot.getMaxLengthMm(),
+                lot.getMaxWidthMm(),
+                lot.getMaxHeightMm(),
+                lot.getMaxWeightKg(),
+                maxCost
+        );
+    }
 }

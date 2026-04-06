@@ -5,12 +5,23 @@ import lombok.*;
 
 @Entity
 @Table(name = "user_account")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class UserAccount {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(unique = true, nullable = false)
+
+    @Column(length = 100, unique = true, nullable = false)
     private String username;
+
+    @Column(name = "full_name")
     private String fullName;
-    private String role; // e.g. ROLE_ADMIN, ROLE_USER
+
+    @Column(length = 50)
+    private String role;
 }

@@ -1,17 +1,38 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.Facility;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.FacilityRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Service
 public class FacilityService {
-    private final FacilityRepository repo;
-    public FacilityService(FacilityRepository repo){ this.repo = repo; }
 
-    public List<Facility> list(){ return repo.findAll(); }
-    public Facility create(Facility f){ f.setId(null); return repo.save(f); }
-    public Facility update(Long id, Facility f){ f.setId(id); return repo.save(f); }
-    public void delete(Long id){ repo.deleteById(id); }
+    private final FacilityRepository repository;
+
+    public FacilityService(FacilityRepository repository) {
+        this.repository = repository;
+    }
+
+    public List<Facility> findAll() {
+        return repository.findAll();
+    }
+
+    public Facility findById(Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Учреждение не найдено: id=" + id));
+    }
+
+    @Transactional
+    public Facility save(Facility facility) {
+        return repository.save(facility);
+    }
+
+    @Transactional
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+    }
 }

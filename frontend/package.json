@@ -1,26 +1,30 @@
 {
-  "name": "medtech-frontend",
-  "version": "1.0.0",
-  "private": true,
+  "name": "nir-frontend",
+  "version": "0.0.0",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
   },
+  "private": true,
+  "packageManager": "npm@10.9.2",
   "dependencies": {
-  "axios": "^1.7.2",
-  "react": "^18.2.0",
-  "react-dom": "^18.2.0",
-  "react-router-dom": "^6.14.1",
-  "jspdf": "^2.5.1",
-  "file-saver": "^2.0.5",
-  "docx": "^8.4.0"
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
-  "vite": "^5.3.1",
-  "@vitejs/plugin-react": "^4.3.1",
-  "tailwindcss": "^3.4.1",
-  "postcss": "^8.4.35",
-  "autoprefixer": "^10.4.19"
-}
+    "@angular/build": "^21.2.6",
+    "@angular/cli": "^21.2.6",
+    "@angular/compiler-cli": "^21.2.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  }
 }
