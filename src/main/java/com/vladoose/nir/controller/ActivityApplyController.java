@@ -3,11 +3,13 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.dto.request.ActivityApplyRequest;
 import com.vladoose.nir.dto.response.ActivityApplyResponse;
 import com.vladoose.nir.dto.response.ApplyItemResponse;
+import com.vladoose.nir.dto.response.AutoFillResponse;
 import com.vladoose.nir.entity.ActivityApply;
 import com.vladoose.nir.entity.ApplyItem;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
 import com.vladoose.nir.mapper.ApplyItemMapper;
 import com.vladoose.nir.service.ActivityApplyService;
+import com.vladoose.nir.service.ApplyAutoFillService;
 import com.vladoose.nir.service.ApplyItemService;
 import com.vladoose.nir.service.JasperReportService;
 import com.vladoose.nir.service.TenderService;
@@ -25,6 +27,7 @@ public class ActivityApplyController {
     private final ApplyItemService applyItemService;
     private final JasperReportService jasperReportService;
     private final TenderService tenderService;
+    private final ApplyAutoFillService autoFillService;
     private final ActivityApplyMapper mapper;
     private final ApplyItemMapper applyItemMapper;
 
@@ -32,12 +35,14 @@ public class ActivityApplyController {
                                    ApplyItemService applyItemService,
                                    JasperReportService jasperReportService,
                                    TenderService tenderService,
+                                   ApplyAutoFillService autoFillService,
                                    ActivityApplyMapper mapper,
                                    ApplyItemMapper applyItemMapper) {
         this.service = service;
         this.applyItemService = applyItemService;
         this.jasperReportService = jasperReportService;
         this.tenderService = tenderService;
+        this.autoFillService = autoFillService;
         this.mapper = mapper;
         this.applyItemMapper = applyItemMapper;
     }
@@ -79,6 +84,11 @@ public class ActivityApplyController {
     @GetMapping("/{id}/items")
     public List<ApplyItemResponse> getItems(@PathVariable Long id) {
         return applyItemMapper.toResponseList(applyItemService.findByApplyId(id));
+    }
+
+    @PostMapping("/{id}/auto-fill")
+    public AutoFillResponse autoFill(@PathVariable Long id) {
+        return autoFillService.autoFill(id);
     }
 
     @GetMapping(value = "/{id}/pdf", produces = "application/pdf")
