@@ -3,9 +3,10 @@ package com.vladoose.nir.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "price_request")
@@ -21,12 +22,8 @@ public class PriceRequest {
     private Long id;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "tender_lot_id", nullable = false)
-    private TenderLot tenderLot;
-
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "med_equip_id", nullable = false)
-    private MedEquipment medEquipment;
+    @JoinColumn(name = "tender_id", nullable = false)
+    private Tender tender;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "distributor_id", nullable = false)
@@ -39,15 +36,16 @@ public class PriceRequest {
     @Column(name = "sent_at")
     private OffsetDateTime sentAt;
 
-    @Column(name = "response_price", precision = 15, scale = 2)
-    private BigDecimal responsePrice;
-
     @Column(name = "response_date")
     private LocalDate responseDate;
 
-    @Column(name = "response_note", columnDefinition = "TEXT")
-    private String responseNote;
+    @Column(columnDefinition = "TEXT")
+    private String note;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
+
+    @OneToMany(mappedBy = "priceRequest", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<PriceRequestItem> items = new ArrayList<>();
 }

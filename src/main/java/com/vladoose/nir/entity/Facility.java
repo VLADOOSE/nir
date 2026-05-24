@@ -1,7 +1,6 @@
 package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import lombok.*;
 
 @Entity
@@ -17,12 +16,9 @@ public class Facility {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Название обязательно")
-    @Size(max = 255)
     @Column(nullable = false, unique = true)
     private String name;
 
-    @Pattern(regexp = "^(\\d{10}|\\d{12})$", message = "ИНН должен содержать 10 или 12 цифр")
     @Column(length = 12)
     private String inn;
 

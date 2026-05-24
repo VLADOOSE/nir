@@ -1,9 +1,14 @@
 package com.vladoose.nir.controller;
 
-import com.vladoose.nir.entity.ActivityApply;
+import com.vladoose.nir.dto.request.TenderRequest;
+import com.vladoose.nir.dto.response.ActivityApplyResponse;
+import com.vladoose.nir.dto.response.TenderLotResponse;
+import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
-import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.mapper.ActivityApplyMapper;
+import com.vladoose.nir.mapper.TenderLotMapper;
+import com.vladoose.nir.mapper.TenderMapper;
 import com.vladoose.nir.service.ActivityApplyService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
@@ -22,22 +27,31 @@ public class TenderController {
     private final TenderService service;
     private final TenderLotService tenderLotService;
     private final ActivityApplyService activityApplyService;
+    private final TenderMapper mapper;
+    private final TenderLotMapper tenderLotMapper;
+    private final ActivityApplyMapper activityApplyMapper;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
-                            ActivityApplyService activityApplyService) {
+                            ActivityApplyService activityApplyService,
+                            TenderMapper mapper,
+                            TenderLotMapper tenderLotMapper,
+                            ActivityApplyMapper activityApplyMapper) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
+        this.mapper = mapper;
+        this.tenderLotMapper = tenderLotMapper;
+        this.activityApplyMapper = activityApplyMapper;
     }
 
     @GetMapping
-    public List<Tender> findAll() {
-        return service.findAll();
+    public List<TenderResponse> findAll() {
+        return mapper.toResponseList(service.findAll());
     }
 
     @GetMapping("/search")
-    public List<Tender> search(
+    public List<TenderResponse> search(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long facilityId,
             @RequestParam(required = false) String equipType,
@@ -45,44 +59,32 @@ public class TenderController {
             @RequestParam(required = false) BigDecimal maxCost,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
-        return service.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo);
+        return mapper.toResponseList(
+                service.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo));
     }
 
     @GetMapping("/{id}")
-    public Tender findById(@PathVariable Long id) {
-        return service.findById(id);
+    public TenderResponse findById(@PathVariable Long id) {
+        return mapper.toResponse(service.findById(id));
     }
 
     @PostMapping
-    public Tender create(@Valid @RequestBody Tender tender) {
-        if (tender.getDeadline() != null && tender.getDeadline().isBefore(LocalDate.now())) {
+    public TenderResponse create(@Valid @RequestBody TenderRequest request) {
+        if (request.getDeadline() != null && request.getDeadline().isBefore(LocalDate.now())) {
             throw new BadRequestException("Дедлайн не может быть в прошлом");
         }
-        return service.save(tender);
+        Tender entity = mapper.toEntity(request);
+        return mapper.toResponse(service.save(entity));
     }
 
     @PutMapping("/{id}")
-    public Tender update(@PathVariable Long id, @Valid @RequestBody Tender tender) {
-        if (tender.getDeadline() != null && tender.getDeadline().isBefore(LocalDate.now())) {
+    public TenderResponse update(@PathVariable Long id, @Valid @RequestBody TenderRequest request) {
+        if (request.getDeadline() != null && request.getDeadline().isBefore(LocalDate.now())) {
             throw new BadRequestException("Дедлайн не может быть в прошлом");
         }
         Tender existing = service.findById(id);
-        existing.setTenderNumber(tender.getTenderNumber());
-        existing.setFacility(tender.getFacility());
-        existing.setStatus(tender.getStatus());
-        existing.setPurchaseType(tender.getPurchaseType());
-        existing.setDeadline(tender.getDeadline());
-        existing.setPublishDate(tender.getPublishDate());
-        existing.setTotalCost(tender.getTotalCost());
-        existing.setCurrency(tender.getCurrency());
-        existing.setDescription(tender.getDescription());
-        existing.setDeliveryAddress(tender.getDeliveryAddress());
-        existing.setContactLastName(tender.getContactLastName());
-        existing.setContactFirstName(tender.getContactFirstName());
-        existing.setContactMiddleName(tender.getContactMiddleName());
-        existing.setContactPhone(tender.getContactPhone());
-        existing.setContactEmail(tender.getContactEmail());
-        return service.save(existing);
+        mapper.updateEntity(request, existing);
+        return mapper.toResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")
@@ -91,12 +93,12 @@ public class TenderController {
     }
 
     @GetMapping("/{id}/lots")
-    public List<TenderLot> getLots(@PathVariable Long id) {
-        return tenderLotService.findByTenderId(id);
+    public List<TenderLotResponse> getLots(@PathVariable Long id) {
+        return tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
     }
 
     @GetMapping("/{id}/applies")
-    public List<ActivityApply> getApplies(@PathVariable Long id) {
-        return activityApplyService.findByTenderId(id);
+    public List<ActivityApplyResponse> getApplies(@PathVariable Long id) {
+        return activityApplyMapper.toResponseList(activityApplyService.findByTenderId(id));
     }
 }

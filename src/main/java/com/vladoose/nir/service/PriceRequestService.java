@@ -26,8 +26,8 @@ public class PriceRequestService {
                 .orElseThrow(() -> new NotFoundException("Запрос КП не найден: id=" + id));
     }
 
-    public List<PriceRequest> findByTenderLotId(Long tenderLotId) {
-        return repository.findByTenderLotId(tenderLotId);
+    public List<PriceRequest> findByTenderId(Long tenderId) {
+        return repository.findByTenderId(tenderId);
     }
 
     public List<PriceRequest> findByDistributorId(Long distributorId) {

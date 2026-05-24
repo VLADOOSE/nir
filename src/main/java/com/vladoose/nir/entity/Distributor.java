@@ -1,8 +1,10 @@
 package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import lombok.*;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "distributor")
@@ -17,12 +19,9 @@ public class Distributor {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Название обязательно")
-    @Size(max = 255)
     @Column(nullable = false, unique = true)
     private String name;
 
-    @Pattern(regexp = "^(\\d{10}|\\d{12})$", message = "ИНН должен содержать 10 или 12 цифр")
     @Column(length = 12, unique = true)
     private String inn;
 
@@ -46,4 +45,13 @@ public class Distributor {
 
     @Column(length = 255)
     private String website;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "distributor_equipment_type",
+        joinColumns = @JoinColumn(name = "distributor_id"),
+        inverseJoinColumns = @JoinColumn(name = "equipment_type_id")
+    )
+    @Builder.Default
+    private List<EquipmentType> equipmentTypes = new ArrayList<>();
 }

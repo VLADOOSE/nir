@@ -10,8 +10,10 @@ import java.util.List;
 
 public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long> {
 
+    List<MedEquipment> findByEquipmentTypeId(Long equipmentTypeId);
+
     @Query("SELECT e FROM MedEquipment e WHERE " +
-           "(:equipType IS NULL OR e.equipType = :equipType) AND " +
+           "(:equipTypeId IS NULL OR e.equipmentType.id = :equipTypeId) AND " +
            "(:maxLength IS NULL OR e.lengthMm <= :maxLength) AND " +
            "(:maxWidth IS NULL OR e.widthMm <= :maxWidth) AND " +
            "(:maxHeight IS NULL OR e.heightMm <= :maxHeight) AND " +
@@ -19,7 +21,7 @@ public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long
            "(:maxCost IS NULL OR e.cost <= :maxCost) " +
            "ORDER BY e.cost ASC")
     List<MedEquipment> findMatchingEquipment(
-            @Param("equipType") String equipType,
+            @Param("equipTypeId") Long equipTypeId,
             @Param("maxLength") Integer maxLength,
             @Param("maxWidth") Integer maxWidth,
             @Param("maxHeight") Integer maxHeight,

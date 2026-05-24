@@ -1,7 +1,6 @@
 package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -22,7 +21,6 @@ public class Tender {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Номер тендера обязателен")
     @Column(name = "tender_number", length = 50, nullable = false)
     private String tenderNumber;
 
@@ -30,22 +28,18 @@ public class Tender {
     @JoinColumn(name = "facility_id")
     private Facility facility;
 
-    @NotBlank(message = "Статус обязателен")
     @Column(length = 50, nullable = false)
     private String status;
 
-    @NotBlank(message = "Способ закупки обязателен")
     @Column(name = "purchase_type", length = 50)
     private String purchaseType;
 
-    @NotNull(message = "Дедлайн обязателен")
     @Column(nullable = false)
     private LocalDate deadline;
 
     @Column(name = "publish_date")
     private LocalDate publishDate;
 
-    @PositiveOrZero(message = "Стоимость не может быть отрицательной")
     @Column(name = "total_cost", precision = 15, scale = 2)
     private BigDecimal totalCost;
 

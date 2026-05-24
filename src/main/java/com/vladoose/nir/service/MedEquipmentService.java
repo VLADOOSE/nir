@@ -48,9 +48,10 @@ public class MedEquipmentService {
         Integer maxCost = lot.getMaxCost() != null
                 ? lot.getMaxCost().intValue()
                 : null;
+        Long typeId = lot.getEquipmentType() != null ? lot.getEquipmentType().getId() : null;
 
         return repository.findMatchingEquipment(
-                lot.getEquipType(),
+                typeId,
                 lot.getMaxLengthMm(),
                 lot.getMaxWidthMm(),
                 lot.getMaxHeightMm(),

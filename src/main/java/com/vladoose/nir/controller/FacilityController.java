@@ -1,8 +1,12 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.request.FacilityRequest;
+import com.vladoose.nir.dto.response.FacilityResponse;
 import com.vladoose.nir.entity.Facility;
+import com.vladoose.nir.mapper.FacilityMapper;
 import com.vladoose.nir.service.FacilityService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,41 +16,40 @@ import java.util.List;
 public class FacilityController {
 
     private final FacilityService service;
+    private final FacilityMapper mapper;
 
-    public FacilityController(FacilityService service) {
+    public FacilityController(FacilityService service, FacilityMapper mapper) {
         this.service = service;
+        this.mapper = mapper;
     }
 
     @GetMapping
-    public List<Facility> findAll() {
-        return service.findAll();
+    public List<FacilityResponse> findAll() {
+        return mapper.toResponseList(service.findAll());
     }
 
     @GetMapping("/{id}")
-    public Facility findById(@PathVariable Long id) {
-        return service.findById(id);
+    public FacilityResponse findById(@PathVariable Long id) {
+        return mapper.toResponse(service.findById(id));
     }
 
     @PostMapping
-    public Facility create(@Valid @RequestBody Facility facility) {
-        return service.save(facility);
+    @PreAuthorize("hasRole('ADMIN')")
+    public FacilityResponse create(@Valid @RequestBody FacilityRequest request) {
+        Facility entity = mapper.toEntity(request);
+        return mapper.toResponse(service.save(entity));
     }
 
     @PutMapping("/{id}")
-    public Facility update(@PathVariable Long id, @Valid @RequestBody Facility facility) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public FacilityResponse update(@PathVariable Long id, @Valid @RequestBody FacilityRequest request) {
         Facility existing = service.findById(id);
-        existing.setName(facility.getName());
-        existing.setInn(facility.getInn());
-        existing.setAddress(facility.getAddress());
-        existing.setLastName(facility.getLastName());
-        existing.setFirstName(facility.getFirstName());
-        existing.setMiddleName(facility.getMiddleName());
-        existing.setPhone(facility.getPhone());
-        existing.setEmail(facility.getEmail());
-        return service.save(existing);
+        mapper.updateEntity(request, existing);
+        return mapper.toResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         service.deleteById(id);
     }

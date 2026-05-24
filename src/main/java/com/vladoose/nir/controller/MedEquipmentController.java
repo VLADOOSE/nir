@@ -1,10 +1,14 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.request.MedEquipmentRequest;
+import com.vladoose.nir.dto.response.MedEquipmentResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.mapper.MedEquipmentMapper;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TenderLotService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,50 +19,50 @@ public class MedEquipmentController {
 
     private final MedEquipmentService service;
     private final TenderLotService tenderLotService;
+    private final MedEquipmentMapper mapper;
 
-    public MedEquipmentController(MedEquipmentService service, TenderLotService tenderLotService) {
+    public MedEquipmentController(MedEquipmentService service,
+                                  TenderLotService tenderLotService,
+                                  MedEquipmentMapper mapper) {
         this.service = service;
         this.tenderLotService = tenderLotService;
+        this.mapper = mapper;
     }
 
     @GetMapping
-    public List<MedEquipment> findAll() {
-        return service.findAll();
+    public List<MedEquipmentResponse> findAll() {
+        return mapper.toResponseList(service.findAll());
     }
 
     @GetMapping("/{id}")
-    public MedEquipment findById(@PathVariable Long id) {
-        return service.findById(id);
+    public MedEquipmentResponse findById(@PathVariable Long id) {
+        return mapper.toResponse(service.findById(id));
     }
 
     @PostMapping
-    public MedEquipment create(@Valid @RequestBody MedEquipment equipment) {
-        return service.save(equipment);
+    @PreAuthorize("hasRole('ADMIN')")
+    public MedEquipmentResponse create(@Valid @RequestBody MedEquipmentRequest request) {
+        MedEquipment entity = mapper.toEntity(request);
+        return mapper.toResponse(service.save(entity));
     }
 
     @PutMapping("/{id}")
-    public MedEquipment update(@PathVariable Long id, @Valid @RequestBody MedEquipment equipment) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public MedEquipmentResponse update(@PathVariable Long id, @Valid @RequestBody MedEquipmentRequest request) {
         MedEquipment existing = service.findById(id);
-        existing.setName(equipment.getName());
-        existing.setManufact(equipment.getManufact());
-        existing.setEquipType(equipment.getEquipType());
-        existing.setCost(equipment.getCost());
-        existing.setLengthMm(equipment.getLengthMm());
-        existing.setWidthMm(equipment.getWidthMm());
-        existing.setHeightMm(equipment.getHeightMm());
-        existing.setWeightKg(equipment.getWeightKg());
-        existing.setSpec(equipment.getSpec());
-        return service.save(existing);
+        mapper.updateEntity(request, existing);
+        return mapper.toResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         service.deleteById(id);
     }
 
     @GetMapping("/match/{lotId}")
-    public List<MedEquipment> findMatchingForLot(@PathVariable Long lotId) {
+    public List<MedEquipmentResponse> findMatchingForLot(@PathVariable Long lotId) {
         TenderLot lot = tenderLotService.findById(lotId);
-        return service.findMatchingForLot(lot);
+        return mapper.toResponseList(service.findMatchingForLot(lot));
     }
 }

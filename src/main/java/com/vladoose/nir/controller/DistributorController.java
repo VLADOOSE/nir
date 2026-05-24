@@ -1,8 +1,12 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.request.DistributorRequest;
+import com.vladoose.nir.dto.response.DistributorResponse;
 import com.vladoose.nir.entity.Distributor;
+import com.vladoose.nir.mapper.DistributorMapper;
 import com.vladoose.nir.service.DistributorService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,42 +16,40 @@ import java.util.List;
 public class DistributorController {
 
     private final DistributorService service;
+    private final DistributorMapper mapper;
 
-    public DistributorController(DistributorService service) {
+    public DistributorController(DistributorService service, DistributorMapper mapper) {
         this.service = service;
+        this.mapper = mapper;
     }
 
     @GetMapping
-    public List<Distributor> findAll() {
-        return service.findAll();
+    public List<DistributorResponse> findAll() {
+        return mapper.toResponseList(service.findAll());
     }
 
     @GetMapping("/{id}")
-    public Distributor findById(@PathVariable Long id) {
-        return service.findById(id);
+    public DistributorResponse findById(@PathVariable Long id) {
+        return mapper.toResponse(service.findById(id));
     }
 
     @PostMapping
-    public Distributor create(@Valid @RequestBody Distributor distributor) {
-        return service.save(distributor);
+    @PreAuthorize("hasRole('ADMIN')")
+    public DistributorResponse create(@Valid @RequestBody DistributorRequest request) {
+        Distributor entity = mapper.toEntity(request);
+        return mapper.toResponse(service.save(entity));
     }
 
     @PutMapping("/{id}")
-    public Distributor update(@PathVariable Long id, @Valid @RequestBody Distributor distributor) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public DistributorResponse update(@PathVariable Long id, @Valid @RequestBody DistributorRequest request) {
         Distributor existing = service.findById(id);
-        existing.setName(distributor.getName());
-        existing.setInn(distributor.getInn());
-        existing.setAddress(distributor.getAddress());
-        existing.setLastName(distributor.getLastName());
-        existing.setFirstName(distributor.getFirstName());
-        existing.setMiddleName(distributor.getMiddleName());
-        existing.setPhone(distributor.getPhone());
-        existing.setEmail(distributor.getEmail());
-        existing.setWebsite(distributor.getWebsite());
-        return service.save(existing);
+        mapper.updateEntity(request, existing);
+        return mapper.toResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         service.deleteById(id);
     }
