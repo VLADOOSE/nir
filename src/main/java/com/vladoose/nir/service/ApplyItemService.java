@@ -26,6 +26,10 @@ public class ApplyItemService {
         return repository.findByApplyId(applyId);
     }
 
+    public List<ApplyItem> findAll() {
+        return repository.findAll();
+    }
+
     public ApplyItem findById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Позиция заявки не найдена: id=" + id));

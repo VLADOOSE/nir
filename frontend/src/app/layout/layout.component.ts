@@ -50,7 +50,6 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
             <span class="nav-group-title">Тендеры</span>
             <a routerLink="/tenders" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">📋 Все тендеры</a>
             <a routerLink="/tenders/search" routerLinkActive="active">🔍 Поиск тендеров</a>
-            <a routerLink="/mail" routerLinkActive="active">📧 Почта</a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Каталог</span>

@@ -11,7 +11,6 @@ import { FacilitiesComponent } from './pages/facilities/facilities.component';
 import { DistributorsComponent } from './pages/distributors/distributors.component';
 import { AppliesComponent } from './pages/applies/applies.component';
 import { ReportsComponent } from './pages/reports/reports.component';
-import { MailComponent } from './pages/mail/mail.component';
 import { SettingsComponent } from './pages/settings/settings.component';
 import { UsersComponent } from './pages/users/users.component';
 import { AboutComponent } from './pages/about/about.component';
@@ -27,7 +26,6 @@ export const routes: Routes = [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       { path: 'dashboard', component: DashboardComponent },
       { path: 'tenders/search', component: TenderSearchComponent },
-      { path: 'mail', component: MailComponent },
       { path: 'tenders', component: TendersComponent },
       { path: 'equipment', component: EquipmentComponent },
       { path: 'facilities', component: FacilitiesComponent },

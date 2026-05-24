@@ -145,20 +145,6 @@ export class ApiService {
     return this.http.get(`${this.base}/reports/tender-pdf${params}`, { responseType: 'blob' });
   }
 
-  // === Email ===
-
-  getEmailStatus(): Observable<any> {
-    return this.http.get(`${this.base}/email/status`);
-  }
-
-  getInbox(count: number = 20): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/email/inbox?count=${count}`);
-  }
-
-  sendEmail(to: string, subject: string, body: string): Observable<any> {
-    return this.http.post(`${this.base}/email/send`, { to, subject, body });
-  }
-
   // === Equipment Types ===
 
   getEquipmentTypes(): Observable<any[]> { return this.getAll('equipment-types'); }
