@@ -10,4 +10,8 @@ public interface ActivityApplyRepository extends JpaRepository<ActivityApply, Lo
     List<ActivityApply> findByTenderId(Long tenderId);
 
     boolean existsByTenderId(Long tenderId);
+
+    List<ActivityApply> findByStatus(String status);
+
+    boolean existsByStatus(String status);
 }

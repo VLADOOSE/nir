@@ -4,11 +4,14 @@ import com.vladoose.nir.entity.ApplyItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface ApplyItemRepository extends JpaRepository<ApplyItem, Long> {
 
     List<ApplyItem> findByApplyId(Long applyId);
+
+    List<ApplyItem> findByMedEquipmentIdIn(Collection<Long> ids);
 
     boolean existsByMedEquipmentId(Long medEquipmentId);
 
