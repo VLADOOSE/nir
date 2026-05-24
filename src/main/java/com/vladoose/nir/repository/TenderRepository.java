@@ -16,7 +16,7 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     @Query("SELECT DISTINCT t FROM Tender t JOIN t.lots l WHERE " +
            "(:status IS NULL OR t.status = :status) AND " +
            "(:facilityId IS NULL OR t.facility.id = :facilityId) AND " +
-           "(:equipType IS NULL OR l.equipType = :equipType) AND " +
+           "(:equipType IS NULL OR l.equipmentType.name = :equipType) AND " +
            "(:minCost IS NULL OR t.totalCost >= :minCost) AND " +
            "(:maxCost IS NULL OR t.totalCost <= :maxCost) AND " +
            "(:dateFrom IS NULL OR t.deadline >= :dateFrom) AND " +
