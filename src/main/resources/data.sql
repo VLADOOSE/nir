@@ -19,15 +19,15 @@ INSERT INTO distributor (name, inn, address, last_name, first_name, middle_name,
 ('Медицинские технологии', '7744444444', 'г. Москва, ул. Тверская, 30', 'Громова', 'Татьяна', 'Владимировна', '+7 (495) 600-00-04', 'gromova@medtech.ru', 'https://medtech.ru');
 
 -- 3. Каталог оборудования
-INSERT INTO med_equipment (name, manufact, equip_type_id, cost, length_mm, width_mm, height_mm, weight_kg, spec) VALUES
-('Аппарат УЗИ SonoAce R7', 'Samsung Medison', (SELECT id FROM equipment_type WHERE name='УЗИ'), 850000, 520, 480, 1350, 85.00, 'Портативный УЗИ аппарат с цветным допплером'),
-('Аппарат УЗИ Vivid T8', 'GE Healthcare', (SELECT id FROM equipment_type WHERE name='УЗИ'), 1200000, 550, 500, 1400, 95.00, 'Ультразвуковой сканер кардиологический'),
-('Рентген-аппарат Luminos dRF', 'Siemens', (SELECT id FROM equipment_type WHERE name='Рентген'), 3500000, 2100, 1800, 2200, 450.00, 'Цифровой рентгенографический комплекс'),
-('Рентген-аппарат ProMax 3D', 'Planmeca', (SELECT id FROM equipment_type WHERE name='Рентген'), 2800000, 1100, 1200, 1600, 180.00, 'Панорамный дентальный рентген с 3D'),
-('Аппарат ИВЛ Авента-М', 'УОМЗ', (SELECT id FROM equipment_type WHERE name='ИВЛ'), 480000, 400, 350, 1200, 45.00, 'Аппарат искусственной вентиляции лёгких'),
-('Аппарат ИВЛ Hamilton C6', 'Hamilton Medical', (SELECT id FROM equipment_type WHERE name='ИВЛ'), 1500000, 380, 300, 1500, 32.00, 'Интеллектуальная вентиляция с адаптивной поддержкой'),
-('Монитор пациента iMEC 12', 'Mindray', (SELECT id FROM equipment_type WHERE name='Монитор'), 320000, 350, 280, 300, 5.50, 'Прикроватный монитор с 12 отведениями ЭКГ'),
-('Монитор пациента IntelliVue MX500', 'Philips', (SELECT id FROM equipment_type WHERE name='Монитор'), 580000, 370, 310, 330, 6.20, 'Модульный монитор пациента');
+INSERT INTO med_equipment (name, manufact, equip_type_id, length_mm, width_mm, height_mm, weight_kg, spec) VALUES
+('Аппарат УЗИ SonoAce R7', 'Samsung Medison', (SELECT id FROM equipment_type WHERE name='УЗИ'), 520, 480, 1350, 85.00, 'Портативный УЗИ аппарат с цветным допплером'),
+('Аппарат УЗИ Vivid T8', 'GE Healthcare', (SELECT id FROM equipment_type WHERE name='УЗИ'), 550, 500, 1400, 95.00, 'Ультразвуковой сканер кардиологический'),
+('Рентген-аппарат Luminos dRF', 'Siemens', (SELECT id FROM equipment_type WHERE name='Рентген'), 2100, 1800, 2200, 450.00, 'Цифровой рентгенографический комплекс'),
+('Рентген-аппарат ProMax 3D', 'Planmeca', (SELECT id FROM equipment_type WHERE name='Рентген'), 1100, 1200, 1600, 180.00, 'Панорамный дентальный рентген с 3D'),
+('Аппарат ИВЛ Авента-М', 'УОМЗ', (SELECT id FROM equipment_type WHERE name='ИВЛ'), 400, 350, 1200, 45.00, 'Аппарат искусственной вентиляции лёгких'),
+('Аппарат ИВЛ Hamilton C6', 'Hamilton Medical', (SELECT id FROM equipment_type WHERE name='ИВЛ'), 380, 300, 1500, 32.00, 'Интеллектуальная вентиляция с адаптивной поддержкой'),
+('Монитор пациента iMEC 12', 'Mindray', (SELECT id FROM equipment_type WHERE name='Монитор'), 350, 280, 300, 5.50, 'Прикроватный монитор с 12 отведениями ЭКГ'),
+('Монитор пациента IntelliVue MX500', 'Philips', (SELECT id FROM equipment_type WHERE name='Монитор'), 370, 310, 330, 6.20, 'Модульный монитор пациента');
 
 -- 4. Пользователи создаются DataInitializer'ом (BCrypt-хэши паролей)
 

@@ -45,9 +45,6 @@ public class MedEquipmentService {
     }
 
     public List<MedEquipment> findMatchingForLot(TenderLot lot) {
-        Integer maxCost = lot.getMaxCost() != null
-                ? lot.getMaxCost().intValue()
-                : null;
         Long typeId = lot.getEquipmentType() != null ? lot.getEquipmentType().getId() : null;
 
         return repository.findMatchingEquipment(
@@ -55,8 +52,7 @@ public class MedEquipmentService {
                 lot.getMaxLengthMm(),
                 lot.getMaxWidthMm(),
                 lot.getMaxHeightMm(),
-                lot.getMaxWeightKg(),
-                maxCost
+                lot.getMaxWeightKg()
         );
     }
 }

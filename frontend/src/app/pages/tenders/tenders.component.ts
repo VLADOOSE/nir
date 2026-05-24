@@ -211,10 +211,10 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
         <h3>Подходящее оборудование для лота #{{ matchLotNumber }}</h3>
         <p *ngIf="matchResults.length === 0">Ничего не найдено</p>
         <table *ngIf="matchResults.length > 0">
-          <thead><tr><th>Название</th><th>Производитель</th><th>Цена</th><th>Д x Ш x В (мм)</th><th>Вес (кг)</th></tr></thead>
+          <thead><tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Д x Ш x В (мм)</th><th>Вес (кг)</th></tr></thead>
           <tbody>
             <tr *ngFor="let m of matchResults">
-              <td>{{ m.name }}</td><td>{{ m.manufact }}</td><td>{{ formatPrice(m.cost) }} &#8381;</td>
+              <td>{{ m.name }}</td><td>{{ m.manufact }}</td><td>{{ m.equipmentType?.name }}</td>
               <td>{{ m.lengthMm }}x{{ m.widthMm }}x{{ m.heightMm }}</td><td>{{ m.weightKg }}</td>
             </tr>
           </tbody>

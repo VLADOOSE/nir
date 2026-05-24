@@ -6,7 +6,6 @@ import com.vladoose.nir.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -31,7 +30,7 @@ public class BulkPriceRequestService {
         this.priceRequestItemRepository = prir; this.emailService = es;
     }
 
-    public record GroupItem(TenderLot lot, MedEquipment equipment, boolean exceedsBudget) {}
+    public record GroupItem(TenderLot lot, MedEquipment equipment) {}
     public record DistributorGroup(Distributor distributor, List<GroupItem> items) {}
     public record Preview(List<DistributorGroup> groups, List<TenderLot> lotsWithoutMatch, List<TenderLot> lotsWithoutDistributor) {}
     public record SendItem(Long tenderLotId, Long medEquipmentId, Integer requestedQuantity) {}
@@ -51,9 +50,7 @@ public class BulkPriceRequestService {
             if (eligible.isEmpty()) { lotsNoDist.add(lot); continue; }
             for (Distributor d : eligible) {
                 for (MedEquipment m : models) {
-                    boolean exceeds = lot.getMaxCost() != null && m.getCost() != null
-                            && BigDecimal.valueOf(m.getCost()).compareTo(lot.getMaxCost()) > 0;
-                    byDistributor.computeIfAbsent(d.getId(), k -> new ArrayList<>()).add(new GroupItem(lot, m, exceeds));
+                    byDistributor.computeIfAbsent(d.getId(), k -> new ArrayList<>()).add(new GroupItem(lot, m));
                 }
             }
         }

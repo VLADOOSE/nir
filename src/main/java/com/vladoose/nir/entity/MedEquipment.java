@@ -28,9 +28,6 @@ public class MedEquipment {
     @JoinColumn(name = "equip_type_id")
     private EquipmentType equipmentType;
 
-    @Column(nullable = false)
-    private Integer cost;
-
     @Column(name = "length_mm")
     private Integer lengthMm;
 

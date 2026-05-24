@@ -74,8 +74,7 @@ import { NotificationService } from '../../services/notification.service';
               </div>
 
               <div class="group-items">
-                <div class="item-row" *ngFor="let item of group.items"
-                     [class.warn]="item.exceedsBudget">
+                <div class="item-row" *ngFor="let item of group.items">
                   <label class="item-label">
                     <input type="checkbox"
                            [checked]="!!selected[key(group.distributor?.id, item.lot?.id, item.equipment?.id)]"
@@ -91,12 +90,6 @@ import { NotificationService } from '../../services/notification.service';
                       </span>
                     </span>
                   </label>
-                  <div class="item-price">
-                    <span class="price-value">{{ formatPrice(item.equipment?.cost) }} &#8381;</span>
-                    <span class="warn-icon" *ngIf="item.exceedsBudget" title="Цена превышает бюджет лота">
-                      &#9888; превышает бюджет ({{ formatPrice(item.lotMaxCost) }} &#8381;)
-                    </span>
-                  </div>
                 </div>
               </div>
 
@@ -305,7 +298,6 @@ export class BulkPriceModalComponent implements OnChanges {
       if (distId == null) continue;
       const items = group?.items || [];
       for (const item of items) {
-        if (item?.exceedsBudget) continue;
         const k = this.key(distId, item?.lot?.id, item?.equipment?.id);
         this.selected[k] = true;
       }

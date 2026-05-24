@@ -27,10 +27,6 @@ import { ApiService } from '../../services/api.service';
             <h3 class="section-title">Характеристики</h3>
             <div class="spec-grid">
               <div class="spec-cell">
-                <div class="spec-label">Цена</div>
-                <div class="spec-value spec-price">{{ formatPrice(equipment.cost) }} &#8381;</div>
-              </div>
-              <div class="spec-cell">
                 <div class="spec-label">Габариты (Д×Ш×В), мм</div>
                 <div class="spec-value">{{ equipment.lengthMm ?? '—' }} × {{ equipment.widthMm ?? '—' }} × {{ equipment.heightMm ?? '—' }}</div>
               </div>

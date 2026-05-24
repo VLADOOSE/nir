@@ -65,7 +65,6 @@ CREATE TABLE med_equipment (
     name          VARCHAR(255) NOT NULL,
     manufact      VARCHAR(255) NOT NULL,
     equip_type_id BIGINT REFERENCES equipment_type(id),
-    cost          INTEGER NOT NULL,
     length_mm     INTEGER,
     width_mm      INTEGER,
     height_mm     INTEGER,

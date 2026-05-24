@@ -10,7 +10,6 @@ public class MedEquipmentResponse {
     private String name;
     private String manufact;
     private EquipmentTypeResponse equipmentType;
-    private Integer cost;
     private Integer lengthMm;
     private Integer widthMm;
     private Integer heightMm;

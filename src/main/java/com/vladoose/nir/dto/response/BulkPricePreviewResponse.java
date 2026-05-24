@@ -2,7 +2,6 @@ package com.vladoose.nir.dto.response;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Data
@@ -21,7 +20,5 @@ public class BulkPricePreviewResponse {
     public static class Item {
         private TenderLotShortResponse lot;
         private MedEquipmentResponse equipment;
-        private BigDecimal lotMaxCost;
-        private boolean exceedsBudget;
     }
 }

@@ -1,7 +1,6 @@
 package com.vladoose.nir.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -20,10 +19,6 @@ public class MedEquipmentRequest {
     private String manufact;
 
     private Long equipTypeId;
-
-    @NotNull(message = "Цена обязательна")
-    @Positive(message = "Цена должна быть положительной")
-    private Integer cost;
 
     @Positive(message = "Длина должна быть положительной")
     private Integer lengthMm;

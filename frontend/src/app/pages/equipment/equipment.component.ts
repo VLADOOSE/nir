@@ -25,7 +25,6 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
         <label>Ширина до (мм)<input type="number" [(ngModel)]="maxWidth" (input)="applyFilter()" /></label>
         <label>Высота до (мм)<input type="number" [(ngModel)]="maxHeight" (input)="applyFilter()" /></label>
         <label>Вес до (кг)<input type="number" step="0.1" [(ngModel)]="maxWeight" (input)="applyFilter()" /></label>
-        <label>Цена до (&#8381;)<input type="number" [(ngModel)]="maxCost" (input)="applyFilter()" /></label>
         <button class="btn btn-reset-filter" (click)="resetFilters()">Сбросить</button>
       </div>
     </div>
@@ -45,7 +44,6 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
           <option *ngFor="let t of allTypes" [ngValue]="t.id">{{ t.name }}</option>
         </select>
       </label>
-      <label>Цена (руб.) *<input type="number" formControlName="cost" [class.input-error]="validationErrors.cost" /><span class="field-error" *ngIf="validationErrors.cost">{{ validationErrors.cost }}</span></label>
       <div class="dims-row">
         <label>Длина (мм)<input type="number" formControlName="lengthMm" [class.input-error]="validationErrors.lengthMm" /><span class="field-error" *ngIf="validationErrors.lengthMm">{{ validationErrors.lengthMm }}</span></label>
         <label>Ширина (мм)<input type="number" formControlName="widthMm" [class.input-error]="validationErrors.widthMm" /><span class="field-error" *ngIf="validationErrors.widthMm">{{ validationErrors.widthMm }}</span></label>
@@ -63,11 +61,11 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
 
     <table *ngIf="filteredEquipment.length > 0">
       <thead>
-        <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Цена</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
+        <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let e of filteredEquipment" class="row-clickable" (click)="detailEquipment = e">
-          <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipmentType?.name }}</td><td>{{ formatPrice(e.cost) }} &#8381;</td>
+          <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipmentType?.name }}</td>
           <td>{{ e.lengthMm }}×{{ e.widthMm }}×{{ e.heightMm }}</td><td>{{ e.weightKg }}</td>
           <td class="actions" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
             <button class="btn btn-edit" (click)="onEdit(e)">Редактировать</button>
@@ -123,7 +121,6 @@ export class EquipmentComponent {
   maxWidth: number | null = null;
   maxHeight: number | null = null;
   maxWeight: number | null = null;
-  maxCost: number | null = null;
   validationErrors: any = {};
   showForm = false;
   editingId: number | null = null;
@@ -133,7 +130,6 @@ export class EquipmentComponent {
     name: new FormControl('', Validators.required),
     manufact: new FormControl('', Validators.required),
     equipTypeId: new FormControl<number | null>(null),
-    cost: new FormControl<number | null>(null, Validators.required),
     lengthMm: new FormControl<number | null>(null),
     widthMm: new FormControl<number | null>(null),
     heightMm: new FormControl<number | null>(null),
@@ -173,7 +169,6 @@ export class EquipmentComponent {
       if (this.maxWidth != null && e.widthMm > this.maxWidth) return false;
       if (this.maxHeight != null && e.heightMm > this.maxHeight) return false;
       if (this.maxWeight != null && e.weightKg > this.maxWeight) return false;
-      if (this.maxCost != null && e.cost > this.maxCost) return false;
       return true;
     });
   }
@@ -184,7 +179,6 @@ export class EquipmentComponent {
     this.maxWidth = null;
     this.maxHeight = null;
     this.maxWeight = null;
-    this.maxCost = null;
     this.applyFilter();
   }
 

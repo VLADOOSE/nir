@@ -17,14 +17,12 @@ public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long
            "(:maxLength IS NULL OR e.lengthMm <= :maxLength) AND " +
            "(:maxWidth IS NULL OR e.widthMm <= :maxWidth) AND " +
            "(:maxHeight IS NULL OR e.heightMm <= :maxHeight) AND " +
-           "(:maxWeight IS NULL OR e.weightKg <= :maxWeight) AND " +
-           "(:maxCost IS NULL OR e.cost <= :maxCost) " +
-           "ORDER BY e.cost ASC")
+           "(:maxWeight IS NULL OR e.weightKg <= :maxWeight) " +
+           "ORDER BY e.name ASC")
     List<MedEquipment> findMatchingEquipment(
             @Param("equipTypeId") Long equipTypeId,
             @Param("maxLength") Integer maxLength,
             @Param("maxWidth") Integer maxWidth,
             @Param("maxHeight") Integer maxHeight,
-            @Param("maxWeight") BigDecimal maxWeight,
-            @Param("maxCost") Integer maxCost);
+            @Param("maxWeight") BigDecimal maxWeight);
 }

@@ -43,8 +43,6 @@ public class BulkPriceController {
                 var i = new BulkPricePreviewResponse.Item();
                 i.setLot(tenderMapper.lotToShortResponse(it.lot()));
                 i.setEquipment(medEquipmentMapper.toResponse(it.equipment()));
-                i.setLotMaxCost(it.lot().getMaxCost());
-                i.setExceedsBudget(it.exceedsBudget());
                 return i;
             }).collect(Collectors.toList()));
             return dto;
