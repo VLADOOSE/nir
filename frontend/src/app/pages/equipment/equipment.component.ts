@@ -5,14 +5,18 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { AuthService } from '../../services/auth.service';
+import { EquipmentDetailModalComponent } from '../../components/equipment-detail-modal/equipment-detail-modal.component';
 
 @Component({
   selector: 'app-equipment',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, EquipmentDetailModalComponent],
   template: `
     <h2>Каталог оборудования</h2>
     <p class="subtitle">Медицинское оборудование для участия в тендерах</p>
+
+    <app-equipment-detail-modal [equipment]="detailEquipment" (close)="detailEquipment = null"></app-equipment-detail-modal>
 
     <div class="filter-block">
       <input type="text" placeholder="Поиск по названию, производителю, типу..." [(ngModel)]="searchQuery" (input)="applyFilter()" class="search-input" />
@@ -27,7 +31,7 @@ import { ConfirmService } from '../../services/confirm.service';
     </div>
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()">Добавить</button>
       <span class="counter" *ngIf="filteredEquipment.length">Найдено: {{ filteredEquipment.length }} записей</span>
     </div>
 
@@ -36,12 +40,9 @@ import { ConfirmService } from '../../services/confirm.service';
       <label>Название *<input formControlName="name" [class.input-error]="validationErrors.name" /><span class="field-error" *ngIf="validationErrors.name">{{ validationErrors.name }}</span></label>
       <label>Производитель *<input formControlName="manufact" [class.input-error]="validationErrors.manufact" /><span class="field-error" *ngIf="validationErrors.manufact">{{ validationErrors.manufact }}</span></label>
       <label>Тип
-        <select formControlName="equipType">
-          <option value="">— не выбран —</option>
-          <option value="УЗИ">УЗИ</option>
-          <option value="Рентген">Рентген</option>
-          <option value="ИВЛ">ИВЛ</option>
-          <option value="Монитор">Монитор</option>
+        <select [formControl]="form.controls.equipTypeId">
+          <option [ngValue]="null">— не выбран —</option>
+          <option *ngFor="let t of allTypes" [ngValue]="t.id">{{ t.name }}</option>
         </select>
       </label>
       <label>Цена (руб.) *<input type="number" formControlName="cost" [class.input-error]="validationErrors.cost" /><span class="field-error" *ngIf="validationErrors.cost">{{ validationErrors.cost }}</span></label>
@@ -62,13 +63,13 @@ import { ConfirmService } from '../../services/confirm.service';
 
     <table *ngIf="filteredEquipment.length > 0">
       <thead>
-        <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Цена</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th>Действия</th></tr>
+        <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Цена</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
-        <tr *ngFor="let e of filteredEquipment">
-          <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipType }}</td><td>{{ formatPrice(e.cost) }} &#8381;</td>
+        <tr *ngFor="let e of filteredEquipment" class="row-clickable" (click)="detailEquipment = e">
+          <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipmentType?.name }}</td><td>{{ formatPrice(e.cost) }} &#8381;</td>
           <td>{{ e.lengthMm }}×{{ e.widthMm }}×{{ e.heightMm }}</td><td>{{ e.weightKg }}</td>
-          <td class="actions">
+          <td class="actions" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
             <button class="btn btn-edit" (click)="onEdit(e)">Редактировать</button>
             <button class="btn btn-delete" (click)="onDelete(e.id)">Удалить</button>
           </td>
@@ -93,6 +94,7 @@ import { ConfirmService } from '../../services/confirm.service';
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
     th { background: #f9fafb; color: #6b7280; font-weight: 600; }
     tr:hover { background: #f9fafb; }
+    tr.row-clickable { cursor: pointer; }
     .actions { white-space: nowrap; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-add { background: #1a56db; color: #fff; }
@@ -125,10 +127,12 @@ export class EquipmentComponent {
   validationErrors: any = {};
   showForm = false;
   editingId: number | null = null;
+  allTypes: any[] = [];
+  detailEquipment: any = null;
   form = new FormGroup({
     name: new FormControl('', Validators.required),
     manufact: new FormControl('', Validators.required),
-    equipType: new FormControl(''),
+    equipTypeId: new FormControl<number | null>(null),
     cost: new FormControl<number | null>(null, Validators.required),
     lengthMm: new FormControl<number | null>(null),
     widthMm: new FormControl<number | null>(null),
@@ -138,11 +142,16 @@ export class EquipmentComponent {
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, private confirm: ConfirmService) {
+              private notify: NotificationService, private confirm: ConfirmService,
+              public auth: AuthService) {
     this.loadData();
     this.api.getAllApplyItems().subscribe({
       next: items => { this.allApplyItems = items || []; },
       error: () => { this.allApplyItems = []; }
+    });
+    this.api.getEquipmentTypes().subscribe(t => {
+      this.allTypes = t || [];
+      this.cdr.detectChanges();
     });
   }
 
@@ -158,7 +167,7 @@ export class EquipmentComponent {
     this.filteredEquipment = this.equipment.filter((e: any) => {
       const textMatch = (e.name || '').toLowerCase().includes(q) ||
         (e.manufact || '').toLowerCase().includes(q) ||
-        (e.equipType || '').toLowerCase().includes(q);
+        (e.equipmentType?.name || '').toLowerCase().includes(q);
       if (!textMatch) return false;
       if (this.maxLength != null && e.lengthMm > this.maxLength) return false;
       if (this.maxWidth != null && e.widthMm > this.maxWidth) return false;
@@ -181,7 +190,12 @@ export class EquipmentComponent {
 
   formatPrice(n: number): string { return n ? n.toLocaleString('ru-RU') : '0'; }
   onAdd() { this.editingId = null; this.form.reset(); this.validationErrors = {}; this.showForm = true; }
-  onEdit(e: any) { this.editingId = e.id; this.form.patchValue(e); this.validationErrors = {}; this.showForm = true; }
+  onEdit(e: any) {
+    this.editingId = e.id;
+    this.form.patchValue({ ...e, equipTypeId: e.equipmentType?.id || null });
+    this.validationErrors = {};
+    this.showForm = true;
+  }
   onCancel() { this.showForm = false; }
 
   onSave() {
