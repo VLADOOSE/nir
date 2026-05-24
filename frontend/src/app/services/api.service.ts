@@ -81,4 +81,77 @@ export class ApiService {
   getApplyItems(applyId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/applies/${applyId}/items`);
   }
+
+  getAllApplyItems(): Observable<any[]> {
+    return this.getAll('apply-items');
+  }
+
+  downloadApplyReport(id: number): Observable<Blob> {
+    return this.http.get(`${this.base}/applies/${id}/pdf`, { responseType: 'blob' });
+  }
+
+  // === Price Requests ===
+
+  getPriceRequests(): Observable<any[]> {
+    return this.getAll('price-requests');
+  }
+
+  getPriceRequestsByLot(lotId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/price-requests/by-lot/${lotId}`);
+  }
+
+  createPriceRequest(body: any): Observable<any> {
+    return this.create('price-requests', body);
+  }
+
+  updatePriceRequest(id: number, body: any): Observable<any> {
+    return this.update('price-requests', id, body);
+  }
+
+  deletePriceRequest(id: number): Observable<void> {
+    return this.delete('price-requests', id);
+  }
+
+  // === Tender Search ===
+
+  searchTenders(params: any): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/tenders/search`, { params });
+  }
+
+  // === Reports ===
+
+  getTenderStats(): Observable<any> {
+    return this.http.get<any>(`${this.base}/reports/tender-stats`);
+  }
+
+  getEquipmentDemand(): Observable<any> {
+    return this.http.get<any>(`${this.base}/reports/equipment-demand`);
+  }
+
+  getDistributorStats(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/reports/distributor-stats`);
+  }
+
+  getDistributorPrStats(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/reports/distributor-pr-stats`);
+  }
+
+  downloadTenderReport(status?: string): Observable<Blob> {
+    const params = status ? `?status=${status}` : '';
+    return this.http.get(`${this.base}/reports/tender-pdf${params}`, { responseType: 'blob' });
+  }
+
+  // === Email ===
+
+  getEmailStatus(): Observable<any> {
+    return this.http.get(`${this.base}/email/status`);
+  }
+
+  getInbox(count: number = 20): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/email/inbox?count=${count}`);
+  }
+
+  sendEmail(to: string, subject: string, body: string): Observable<any> {
+    return this.http.post(`${this.base}/email/send`, { to, subject, body });
+  }
 }

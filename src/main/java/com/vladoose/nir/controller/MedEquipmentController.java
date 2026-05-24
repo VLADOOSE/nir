@@ -4,6 +4,7 @@ import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TenderLotService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,12 +32,12 @@ public class MedEquipmentController {
     }
 
     @PostMapping
-    public MedEquipment create(@RequestBody MedEquipment equipment) {
+    public MedEquipment create(@Valid @RequestBody MedEquipment equipment) {
         return service.save(equipment);
     }
 
     @PutMapping("/{id}")
-    public MedEquipment update(@PathVariable Long id, @RequestBody MedEquipment equipment) {
+    public MedEquipment update(@PathVariable Long id, @Valid @RequestBody MedEquipment equipment) {
         MedEquipment existing = service.findById(id);
         existing.setName(equipment.getName());
         existing.setManufact(equipment.getManufact());

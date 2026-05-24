@@ -1,20 +1,26 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.repository.ActivityApplyRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
 public class TenderService {
 
     private final TenderRepository repository;
+    private final ActivityApplyRepository activityApplyRepository;
 
-    public TenderService(TenderRepository repository) {
+    public TenderService(TenderRepository repository, ActivityApplyRepository activityApplyRepository) {
         this.repository = repository;
+        this.activityApplyRepository = activityApplyRepository;
     }
 
     public List<Tender> findAll() {
@@ -33,6 +39,15 @@ public class TenderService {
 
     @Transactional
     public void deleteById(Long id) {
+        if (activityApplyRepository.existsByTenderId(id)) {
+            throw new BadRequestException("Невозможно удалить тендер: к нему привязаны заявки. Сначала удалите заявки.");
+        }
         repository.deleteById(id);
+    }
+
+    public List<Tender> searchTenders(String status, Long facilityId, String equipType,
+                                      BigDecimal minCost, BigDecimal maxCost,
+                                      LocalDate dateFrom, LocalDate dateTo) {
+        return repository.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo);
     }
 }

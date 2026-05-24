@@ -1,32 +1,61 @@
-import { Component, OnInit } from '@angular/core';
-import { NgFor, NgIf, SlicePipe } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl } from '@angular/forms';
+import { Component, ChangeDetectorRef } from '@angular/core';
+import { NgFor, NgIf } from '@angular/common';
+import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
+import { ConfirmService } from '../../services/confirm.service';
+import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 
 @Component({
   selector: 'app-applies',
   standalone: true,
-  imports: [NgFor, NgIf, SlicePipe, ReactiveFormsModule],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent],
   template: `
     <!-- ========== СПИСОК ЗАЯВОК ========== -->
     <ng-container *ngIf="!selectedApply">
-      <h2>Заявки</h2>
+      <h2>Заявки на участие</h2>
+      <p class="subtitle">Заявки на участие в тендерах на медицинское оборудование</p>
 
-      <button class="btn btn-add" *ngIf="!showApplyForm" (click)="onAddApply()">Добавить</button>
+      <div class="filters">
+        <input type="text" placeholder="Поиск по номеру тендера или заказчику..." [(ngModel)]="filterQuery" (input)="applyFilters()" class="filter-input" />
+        <select [(ngModel)]="filterStatus" (change)="applyFilters()" class="filter-select">
+          <option value="">Все статусы</option>
+          <option value="DRAFT">Черновик</option>
+          <option value="SUBMITTED">Подана</option>
+          <option value="UNDER_REVIEW">На рассмотрении</option>
+          <option value="WON">Выиграна</option>
+          <option value="LOST">Проиграна</option>
+          <option value="CANCELLED">Отменена</option>
+        </select>
+        <button class="btn btn-reset-filter" (click)="resetFilters()">Сбросить</button>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn btn-add" *ngIf="!showApplyForm" (click)="onAddApply()">Добавить</button>
+        <span class="counter" *ngIf="filteredApplies.length">Найдено: {{ filteredApplies.length }} записей</span>
+      </div>
 
       <form *ngIf="showApplyForm" [formGroup]="applyForm" (ngSubmit)="onSaveApply()" class="edit-form">
+        <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
         <label>Тендер
-          <select formControlName="tenderId">
-            <option [ngValue]="null">— не выбран —</option>
-            <option *ngFor="let t of tenders" [ngValue]="t.id">{{ t.tenderNumber }} — {{ t.facility?.name || '?' }}</option>
-          </select>
+          <app-searchable-select
+            [items]="tenders"
+            labelField="tenderNumber"
+            [subLabelFields]="['description']"
+            [searchFields]="['tenderNumber', 'description']"
+            placeholder="— выберите тендер —"
+            [value]="applyForm.value.tenderId"
+            (valueChange)="applyForm.patchValue({tenderId: $event})">
+          </app-searchable-select>
         </label>
         <label>Статус
           <select formControlName="status">
-            <option value="DRAFT">DRAFT</option>
-            <option value="SUBMITTED">SUBMITTED</option>
-            <option value="WON">WON</option>
-            <option value="REJECTED">REJECTED</option>
+            <option value="DRAFT">Черновик</option>
+            <option value="SUBMITTED">Подана</option>
+            <option value="UNDER_REVIEW">На рассмотрении</option>
+            <option value="WON">Выиграна</option>
+            <option value="LOST">Проиграна</option>
+            <option value="CANCELLED">Отменена</option>
           </select>
         </label>
         <div class="form-actions">
@@ -35,22 +64,19 @@ import { ApiService } from '../../services/api.service';
         </div>
       </form>
 
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Тендер</th>
-            <th>Статус</th>
-            <th>Дата создания</th>
-            <th>Действия</th>
-          </tr>
-        </thead>
+      <div *ngIf="filteredApplies.length === 0 && !showApplyForm" class="empty">Нет данных</div>
+
+      <table *ngIf="filteredApplies.length > 0">
+        <thead><tr><th>ID</th><th>Номер тендера</th><th>Заказчик</th><th>Статус</th><th>Позиций</th><th>Сумма</th><th>Дата создания</th><th>Действия</th></tr></thead>
         <tbody>
-          <tr *ngFor="let a of applies">
+          <tr *ngFor="let a of filteredApplies">
             <td>{{ a.id }}</td>
             <td>{{ a.tender?.tenderNumber || '—' }}</td>
-            <td><span class="badge" [class]="'badge-' + a.status">{{ a.status }}</span></td>
-            <td>{{ a.createdAt | slice:0:10 }}</td>
+            <td>{{ a.tender?.facility?.name || '—' }}</td>
+            <td><span class="badge" [class]="'badge-' + a.status">{{ getStatusLabel(a.status) }}</span></td>
+            <td>{{ a._itemCount || 0 }}</td>
+            <td>{{ formatPrice(a._totalCost) }} &#8381;</td>
+            <td>{{ formatDate(a.createdAt) }}</td>
             <td class="actions">
               <button class="btn btn-open" (click)="onOpen(a)">Открыть</button>
               <button class="btn btn-edit" (click)="onEditApply(a)">Редактировать</button>
@@ -64,22 +90,33 @@ import { ApiService } from '../../services/api.service';
     <!-- ========== ДЕТАЛИ ЗАЯВКИ ========== -->
     <ng-container *ngIf="selectedApply">
       <button class="btn btn-back" (click)="onBack()">&#8592; Назад к списку</button>
+      <button class="btn btn-pdf" (click)="downloadPdf()">Скачать PDF</button>
+      <button *ngIf="selectedApply?.status === 'DRAFT'" class="btn btn-submit" (click)="onMarkSubmitted()" [disabled]="items.length === 0 || isDeadlinePassed()">Подали заявку</button>
+      <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-withdraw" (click)="onWithdrawApply()">Вернуть в черновик</button>
+      <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-won" (click)="onMarkResult('WON')">Тендер выигран</button>
+      <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-lost" (click)="onMarkResult('LOST')">Тендер проигран</button>
 
       <div class="apply-info">
         <h2>Заявка #{{ selectedApply.id }}</h2>
-        <p><strong>Тендер:</strong> {{ selectedApply.tender?.tenderNumber || '—' }}</p>
-        <p><strong>Статус:</strong> <span class="badge" [class]="'badge-' + selectedApply.status">{{ selectedApply.status }}</span></p>
-        <p><strong>Дата создания:</strong> {{ selectedApply.createdAt | slice:0:10 }}</p>
+        <div class="info-grid">
+          <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}</span></div>
+          <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedApply.tender?.facility?.name || '—' }}</span></div>
+          <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedApply.status">{{ getStatusLabel(selectedApply.status) }}</span></div>
+          <div class="info-item"><span class="info-label">Дата создания</span><span>{{ formatDate(selectedApply.createdAt) }}</span></div>
+        </div>
+        <p *ngIf="selectedApply.tender?.description" class="info-desc">{{ selectedApply.tender.description }}</p>
       </div>
 
-      <!-- Позиции -->
       <h3>Позиции заявки</h3>
 
-      <button class="btn btn-add" *ngIf="!showItemForm" (click)="onAddItem()">Добавить позицию</button>
+      <div class="toolbar">
+        <button class="btn btn-add" *ngIf="!showItemForm" (click)="onAddItem()">Добавить позицию</button>
+        <span class="counter" *ngIf="items.length">{{ items.length }} позиций — итого: {{ formatPrice(itemsTotal) }} &#8381;</span>
+      </div>
 
       <form *ngIf="showItemForm" [formGroup]="itemForm" (ngSubmit)="onSaveItem()" class="edit-form">
         <label>Лот тендера
-          <select formControlName="tenderLotId">
+          <select formControlName="tenderLotId" (change)="onLotSelected()">
             <option [ngValue]="null">— не выбран —</option>
             <option *ngFor="let l of lots" [ngValue]="l.id">Лот {{ l.lotNumber }}: {{ l.equipName }}</option>
           </select>
@@ -97,12 +134,8 @@ import { ApiService } from '../../services/api.service';
           </select>
         </label>
         <div class="dims-row">
-          <label>Предложенная цена
-            <input type="number" step="0.01" formControlName="offeredCost" />
-          </label>
-          <label>Количество
-            <input type="number" formControlName="quantity" />
-          </label>
+          <label>Предложенная цена<input type="number" step="0.01" formControlName="offeredCost" [class.input-error]="validationErrors.offeredCost" /><span class="field-error" *ngIf="validationErrors.offeredCost">{{ validationErrors.offeredCost }}</span></label>
+          <label>Количество<input type="number" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
         </div>
         <div class="form-actions">
           <button class="btn btn-save" type="submit">Сохранить</button>
@@ -110,27 +143,17 @@ import { ApiService } from '../../services/api.service';
         </div>
       </form>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Лот</th>
-            <th>Оборудование</th>
-            <th>Дистрибьютор</th>
-            <th>Предл. цена</th>
-            <th>Кол-во</th>
-            <th>Действия</th>
-          </tr>
-        </thead>
+      <div *ngIf="items.length === 0 && !showItemForm" class="empty">Нет позиций</div>
+
+      <table *ngIf="items.length > 0">
+        <thead><tr><th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th><th>Предл. цена</th><th>Кол-во</th><th>Действия</th></tr></thead>
         <tbody>
           <tr *ngFor="let it of items">
-            <td>{{ it.tenderLot?.equipName || '—' }}</td>
-            <td>{{ it.medEquipment?.name || '—' }}</td>
-            <td>{{ it.distributor?.name || '—' }}</td>
-            <td>{{ it.offeredCost }}</td>
-            <td>{{ it.quantity }}</td>
+            <td>{{ it.tenderLot?.equipName || '—' }}</td><td>{{ it.medEquipment?.name || '—' }}</td>
+            <td>{{ it.distributor?.name || '—' }}</td><td>{{ formatPrice(it.offeredCost) }} &#8381;</td><td>{{ it.quantity }}</td>
             <td class="actions">
-              <button class="btn btn-edit" (click)="onEditItem(it)">Ред.</button>
-              <button class="btn btn-delete" (click)="onDeleteItem(it.id)">Удл.</button>
+              <button class="btn btn-edit" (click)="onEditItem(it)">Редактировать</button>
+              <button class="btn btn-delete" (click)="onDeleteItem(it.id)">Удалить</button>
             </td>
           </tr>
         </tbody>
@@ -138,180 +161,307 @@ import { ApiService } from '../../services/api.service';
     </ng-container>
   `,
   styles: [`
-    h2 { margin: 0 0 16px; font-size: 20px; color: #111827; }
+    h2 { margin: 0; font-size: 20px; color: #111827; }
     h3 { margin: 24px 0 12px; font-size: 17px; color: #111827; }
+    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+    .filter-input { flex: 1; min-width: 240px; max-width: 400px; padding: 8px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+    .filter-input:focus { outline: none; border-color: #1a56db; }
+    .filter-select { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: #fff; }
+    .btn-reset-filter { background: #e5e7eb; color: #374151; padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .counter { color: #6b7280; font-size: 13px; }
+    .empty { color: #9ca3af; font-size: 14px; padding: 32px 0; text-align: center; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
     th { background: #f9fafb; color: #6b7280; font-weight: 600; }
     tr:hover { background: #f9fafb; }
     .actions { white-space: nowrap; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-add { background: #1a56db; color: #fff; margin-bottom: 16px; }
+    .btn-add { background: #1a56db; color: #fff; }
     .btn-save { background: #1a56db; color: #fff; }
     .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
     .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
     .btn-delete { background: #ef4444; color: #fff; }
     .btn-open { background: #1a56db; color: #fff; margin-right: 4px; }
     .btn-back { background: #6b7280; color: #fff; margin-bottom: 16px; }
+    .btn-pdf { background: #dc2626; color: #fff; margin-left: 8px; margin-bottom: 16px; }
+    .btn-submit { background: #059669; color: #fff; margin-left: 8px; margin-bottom: 16px; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-withdraw { background: #6b7280; color: #fff; margin-left: 8px; margin-bottom: 16px; }
+    .btn-won { background: #059669; color: #fff; margin-left: 8px; margin-bottom: 16px; }
+    .btn-lost { background: #dc2626; color: #fff; margin-left: 8px; margin-bottom: 16px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
     .badge-DRAFT { background: #e5e7eb; color: #374151; }
     .badge-SUBMITTED { background: #dbeafe; color: #1a56db; }
+    .badge-UNDER_REVIEW { background: #fef3c7; color: #92400e; }
     .badge-WON { background: #d1fae5; color: #065f46; }
+    .badge-LOST { background: #fee2e2; color: #991b1b; }
+    .badge-CANCELLED { background: #f3f4f6; color: #6b7280; }
     .badge-REJECTED { background: #fee2e2; color: #991b1b; }
-    .apply-info { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+    .apply-info { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
     .apply-info p { margin: 4px 0; font-size: 14px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-top: 12px; }
+    .info-item { display: flex; flex-direction: column; }
+    .info-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; margin-bottom: 2px; }
+    .info-item span:not(.info-label) { font-size: 14px; }
+    .info-desc { margin-top: 12px; font-size: 13px; color: #6b7280; line-height: 1.5; }
     .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 600px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
     .edit-form input, .edit-form select { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .form-actions { margin-top: 16px; }
+    .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
+    .input-error { border-color: #dc2626 !important; }
+    .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
   `]
 })
-export class AppliesComponent implements OnInit {
+export class AppliesComponent {
   applies: any[] = [];
+  filteredApplies: any[] = [];
+  filterQuery = '';
+  filterStatus = '';
   tenders: any[] = [];
+  validationErrors: any = {};
   selectedApply: any = null;
   items: any[] = [];
+  itemsTotal = 0;
   lots: any[] = [];
   equipment: any[] = [];
   distributors: any[] = [];
 
   showApplyForm = false;
   editingApplyId: number | null = null;
-  applyForm = new FormGroup({
-    tenderId: new FormControl<number | null>(null),
-    status: new FormControl('DRAFT')
-  });
+  applyForm = new FormGroup({ tenderId: new FormControl<number | null>(null), status: new FormControl('DRAFT') });
 
   showItemForm = false;
   editingItemId: number | null = null;
   itemForm = new FormGroup({
-    tenderLotId: new FormControl<number | null>(null),
-    medEquipId: new FormControl<number | null>(null),
-    distributorId: new FormControl<number | null>(null),
-    offeredCost: new FormControl<number | null>(null),
-    quantity: new FormControl<number | null>(null)
+    tenderLotId: new FormControl<number | null>(null), medEquipId: new FormControl<number | null>(null),
+    distributorId: new FormControl<number | null>(null), offeredCost: new FormControl<number | null>(null), quantity: new FormControl<number | null>(null)
   });
 
-  constructor(private api: ApiService) {}
-
-  ngOnInit() {
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef,
+              private notify: NotificationService, private confirm: ConfirmService) {
     this.loadApplies();
-    this.api.getTenders().subscribe(data => this.tenders = data);
+    this.api.getTenders().subscribe({ next: data => { this.tenders = data; this.cdr.detectChanges(); } });
   }
+
+  applyFilters() {
+    const q = (this.filterQuery || '').toLowerCase();
+    this.filteredApplies = this.applies.filter(a => {
+      const tn = (a.tender?.tenderNumber || '').toLowerCase();
+      const fn = (a.tender?.facility?.name || '').toLowerCase();
+      const textMatch = !q || tn.includes(q) || fn.includes(q);
+      const statusMatch = !this.filterStatus || a.status === this.filterStatus;
+      return textMatch && statusMatch;
+    });
+  }
+
+  resetFilters() {
+    this.filterQuery = '';
+    this.filterStatus = '';
+    this.applyFilters();
+  }
+
+  getStatusLabel(s: string): string {
+    return ({ DRAFT: 'Черновик', SUBMITTED: 'Подана', UNDER_REVIEW: 'На рассмотрении', WON: 'Выиграна', LOST: 'Проиграна', CANCELLED: 'Отменена', REJECTED: 'Отклонена' } as any)[s] || s;
+  }
+
+  formatDate(d: string): string {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
 
   loadApplies() {
-    this.api.getApplies().subscribe(data => this.applies = data);
-  }
-
-  // === Apply CRUD ===
-
-  onAddApply() {
-    this.editingApplyId = null;
-    this.applyForm.reset({ status: 'DRAFT' });
-    this.showApplyForm = true;
-  }
-
-  onEditApply(a: any) {
-    this.editingApplyId = a.id;
-    this.applyForm.patchValue({
-      tenderId: a.tender?.id || null,
-      status: a.status
+    this.api.getApplies().subscribe({
+      next: data => {
+        this.applies = data;
+        this.applyFilters();
+        // Подгружаем позиции для каждой заявки для подсчёта
+        for (const a of this.applies) {
+          a._itemCount = 0;
+          a._totalCost = 0;
+          this.api.getApplyItems(a.id).subscribe(items => {
+            a._itemCount = items.length;
+            a._totalCost = items.reduce((s: number, it: any) => s + ((it.offeredCost || 0) * (it.quantity || 1)), 0);
+            this.cdr.detectChanges();
+          });
+        }
+        this.cdr.detectChanges();
+      },
+      error: err => this.notify.error('Ошибка загрузки заявок: ' + (err.error?.message || err.message))
     });
-    this.showApplyForm = true;
   }
+
+  onAddApply() { this.editingApplyId = null; this.applyForm.reset({ status: 'DRAFT' }); this.validationErrors = {}; this.showApplyForm = true; }
+  onEditApply(a: any) { this.editingApplyId = a.id; this.applyForm.patchValue({ tenderId: a.tender?.id || null, status: a.status }); this.validationErrors = {}; this.showApplyForm = true; }
 
   onSaveApply() {
     const v = this.applyForm.value;
-    const body: any = {
-      status: v.status,
-      tender: v.tenderId ? { id: v.tenderId } : null
-    };
-    const req = this.editingApplyId
-      ? this.api.update('applies', this.editingApplyId, body)
-      : this.api.create('applies', body);
-    req.subscribe(() => {
-      this.showApplyForm = false;
-      this.loadApplies();
+    const body: any = { status: v.status, tender: v.tenderId ? { id: v.tenderId } : null };
+    const wasEditing = this.editingApplyId !== null;
+    const req = this.editingApplyId ? this.api.update('applies', this.editingApplyId, body) : this.api.create('applies', body);
+    req.subscribe({
+      next: () => {
+        this.showApplyForm = false; this.validationErrors = {};
+        this.notify.success(wasEditing ? 'Заявка обновлена' : 'Заявка создана');
+        this.loadApplies();
+      },
+      error: (err: any) => {
+        if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
+        else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
+        else { this.validationErrors = { _general: 'Ошибка сохранения данных' }; }
+        this.cdr.detectChanges();
+      }
     });
   }
 
   onDeleteApply(id: number) {
-    if (confirm('Удалить заявку?')) {
-      this.api.delete('applies', id).subscribe(() => this.loadApplies());
-    }
+    this.confirm.ask('Удалить заявку?', 'Это действие нельзя отменить. Будут удалены все позиции этой заявки.', { danger: true, confirmLabel: 'Удалить' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.delete('applies', id).subscribe({
+          next: () => { this.notify.success('Заявка удалена'); this.loadApplies(); },
+          error: err => this.notify.error(err.error?.message || 'Ошибка удаления')
+        });
+      });
   }
 
-  // === Detail view ===
-
-  onOpen(a: any) {
-    this.selectedApply = a;
-    this.loadItems();
-    this.loadReferenceData();
-  }
-
-  onBack() {
-    this.selectedApply = null;
-    this.showItemForm = false;
-    this.loadApplies();
-  }
+  onOpen(a: any) { this.selectedApply = a; this.loadItems(); this.loadReferenceData(); }
+  onBack() { this.selectedApply = null; this.showItemForm = false; this.loadApplies(); }
 
   loadItems() {
-    this.api.getApplyItems(this.selectedApply.id).subscribe(data => this.items = data);
+    this.api.getApplyItems(this.selectedApply.id).subscribe({
+      next: data => {
+        this.items = data;
+        this.itemsTotal = data.reduce((s: number, it: any) => s + ((it.offeredCost || 0) * (it.quantity || 1)), 0);
+        this.cdr.detectChanges();
+      },
+      error: err => this.notify.error('Ошибка загрузки позиций: ' + (err.error?.message || err.message))
+    });
   }
 
   loadReferenceData() {
-    if (this.selectedApply.tender?.id) {
-      this.api.getTenderLots(this.selectedApply.tender.id).subscribe(data => this.lots = data);
-    }
+    if (this.selectedApply.tender?.id) { this.api.getTenderLots(this.selectedApply.tender.id).subscribe(data => this.lots = data); }
     this.api.getEquipment().subscribe(data => this.equipment = data);
     this.api.getDistributors().subscribe(data => this.distributors = data);
   }
 
-  // === Item CRUD ===
-
-  onAddItem() {
-    this.editingItemId = null;
-    this.itemForm.reset();
-    this.showItemForm = true;
-  }
-
+  onAddItem() { this.editingItemId = null; this.itemForm.reset(); this.validationErrors = {}; this.showItemForm = true; }
   onEditItem(it: any) {
     this.editingItemId = it.id;
-    this.itemForm.patchValue({
-      tenderLotId: it.tenderLot?.id || null,
-      medEquipId: it.medEquipment?.id || null,
-      distributorId: it.distributor?.id || null,
-      offeredCost: it.offeredCost,
-      quantity: it.quantity
-    });
+    this.itemForm.patchValue({ tenderLotId: it.tenderLot?.id || null, medEquipId: it.medEquipment?.id || null, distributorId: it.distributor?.id || null, offeredCost: it.offeredCost, quantity: it.quantity });
     this.showItemForm = true;
   }
 
   onSaveItem() {
+    this.validationErrors = {};
     const v = this.itemForm.value;
-    const body: any = {
-      apply: { id: this.selectedApply.id },
-      tenderLot: v.tenderLotId ? { id: v.tenderLotId } : null,
-      medEquipment: v.medEquipId ? { id: v.medEquipId } : null,
-      distributor: v.distributorId ? { id: v.distributorId } : null,
-      offeredCost: v.offeredCost,
-      quantity: v.quantity
+
+    if (v.offeredCost && v.tenderLotId) {
+      const lot = this.lots.find((l: any) => l.id === +v.tenderLotId!);
+      if (lot && lot.maxCost != null && +v.offeredCost! > +lot.maxCost) {
+        this.validationErrors = { offeredCost: 'Превышает макс. цену лота (' + lot.maxCost + ' ₽)' };
+        return;
+      }
+    }
+
+    const body: any = { apply: { id: this.selectedApply.id }, tenderLot: v.tenderLotId ? { id: v.tenderLotId } : null, medEquipment: v.medEquipId ? { id: v.medEquipId } : null, distributor: v.distributorId ? { id: v.distributorId } : null, offeredCost: v.offeredCost, quantity: v.quantity };
+    const req = this.editingItemId ? this.api.update('apply-items', this.editingItemId, body) : this.api.create('apply-items', body);
+    req.subscribe({
+      next: () => { this.showItemForm = false; this.validationErrors = {}; this.loadItems(); },
+      error: (err: any) => {
+        if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
+        else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
+        else { this.validationErrors = { _general: 'Ошибка сохранения данных' }; }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  onLotSelected() {
+    const lotId = this.itemForm.value.tenderLotId;
+    if (lotId) {
+      const lot = this.lots.find((l: any) => l.id === +lotId);
+      if (lot) {
+        this.itemForm.patchValue({ quantity: lot.quantity });
+      }
+    }
+  }
+
+  isDeadlinePassed(): boolean {
+    if (!this.selectedApply?.tender?.deadline) return false;
+    return new Date(this.selectedApply.tender.deadline) < new Date();
+  }
+
+  onMarkSubmitted() {
+    if (this.items.length === 0) {
+      this.notify.error('Нельзя отметить подачу без позиций в заявке');
+      return;
+    }
+    if (this.isDeadlinePassed()) {
+      this.notify.error('Срок подачи заявок по этому тендеру истёк');
+      return;
+    }
+    this.confirm.ask('Отметить заявку как поданную?', 'Это означает, что заявка отправлена на тендерную площадку.', { confirmLabel: 'Отметить' })
+      .subscribe(ok => { if (ok) this.updateApplyStatus('SUBMITTED', 'Заявка отмечена как поданная'); });
+  }
+
+  onWithdrawApply() {
+    this.confirm.ask('Вернуть заявку в черновики?', 'Статус сменится с «Подана» на «Черновик».', { confirmLabel: 'Вернуть' })
+      .subscribe(ok => { if (ok) this.updateApplyStatus('DRAFT', 'Заявка возвращена в черновики'); });
+  }
+
+  onMarkResult(result: 'WON' | 'LOST') {
+    const won = result === 'WON';
+    this.confirm.ask(
+      won ? 'Отметить тендер как выигранный?' : 'Отметить тендер как проигранный?',
+      'Это финальный статус заявки.',
+      { danger: !won, confirmLabel: won ? 'Выигран' : 'Проигран' }
+    ).subscribe(ok => {
+      if (ok) this.updateApplyStatus(result, won ? 'Заявка отмечена как выигранная' : 'Заявка отмечена как проигранная');
+    });
+  }
+
+  private updateApplyStatus(status: string, successMsg: string) {
+    const body = {
+      status,
+      tender: this.selectedApply.tender ? { id: this.selectedApply.tender.id } : null
     };
-    const req = this.editingItemId
-      ? this.api.update('apply-items', this.editingItemId, body)
-      : this.api.create('apply-items', body);
-    req.subscribe(() => {
-      this.showItemForm = false;
-      this.loadItems();
+    this.api.update('applies', this.selectedApply.id, body).subscribe({
+      next: (updated: any) => {
+        this.selectedApply = updated;
+        this.notify.success(successMsg);
+        this.cdr.detectChanges();
+      },
+      error: () => this.notify.error('Ошибка при обновлении статуса')
+    });
+  }
+
+  downloadPdf() {
+    this.api.downloadApplyReport(this.selectedApply.id).subscribe(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'apply_' + this.selectedApply.id + '.pdf';
+      a.click();
+      window.URL.revokeObjectURL(url);
     });
   }
 
   onDeleteItem(id: number) {
-    if (confirm('Удалить позицию?')) {
-      this.api.delete('apply-items', id).subscribe(() => this.loadItems());
-    }
+    this.confirm.ask('Удалить позицию заявки?', undefined, { danger: true, confirmLabel: 'Удалить' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.delete('apply-items', id).subscribe({
+          next: () => { this.notify.success('Позиция удалена'); this.loadItems(); },
+          error: err => this.notify.error(err.error?.message || 'Ошибка удаления')
+        });
+      });
   }
 }

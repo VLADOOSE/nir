@@ -4,6 +4,18 @@ spring:
     username: postgres
     password: admin
 
+  mail:
+    host: smtp.mail.ru
+    port: 465
+    username: ${MAIL_USERNAME:test@mail.ru}
+    password: ${MAIL_PASSWORD:password}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl.enable: true
+
   sql:
     init:
       mode: always

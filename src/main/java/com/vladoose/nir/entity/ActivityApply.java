@@ -1,6 +1,7 @@
 package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.time.OffsetDateTime;
@@ -24,6 +25,7 @@ public class ActivityApply {
     @JoinColumn(name = "tender_id", nullable = false)
     private Tender tender;
 
+    @NotBlank(message = "Статус обязателен")
     @Column(length = 50)
     @Builder.Default
     private String status = "DRAFT";

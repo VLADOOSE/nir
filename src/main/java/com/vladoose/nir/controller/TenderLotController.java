@@ -1,7 +1,11 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.service.TenderLotService;
+import com.vladoose.nir.service.TenderService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -9,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 public class TenderLotController {
 
     private final TenderLotService service;
+    private final TenderService tenderService;
 
-    public TenderLotController(TenderLotService service) {
+    public TenderLotController(TenderLotService service, TenderService tenderService) {
         this.service = service;
+        this.tenderService = tenderService;
     }
 
     @GetMapping("/{id}")
@@ -20,14 +26,22 @@ public class TenderLotController {
     }
 
     @PostMapping
-    public TenderLot create(@RequestBody TenderLot lot) {
+    public TenderLot create(@Valid @RequestBody TenderLot lot) {
+        if (lot.getTender() == null || lot.getTender().getId() == null) {
+            throw new BadRequestException("Не указан тендер");
+        }
+        Tender tender = tenderService.findById(lot.getTender().getId());
+        lot.setTender(tender);
         return service.save(lot);
     }
 
     @PutMapping("/{id}")
-    public TenderLot update(@PathVariable Long id, @RequestBody TenderLot lot) {
+    public TenderLot update(@PathVariable Long id, @Valid @RequestBody TenderLot lot) {
         TenderLot existing = service.findById(id);
-        existing.setTender(lot.getTender());
+        if (lot.getTender() != null && lot.getTender().getId() != null) {
+            Tender tender = tenderService.findById(lot.getTender().getId());
+            existing.setTender(tender);
+        }
         existing.setLotNumber(lot.getLotNumber());
         existing.setEquipName(lot.getEquipName());
         existing.setEquipType(lot.getEquipType());

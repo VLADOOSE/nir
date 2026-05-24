@@ -1,7 +1,8 @@
 package com.vladoose.nir.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -21,7 +22,7 @@ public class ApplyItem {
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "apply_id", nullable = false)
-    @JsonIgnore
+    @JsonIgnoreProperties("items")
     private ActivityApply apply;
 
     @ManyToOne(fetch = FetchType.EAGER)
@@ -36,8 +37,11 @@ public class ApplyItem {
     @JoinColumn(name = "distributor_id")
     private Distributor distributor;
 
+    @Positive(message = "Предложенная цена должна быть положительной")
     @Column(name = "offered_cost", precision = 15, scale = 2)
     private BigDecimal offeredCost;
 
+    @NotNull(message = "Количество обязательно")
+    @Positive(message = "Количество должно быть положительным")
     private Integer quantity;
 }

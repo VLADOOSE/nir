@@ -1,6 +1,7 @@
 -- DEV ONLY: пересоздаёт все таблицы при каждом запуске
 
 -- Удаление таблиц в обратном порядке зависимостей
+DROP TABLE IF EXISTS price_request CASCADE;
 DROP TABLE IF EXISTS apply_item CASCADE;
 DROP TABLE IF EXISTS activity_apply CASCADE;
 DROP TABLE IF EXISTS tender_lot CASCADE;
@@ -21,18 +22,28 @@ DROP TABLE IF EXISTS tender_founder CASCADE;
 -- ========== Справочники ==========
 
 CREATE TABLE facility (
-    id       BIGSERIAL PRIMARY KEY,
-    name     VARCHAR(255) NOT NULL UNIQUE,
-    inn      VARCHAR(12),
-    address  VARCHAR(500),
-    contact  VARCHAR(500)
+    id          BIGSERIAL PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL UNIQUE,
+    inn         VARCHAR(12),
+    address     VARCHAR(500),
+    last_name   VARCHAR(100),
+    first_name  VARCHAR(100),
+    middle_name VARCHAR(100),
+    phone       VARCHAR(50),
+    email       VARCHAR(255)
 );
 
 CREATE TABLE distributor (
-    id      BIGSERIAL PRIMARY KEY,
-    name    VARCHAR(255) NOT NULL UNIQUE,
-    inn     VARCHAR(12) UNIQUE,
-    contact VARCHAR(500)
+    id          BIGSERIAL PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL UNIQUE,
+    inn         VARCHAR(12) UNIQUE,
+    address     VARCHAR(500),
+    last_name   VARCHAR(100),
+    first_name  VARCHAR(100),
+    middle_name VARCHAR(100),
+    phone       VARCHAR(50),
+    email       VARCHAR(255),
+    website     VARCHAR(255)
 );
 
 CREATE TABLE med_equipment (
@@ -58,13 +69,22 @@ CREATE TABLE user_account (
 -- ========== Тендеры ==========
 
 CREATE TABLE tender (
-    id            BIGSERIAL PRIMARY KEY,
-    tender_number VARCHAR(50),
-    facility_id   BIGINT REFERENCES facility(id),
-    status        VARCHAR(50),
-    deadline      DATE,
-    total_cost    NUMERIC(15, 2),
-    description   TEXT
+    id              BIGSERIAL PRIMARY KEY,
+    tender_number   VARCHAR(50) NOT NULL,
+    facility_id     BIGINT REFERENCES facility(id),
+    status          VARCHAR(50) NOT NULL,
+    purchase_type   VARCHAR(50),
+    deadline        DATE NOT NULL,
+    publish_date    DATE,
+    total_cost      NUMERIC(15, 2),
+    currency        VARCHAR(10) DEFAULT 'RUB',
+    description     TEXT,
+    delivery_address TEXT,
+    contact_last_name   VARCHAR(100),
+    contact_first_name  VARCHAR(100),
+    contact_middle_name VARCHAR(100),
+    contact_phone       VARCHAR(50),
+    contact_email       VARCHAR(255)
 );
 
 CREATE TABLE tender_lot (
@@ -99,4 +119,19 @@ CREATE TABLE apply_item (
     distributor_id BIGINT REFERENCES distributor(id),
     offered_cost   NUMERIC(15, 2),
     quantity       INTEGER
+);
+
+-- ========== Запросы КП ==========
+
+CREATE TABLE price_request (
+    id              BIGSERIAL PRIMARY KEY,
+    tender_lot_id   BIGINT NOT NULL REFERENCES tender_lot(id),
+    med_equip_id    BIGINT NOT NULL REFERENCES med_equipment(id),
+    distributor_id  BIGINT NOT NULL REFERENCES distributor(id),
+    status          VARCHAR(50) NOT NULL DEFAULT 'CREATED',
+    sent_at         TIMESTAMPTZ,
+    response_price  NUMERIC(15, 2),
+    response_date   DATE,
+    response_note   TEXT,
+    created_at      TIMESTAMPTZ DEFAULT now()
 );

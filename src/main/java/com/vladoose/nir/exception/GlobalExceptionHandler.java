@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -24,7 +25,7 @@ public class GlobalExceptionHandler {
         ApiError error = ApiError.builder()
                 .status(HttpStatus.BAD_REQUEST.value())
                 .message("Ошибка валидации данных")
-                .fieldErrors(fieldErrors)
+                .errors(fieldErrors)
                 .build();
 
         return ResponseEntity.badRequest().body(error);
@@ -41,7 +42,7 @@ public class GlobalExceptionHandler {
         ApiError error = ApiError.builder()
                 .status(HttpStatus.BAD_REQUEST.value())
                 .message("Нарушение ограничений")
-                .fieldErrors(fieldErrors)
+                .errors(fieldErrors)
                 .build();
 
         return ResponseEntity.badRequest().body(error);
@@ -52,9 +53,24 @@ public class GlobalExceptionHandler {
         ApiError error = ApiError.builder()
                 .status(HttpStatus.BAD_REQUEST.value())
                 .message(ex.getMessage())
-                .fieldErrors(null)
+                .errors(null)
                 .build();
 
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleNotReadable(HttpMessageNotReadableException ex) {
+        String message = "Неверный формат данных в запросе";
+        Throwable cause = ex.getCause();
+        if (cause != null && cause.getMessage() != null && cause.getMessage().contains("LocalDate")) {
+            message = "Неверный формат даты. Используйте дату в диапазоне 2020-2100.";
+        }
+        ApiError error = ApiError.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .message(message)
+                .errors(null)
+                .build();
         return ResponseEntity.badRequest().body(error);
     }
 
@@ -64,7 +80,7 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST.value())
                 .message("Операция невозможна: данные используются в других разделах системы " +
                         "или нарушено ограничение уникальности.")
-                .fieldErrors(null)
+                .errors(null)
                 .build();
 
         return ResponseEntity.badRequest().body(error);
@@ -75,7 +91,7 @@ public class GlobalExceptionHandler {
         ApiError error = ApiError.builder()
                 .status(HttpStatus.NOT_FOUND.value())
                 .message(ex.getMessage())
-                .fieldErrors(null)
+                .errors(null)
                 .build();
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
@@ -88,7 +104,7 @@ public class GlobalExceptionHandler {
         ApiError error = ApiError.builder()
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .message("Внутренняя ошибка сервера")
-                .fieldErrors(null)
+                .errors(null)
                 .build();
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);

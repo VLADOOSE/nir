@@ -8,4 +8,6 @@ import java.util.List;
 public interface ActivityApplyRepository extends JpaRepository<ActivityApply, Long> {
 
     List<ActivityApply> findByTenderId(Long tenderId);
+
+    boolean existsByTenderId(Long tenderId);
 }

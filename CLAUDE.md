@@ -119,15 +119,32 @@ DISTRIBUTOR 1:N APPLY_ITEM
 ## Текущее состояние проекта
 
 Backend полностью перестроен и работает:
-- schema.sql: 8 таблиц (facility, distributor, med_equipment, user_account, tender, tender_lot, activity_apply, apply_item)
-- 8 entity-классов с Lombok, простые BIGSERIAL PK, без @IdClass
-- 8 репозиториев (включая JPQL findMatchingEquipment в MedEquipmentRepository)
-- 8 сервисов с constructor injection, @Transactional
-- 8 REST-контроллеров
+- schema.sql: 9 таблиц (facility, distributor, med_equipment, user_account, tender, tender_lot, activity_apply, apply_item, **price_request**)
+- 9 entity-классов с Lombok, простые BIGSERIAL PK, без @IdClass
+- 9 репозиториев (включая JPQL findMatchingEquipment в MedEquipmentRepository, searchTenders в TenderRepository, countByEquipType в TenderLotRepository, distributorStats в ApplyItemRepository)
+- 10 сервисов: 9 CRUD + ReportService + EmailService
+- 11 REST-контроллеров (включая PriceRequestController, ReportController, EmailController)
 - data.sql с тестовыми данными (5 учреждений, 4 дистрибьютора, 8 единиц оборудования, 2 пользователя, 3 тендера, 5 лотов)
 - SecurityConfig: csrf disabled, всё permitAll (dev)
 - spring.jpa.hibernate.ddl-auto: none, schema.sql управляет схемой
 - Gradle 8.14, Spring Boot стартует на порту 8080
+
+### Ключевые доработки
+
+- **PriceRequest** — 9-я сущность, таблица `price_request`. Workflow статусов: CREATED → SENT → RESPONDED → ACCEPTED → REJECTED. Связана с tender_lot, med_equipment, distributor.
+- **Нормализация контактов** — в facility, distributor, tender контактные данные разнесены на отдельные поля: `last_name`, `first_name`, `middle_name`, `phone`, `email` (для tender — с префиксом `contact_`). Это устраняет нарушение 1НФ.
+- **EmailService + EmailController** — отправка КП дистрибьюторам через JavaMailSender (`spring-boot-starter-mail`). Конфигурация SMTP в application.yaml через переменные окружения `MAIL_USERNAME` / `MAIL_PASSWORD`. Endpoint `POST /api/email/send`.
+- **Расширенный серверный поиск тендеров** — `GET /api/tenders/search` с 7 фильтрами (status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo) через JPQL JOIN на лоты.
+- **Отчёты** — `GET /api/reports/{tender-stats,equipment-demand,distributor-stats}` через ReportService с агрегациями GROUP BY/COUNT/AVG.
+
+### Frontend (Angular)
+
+- **Дашборд** (главная) — счётчики по статусам, ближайшие дедлайны, спрос на типы оборудования (progress bars), последние заявки.
+- **Глобальный поиск в шапке** — `SearchService` с `forkJoin` параллельно по 4 сущностям (тендеры/оборудование/учреждения/дистрибьюторы) с `catchError`, фильтрация на клиенте, выпадающий список с цветными бейджами.
+- **Расширенный поиск тендеров** — отдельная страница с серверной фильтрацией.
+- **Страница отчётов** — три секции с горизонтальными bar-чартами и таблицами.
+- **Workflow КП в детальном просмотре тендера** — кнопка «Запросить КП» в строке лота → форма выбора оборудования и дистрибьютора → автогенерация шаблона email с реквизитами лота/тендера → 3 действия (копировать в буфер / отправить из системы через `/api/email/send` / открыть mailto) → ручное обновление статуса КП → при ACCEPTED появляется кнопка «В заявку», создающая позицию в черновике activity_apply.
+- **Поддержка `?openId=...`** — переходы на детали тендера с дашборда, поиска и глобального поиска.
 
 ## API endpoints
 

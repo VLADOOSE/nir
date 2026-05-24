@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.entity.Distributor;
 import com.vladoose.nir.service.DistributorService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,16 +28,22 @@ public class DistributorController {
     }
 
     @PostMapping
-    public Distributor create(@RequestBody Distributor distributor) {
+    public Distributor create(@Valid @RequestBody Distributor distributor) {
         return service.save(distributor);
     }
 
     @PutMapping("/{id}")
-    public Distributor update(@PathVariable Long id, @RequestBody Distributor distributor) {
+    public Distributor update(@PathVariable Long id, @Valid @RequestBody Distributor distributor) {
         Distributor existing = service.findById(id);
         existing.setName(distributor.getName());
         existing.setInn(distributor.getInn());
-        existing.setContact(distributor.getContact());
+        existing.setAddress(distributor.getAddress());
+        existing.setLastName(distributor.getLastName());
+        existing.setFirstName(distributor.getFirstName());
+        existing.setMiddleName(distributor.getMiddleName());
+        existing.setPhone(distributor.getPhone());
+        existing.setEmail(distributor.getEmail());
+        existing.setWebsite(distributor.getWebsite());
         return service.save(existing);
     }
 

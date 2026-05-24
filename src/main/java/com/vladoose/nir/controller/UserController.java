@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.entity.UserAccount;
 import com.vladoose.nir.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,12 +28,12 @@ public class UserController {
     }
 
     @PostMapping
-    public UserAccount create(@RequestBody UserAccount user) {
+    public UserAccount create(@Valid @RequestBody UserAccount user) {
         return service.save(user);
     }
 
     @PutMapping("/{id}")
-    public UserAccount update(@PathVariable Long id, @RequestBody UserAccount user) {
+    public UserAccount update(@PathVariable Long id, @Valid @RequestBody UserAccount user) {
         UserAccount existing = service.findById(id);
         existing.setUsername(user.getUsername());
         existing.setFullName(user.getFullName());

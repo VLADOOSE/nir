@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+              name="tender_report" pageWidth="595" pageHeight="842" columnWidth="535" leftMargin="30" rightMargin="30" topMargin="20" bottomMargin="20">
+    <parameter name="reportTitle" class="java.lang.String"/>
+    <parameter name="generatedDate" class="java.lang.String"/>
+    <field name="tenderNumber" class="java.lang.String"/>
+    <field name="facilityName" class="java.lang.String"/>
+    <field name="status" class="java.lang.String"/>
+    <field name="purchaseType" class="java.lang.String"/>
+    <field name="deadline" class="java.lang.String"/>
+    <field name="totalCost" class="java.lang.String"/>
+    <field name="lotCount" class="java.lang.String"/>
+    <title>
+        <band height="60">
+            <textField>
+                <reportElement x="0" y="0" width="535" height="30"/>
+                <textElement textAlignment="Center">
+                    <font size="16" isBold="true"/>
+                </textElement>
+                <textFieldExpression><![CDATA[$P{reportTitle}]]></textFieldExpression>
+            </textField>
+            <textField>
+                <reportElement x="0" y="30" width="535" height="20"/>
+                <textElement textAlignment="Center">
+                    <font size="10"/>
+                </textElement>
+                <textFieldExpression><![CDATA["Дата формирования: " + $P{generatedDate}]]></textFieldExpression>
+            </textField>
+        </band>
+    </title>
+    <columnHeader>
+        <band height="25">
+            <staticText><reportElement x="0" y="0" width="80" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Номер]]></text></staticText>
+            <staticText><reportElement x="80" y="0" width="120" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Заказчик]]></text></staticText>
+            <staticText><reportElement x="200" y="0" width="70" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Статус]]></text></staticText>
+            <staticText><reportElement x="270" y="0" width="90" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Способ]]></text></staticText>
+            <staticText><reportElement x="360" y="0" width="70" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Дата оконч.]]></text></staticText>
+            <staticText><reportElement x="430" y="0" width="65" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Цена]]></text></staticText>
+            <staticText><reportElement x="495" y="0" width="40" height="25" backcolor="#F0F0F0" mode="Opaque"/><textElement><font size="9" isBold="true"/></textElement><text><![CDATA[Лотов]]></text></staticText>
+        </band>
+    </columnHeader>
+    <detail>
+        <band height="20">
+            <textField><reportElement x="0" y="0" width="80" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{tenderNumber}]]></textFieldExpression></textField>
+            <textField><reportElement x="80" y="0" width="120" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{facilityName}]]></textFieldExpression></textField>
+            <textField><reportElement x="200" y="0" width="70" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{status}]]></textFieldExpression></textField>
+            <textField><reportElement x="270" y="0" width="90" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{purchaseType}]]></textFieldExpression></textField>
+            <textField><reportElement x="360" y="0" width="70" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{deadline}]]></textFieldExpression></textField>
+            <textField><reportElement x="430" y="0" width="65" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{totalCost}]]></textFieldExpression></textField>
+            <textField><reportElement x="495" y="0" width="40" height="20"/><textElement><font size="8"/></textElement><textFieldExpression><![CDATA[$F{lotCount}]]></textFieldExpression></textField>
+        </band>
+    </detail>
+    <summary>
+        <band height="30">
+            <textField>
+                <reportElement x="0" y="10" width="535" height="20"/>
+                <textElement>
+                    <font size="10" isBold="true"/>
+                </textElement>
+                <textFieldExpression><![CDATA["Итого тендеров: " + $V{REPORT_COUNT}]]></textFieldExpression>
+            </textField>
+        </band>
+    </summary>
+</jasperReport>

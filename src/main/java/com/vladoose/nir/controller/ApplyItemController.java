@@ -1,7 +1,9 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.entity.ApplyItem;
-import com.vladoose.nir.service.ApplyItemService;
+import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.service.*;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -9,9 +11,21 @@ import org.springframework.web.bind.annotation.*;
 public class ApplyItemController {
 
     private final ApplyItemService service;
+    private final ActivityApplyService activityApplyService;
+    private final TenderLotService tenderLotService;
+    private final MedEquipmentService medEquipmentService;
+    private final DistributorService distributorService;
 
-    public ApplyItemController(ApplyItemService service) {
+    public ApplyItemController(ApplyItemService service,
+                               ActivityApplyService activityApplyService,
+                               TenderLotService tenderLotService,
+                               MedEquipmentService medEquipmentService,
+                               DistributorService distributorService) {
         this.service = service;
+        this.activityApplyService = activityApplyService;
+        this.tenderLotService = tenderLotService;
+        this.medEquipmentService = medEquipmentService;
+        this.distributorService = distributorService;
     }
 
     @GetMapping("/{id}")
@@ -20,17 +34,35 @@ public class ApplyItemController {
     }
 
     @PostMapping
-    public ApplyItem create(@RequestBody ApplyItem item) {
+    public ApplyItem create(@Valid @RequestBody ApplyItem item) {
+        if (item.getApply() == null || item.getApply().getId() == null) {
+            throw new BadRequestException("Не указана заявка");
+        }
+        item.setApply(activityApplyService.findById(item.getApply().getId()));
+        if (item.getTenderLot() != null && item.getTenderLot().getId() != null) {
+            item.setTenderLot(tenderLotService.findById(item.getTenderLot().getId()));
+        }
+        if (item.getMedEquipment() != null && item.getMedEquipment().getId() != null) {
+            item.setMedEquipment(medEquipmentService.findById(item.getMedEquipment().getId()));
+        }
+        if (item.getDistributor() != null && item.getDistributor().getId() != null) {
+            item.setDistributor(distributorService.findById(item.getDistributor().getId()));
+        }
         return service.save(item);
     }
 
     @PutMapping("/{id}")
-    public ApplyItem update(@PathVariable Long id, @RequestBody ApplyItem item) {
+    public ApplyItem update(@PathVariable Long id, @Valid @RequestBody ApplyItem item) {
         ApplyItem existing = service.findById(id);
-        existing.setApply(item.getApply());
-        existing.setTenderLot(item.getTenderLot());
-        existing.setMedEquipment(item.getMedEquipment());
-        existing.setDistributor(item.getDistributor());
+        if (item.getTenderLot() != null && item.getTenderLot().getId() != null) {
+            existing.setTenderLot(tenderLotService.findById(item.getTenderLot().getId()));
+        }
+        if (item.getMedEquipment() != null && item.getMedEquipment().getId() != null) {
+            existing.setMedEquipment(medEquipmentService.findById(item.getMedEquipment().getId()));
+        }
+        if (item.getDistributor() != null && item.getDistributor().getId() != null) {
+            existing.setDistributor(distributorService.findById(item.getDistributor().getId()));
+        }
         existing.setOfferedCost(item.getOfferedCost());
         existing.setQuantity(item.getQuantity());
         return service.save(existing);
