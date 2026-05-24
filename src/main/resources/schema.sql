@@ -1,13 +1,16 @@
 -- DEV ONLY: пересоздаёт все таблицы при каждом запуске
 
 -- Удаление таблиц в обратном порядке зависимостей
+DROP TABLE IF EXISTS price_request_item CASCADE;
 DROP TABLE IF EXISTS price_request CASCADE;
 DROP TABLE IF EXISTS apply_item CASCADE;
 DROP TABLE IF EXISTS activity_apply CASCADE;
 DROP TABLE IF EXISTS tender_lot CASCADE;
 DROP TABLE IF EXISTS tender CASCADE;
+DROP TABLE IF EXISTS distributor_equipment_type CASCADE;
 DROP TABLE IF EXISTS med_equipment CASCADE;
 DROP TABLE IF EXISTS distributor CASCADE;
+DROP TABLE IF EXISTS equipment_type CASCADE;
 DROP TABLE IF EXISTS facility CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
 
@@ -20,6 +23,11 @@ DROP TABLE IF EXISTS tender_step CASCADE;
 DROP TABLE IF EXISTS tender_founder CASCADE;
 
 -- ========== Справочники ==========
+
+CREATE TABLE equipment_type (
+    id   BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL
+);
 
 CREATE TABLE facility (
     id          BIGSERIAL PRIMARY KEY,
@@ -46,24 +54,31 @@ CREATE TABLE distributor (
     website     VARCHAR(255)
 );
 
+CREATE TABLE distributor_equipment_type (
+    distributor_id    BIGINT NOT NULL REFERENCES distributor(id) ON DELETE CASCADE,
+    equipment_type_id BIGINT NOT NULL REFERENCES equipment_type(id) ON DELETE CASCADE,
+    PRIMARY KEY (distributor_id, equipment_type_id)
+);
+
 CREATE TABLE med_equipment (
-    id         BIGSERIAL PRIMARY KEY,
-    name       VARCHAR(255) NOT NULL,
-    manufact   VARCHAR(255) NOT NULL,
-    equip_type VARCHAR(100),
-    cost       INTEGER NOT NULL,
-    length_mm  INTEGER,
-    width_mm   INTEGER,
-    height_mm  INTEGER,
-    weight_kg  NUMERIC(10, 2),
-    spec       TEXT
+    id            BIGSERIAL PRIMARY KEY,
+    name          VARCHAR(255) NOT NULL,
+    manufact      VARCHAR(255) NOT NULL,
+    equip_type_id BIGINT REFERENCES equipment_type(id),
+    cost          INTEGER NOT NULL,
+    length_mm     INTEGER,
+    width_mm      INTEGER,
+    height_mm     INTEGER,
+    weight_kg     NUMERIC(10, 2),
+    spec          TEXT
 );
 
 CREATE TABLE user_account (
-    id        BIGSERIAL PRIMARY KEY,
-    username  VARCHAR(100) UNIQUE NOT NULL,
-    full_name VARCHAR(255),
-    role      VARCHAR(50)
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(100) UNIQUE NOT NULL,
+    full_name     VARCHAR(255),
+    role          VARCHAR(50) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL
 );
 
 -- ========== Тендеры ==========
@@ -92,7 +107,7 @@ CREATE TABLE tender_lot (
     tender_id     BIGINT NOT NULL REFERENCES tender(id) ON DELETE CASCADE,
     lot_number    INTEGER,
     equip_name    VARCHAR(255),
-    equip_type    VARCHAR(100),
+    equip_type_id BIGINT REFERENCES equipment_type(id),
     quantity      INTEGER,
     max_cost      NUMERIC(15, 2),
     max_length_mm INTEGER,
@@ -124,14 +139,22 @@ CREATE TABLE apply_item (
 -- ========== Запросы КП ==========
 
 CREATE TABLE price_request (
-    id              BIGSERIAL PRIMARY KEY,
-    tender_lot_id   BIGINT NOT NULL REFERENCES tender_lot(id),
-    med_equip_id    BIGINT NOT NULL REFERENCES med_equipment(id),
-    distributor_id  BIGINT NOT NULL REFERENCES distributor(id),
-    status          VARCHAR(50) NOT NULL DEFAULT 'CREATED',
-    sent_at         TIMESTAMPTZ,
-    response_price  NUMERIC(15, 2),
-    response_date   DATE,
-    response_note   TEXT,
-    created_at      TIMESTAMPTZ DEFAULT now()
+    id             BIGSERIAL PRIMARY KEY,
+    tender_id      BIGINT NOT NULL REFERENCES tender(id),
+    distributor_id BIGINT NOT NULL REFERENCES distributor(id),
+    status         VARCHAR(50) NOT NULL DEFAULT 'CREATED',
+    sent_at        TIMESTAMPTZ,
+    response_date  DATE,
+    note           TEXT,
+    created_at     TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE price_request_item (
+    id                 BIGSERIAL PRIMARY KEY,
+    price_request_id   BIGINT NOT NULL REFERENCES price_request(id) ON DELETE CASCADE,
+    tender_lot_id      BIGINT NOT NULL REFERENCES tender_lot(id),
+    med_equipment_id   BIGINT NOT NULL REFERENCES med_equipment(id),
+    requested_quantity INTEGER NOT NULL,
+    response_price     NUMERIC(15, 2),
+    response_note      TEXT
 );
