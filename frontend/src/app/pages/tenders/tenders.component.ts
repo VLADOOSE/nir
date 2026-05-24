@@ -200,7 +200,6 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
             <td>{{ formatPrice(l.maxCost) }} &#8381;</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td><td>{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
               <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
-              <button class="btn btn-pr" (click)="onRequestPrice(l)">Запросить КП</button>
               <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteLot(l.id)">Удалить</button>
             </td>
@@ -223,97 +222,41 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
       </div>
 
       <!-- ========== ЗАПРОСЫ КП ========== -->
-      <h3>Запросы коммерческих предложений</h3>
-
-      <form *ngIf="showPriceRequestForm" [formGroup]="priceRequestForm" (ngSubmit)="onSavePriceRequest()" class="edit-form pr-form">
-        <p class="form-hint">Создание запроса КП для лота #{{ priceRequestLotNumber }}</p>
-        <label>Оборудование {{ matchedEquipForPR.length > 0 ? '(подходящее по параметрам)' : '(весь каталог)' }}
-          <app-searchable-select
-            [items]="equipmentForSelect"
-            labelField="name"
-            [subLabelFields]="['manufact', 'equipType']"
-            [searchFields]="['name', 'manufact', 'equipType']"
-            placeholder="— выберите оборудование —"
-            [value]="priceRequestForm.value.medEquipId"
-            (valueChange)="priceRequestForm.patchValue({medEquipId: $event})"
-            [groupLabel]="matchedEquipForPR.length > 0 ? 'Подходящее по параметрам' : 'Весь каталог'">
-          </app-searchable-select>
-        </label>
-        <label>Дистрибьютор
-          <app-searchable-select
-            [items]="distributors"
-            labelField="name"
-            [subLabelFields]="['phone', 'email']"
-            [searchFields]="['name', 'inn']"
-            placeholder="— выберите дистрибьютора —"
-            [value]="priceRequestForm.value.distributorId"
-            (valueChange)="priceRequestForm.patchValue({distributorId: $event})">
-          </app-searchable-select>
-        </label>
-        <div class="form-actions">
-          <button class="btn btn-save" type="submit" [disabled]="priceRequestForm.invalid">Отправить запрос</button>
-          <button class="btn btn-cancel" type="button" (click)="showPriceRequestForm = false">Отмена</button>
+      <section *ngIf="priceRequests.length > 0" class="pr-section">
+        <h3>Запросы КП</h3>
+        <div *ngFor="let pr of priceRequests" class="pr-card" [class.expanded]="pr._expanded">
+          <header class="pr-header" (click)="togglePr(pr)">
+            <div class="pr-header-main">
+              <strong>{{ pr.distributor?.name }}</strong>
+              <span class="badge badge-pr-{{ pr.status }}">{{ getPrStatusLabel(pr.status) }}</span>
+            </div>
+            <div class="pr-header-meta">
+              <small *ngIf="pr.sentAt">отправлено {{ formatDate(pr.sentAt) }}</small>
+              <small class="counter">{{ pr.items?.length || 0 }} позиций</small>
+              <span class="chevron">{{ pr._expanded ? '▲' : '▼' }}</span>
+            </div>
+          </header>
+          <div *ngIf="pr._expanded" class="pr-body">
+            <table class="pr-items">
+              <thead><tr><th>Лот</th><th>Модель</th><th>Кол-во</th><th>Цена ответа (₽)</th><th>Заметка</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let it of pr.items">
+                  <td>{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
+                  <td>{{ it.medEquipment?.name }}</td>
+                  <td>{{ it.requestedQuantity }}</td>
+                  <td><input type="number" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
+                  <td><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pr-actions">
+              <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
+              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
+              <button class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
+            </div>
+          </div>
         </div>
-      </form>
-
-      <form *ngIf="showPrUpdateForm" [formGroup]="prUpdateForm" (ngSubmit)="onSavePrUpdate()" class="edit-form pr-form">
-        <p class="form-hint">Обновление запроса КП #{{ updatingPrId }}</p>
-        <label>Статус
-          <select formControlName="status">
-            <option value="CREATED">Создан</option>
-            <option value="SENT">Отправлен</option>
-            <option value="RESPONDED">Получен ответ</option>
-            <option value="ACCEPTED">Принят</option>
-            <option value="REJECTED">Отклонён</option>
-          </select>
-        </label>
-        <label>Цена ответа<input type="number" step="0.01" formControlName="responsePrice" /></label>
-        <label>Дата ответа<input type="date" formControlName="responseDate" /></label>
-        <label>Примечание<textarea formControlName="responseNote" rows="2"></textarea></label>
-        <div class="form-actions">
-          <button class="btn btn-save" type="submit">Сохранить</button>
-          <button class="btn btn-cancel" type="button" (click)="showPrUpdateForm = false">Отмена</button>
-        </div>
-      </form>
-
-      <div *ngIf="priceRequests.length === 0 && !showPriceRequestForm" class="empty">Запросов КП пока нет</div>
-
-      <table *ngIf="priceRequests.length > 0">
-        <thead>
-          <tr><th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th><th>Статус</th><th>Цена ответа</th><th>Дата ответа</th><th>Действия</th></tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let pr of priceRequests">
-            <td>{{ pr.lotEquipName }}</td>
-            <td>{{ pr.medEquipment?.name }}</td>
-            <td>{{ pr.distributor?.name }}</td>
-            <td><span class="badge" [class]="'badge-pr-' + pr.status">{{ getPrStatusLabel(pr.status) }}</span></td>
-            <td>{{ pr.responsePrice ? (formatPrice(pr.responsePrice) + ' ₽') : '—' }}</td>
-            <td>{{ formatDate(pr.responseDate) }}</td>
-            <td class="actions">
-              <button *ngIf="pr.status === 'ACCEPTED'" class="btn btn-add-to-apply" (click)="onAddToApply(pr)">В заявку</button>
-              <button class="btn btn-edit" (click)="onUpdatePr(pr)">Обновить статус</button>
-              <button class="btn btn-delete" (click)="onDeletePr(pr.id)">Удалить</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- ========== ШАБЛОН EMAIL ========== -->
-      <div *ngIf="generatedEmail" class="email-preview">
-        <h3>Шаблон письма для дистрибьютора</h3>
-        <div class="email-header">
-          <div class="email-field"><span class="email-label">Кому:</span> {{ generatedEmail.to }}</div>
-          <div class="email-field"><span class="email-label">Тема:</span> {{ generatedEmail.subject }}</div>
-        </div>
-        <pre class="email-body">{{ generatedEmail.body }}</pre>
-        <div class="email-actions">
-          <button class="btn btn-save" (click)="copyEmail()">Копировать в буфер</button>
-          <button *ngIf="emailConfigured" class="btn btn-send-email" (click)="sendEmailFromApp()">Отправить из системы</button>
-          <button class="btn btn-open-mail" (click)="openMailto()">Открыть почтовый клиент</button>
-          <button class="btn btn-cancel" (click)="generatedEmail = null">Закрыть</button>
-        </div>
-      </div>
+      </section>
     </ng-container>
   `,
   styles: [`
@@ -369,10 +312,6 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
     .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
     .btn-delete { background: #ef4444; color: #fff; }
     .btn-match { background: #10b981; color: #fff; margin-right: 4px; }
-    .btn-pr { background: #8b5cf6; color: #fff; margin-right: 4px; }
-    .btn-add-to-apply { background: #059669; color: #fff; margin-right: 4px; }
-    .btn-open-mail { background: #10b981; color: #fff; }
-    .btn-send-email { background: #1a56db; color: #fff; }
     .btn-back { background: #6b7280; color: #fff; margin-bottom: 16px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
@@ -382,28 +321,34 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
     .badge-pr-CREATED { background: #e5e7eb; color: #374151; }
     .badge-pr-SENT { background: #dbeafe; color: #1a56db; }
     .badge-pr-RESPONDED { background: #fef3c7; color: #92400e; }
-    .badge-pr-ACCEPTED { background: #d1fae5; color: #065f46; }
-    .badge-pr-REJECTED { background: #fee2e2; color: #991b1b; }
+    .badge-pr-CLOSED { background: #d1fae5; color: #065f46; }
     .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; font-family: inherit; }
-    .pr-form { background: #faf5ff; border-color: #ddd6fe; }
     .form-hint { font-size: 13px; color: #6b7280; margin: 0 0 12px; }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .form-actions { margin-top: 16px; }
     .match-results { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin-top: 16px; }
     .match-results table { margin-top: 8px; }
-    .email-preview { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 20px; margin-top: 16px; }
-    .email-preview h3 { margin: 0 0 12px; font-size: 16px; color: #1e40af; }
-    .email-header { margin-bottom: 12px; }
-    .email-field { font-size: 14px; margin-bottom: 4px; }
-    .email-label { font-weight: 600; color: #374151; }
-    .email-body { background: #fff; border: 1px solid #d1d5db; border-radius: 4px; padding: 16px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; font-family: inherit; margin-bottom: 12px; max-height: 300px; overflow-y: auto; }
-    .email-actions { display: flex; gap: 8px; }
     .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
     .input-error { border-color: #dc2626 !important; }
     .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    .pr-section { margin-top: 24px; }
+    .pr-card { border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: #fff; }
+    .pr-card.expanded { border-color: #1a56db; }
+    .pr-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
+    .pr-header:hover { background: #f9fafb; }
+    .pr-header-main { display: flex; align-items: center; gap: 10px; }
+    .pr-header-meta { display: flex; align-items: center; gap: 12px; color: #6b7280; font-size: 13px; }
+    .chevron { color: #9ca3af; font-size: 11px; }
+    .pr-body { padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #fafafa; }
+    .pr-items { width: 100%; border-collapse: collapse; }
+    .pr-items th { background: #f9fafb; padding: 6px 10px; font-size: 12px; color: #6b7280; }
+    .pr-items td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+    .pr-items input { width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 3px; font-size: 13px; }
+    .pr-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+    .btn-close-pr { background: #6b7280; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
   `]
 })
 export class TendersComponent {
@@ -460,27 +405,6 @@ export class TendersComponent {
 
   // ===== Запросы КП =====
   priceRequests: any[] = [];
-  showPriceRequestForm = false;
-  priceRequestLotId: number | null = null;
-  priceRequestLotNumber: number | null = null;
-  matchedEquipForPR: any[] = [];
-  allEquipment: any[] = [];
-  priceRequestForm = new FormGroup({
-    medEquipId: new FormControl<number | null>(null),
-    distributorId: new FormControl<number | null>(null)
-  });
-
-  showPrUpdateForm = false;
-  updatingPrId: number | null = null;
-  prUpdateForm = new FormGroup({
-    status: new FormControl('CREATED'),
-    responsePrice: new FormControl<number | null>(null),
-    responseDate: new FormControl(''),
-    responseNote: new FormControl('')
-  });
-
-  generatedEmail: any = null;
-  emailConfigured = false;
 
   // Массовый подбор КП по тендеру
   bulkPriceTenderId: number | null = null;
@@ -490,7 +414,6 @@ export class TendersComponent {
     this.loadTenders();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
     this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
-    this.api.getEmailStatus().subscribe({ next: (s: any) => { this.emailConfigured = s.configured; this.cdr.detectChanges(); } });
     this.api.getAllApplyItems().subscribe({
       next: items => { this.allApplyItems = items || []; },
       error: () => { this.allApplyItems = []; }
@@ -519,7 +442,7 @@ export class TendersComponent {
   }
 
   getPrStatusLabel(s: string): string {
-    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Получен ответ', ACCEPTED: 'Принят', REJECTED: 'Отклонён' } as any)[s] || s;
+    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Ответ получен', CLOSED: 'Закрыт' } as any)[s] || s;
   }
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
@@ -532,11 +455,6 @@ export class TendersComponent {
   formatContact(t: any): string {
     const parts = [t?.contactLastName, t?.contactFirstName, t?.contactMiddleName].filter(Boolean);
     return parts.length ? parts.join(' ') : '—';
-  }
-
-  get equipmentForSelect(): any[] {
-    if (this.matchedEquipForPR.length > 0) return this.matchedEquipForPR;
-    return this.allEquipment;
   }
 
   isOverdue(d: string): boolean {
@@ -636,8 +554,6 @@ export class TendersComponent {
     this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
-    this.showPriceRequestForm = false;
-    this.showPrUpdateForm = false;
     this.loadLots();
   }
 
@@ -662,13 +578,11 @@ export class TendersComponent {
   }
 
   loadPriceRequests() {
-    this.priceRequests = [];
-    for (let lot of this.lots) {
-      this.api.getPriceRequestsByLot(lot.id).subscribe(data => {
-        this.priceRequests = [...this.priceRequests, ...data.map((pr: any) => ({ ...pr, lotEquipName: lot.equipName }))];
-        this.cdr.detectChanges();
-      });
-    }
+    if (!this.selectedTender) return;
+    this.api.getPriceRequestsByTender(this.selectedTender.id).subscribe({
+      next: data => { this.priceRequests = data; this.cdr.detectChanges(); },
+      error: () => this.priceRequests = []
+    });
   }
 
   onAddLot() { this.editingLotId = null; this.lotForm.reset(); this.validationErrors = {}; this.showLotForm = true; }
@@ -723,171 +637,46 @@ export class TendersComponent {
   }
 
   // ===== Запросы КП =====
-  onRequestPrice(lot: any) {
-    this.priceRequestLotId = lot.id;
-    this.priceRequestLotNumber = lot.lotNumber;
-    this.priceRequestForm.reset({ medEquipId: null, distributorId: null });
-    this.showPriceRequestForm = true;
-    this.showPrUpdateForm = false;
-    this.generatedEmail = null;
-    this.allEquipment = [];
-    this.api.getMatchingEquipment(lot.id).subscribe(data => {
-      this.matchedEquipForPR = data;
-      if (data.length === 0) {
-        this.api.getEquipment().subscribe(all => {
-          this.allEquipment = all;
-          this.cdr.detectChanges();
-        });
+  togglePr(pr: any) {
+    pr._expanded = !pr._expanded;
+    if (pr._expanded) {
+      // pre-populate editing fields from current values
+      for (const it of (pr.items || [])) {
+        if (it._editPrice === undefined) it._editPrice = it.responsePrice;
+        if (it._editNote === undefined) it._editNote = it.responseNote;
       }
-      this.cdr.detectChanges();
-    });
-  }
-
-  onSavePriceRequest() {
-    const v = this.priceRequestForm.value;
-    if (!v.medEquipId || !v.distributorId || !this.priceRequestLotId) {
-      this.notify.error('Выберите оборудование и дистрибьютора');
-      return;
     }
-    const body = {
-      tenderLotId: this.priceRequestLotId,
-      medEquipId: v.medEquipId,
-      distributorId: v.distributorId,
-      status: 'CREATED'
-    };
-    this.api.createPriceRequest(body).subscribe((created: any) => {
-      this.showPriceRequestForm = false;
-      this.loadPriceRequests();
-      const dist = this.distributors.find((d: any) => d.id === v.distributorId);
-      const equip = this.matchedEquipForPR.find((e: any) => e.id === v.medEquipId)
-                 || this.allEquipment.find((e: any) => e.id === v.medEquipId);
-      const lot = this.lots.find((l: any) => l.id === this.priceRequestLotId);
-      this.generatedEmail = {
-        to: dist?.email || '',
-        subject: `Запрос КП: ${equip?.name || ''} для тендера №${this.selectedTender.tenderNumber}`,
-        body: this.buildEmailBody(dist, equip, lot)
-      };
-      this.cdr.detectChanges();
+  }
+
+  saveResponses(pr: any) {
+    const updates = (pr.items || []).map((it: any) => ({
+      itemId: it.id,
+      responsePrice: it._editPrice ?? it.responsePrice,
+      responseNote: it._editNote ?? it.responseNote
+    }));
+    this.api.updatePriceRequestResponses(pr.id, updates).subscribe({
+      next: () => { this.notify.success('Ответы сохранены'); this.loadPriceRequests(); },
+      error: err => this.notify.error(err.error?.message || 'Ошибка сохранения')
     });
   }
 
-  buildEmailBody(dist: any, equip: any, lot: any): string {
-    return `Уважаемый(ая) ${dist?.lastName || ''} ${dist?.firstName || ''} ${dist?.middleName || ''}!
-
-Компания ООО «Регион-Мед» просит предоставить коммерческое предложение на поставку следующего медицинского оборудования:
-
-Наименование: ${equip?.name || ''}
-Производитель: ${equip?.manufact || ''}
-Тип оборудования: ${equip?.equipType || ''}
-Количество: ${lot?.quantity || 1} шт.
-
-Просим направить коммерческое предложение с указанием:
-- Цена за единицу и общая стоимость
-- Сроки поставки
-- Условия оплаты
-- Гарантийные обязательства
-
-Ответ просим направить на адрес эл. почты отправителя.
-
-С уважением,
-ООО «Регион-Мед»`;
-  }
-
-  copyEmail() {
-    const text = `Кому: ${this.generatedEmail.to}\nТема: ${this.generatedEmail.subject}\n\n${this.generatedEmail.body}`;
-    navigator.clipboard.writeText(text);
-    this.notify.success('Скопировано в буфер обмена');
-  }
-
-  openMailto() {
-    const subj = encodeURIComponent(this.generatedEmail.subject);
-    const body = encodeURIComponent(this.generatedEmail.body);
-    window.open(`mailto:${this.generatedEmail.to}?subject=${subj}&body=${body}`);
-  }
-
-  sendEmailFromApp() {
-    if (!this.generatedEmail) return;
-    this.api.sendEmail(this.generatedEmail.to, this.generatedEmail.subject, this.generatedEmail.body)
-      .subscribe({
-        next: (res: any) => {
-          if (res.status === 'OK') {
-            this.notify.success('Письмо успешно отправлено на ' + this.generatedEmail.to);
-            const lastPr = this.priceRequests[this.priceRequests.length - 1];
-            if (lastPr && lastPr.status === 'CREATED') {
-              this.api.updatePriceRequest(lastPr.id, { ...lastPr, status: 'SENT', sentAt: new Date().toISOString() })
-                .subscribe(() => this.loadPriceRequests());
-            }
-          } else {
-            this.notify.error('Ошибка отправки: ' + res.message);
-          }
-        },
-        error: err => this.notify.error('Ошибка отправки: ' + (err.error?.message || err.message))
+  closePr(pr: any) {
+    this.confirm.ask('Закрыть запрос КП?', 'После закрытия редактирование станет невозможно.', { confirmLabel: 'Закрыть' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.closePriceRequest(pr.id).subscribe({
+          next: () => { this.notify.success('Запрос закрыт'); this.loadPriceRequests(); },
+          error: err => this.notify.error(err.error?.message || 'Ошибка')
+        });
       });
   }
 
-  onAddToApply(pr: any) {
-    this.api.getApplies().subscribe((applies: any[]) => {
-      let apply = applies.find((a: any) => a.tender?.id === this.selectedTender.id && a.status === 'DRAFT');
-      if (apply) {
-        this.addItemToApply(apply.id, pr);
-      } else {
-        this.api.create('applies', { tenderId: this.selectedTender.id, status: 'DRAFT' }).subscribe((newApply: any) => {
-          this.addItemToApply(newApply.id, pr);
-        });
-      }
-    });
-  }
-
-  addItemToApply(applyId: number, pr: any) {
-    const item = {
-      applyId: applyId,
-      tenderLotId: pr.tenderLot?.id,
-      medEquipId: pr.medEquipment?.id,
-      distributorId: pr.distributor?.id,
-      offeredCost: pr.responsePrice,
-      quantity: pr.tenderLot?.quantity || 1
-    };
-    this.api.create('apply-items', item).subscribe(() => {
-      this.notify.success('Позиция добавлена в заявку');
-    });
-  }
-
-  onUpdatePr(pr: any) {
-    this.updatingPrId = pr.id;
-    this.prUpdateForm.patchValue({
-      status: pr.status,
-      responsePrice: pr.responsePrice,
-      responseDate: pr.responseDate,
-      responseNote: pr.responseNote
-    });
-    this.showPrUpdateForm = true;
-  }
-
-  onSavePrUpdate() {
-    if (!this.updatingPrId) return;
-    const existing = this.priceRequests.find(p => p.id === this.updatingPrId);
-    if (!existing) return;
-    const body = {
-      tenderLotId: existing.tenderLot?.id,
-      medEquipId: existing.medEquipment?.id,
-      distributorId: existing.distributor?.id,
-      status: this.prUpdateForm.value.status,
-      responsePrice: this.prUpdateForm.value.responsePrice,
-      responseDate: this.prUpdateForm.value.responseDate || null,
-      responseNote: this.prUpdateForm.value.responseNote
-    };
-    this.api.updatePriceRequest(this.updatingPrId, body).subscribe(() => {
-      this.showPrUpdateForm = false;
-      this.loadPriceRequests();
-    });
-  }
-
-  onDeletePr(id: number) {
-    this.confirm.ask('Удалить запрос КП?', undefined, { danger: true, confirmLabel: 'Удалить' })
+  deletePr(id: number) {
+    this.confirm.ask('Удалить запрос КП?', 'Все позиции запроса будут удалены.', { danger: true, confirmLabel: 'Удалить' })
       .subscribe(ok => {
         if (!ok) return;
         this.api.deletePriceRequest(id).subscribe({
-          next: () => { this.notify.success('Запрос КП удалён'); this.loadPriceRequests(); },
+          next: () => { this.notify.success('Запрос удалён'); this.loadPriceRequests(); },
           error: err => this.notify.error(err.error?.message || 'Ошибка удаления')
         });
       });
