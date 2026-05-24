@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-distributors',
@@ -17,7 +18,7 @@ import { ConfirmService } from '../../services/confirm.service';
     <input type="text" placeholder="Поиск по названию, ИНН, фамилии..." [(ngModel)]="searchQuery" (input)="applyFilter()" class="search-input" />
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()">Добавить</button>
       <span class="counter" *ngIf="filteredDistributors.length">Найдено: {{ filteredDistributors.length }} записей</span>
     </div>
 
@@ -32,6 +33,19 @@ import { ConfirmService } from '../../services/confirm.service';
       <label>Телефон<input formControlName="phone" [class.input-error]="validationErrors.phone" /><span class="field-error" *ngIf="validationErrors.phone">{{ validationErrors.phone }}</span></label>
       <label>Эл. почта<input formControlName="email" [class.input-error]="validationErrors.email" /><span class="field-error" *ngIf="validationErrors.email">{{ validationErrors.email }}</span></label>
       <label>Сайт<input formControlName="website" [class.input-error]="validationErrors.website" /><span class="field-error" *ngIf="validationErrors.website">{{ validationErrors.website }}</span></label>
+
+      <label class="specialization-label">Специализация</label>
+      <div class="specialization-block">
+        <label class="type-checkbox universal">
+          <input type="checkbox" [checked]="isUniversal" [disabled]="isUniversal" (change)="onUniversalToggle()">
+          <span>Все типы</span>
+        </label>
+        <label class="type-checkbox" *ngFor="let t of allTypes">
+          <input type="checkbox" [checked]="selectedTypeIds.has(t.id)" (change)="onTypeToggle(t.id, $event)">
+          <span>{{ t.name }}</span>
+        </label>
+      </div>
+
       <div class="form-actions">
         <button class="btn btn-save" type="submit" [disabled]="form.invalid">Сохранить</button>
         <button class="btn btn-cancel" type="button" (click)="onCancel()">Отмена</button>
@@ -41,12 +55,16 @@ import { ConfirmService } from '../../services/confirm.service';
     <div *ngIf="filteredDistributors.length === 0 && !showForm" class="empty">Нет данных</div>
 
     <table *ngIf="filteredDistributors.length > 0">
-      <thead><tr><th>Название</th><th>ИНН</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Действия</th></tr></thead>
+      <thead><tr><th>Название</th><th>ИНН</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Специализация</th><th *ngIf="auth.isAdmin()">Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let d of filteredDistributors">
           <td>{{ d.name }}</td><td>{{ d.inn }}</td>
           <td>{{ d.lastName }} {{ d.firstName }}</td><td>{{ d.phone }}</td><td>{{ d.email }}</td>
-          <td class="actions">
+          <td>
+            <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
+            <span *ngFor="let t of d.equipmentTypes" class="tag">{{ t.name }}</span>
+          </td>
+          <td class="actions" *ngIf="auth.isAdmin()">
             <button class="btn btn-edit" (click)="onEdit(d)">Редактировать</button>
             <button class="btn btn-delete" (click)="onDelete(d.id)">Удалить</button>
           </td>
@@ -81,6 +99,14 @@ import { ConfirmService } from '../../services/confirm.service';
     .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
     .input-error { border-color: #dc2626 !important; }
     .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    .specialization-label { display: block; margin: 12px 0 6px; font-weight: 500; font-size: 14px; color: #374151; }
+    .specialization-block { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; background: #fff; border-radius: 6px; border: 1px solid #d1d5db; margin-bottom: 12px; }
+    .type-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; margin: 0 !important; font-weight: 400 !important; }
+    .type-checkbox.universal { font-weight: 600 !important; }
+    .type-checkbox input { width: auto !important; padding: 0 !important; margin: 0 !important; display: inline !important; }
+    .type-checkbox input[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .tag { display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 12px; margin-right: 4px; margin-bottom: 2px; }
+    .tag-all { background: #fef3c7; color: #92400e; font-weight: 600; }
   `]
 })
 export class DistributorsComponent {
@@ -90,6 +116,9 @@ export class DistributorsComponent {
   searchQuery = '';
   showForm = false;
   editingId: number | null = null;
+  allTypes: any[] = [];
+  selectedTypeIds: Set<number> = new Set();
+  get isUniversal(): boolean { return this.selectedTypeIds.size === 0; }
   form = new FormGroup({
     name: new FormControl('', Validators.required),
     inn: new FormControl(''),
@@ -103,7 +132,17 @@ export class DistributorsComponent {
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, private confirm: ConfirmService) { this.loadData(); }
+              private notify: NotificationService, private confirm: ConfirmService,
+              public auth: AuthService) {
+    this.loadData();
+    this.api.getEquipmentTypes().subscribe(types => { this.allTypes = types; this.cdr.detectChanges(); });
+  }
+
+  onUniversalToggle() { this.selectedTypeIds.clear(); }
+  onTypeToggle(id: number, e: Event) {
+    const checked = (e.target as HTMLInputElement).checked;
+    if (checked) this.selectedTypeIds.add(id); else this.selectedTypeIds.delete(id);
+  }
 
   loadData() {
     this.api.getDistributors().subscribe({
@@ -121,12 +160,20 @@ export class DistributorsComponent {
     );
   }
 
-  onAdd() { this.editingId = null; this.form.reset(); this.validationErrors = {}; this.showForm = true; }
-  onEdit(d: any) { this.editingId = d.id; this.form.patchValue(d); this.validationErrors = {}; this.showForm = true; }
+  onAdd() {
+    this.editingId = null; this.form.reset(); this.validationErrors = {};
+    this.selectedTypeIds = new Set();
+    this.showForm = true;
+  }
+  onEdit(d: any) {
+    this.editingId = d.id; this.form.patchValue(d); this.validationErrors = {};
+    this.selectedTypeIds = new Set((d.equipmentTypes || []).map((t: any) => t.id));
+    this.showForm = true;
+  }
   onCancel() { this.showForm = false; }
 
   onSave() {
-    const body = this.form.value;
+    const body: any = { ...this.form.value, equipmentTypeIds: Array.from(this.selectedTypeIds) };
     const req = this.editingId ? this.api.update('distributors', this.editingId, body) : this.api.create('distributors', body);
     const wasEditing = this.editingId !== null;
     req.subscribe({

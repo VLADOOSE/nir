@@ -29,6 +29,10 @@ import { ConfirmService } from '../../services/confirm.service';
         </select>
         <span class="field-error" *ngIf="validationErrors.role">{{ validationErrors.role }}</span>
       </label>
+      <label>{{ editingId ? 'Новый пароль (оставьте пустым чтобы не менять)' : 'Пароль *' }}
+        <input type="password" formControlName="password" [class.input-error]="validationErrors.password" autocomplete="new-password" />
+        <span class="field-error" *ngIf="validationErrors.password">{{ validationErrors.password }}</span>
+      </label>
       <div class="form-actions">
         <button class="btn btn-save" type="submit" [disabled]="form.invalid">Сохранить</button>
         <button class="btn btn-cancel" type="button" (click)="onCancel()">Отмена</button>
@@ -85,7 +89,8 @@ export class UsersComponent {
   form = new FormGroup({
     username: new FormControl('', Validators.required),
     fullName: new FormControl(''),
-    role: new FormControl('ROLE_USER')
+    role: new FormControl('ROLE_USER'),
+    password: new FormControl('')
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
@@ -100,8 +105,8 @@ export class UsersComponent {
     });
   }
 
-  onAdd() { this.editingId = null; this.form.reset({ role: 'ROLE_USER' }); this.validationErrors = {}; this.showForm = true; }
-  onEdit(u: any) { this.editingId = u.id; this.form.patchValue(u); this.validationErrors = {}; this.showForm = true; }
+  onAdd() { this.editingId = null; this.form.reset({ role: 'ROLE_USER', password: '' }); this.validationErrors = {}; this.showForm = true; }
+  onEdit(u: any) { this.editingId = u.id; this.form.patchValue({ ...u, password: '' }); this.validationErrors = {}; this.showForm = true; }
   onCancel() { this.showForm = false; }
 
   onSave() {

@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -20,7 +20,7 @@ import { AuthService } from '../../services/auth.service';
           <label>Логин<input formControlName="username" placeholder="Введите логин" autofocus /></label>
           <label>Пароль<input type="password" formControlName="password" placeholder="Введите пароль" /></label>
           <p *ngIf="error" class="error-msg">{{ error }}</p>
-          <button class="btn btn-login" type="submit" [disabled]="loginForm.invalid">Войти</button>
+          <button class="btn btn-login" type="submit" [disabled]="loginForm.invalid || loading">{{ loading ? 'Вход...' : 'Войти' }}</button>
         </form>
         <p class="login-hint">Тестовые данные: admin / admin или operator / operator</p>
       </div>
@@ -49,8 +49,9 @@ export class LoginComponent {
     password: new FormControl('', Validators.required)
   });
   error = '';
+  loading = false;
 
-  constructor(private auth: AuthService, private router: Router) {
+  constructor(private auth: AuthService, private router: Router, private cdr: ChangeDetectorRef) {
     if (this.auth.isLoggedIn()) {
       this.router.navigate(['/dashboard']);
     }
@@ -58,10 +59,18 @@ export class LoginComponent {
 
   onLogin() {
     const { username, password } = this.loginForm.value;
-    if (this.auth.login(username!, password!)) {
-      this.router.navigate(['/dashboard']);
-    } else {
-      this.error = 'Неверный логин или пароль';
-    }
+    if (!username || !password) return;
+    this.error = '';
+    this.loading = true;
+    this.auth.login(username, password).subscribe({
+      next: () => {
+        this.loading = false;
+        this.router.navigate(['/dashboard']);
+      },
+      error: (err) => {
+        this.loading = false;
+        this.error = err.error?.message || 'Неверный логин или пароль';
+      }
+    });
   }
 }

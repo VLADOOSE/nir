@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { LoginComponent } from './pages/login/login.component';
 import { LayoutComponent } from './layout/layout.component';
 import { authGuard } from './guards/auth.guard';
+import { adminGuard } from './guards/admin.guard';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { TendersComponent } from './pages/tenders/tenders.component';
 import { TenderSearchComponent } from './pages/tender-search/tender-search.component';
@@ -14,6 +15,7 @@ import { MailComponent } from './pages/mail/mail.component';
 import { SettingsComponent } from './pages/settings/settings.component';
 import { UsersComponent } from './pages/users/users.component';
 import { AboutComponent } from './pages/about/about.component';
+import { EquipmentTypesComponent } from './pages/equipment-types/equipment-types.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -33,7 +35,8 @@ export const routes: Routes = [
       { path: 'applies', component: AppliesComponent },
       { path: 'reports', component: ReportsComponent },
       { path: 'settings', component: SettingsComponent },
-      { path: 'users', component: UsersComponent },
+      { path: 'users', component: UsersComponent, canActivate: [adminGuard] },
+      { path: 'equipment-types', component: EquipmentTypesComponent, canActivate: [adminGuard] },
       { path: 'about', component: AboutComponent },
     ]
   }

@@ -1,48 +1,63 @@
 import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, of, tap, catchError, map } from 'rxjs';
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  fullName: string;
+  role: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private currentUser: any = null;
+  private base = '/api/auth';
+  private currentUser$ = new BehaviorSubject<AuthUser | null>(null);
 
-  private users = [
-    { username: 'admin', password: 'admin', fullName: 'Администратор', role: 'ROLE_ADMIN' },
-    { username: 'operator', password: 'operator', fullName: 'Оператор Иванов', role: 'ROLE_USER' }
-  ];
+  user$ = this.currentUser$.asObservable();
 
-  login(username: string, password: string): boolean {
-    const user = this.users.find(u => u.username === username && u.password === password);
-    if (user) {
-      this.currentUser = user;
-      sessionStorage.setItem('currentUser', JSON.stringify(user));
-      return true;
-    }
-    return false;
+  constructor(private http: HttpClient) {}
+
+  loadCurrentUser(): Observable<AuthUser | null> {
+    return this.http.get<AuthUser>(`${this.base}/me`, { withCredentials: true }).pipe(
+      tap(user => this.currentUser$.next(user)),
+      catchError(() => {
+        this.currentUser$.next(null);
+        return of(null);
+      })
+    );
   }
 
-  logout() {
-    this.currentUser = null;
-    sessionStorage.removeItem('currentUser');
+  login(username: string, password: string): Observable<AuthUser> {
+    return this.http.post<AuthUser>(
+      `${this.base}/login`,
+      { username, password },
+      { withCredentials: true }
+    ).pipe(
+      tap(user => this.currentUser$.next(user))
+    );
+  }
+
+  logout(): Observable<void> {
+    return this.http.post<void>(`${this.base}/logout`, {}, { withCredentials: true }).pipe(
+      tap(() => this.currentUser$.next(null)),
+      catchError(() => {
+        this.currentUser$.next(null);
+        return of(undefined as any);
+      }),
+      map(() => undefined)
+    );
   }
 
   isLoggedIn(): boolean {
-    if (this.currentUser) return true;
-    const saved = sessionStorage.getItem('currentUser');
-    if (saved) {
-      this.currentUser = JSON.parse(saved);
-      return true;
-    }
-    return false;
+    return this.currentUser$.getValue() !== null;
   }
 
-  getUser(): any {
-    if (!this.currentUser) {
-      const saved = sessionStorage.getItem('currentUser');
-      if (saved) this.currentUser = JSON.parse(saved);
-    }
-    return this.currentUser;
+  getUser(): AuthUser | null {
+    return this.currentUser$.getValue();
   }
 
   isAdmin(): boolean {
-    return this.getUser()?.role === 'ROLE_ADMIN';
+    return this.currentUser$.getValue()?.role === 'ROLE_ADMIN';
   }
 }

@@ -1,7 +1,7 @@
 import { Component, HostListener, ChangeDetectorRef } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { NgFor, NgIf } from '@angular/common';
+import { NgFor, NgIf, AsyncPipe } from '@angular/common';
 import { SearchService, SearchResult } from '../services/search.service';
 import { AuthService } from '../services/auth.service';
 import { NotificationComponent } from '../components/notification/notification.component';
@@ -10,7 +10,7 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
 @Component({
   selector: 'app-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, NgFor, NgIf, NotificationComponent, ConfirmComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, NgFor, NgIf, AsyncPipe, NotificationComponent, ConfirmComponent],
   template: `
     <app-notifications></app-notifications>
     <app-confirm></app-confirm>
@@ -33,8 +33,11 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
             </div>
           </div>
         </div>
-        <div class="header-right">
-          <span>{{ auth.getUser()?.fullName || 'Пользователь' }}</span>
+        <div class="header-right" *ngIf="auth.user$ | async as user">
+          <span class="user-name">{{ user.fullName || user.username }}</span>
+          <span class="role-badge" [class.role-admin]="user.role === 'ROLE_ADMIN'">
+            {{ user.role === 'ROLE_ADMIN' ? 'Админ' : 'Оператор' }}
+          </span>
           <button class="btn-logout" (click)="onLogout()">Выйти</button>
         </div>
       </header>
@@ -52,6 +55,7 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
           <div class="nav-group">
             <span class="nav-group-title">Каталог</span>
             <a routerLink="/equipment" routerLinkActive="active">🏥 Оборудование</a>
+            <a *ngIf="auth.isAdmin()" routerLink="/equipment-types" routerLinkActive="active">🏷️ Типы оборудования</a>
             <a routerLink="/facilities" routerLinkActive="active">🏢 Учреждения</a>
             <a routerLink="/distributors" routerLinkActive="active">🚚 Дистрибьюторы</a>
           </div>
@@ -86,9 +90,12 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
       font-weight: 700; font-size: 13px; letter-spacing: 1px;
     }
     .header-title { font-weight: 600; font-size: 16px; }
-    .header-right { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: 0.9; }
-    .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    .btn-logout:hover { background: rgba(255,255,255,0.25); }
+    .header-right { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: 0.95; }
+    .user-name { font-weight: 500; }
+    .role-badge { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .role-badge.role-admin { background: #fef3c7; color: #92400e; }
+    .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; }
+    .btn-logout:hover { background: rgba(255,255,255,0.3); }
 
     .header-search { flex: 1; max-width: 500px; margin: 0 24px; position: relative; }
     .header-search input { width: 100%; padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; background: rgba(255,255,255,0.15); color: #fff; outline: none; box-sizing: border-box; }
@@ -153,8 +160,7 @@ export class LayoutComponent {
   }
 
   onLogout() {
-    this.auth.logout();
-    this.router.navigate(['/login']);
+    this.auth.logout().subscribe(() => this.router.navigate(['/login']));
   }
 
   @HostListener('document:click', ['$event'])

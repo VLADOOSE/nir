@@ -1,10 +1,12 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.MedEquipmentRequest;
+import com.vladoose.nir.dto.response.EquipmentStatsResponse;
 import com.vladoose.nir.dto.response.MedEquipmentResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.mapper.MedEquipmentMapper;
+import com.vladoose.nir.service.EquipmentStatsService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TenderLotService;
 import jakarta.validation.Valid;
@@ -20,13 +22,16 @@ public class MedEquipmentController {
     private final MedEquipmentService service;
     private final TenderLotService tenderLotService;
     private final MedEquipmentMapper mapper;
+    private final EquipmentStatsService statsService;
 
     public MedEquipmentController(MedEquipmentService service,
                                   TenderLotService tenderLotService,
-                                  MedEquipmentMapper mapper) {
+                                  MedEquipmentMapper mapper,
+                                  EquipmentStatsService statsService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.mapper = mapper;
+        this.statsService = statsService;
     }
 
     @GetMapping
@@ -64,5 +69,10 @@ public class MedEquipmentController {
     public List<MedEquipmentResponse> findMatchingForLot(@PathVariable Long lotId) {
         TenderLot lot = tenderLotService.findById(lotId);
         return mapper.toResponseList(service.findMatchingForLot(lot));
+    }
+
+    @GetMapping("/{id}/stats")
+    public EquipmentStatsResponse stats(@PathVariable Long id) {
+        return statsService.buildStats(id);
     }
 }

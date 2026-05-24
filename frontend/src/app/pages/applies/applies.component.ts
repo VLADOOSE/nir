@@ -111,6 +111,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showItemForm" (click)="onAddItem()">Добавить позицию</button>
+        <button class="btn btn-autofill" *ngIf="selectedApply?.status === 'DRAFT' && !showItemForm" (click)="onAutoFill()">Собрать из КП</button>
         <span class="counter" *ngIf="items.length">{{ items.length }} позиций — итого: {{ formatPrice(itemsTotal) }} &#8381;</span>
       </div>
 
@@ -124,8 +125,9 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         <label>Оборудование
           <select formControlName="medEquipId">
             <option [ngValue]="null">— не выбрано —</option>
-            <option *ngFor="let e of equipment" [ngValue]="e.id">{{ e.name }} ({{ e.manufact }})</option>
+            <option *ngFor="let e of filteredEquipmentForItem" [ngValue]="e.id">{{ e.name }} ({{ e.manufact }})</option>
           </select>
+          <div *ngIf="currentLotTypeName" class="filter-hint">Показаны только аппараты типа «{{ currentLotTypeName }}»</div>
         </label>
         <label>Дистрибьютор
           <select formControlName="distributorId">
@@ -179,6 +181,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .actions { white-space: nowrap; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-add { background: #1a56db; color: #fff; }
+    .btn-autofill { background: #059669; color: #fff; margin-left: 8px; }
     .btn-save { background: #1a56db; color: #fff; }
     .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
     .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
@@ -216,6 +219,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
     .input-error { border-color: #dc2626 !important; }
     .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    .filter-hint { font-size: 12px; color: #6b7280; margin-top: 4px; font-style: italic; }
   `]
 })
 export class AppliesComponent {
@@ -303,7 +307,7 @@ export class AppliesComponent {
 
   onSaveApply() {
     const v = this.applyForm.value;
-    const body: any = { status: v.status, tender: v.tenderId ? { id: v.tenderId } : null };
+    const body: any = { status: v.status, tenderId: v.tenderId || null };
     const wasEditing = this.editingApplyId !== null;
     const req = this.editingApplyId ? this.api.update('applies', this.editingApplyId, body) : this.api.create('applies', body);
     req.subscribe({
@@ -353,6 +357,23 @@ export class AppliesComponent {
   }
 
   onAddItem() { this.editingItemId = null; this.itemForm.reset(); this.validationErrors = {}; this.showItemForm = true; }
+
+  onAutoFill() {
+    this.confirm.ask('Собрать позиции из принятых КП?', 'Для каждого лота возьмётся самое дешёвое предложение. Лоты, по которым позиция уже есть, пропускаются.', { confirmLabel: 'Собрать' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.autoFillApply(this.selectedApply.id).subscribe({
+          next: (resp: any) => {
+            this.notify.success(`Добавлено позиций: ${resp.addedItems}`);
+            if (resp.lotsWithoutResponse?.length) {
+              this.notify.info('Нет КП с ответом по: ' + resp.lotsWithoutResponse.join(', '));
+            }
+            this.loadItems();
+          },
+          error: err => this.notify.error(err.error?.message || 'Ошибка автосборки')
+        });
+      });
+  }
   onEditItem(it: any) {
     this.editingItemId = it.id;
     this.itemForm.patchValue({ tenderLotId: it.tenderLot?.id || null, medEquipId: it.medEquipment?.id || null, distributorId: it.distributor?.id || null, offeredCost: it.offeredCost, quantity: it.quantity });
@@ -371,7 +392,7 @@ export class AppliesComponent {
       }
     }
 
-    const body: any = { apply: { id: this.selectedApply.id }, tenderLot: v.tenderLotId ? { id: v.tenderLotId } : null, medEquipment: v.medEquipId ? { id: v.medEquipId } : null, distributor: v.distributorId ? { id: v.distributorId } : null, offeredCost: v.offeredCost, quantity: v.quantity };
+    const body: any = { applyId: this.selectedApply.id, tenderLotId: v.tenderLotId || null, medEquipId: v.medEquipId || null, distributorId: v.distributorId || null, offeredCost: v.offeredCost, quantity: v.quantity };
     const req = this.editingItemId ? this.api.update('apply-items', this.editingItemId, body) : this.api.create('apply-items', body);
     req.subscribe({
       next: () => { this.showItemForm = false; this.validationErrors = {}; this.loadItems(); },
@@ -382,6 +403,21 @@ export class AppliesComponent {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  get filteredEquipmentForItem(): any[] {
+    const lotId = this.itemForm.value.tenderLotId;
+    if (!lotId) return this.equipment;
+    const lot = this.lots.find((l: any) => l.id === +lotId!);
+    if (!lot || !lot.equipmentType?.id) return this.equipment;
+    return this.equipment.filter((e: any) => e.equipmentType?.id === lot.equipmentType.id);
+  }
+
+  get currentLotTypeName(): string | null {
+    const lotId = this.itemForm.value.tenderLotId;
+    if (!lotId) return null;
+    const lot = this.lots.find((l: any) => l.id === +lotId!);
+    return lot?.equipmentType?.name || null;
   }
 
   onLotSelected() {
@@ -431,7 +467,7 @@ export class AppliesComponent {
   private updateApplyStatus(status: string, successMsg: string) {
     const body = {
       status,
-      tender: this.selectedApply.tender ? { id: this.selectedApply.tender.id } : null
+      tenderId: this.selectedApply.tender?.id || null
     };
     this.api.update('applies', this.selectedApply.id, body).subscribe({
       next: (updated: any) => {

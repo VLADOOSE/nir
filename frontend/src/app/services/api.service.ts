@@ -154,4 +154,47 @@ export class ApiService {
   sendEmail(to: string, subject: string, body: string): Observable<any> {
     return this.http.post(`${this.base}/email/send`, { to, subject, body });
   }
+
+  // === Equipment Types ===
+
+  getEquipmentTypes(): Observable<any[]> { return this.getAll('equipment-types'); }
+  createEquipmentType(body: any): Observable<any> { return this.create('equipment-types', body); }
+  updateEquipmentType(id: number, body: any): Observable<any> { return this.update('equipment-types', id, body); }
+  deleteEquipmentType(id: number): Observable<void> { return this.delete('equipment-types', id); }
+
+  // === Bulk Price ===
+
+  bulkPricePreview(tenderId: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/bulk-price/preview/${tenderId}`);
+  }
+
+  bulkPriceSend(body: any): Observable<number> {
+    return this.http.post<number>(`${this.base}/bulk-price/send`, body);
+  }
+
+  // === Equipment stats ===
+
+  getEquipmentStats(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/equipment/${id}/stats`);
+  }
+
+  // === Auto-fill apply ===
+
+  autoFillApply(applyId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/applies/${applyId}/auto-fill`, {});
+  }
+
+  // === Price Request responses ===
+
+  updatePriceRequestResponses(id: number, updates: any[]): Observable<any> {
+    return this.http.put<any>(`${this.base}/price-requests/${id}/responses`, updates);
+  }
+
+  getPriceRequestsByTender(tenderId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/price-requests/by-tender/${tenderId}`);
+  }
+
+  closePriceRequest(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/price-requests/${id}/close`, {});
+  }
 }

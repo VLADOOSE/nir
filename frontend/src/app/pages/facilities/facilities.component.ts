@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-facilities',
@@ -17,7 +18,7 @@ import { ConfirmService } from '../../services/confirm.service';
     <input type="text" placeholder="Поиск по названию, ИНН, адресу, фамилии..." [(ngModel)]="searchQuery" (input)="applyFilter()" class="search-input" />
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()">Добавить</button>
       <span class="counter" *ngIf="filteredFacilities.length">Найдено: {{ filteredFacilities.length }} записей</span>
     </div>
 
@@ -41,13 +42,13 @@ import { ConfirmService } from '../../services/confirm.service';
 
     <table *ngIf="filteredFacilities.length > 0">
       <thead>
-        <tr><th>Название</th><th>ИНН</th><th>Адрес</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Действия</th></tr>
+        <tr><th>Название</th><th>ИНН</th><th>Адрес</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let f of filteredFacilities">
           <td>{{ f.name }}</td><td>{{ f.inn }}</td><td>{{ f.address }}</td>
           <td>{{ f.lastName }} {{ f.firstName }}</td><td>{{ f.phone }}</td><td>{{ f.email }}</td>
-          <td class="actions">
+          <td class="actions" *ngIf="auth.isAdmin()">
             <button class="btn btn-edit" (click)="onEdit(f)">Редактировать</button>
             <button class="btn btn-delete" (click)="onDelete(f.id)">Удалить</button>
           </td>
@@ -104,7 +105,8 @@ export class FacilitiesComponent {
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, private confirm: ConfirmService) {
+              private notify: NotificationService, private confirm: ConfirmService,
+              public auth: AuthService) {
     this.loadData();
     this.api.getTenders().subscribe({
       next: data => { this.tenders = data || []; },
