@@ -6,11 +6,12 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
+import { BulkPriceModalComponent } from './bulk-price-modal.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -126,6 +127,8 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
     <!-- ========== ДЕТАЛИ ТЕНДЕРА ========== -->
     <ng-container *ngIf="selectedTender">
+      <app-bulk-price-modal [tenderId]="bulkPriceTenderId" (close)="bulkPriceTenderId = null; loadPriceRequests()"></app-bulk-price-modal>
+
       <button class="btn btn-back" (click)="onBack()">&#8592; Назад к списку</button>
 
       <div class="tender-info">
@@ -149,6 +152,9 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showLotForm" (click)="onAddLot()">Добавить лот</button>
+        <button class="btn btn-add-bulk" *ngIf="lots.length > 0" (click)="bulkPriceTenderId = selectedTender.id">
+          Запросить КП по всему тендеру
+        </button>
         <span class="counter" *ngIf="lots.length">Найдено: {{ lots.length }} лотов</span>
       </div>
 
@@ -357,6 +363,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .actions { white-space: nowrap; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-add { background: #1a56db; color: #fff; }
+    .btn-add-bulk { background: #8b5cf6; color: #fff; margin-left: 8px; }
     .btn-save { background: #1a56db; color: #fff; }
     .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
     .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
@@ -475,6 +482,9 @@ export class TendersComponent {
   generatedEmail: any = null;
   emailConfigured = false;
 
+  // Массовый подбор КП по тендеру
+  bulkPriceTenderId: number | null = null;
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
               private notify: NotificationService, private confirm: ConfirmService) {
     this.loadTenders();
@@ -590,7 +600,7 @@ export class TendersComponent {
       description: v.description, deliveryAddress: v.deliveryAddress,
       contactLastName: v.contactLastName, contactFirstName: v.contactFirstName,
       contactMiddleName: v.contactMiddleName, contactPhone: v.contactPhone, contactEmail: v.contactEmail,
-      facility: v.facilityId ? { id: v.facilityId } : null
+      facilityId: v.facilityId || null
     };
     const wasEditing = this.editingTenderId !== null;
     const req = this.editingTenderId ? this.api.update('tenders', this.editingTenderId, body) : this.api.create('tenders', body);
@@ -672,7 +682,7 @@ export class TendersComponent {
       return;
     }
 
-    const body: any = { ...this.lotForm.value, tender: { id: this.selectedTender.id } };
+    const body: any = { ...this.lotForm.value, tenderId: this.selectedTender.id };
     const wasEditing = this.editingLotId !== null;
     const req = this.editingLotId ? this.api.update('lots', this.editingLotId, body) : this.api.create('lots', body);
     req.subscribe({
@@ -740,9 +750,9 @@ export class TendersComponent {
       return;
     }
     const body = {
-      tenderLot: { id: this.priceRequestLotId },
-      medEquipment: { id: v.medEquipId },
-      distributor: { id: v.distributorId },
+      tenderLotId: this.priceRequestLotId,
+      medEquipId: v.medEquipId,
+      distributorId: v.distributorId,
       status: 'CREATED'
     };
     this.api.createPriceRequest(body).subscribe((created: any) => {
@@ -821,7 +831,7 @@ export class TendersComponent {
       if (apply) {
         this.addItemToApply(apply.id, pr);
       } else {
-        this.api.create('applies', { tender: { id: this.selectedTender.id }, status: 'DRAFT' }).subscribe((newApply: any) => {
+        this.api.create('applies', { tenderId: this.selectedTender.id, status: 'DRAFT' }).subscribe((newApply: any) => {
           this.addItemToApply(newApply.id, pr);
         });
       }
@@ -830,10 +840,10 @@ export class TendersComponent {
 
   addItemToApply(applyId: number, pr: any) {
     const item = {
-      apply: { id: applyId },
-      tenderLot: { id: pr.tenderLot?.id },
-      medEquipment: { id: pr.medEquipment?.id },
-      distributor: { id: pr.distributor?.id },
+      applyId: applyId,
+      tenderLotId: pr.tenderLot?.id,
+      medEquipId: pr.medEquipment?.id,
+      distributorId: pr.distributor?.id,
       offeredCost: pr.responsePrice,
       quantity: pr.tenderLot?.quantity || 1
     };
@@ -858,13 +868,14 @@ export class TendersComponent {
     const existing = this.priceRequests.find(p => p.id === this.updatingPrId);
     if (!existing) return;
     const body = {
-      ...existing,
+      tenderLotId: existing.tenderLot?.id,
+      medEquipId: existing.medEquipment?.id,
+      distributorId: existing.distributor?.id,
       status: this.prUpdateForm.value.status,
       responsePrice: this.prUpdateForm.value.responsePrice,
       responseDate: this.prUpdateForm.value.responseDate || null,
       responseNote: this.prUpdateForm.value.responseNote
     };
-    delete body.lotEquipName;
     this.api.updatePriceRequest(this.updatingPrId, body).subscribe(() => {
       this.showPrUpdateForm = false;
       this.loadPriceRequests();
