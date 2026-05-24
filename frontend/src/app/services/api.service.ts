@@ -145,6 +145,10 @@ export class ApiService {
     return this.http.get(`${this.base}/reports/tender-pdf${params}`, { responseType: 'blob' });
   }
 
+  downloadProfitabilityExcel(): Observable<Blob> {
+    return this.http.get(`${this.base}/reports/profitability-excel`, { responseType: 'blob' });
+  }
+
   // === Equipment Types ===
 
   getEquipmentTypes(): Observable<any[]> { return this.getAll('equipment-types'); }

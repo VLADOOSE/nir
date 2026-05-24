@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.response.ProfitabilityReportResponse;
 import com.vladoose.nir.service.JasperReportService;
+import com.vladoose.nir.service.ProfitabilityExcelService;
 import com.vladoose.nir.service.ProfitabilityReportService;
 import com.vladoose.nir.service.ReportService;
 import org.springframework.http.ResponseEntity;
@@ -17,13 +18,29 @@ public class ReportController {
     private final ReportService service;
     private final JasperReportService jasperReportService;
     private final ProfitabilityReportService profitabilityReportService;
+    private final ProfitabilityExcelService profitabilityExcelService;
 
     public ReportController(ReportService service,
                             JasperReportService jasperReportService,
-                            ProfitabilityReportService profitabilityReportService) {
+                            ProfitabilityReportService profitabilityReportService,
+                            ProfitabilityExcelService profitabilityExcelService) {
         this.service = service;
         this.jasperReportService = jasperReportService;
         this.profitabilityReportService = profitabilityReportService;
+        this.profitabilityExcelService = profitabilityExcelService;
+    }
+
+    @GetMapping(value = "/profitability-excel",
+            produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> profitabilityExcel() {
+        try {
+            byte[] xlsx = profitabilityExcelService.generate();
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=profitability_report.xlsx")
+                    .body(xlsx);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @GetMapping("/tender-stats")

@@ -1,22 +1,48 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { ApiService } from '../../services/api.service';
+import { ChartComponent } from '../../components/chart/chart.component';
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass],
+  imports: [NgFor, NgIf, NgClass, ChartComponent],
   template: `
     <h2>Отчёты</h2>
     <p class="subtitle">Аналитика по тендерной деятельности</p>
 
     <div class="report-actions">
-      <h3>Скачать отчёты (PDF)</h3>
+      <h3>Скачать отчёты</h3>
       <div class="report-buttons">
-        <button class="btn btn-pdf" (click)="downloadPdf()">Все тендеры</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('ACTIVE')">Активные тендеры</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('DRAFT')">Тендеры на подготовке</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('COMPLETED')">Завершённые тендеры</button>
+        <button class="btn btn-pdf" (click)="downloadPdf()">PDF: все тендеры</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('ACTIVE')">PDF: активные</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('DRAFT')">PDF: подготовка</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('COMPLETED')">PDF: завершённые</button>
+        <button class="btn btn-excel" (click)="downloadProfitabilityExcel()">📊 Excel: прибыльность</button>
+      </div>
+    </div>
+
+    <div class="report-section">
+      <h3>Визуализация</h3>
+      <div class="charts-grid">
+        <div class="chart-cell">
+          <h4>Тендеры по статусам</h4>
+          <app-chart *ngIf="tenderStatusLabels.length" type="doughnut" [labels]="tenderStatusLabels" [values]="tenderStatusValues"></app-chart>
+          <div *ngIf="!tenderStatusLabels.length" class="empty">Нет данных</div>
+        </div>
+        <div class="chart-cell">
+          <h4>Спрос на типы оборудования</h4>
+          <app-chart *ngIf="demandLabels.length" type="bar" label="Лотов" [labels]="demandLabels" [values]="demandValues" [horizontal]="true"></app-chart>
+          <div *ngIf="!demandLabels.length" class="empty">Нет данных</div>
+        </div>
+        <div class="chart-cell" *ngIf="profit?.profitByType?.length">
+          <h4>Прибыль по типам оборудования</h4>
+          <app-chart type="bar" label="Прибыль, ₽" [labels]="profitByTypeLabels" [values]="profitByTypeValues" [horizontal]="true"></app-chart>
+        </div>
+        <div class="chart-cell" *ngIf="profit?.distributorRanking?.length">
+          <h4>Прибыль по дистрибьюторам</h4>
+          <app-chart type="bar" label="Прибыль, ₽" [labels]="distributorProfitLabels" [values]="distributorProfitValues" [horizontal]="true"></app-chart>
+        </div>
       </div>
     </div>
 
@@ -153,6 +179,11 @@ import { ApiService } from '../../services/api.service';
     .report-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .btn-pdf { background: #dc2626; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-pdf:hover { background: #b91c1c; }
+    .btn-excel { background: #059669; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-excel:hover { background: #047857; }
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .chart-cell h4 { font-size: 13px; color: #6b7280; margin: 0 0 8px; text-align: center; }
+    .chart-cell { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
     .summary-grid-4 { grid-template-columns: repeat(3, 1fr); }
     .summary-item { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; text-align: center; }
@@ -181,8 +212,28 @@ export class ReportsComponent {
   distributorPrStats: any[] = [];
   profit: any = null;
 
+  get tenderStatusLabels(): string[] { return this.tenderStatsList.map(s => this.getStatusLabel(s.status)); }
+  get tenderStatusValues(): number[] { return this.tenderStatsList.map(s => s.count); }
+  get demandLabels(): string[] { return this.equipmentDemandList.map(i => i.type); }
+  get demandValues(): number[] { return this.equipmentDemandList.map(i => i.count); }
+  get profitByTypeLabels(): string[] { return (this.profit?.profitByType || []).map((t: any) => t.typeName); }
+  get profitByTypeValues(): number[] { return (this.profit?.profitByType || []).map((t: any) => Number(t.totalProfit || 0)); }
+  get distributorProfitLabels(): string[] { return (this.profit?.distributorRanking || []).map((d: any) => d.name); }
+  get distributorProfitValues(): number[] { return (this.profit?.distributorRanking || []).map((d: any) => Number(d.totalProfit || 0)); }
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) {
     this.loadAll();
+  }
+
+  downloadProfitabilityExcel() {
+    this.api.downloadProfitabilityExcel().subscribe(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'profitability_report.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    });
   }
 
   loadAll() {
