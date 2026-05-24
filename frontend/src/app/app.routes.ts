@@ -11,7 +11,6 @@ import { FacilitiesComponent } from './pages/facilities/facilities.component';
 import { DistributorsComponent } from './pages/distributors/distributors.component';
 import { AppliesComponent } from './pages/applies/applies.component';
 import { ReportsComponent } from './pages/reports/reports.component';
-import { SettingsComponent } from './pages/settings/settings.component';
 import { UsersComponent } from './pages/users/users.component';
 import { AboutComponent } from './pages/about/about.component';
 import { EquipmentTypesComponent } from './pages/equipment-types/equipment-types.component';
@@ -32,7 +31,6 @@ export const routes: Routes = [
       { path: 'distributors', component: DistributorsComponent },
       { path: 'applies', component: AppliesComponent },
       { path: 'reports', component: ReportsComponent },
-      { path: 'settings', component: SettingsComponent },
       { path: 'users', component: UsersComponent, canActivate: [adminGuard] },
       { path: 'equipment-types', component: EquipmentTypesComponent, canActivate: [adminGuard] },
       { path: 'about', component: AboutComponent },

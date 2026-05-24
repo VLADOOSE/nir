@@ -65,7 +65,6 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
           <div class="nav-group">
             <span class="nav-group-title">Система</span>
             <a routerLink="/reports" routerLinkActive="active">📊 Отчёты</a>
-            <a *ngIf="auth.isAdmin()" routerLink="/settings" routerLinkActive="active">⚙️ Настройки</a>
             <a *ngIf="auth.isAdmin()" routerLink="/users" routerLinkActive="active">👥 Пользователи</a>
             <a routerLink="/about" routerLinkActive="active">ℹ️ О системе</a>
           </div>

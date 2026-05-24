@@ -119,10 +119,15 @@ CREATE TABLE tender_lot (
 -- ========== Заявки ==========
 
 CREATE TABLE activity_apply (
-    id         BIGSERIAL PRIMARY KEY,
-    tender_id  BIGINT NOT NULL REFERENCES tender(id),
-    status     VARCHAR(50) DEFAULT 'DRAFT',
-    created_at TIMESTAMPTZ DEFAULT now()
+    id                  BIGSERIAL PRIMARY KEY,
+    tender_id           BIGINT NOT NULL REFERENCES tender(id),
+    status              VARCHAR(50) DEFAULT 'DRAFT',
+    created_at          TIMESTAMPTZ DEFAULT now(),
+    contract_number     VARCHAR(100),
+    contract_signed_at  DATE,
+    delivery_status     VARCHAR(50) DEFAULT 'NONE',
+    delivered_at        DATE,
+    paid_at             DATE
 );
 
 CREATE TABLE apply_item (

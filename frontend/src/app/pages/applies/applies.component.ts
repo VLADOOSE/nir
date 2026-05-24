@@ -67,13 +67,19 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div *ngIf="filteredApplies.length === 0 && !showApplyForm" class="empty">Нет данных</div>
 
       <table *ngIf="filteredApplies.length > 0">
-        <thead><tr><th>ID</th><th>Номер тендера</th><th>Заказчик</th><th>Статус</th><th>Позиций</th><th>Сумма</th><th>Дата создания</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>Номер тендера</th><th>Заказчик</th><th>Статус</th><th>Поставка</th><th>Позиций</th><th>Сумма</th><th>Дата создания</th><th>Действия</th></tr></thead>
         <tbody>
           <tr *ngFor="let a of filteredApplies">
             <td>{{ a.id }}</td>
             <td>{{ a.tender?.tenderNumber || '—' }}</td>
             <td>{{ a.tender?.facility?.name || '—' }}</td>
             <td><span class="badge" [class]="'badge-' + a.status">{{ getStatusLabel(a.status) }}</span></td>
+            <td>
+              <span *ngIf="a.status === 'WON' && a.deliveryStatus" class="badge" [class]="'badge-d-' + a.deliveryStatus">
+                {{ deliveryLabel(a.deliveryStatus) }}
+              </span>
+              <span *ngIf="a.status !== 'WON'" class="muted">—</span>
+            </td>
             <td>{{ a._itemCount || 0 }}</td>
             <td>{{ formatPrice(a._totalCost) }} &#8381;</td>
             <td>{{ formatDate(a.createdAt) }}</td>
@@ -200,6 +206,56 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
           <span class="ps-hint-text">Закупочные цены не определены — заявка собрана без привязки к ответам КП</span>
         </div>
       </div>
+
+      <div *ngIf="selectedApply?.status === 'WON'" class="won-block">
+        <h3>После победы</h3>
+
+        <div class="contract-form">
+          <div class="cf-field">
+            <label>Номер договора с заказчиком</label>
+            <input [(ngModel)]="contractEdit.contractNumber" placeholder="напр. №42/2026" />
+          </div>
+          <div class="cf-field">
+            <label>Дата подписания</label>
+            <input type="date" [(ngModel)]="contractEdit.contractSignedAt" />
+          </div>
+          <div class="cf-actions">
+            <button class="btn btn-save" (click)="saveContract()">Сохранить договор</button>
+          </div>
+        </div>
+
+        <div class="delivery-flow">
+          <h4>Поставка</h4>
+          <div class="delivery-steps">
+            <div class="delivery-step" [class.active]="!selectedApply.deliveryStatus || selectedApply.deliveryStatus === 'NONE'">
+              <span class="ds-icon">📋</span>
+              <span class="ds-label">Не начата</span>
+            </div>
+            <span class="ds-arrow">→</span>
+            <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'ORDERED'" [class.done]="['DELIVERED','PAID'].includes(selectedApply.deliveryStatus)">
+              <span class="ds-icon">📦</span>
+              <span class="ds-label">Заказано</span>
+            </div>
+            <span class="ds-arrow">→</span>
+            <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'DELIVERED'" [class.done]="selectedApply.deliveryStatus === 'PAID'">
+              <span class="ds-icon">🚚</span>
+              <span class="ds-label">Поставлено<small *ngIf="selectedApply.deliveredAt">{{ formatDate(selectedApply.deliveredAt) }}</small></span>
+            </div>
+            <span class="ds-arrow">→</span>
+            <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'PAID'">
+              <span class="ds-icon">💵</span>
+              <span class="ds-label">Оплачено<small *ngIf="selectedApply.paidAt">{{ formatDate(selectedApply.paidAt) }}</small></span>
+            </div>
+          </div>
+
+          <div class="delivery-actions">
+            <button *ngIf="!selectedApply.deliveryStatus || selectedApply.deliveryStatus === 'NONE'" class="btn btn-step" (click)="setDeliveryStatus('ORDERED')">Заказать у дистрибьютора</button>
+            <button *ngIf="selectedApply.deliveryStatus === 'ORDERED'" class="btn btn-step" (click)="setDeliveryStatus('DELIVERED')">Отметить поставку</button>
+            <button *ngIf="selectedApply.deliveryStatus === 'DELIVERED'" class="btn btn-step btn-step-paid" (click)="setDeliveryStatus('PAID')">Отметить оплату</button>
+            <span *ngIf="selectedApply.deliveryStatus === 'PAID'" class="all-done">✓ Сделка закрыта</span>
+          </div>
+        </div>
+      </div>
     </ng-container>
   `,
   styles: [`
@@ -273,6 +329,32 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .ps-percent { font-size: 13px; opacity: 0.85; font-weight: 500; }
     .ps-hint { font-size: 12px; color: #9ca3af; font-style: italic; padding-top: 4px; }
     .ps-hint-text { display: block; }
+
+    .won-block { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px 24px; margin-top: 20px; }
+    .won-block h3 { margin: 0 0 14px; font-size: 16px; color: #047857; }
+    .won-block h4 { margin: 20px 0 12px; font-size: 14px; color: #065f46; }
+    .contract-form { display: grid; grid-template-columns: 2fr 1fr auto; gap: 12px; align-items: end; }
+    .cf-field label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+    .cf-field input { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+    .cf-actions { display: flex; }
+    .delivery-flow { margin-top: 16px; padding-top: 16px; border-top: 1px solid #bbf7d0; }
+    .delivery-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .delivery-step { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px; background: #e5e7eb; color: #6b7280; font-size: 13px; }
+    .delivery-step.active { background: #1a56db; color: #fff; font-weight: 500; }
+    .delivery-step.done { background: #d1fae5; color: #047857; }
+    .ds-icon { font-size: 16px; }
+    .ds-label { display: flex; flex-direction: column; line-height: 1.2; }
+    .ds-label small { font-size: 10px; opacity: 0.8; }
+    .ds-arrow { color: #9ca3af; font-size: 14px; }
+    .delivery-actions { display: flex; gap: 8px; align-items: center; }
+    .btn-step { background: #1a56db; color: #fff; }
+    .btn-step-paid { background: #059669; }
+    .all-done { color: #047857; font-weight: 600; font-size: 14px; }
+    .badge-d-NONE { background: #e5e7eb; color: #6b7280; }
+    .badge-d-ORDERED { background: #fef3c7; color: #92400e; }
+    .badge-d-DELIVERED { background: #dbeafe; color: #1a56db; }
+    .badge-d-PAID { background: #d1fae5; color: #047857; }
+    .muted { color: #9ca3af; font-size: 12px; }
   `]
 })
 export class AppliesComponent {
@@ -292,6 +374,8 @@ export class AppliesComponent {
   showApplyForm = false;
   editingApplyId: number | null = null;
   applyForm = new FormGroup({ tenderId: new FormControl<number | null>(null), status: new FormControl('DRAFT') });
+
+  contractEdit: { contractNumber: string; contractSignedAt: string } = { contractNumber: '', contractSignedAt: '' };
 
   showItemForm = false;
   editingItemId: number | null = null;
@@ -389,7 +473,61 @@ export class AppliesComponent {
       });
   }
 
-  onOpen(a: any) { this.selectedApply = a; this.loadItems(); this.loadReferenceData(); }
+  onOpen(a: any) {
+    this.selectedApply = a;
+    this.contractEdit = {
+      contractNumber: a.contractNumber || '',
+      contractSignedAt: a.contractSignedAt || ''
+    };
+    this.loadItems();
+    this.loadReferenceData();
+  }
+
+  saveContract() {
+    const body: any = {
+      status: this.selectedApply.status,
+      tenderId: this.selectedApply.tender?.id || null,
+      contractNumber: this.contractEdit.contractNumber || null,
+      contractSignedAt: this.contractEdit.contractSignedAt || null
+    };
+    this.api.update('applies', this.selectedApply.id, body).subscribe({
+      next: (updated: any) => {
+        this.selectedApply = updated;
+        this.notify.success('Договор сохранён');
+        this.cdr.detectChanges();
+      },
+      error: err => this.notify.error(err.error?.message || 'Ошибка сохранения')
+    });
+  }
+
+  setDeliveryStatus(status: 'ORDERED' | 'DELIVERED' | 'PAID') {
+    const today = new Date().toISOString().slice(0, 10);
+    const body: any = {
+      status: this.selectedApply.status,
+      tenderId: this.selectedApply.tender?.id || null,
+      deliveryStatus: status
+    };
+    if (status === 'DELIVERED' && !this.selectedApply.deliveredAt) body.deliveredAt = today;
+    if (status === 'PAID' && !this.selectedApply.paidAt) body.paidAt = today;
+
+    this.confirm.ask('Перевести поставку в статус «' + this.deliveryLabel(status) + '»?', undefined, { confirmLabel: 'Подтвердить' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.update('applies', this.selectedApply.id, body).subscribe({
+          next: (updated: any) => {
+            this.selectedApply = updated;
+            this.notify.success('Статус поставки обновлён');
+            this.cdr.detectChanges();
+          },
+          error: err => this.notify.error(err.error?.message || 'Ошибка')
+        });
+      });
+  }
+
+  deliveryLabel(s: string): string {
+    return ({ NONE: 'Не начата', ORDERED: 'Заказано', DELIVERED: 'Поставлено', PAID: 'Оплачено' } as any)[s] || s;
+  }
+
   onBack() { this.selectedApply = null; this.showItemForm = false; this.loadApplies(); }
 
   loadItems() {
