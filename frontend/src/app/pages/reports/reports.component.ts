@@ -20,6 +20,61 @@ import { ApiService } from '../../services/api.service';
       </div>
     </div>
 
+    <div class="report-section profit-section" *ngIf="profit">
+      <h3>Прибыльность по выигранным тендерам</h3>
+      <div class="summary-grid summary-grid-4">
+        <div class="summary-item highlight"><span class="summary-value">{{ formatPrice(profit.summary?.totalProfit) }} &#8381;</span><span class="summary-label">Чистая прибыль</span></div>
+        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.totalRevenue) }} &#8381;</span><span class="summary-label">Выручка</span></div>
+        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.totalProcurement) }} &#8381;</span><span class="summary-label">Закупка</span></div>
+        <div class="summary-item"><span class="summary-value">{{ profit.summary?.marginPercent ?? '—' }} %</span><span class="summary-label">Маржинальность</span></div>
+        <div class="summary-item"><span class="summary-value">{{ profit.summary?.wonApplies || 0 }}</span><span class="summary-label">Выиграно заявок</span></div>
+        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.avgChequeProfit) }} &#8381;</span><span class="summary-label">Прибыль / заявка</span></div>
+      </div>
+
+      <h4 class="subsection-title">Топ-5 прибыльных тендеров</h4>
+      <div *ngIf="!profit.topTenders?.length" class="empty">Пока нет данных по WON-заявкам с известной закупкой</div>
+      <table *ngIf="profit.topTenders?.length">
+        <thead><tr><th>Тендер</th><th>Заказчик</th><th>Выручка</th><th>Прибыль</th><th>Маржа %</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let t of profit.topTenders">
+            <td>&#8470; {{ t.tenderNumber }}</td>
+            <td>{{ t.facilityName }}</td>
+            <td>{{ formatPrice(t.revenue) }} &#8381;</td>
+            <td class="positive">{{ formatPrice(t.profit) }} &#8381;</td>
+            <td>{{ t.marginPercent ?? '—' }} %</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 class="subsection-title">Рейтинг дистрибьюторов по прибыли</h4>
+      <div *ngIf="!profit.distributorRanking?.length" class="empty">Нет данных</div>
+      <table *ngIf="profit.distributorRanking?.length">
+        <thead><tr><th>Дистрибьютор</th><th>Позиций в WON</th><th>Прибыль с них</th><th>Средняя маржа</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let d of profit.distributorRanking">
+            <td>{{ d.name }}</td>
+            <td>{{ d.dealsCount }}</td>
+            <td class="positive">{{ formatPrice(d.totalProfit) }} &#8381;</td>
+            <td>{{ d.avgMarginPercent ?? '—' }} %</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 class="subsection-title">Прибыль по типам оборудования</h4>
+      <div *ngIf="!profit.profitByType?.length" class="empty">Нет данных</div>
+      <table *ngIf="profit.profitByType?.length">
+        <thead><tr><th>Тип</th><th>Позиций</th><th>Прибыль</th><th>Средняя маржа</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let t of profit.profitByType">
+            <td>{{ t.typeName }}</td>
+            <td>{{ t.positionsCount }}</td>
+            <td class="positive">{{ formatPrice(t.totalProfit) }} &#8381;</td>
+            <td>{{ t.avgMarginPercent ?? '—' }} %</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="report-section summary-section">
       <h3>Сводка</h3>
       <div class="summary-grid">
@@ -99,9 +154,15 @@ import { ApiService } from '../../services/api.service';
     .btn-pdf { background: #dc2626; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-pdf:hover { background: #b91c1c; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .summary-grid-4 { grid-template-columns: repeat(3, 1fr); }
     .summary-item { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; text-align: center; }
+    .summary-item.highlight { background: #ecfdf5; border-color: #a7f3d0; }
+    .summary-item.highlight .summary-value { color: #047857; }
     .summary-value { display: block; font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 4px; }
     .summary-label { font-size: 12px; color: #6b7280; }
+    .profit-section { border-color: #a7f3d0; background: #fdfffe; }
+    .subsection-title { font-size: 14px; font-weight: 600; color: #374151; margin: 20px 0 10px; }
+    .positive { color: #059669; font-weight: 500; }
   `]
 })
 export class ReportsComponent {
@@ -118,6 +179,7 @@ export class ReportsComponent {
   maxDemand = 0;
   distributorStats: any[] = [];
   distributorPrStats: any[] = [];
+  profit: any = null;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) {
     this.loadAll();
@@ -161,6 +223,11 @@ export class ReportsComponent {
     this.api.getDistributorPrStats().subscribe(data => {
       this.distributorPrStats = data;
       this.cdr.detectChanges();
+    });
+
+    this.api.getProfitabilityReport().subscribe({
+      next: data => { this.profit = data; this.cdr.detectChanges(); },
+      error: () => { this.profit = null; }
     });
   }
 

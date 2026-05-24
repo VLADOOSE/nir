@@ -1,6 +1,8 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.response.ProfitabilityReportResponse;
 import com.vladoose.nir.service.JasperReportService;
+import com.vladoose.nir.service.ProfitabilityReportService;
 import com.vladoose.nir.service.ReportService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,10 +16,14 @@ public class ReportController {
 
     private final ReportService service;
     private final JasperReportService jasperReportService;
+    private final ProfitabilityReportService profitabilityReportService;
 
-    public ReportController(ReportService service, JasperReportService jasperReportService) {
+    public ReportController(ReportService service,
+                            JasperReportService jasperReportService,
+                            ProfitabilityReportService profitabilityReportService) {
         this.service = service;
         this.jasperReportService = jasperReportService;
+        this.profitabilityReportService = profitabilityReportService;
     }
 
     @GetMapping("/tender-stats")
@@ -38,6 +44,11 @@ public class ReportController {
     @GetMapping("/distributor-pr-stats")
     public List<Map<String, Object>> distributorPrStats() {
         return service.getDistributorPriceRequestStats();
+    }
+
+    @GetMapping("/profitability")
+    public ProfitabilityReportResponse profitability() {
+        return profitabilityReportService.buildReport();
     }
 
     @GetMapping(value = "/tender-pdf", produces = "application/pdf")

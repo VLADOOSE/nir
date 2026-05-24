@@ -148,9 +148,9 @@ public class JasperReportService {
         document.add(new Paragraph(" ", valueFont));
 
         if (!items.isEmpty()) {
-            PdfPTable table = new PdfPTable(new float[]{5, 20, 20, 15, 10, 15});
+            PdfPTable table = new PdfPTable(new float[]{4, 14, 22, 16, 8, 18, 18});
             table.setWidthPercentage(100);
-            String[] headers = {"№", "Лот", "Оборудование", "Дистрибьютор", "Кол-во", "Цена"};
+            String[] headers = {"№", "Лот", "Оборудование", "Производитель", "Кол-во", "Цена за ед.", "Итого"};
             Color headerBg = new Color(26, 86, 219);
             for (String h : headers) {
                 PdfPCell cell = new PdfPCell(new Phrase(h, headerFont));
@@ -165,17 +165,22 @@ public class JasperReportService {
                 table.addCell(new PdfPCell(new Phrase(String.valueOf(idx++), cellFont)));
                 table.addCell(new PdfPCell(new Phrase(item.getTenderLot() != null ? item.getTenderLot().getEquipName() : "—", cellFont)));
                 table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getName() : "—", cellFont)));
-                table.addCell(new PdfPCell(new Phrase(item.getDistributor() != null ? item.getDistributor().getName() : "—", cellFont)));
+                table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getManufact() : "—", cellFont)));
                 table.addCell(new PdfPCell(new Phrase(item.getQuantity() != null ? String.valueOf(item.getQuantity()) : "—", cellFont)));
-                String cost = "—";
+                String unitCost = "—";
+                String itemTotalStr = "—";
                 if (item.getOfferedCost() != null) {
-                    cost = String.format("%,.2f ₽", item.getOfferedCost());
+                    unitCost = String.format("%,.2f ₽", item.getOfferedCost());
                     BigDecimal itemTotal = item.getOfferedCost().multiply(BigDecimal.valueOf(item.getQuantity() != null ? item.getQuantity() : 1));
+                    itemTotalStr = String.format("%,.2f ₽", itemTotal);
                     total = total.add(itemTotal);
                 }
-                PdfPCell costCell = new PdfPCell(new Phrase(cost, cellFont));
-                costCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
-                table.addCell(costCell);
+                PdfPCell unitCell = new PdfPCell(new Phrase(unitCost, cellFont));
+                unitCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+                table.addCell(unitCell);
+                PdfPCell totalCell = new PdfPCell(new Phrase(itemTotalStr, cellFont));
+                totalCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+                table.addCell(totalCell);
             }
             document.add(table);
 

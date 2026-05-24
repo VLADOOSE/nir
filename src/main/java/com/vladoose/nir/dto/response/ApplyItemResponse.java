@@ -13,4 +13,7 @@ public class ApplyItemResponse {
     private DistributorResponse distributor;
     private BigDecimal offeredCost;
     private Integer quantity;
+    private BigDecimal procurementCost;  // закупочная цена у дистрибьютора (из последнего КП)
+    private BigDecimal margin;            // маржа на единицу = offeredCost - procurementCost
+    private BigDecimal marginPercent;     // процент маржинальности от закупки
 }

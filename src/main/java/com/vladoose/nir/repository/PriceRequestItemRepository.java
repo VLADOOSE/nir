@@ -18,4 +18,16 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
 
     @Query("SELECT i FROM PriceRequestItem i WHERE i.tenderLot.id = :lotId")
     List<PriceRequestItem> findByTenderLotId(@Param("lotId") Long lotId);
+
+    /**
+     * Поиск закупочной цены (responsePrice) на пару лот+оборудование от конкретного дистрибьютора.
+     * Сортировка по дате создания PR убывающая — берётся самый свежий ответ.
+     */
+    @Query("SELECT i FROM PriceRequestItem i " +
+           "WHERE i.tenderLot.id = :lotId AND i.medEquipment.id = :eqId " +
+           "AND i.priceRequest.distributor.id = :distId AND i.responsePrice IS NOT NULL " +
+           "ORDER BY i.priceRequest.createdAt DESC")
+    List<PriceRequestItem> findResponseFor(@Param("lotId") Long lotId,
+                                            @Param("eqId") Long eqId,
+                                            @Param("distId") Long distId);
 }

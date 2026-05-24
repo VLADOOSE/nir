@@ -148,11 +148,29 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div *ngIf="items.length === 0 && !showItemForm" class="empty">Нет позиций</div>
 
       <table *ngIf="items.length > 0">
-        <thead><tr><th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th><th>Предл. цена</th><th>Кол-во</th><th>Действия</th></tr></thead>
+        <thead><tr>
+          <th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th>
+          <th class="num-col">Предл. цена</th>
+          <th class="num-col">Закупка</th>
+          <th class="num-col">Маржа</th>
+          <th class="num-col">%</th>
+          <th class="num-col">Кол-во</th>
+          <th>Действия</th>
+        </tr></thead>
         <tbody>
           <tr *ngFor="let it of items">
-            <td>{{ it.tenderLot?.equipName || '—' }}</td><td>{{ it.medEquipment?.name || '—' }}</td>
-            <td>{{ it.distributor?.name || '—' }}</td><td>{{ formatPrice(it.offeredCost) }} &#8381;</td><td>{{ it.quantity }}</td>
+            <td>{{ it.tenderLot?.equipName || '—' }}</td>
+            <td>{{ it.medEquipment?.name || '—' }}</td>
+            <td>{{ it.distributor?.name || '—' }}</td>
+            <td class="num-col">{{ formatPrice(it.offeredCost) }} &#8381;</td>
+            <td class="num-col">{{ it.procurementCost != null ? formatPrice(it.procurementCost) + ' ₽' : '—' }}</td>
+            <td class="num-col" [class.positive]="it.margin > 0" [class.negative]="it.margin < 0">
+              {{ it.margin != null ? formatPrice(it.margin) + ' ₽' : '—' }}
+            </td>
+            <td class="num-col" [class.positive]="it.marginPercent > 0" [class.negative]="it.marginPercent < 0">
+              {{ it.marginPercent != null ? it.marginPercent + ' %' : '—' }}
+            </td>
+            <td class="num-col">{{ it.quantity }}</td>
             <td class="actions">
               <button class="btn btn-edit" (click)="onEditItem(it)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteItem(it.id)">Удалить</button>
@@ -160,6 +178,28 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
           </tr>
         </tbody>
       </table>
+
+      <div *ngIf="items.length > 0 && selectedApply" class="profit-summary">
+        <div class="ps-row">
+          <span class="ps-label">Выручка</span>
+          <span class="ps-value">{{ formatPrice(selectedApply.totalRevenue) }} &#8381;</span>
+        </div>
+        <div class="ps-row" *ngIf="selectedApply.totalProcurement != null">
+          <span class="ps-label">Закупка</span>
+          <span class="ps-value">{{ formatPrice(selectedApply.totalProcurement) }} &#8381;</span>
+        </div>
+        <div class="ps-row ps-profit" *ngIf="selectedApply.totalProfit != null"
+             [class.positive]="selectedApply.totalProfit > 0"
+             [class.negative]="selectedApply.totalProfit < 0">
+          <span class="ps-label">Прибыль</span>
+          <span class="ps-value">{{ formatPrice(selectedApply.totalProfit) }} &#8381;
+            <span *ngIf="selectedApply.marginPercent != null" class="ps-percent">({{ selectedApply.marginPercent }}%)</span>
+          </span>
+        </div>
+        <div class="ps-row ps-hint" *ngIf="selectedApply.totalProcurement == null">
+          <span class="ps-hint-text">Закупочные цены не определены — заявка собрана без привязки к ответам КП</span>
+        </div>
+      </div>
     </ng-container>
   `,
   styles: [`
@@ -220,6 +260,19 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .input-error { border-color: #dc2626 !important; }
     .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
     .filter-hint { font-size: 12px; color: #6b7280; margin-top: 4px; font-style: italic; }
+    .num-col { text-align: right; white-space: nowrap; }
+    .positive { color: #059669; font-weight: 500; }
+    .negative { color: #dc2626; font-weight: 500; }
+    .profit-summary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px 20px; margin-top: 16px; max-width: 480px; }
+    .ps-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 14px; }
+    .ps-label { color: #6b7280; }
+    .ps-value { font-weight: 600; color: #111827; }
+    .ps-profit { border-top: 1px solid #e5e7eb; padding-top: 8px; margin-top: 4px; font-size: 16px; }
+    .ps-profit.positive .ps-value { color: #059669; }
+    .ps-profit.negative .ps-value { color: #dc2626; }
+    .ps-percent { font-size: 13px; opacity: 0.85; font-weight: 500; }
+    .ps-hint { font-size: 12px; color: #9ca3af; font-style: italic; padding-top: 4px; }
+    .ps-hint-text { display: block; }
   `]
 })
 export class AppliesComponent {

@@ -3,6 +3,8 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,6 +14,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class BulkPriceRequestService {
+
+    private static final Logger log = LoggerFactory.getLogger(BulkPriceRequestService.class);
 
     private final TenderRepository tenderRepository;
     private final TenderLotRepository tenderLotRepository;
@@ -90,8 +94,9 @@ public class BulkPriceRequestService {
         try {
             emailService.sendEmail(dist.getEmail() == null ? "" : dist.getEmail(),
                     "Запрос КП по тендеру №" + tender.getTenderNumber(), body);
-        } catch (Exception ignore) {
-            // Если SMTP не настроен в DEV — не валим транзакцию
+        } catch (Exception ex) {
+            log.warn("Не удалось отправить КП на {}: {}. Запрос сохранён в БД (id={}).",
+                    dist.getEmail(), ex.getMessage(), pr.getId());
         }
         return pr;
     }

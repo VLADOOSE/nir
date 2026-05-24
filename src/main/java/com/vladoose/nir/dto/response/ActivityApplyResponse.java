@@ -2,6 +2,7 @@ package com.vladoose.nir.dto.response;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,4 +18,16 @@ public class ActivityApplyResponse {
      * via GET /applies/{id}/items. Kept here for shape compatibility.
      */
     private List<Object> items = new ArrayList<>();
+
+    /**
+     * Агрегаты по позициям заявки (заполняются Enricher'ом):
+     * totalRevenue   — сумма offered_cost × quantity
+     * totalProcurement — сумма procurement (если известна по КП)
+     * totalProfit    — totalRevenue − totalProcurement
+     * marginPercent  — totalProfit / totalProcurement × 100
+     */
+    private BigDecimal totalRevenue;
+    private BigDecimal totalProcurement;
+    private BigDecimal totalProfit;
+    private BigDecimal marginPercent;
 }

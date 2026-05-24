@@ -18,7 +18,7 @@ public class EmailService {
     }
 
     public boolean isConfigured() {
-        return fromAddress != null && !fromAddress.equals("test@mail.ru") && !fromAddress.isBlank();
+        return fromAddress != null && !fromAddress.isBlank();
     }
 
     public void sendEmail(String to, String subject, String body) {

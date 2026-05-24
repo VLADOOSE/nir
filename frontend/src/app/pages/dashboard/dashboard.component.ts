@@ -30,6 +30,20 @@ import { ApiService } from '../../services/api.service';
       </div>
     </div>
 
+    <div class="profit-card" *ngIf="profitSummary">
+      <div class="profit-card-header">
+        <span class="profit-card-icon">💰</span>
+        <div>
+          <div class="profit-card-label">Чистая прибыль по выигранным тендерам</div>
+          <div class="profit-card-meta">{{ profitSummary.wonApplies || 0 }} заявок · средняя прибыль {{ formatPrice(profitSummary.avgChequeProfit) }} &#8381;</div>
+        </div>
+      </div>
+      <div class="profit-card-value">
+        {{ formatPrice(profitSummary.totalProfit) }} &#8381;
+        <span class="profit-card-margin" *ngIf="profitSummary.marginPercent != null">({{ profitSummary.marginPercent }}% маржинальность)</span>
+      </div>
+    </div>
+
     <div class="dashboard-row">
       <div class="dashboard-panel">
         <h3>Ближайшие дедлайны</h3>
@@ -93,6 +107,14 @@ import { ApiService } from '../../services/api.service';
     .stat-card.yellow .stat-card-value { color: #f59e0b; }
     .stat-card.green .stat-card-value { color: #10b981; }
 
+    .profit-card { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .profit-card-header { display: flex; align-items: center; gap: 14px; }
+    .profit-card-icon { font-size: 32px; }
+    .profit-card-label { font-size: 13px; color: #047857; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .profit-card-meta { font-size: 12px; color: #047857; opacity: 0.8; margin-top: 2px; }
+    .profit-card-value { font-size: 28px; font-weight: 700; color: #047857; }
+    .profit-card-margin { font-size: 14px; font-weight: 500; margin-left: 8px; opacity: 0.85; }
+
     .dashboard-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
     .dashboard-row.single { grid-template-columns: 1fr; }
     .dashboard-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
@@ -135,12 +157,18 @@ export class DashboardComponent {
   equipmentDemandList: { type: string; count: number }[] = [];
   maxDemand = 0;
   recentApplies: any[] = [];
+  profitSummary: any = null;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) {
     this.loadAll();
   }
 
   loadAll() {
+    this.api.getProfitabilityReport().subscribe({
+      next: data => { this.profitSummary = data?.summary || null; this.cdr.detectChanges(); },
+      error: () => { this.profitSummary = null; }
+    });
+
     this.api.getTenders().subscribe(data => {
       this.activeCount = data.filter(t => t.status === 'ACTIVE').length;
       this.draftCount = data.filter(t => t.status === 'DRAFT').length;
@@ -199,6 +227,11 @@ export class DashboardComponent {
   formatDate(d: string): string {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  formatPrice(n: any): string {
+    if (n == null) return '0';
+    return Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   }
 
   formatDateTime(d: string): string {

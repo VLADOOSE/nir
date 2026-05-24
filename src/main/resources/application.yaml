@@ -5,16 +5,17 @@ spring:
     password: admin
 
   mail:
-    host: smtp.mail.ru
-    port: 465
-    username: ${MAIL_USERNAME:test@mail.ru}
-    password: ${MAIL_PASSWORD:password}
-    protocol: smtps
+    # DEV: MailHog — фейковый SMTP без auth, UI на http://localhost:8025
+    # Запуск: docker run -d --name nir2-mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:noreply@regionmed.local}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: true
-          ssl.enable: true
+          auth: false
+          starttls.enable: false
 
   sql:
     init:

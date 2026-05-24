@@ -4,14 +4,17 @@ import com.vladoose.nir.dto.request.ApplyItemRequest;
 import com.vladoose.nir.dto.response.ApplyItemResponse;
 import com.vladoose.nir.entity.ApplyItem;
 import com.vladoose.nir.exception.BadRequestException;
-import com.vladoose.nir.mapper.ApplyItemMapper;
 import com.vladoose.nir.service.ActivityApplyService;
+import com.vladoose.nir.service.ApplyItemEnricher;
 import com.vladoose.nir.service.ApplyItemService;
 import com.vladoose.nir.service.DistributorService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TenderLotService;
+import com.vladoose.nir.mapper.ApplyItemMapper;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/apply-items")
@@ -23,24 +26,32 @@ public class ApplyItemController {
     private final MedEquipmentService medEquipmentService;
     private final DistributorService distributorService;
     private final ApplyItemMapper mapper;
+    private final ApplyItemEnricher enricher;
 
     public ApplyItemController(ApplyItemService service,
                                ActivityApplyService activityApplyService,
                                TenderLotService tenderLotService,
                                MedEquipmentService medEquipmentService,
                                DistributorService distributorService,
-                               ApplyItemMapper mapper) {
+                               ApplyItemMapper mapper,
+                               ApplyItemEnricher enricher) {
         this.service = service;
         this.activityApplyService = activityApplyService;
         this.tenderLotService = tenderLotService;
         this.medEquipmentService = medEquipmentService;
         this.distributorService = distributorService;
         this.mapper = mapper;
+        this.enricher = enricher;
+    }
+
+    @GetMapping
+    public List<ApplyItemResponse> findAll() {
+        return enricher.toEnrichedResponseList(service.findAll());
     }
 
     @GetMapping("/{id}")
     public ApplyItemResponse findById(@PathVariable Long id) {
-        return mapper.toResponse(service.findById(id));
+        return enricher.toEnrichedResponse(service.findById(id));
     }
 
     @PostMapping
@@ -59,7 +70,7 @@ public class ApplyItemController {
         if (request.getDistributorId() != null) {
             item.setDistributor(distributorService.findById(request.getDistributorId()));
         }
-        return mapper.toResponse(service.save(item));
+        return enricher.toEnrichedResponse(service.save(item));
     }
 
     @PutMapping("/{id}")
@@ -75,7 +86,7 @@ public class ApplyItemController {
         if (request.getDistributorId() != null) {
             existing.setDistributor(distributorService.findById(request.getDistributorId()));
         }
-        return mapper.toResponse(service.save(existing));
+        return enricher.toEnrichedResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")

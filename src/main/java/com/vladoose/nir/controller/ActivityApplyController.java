@@ -30,6 +30,8 @@ public class ActivityApplyController {
     private final ApplyAutoFillService autoFillService;
     private final ActivityApplyMapper mapper;
     private final ApplyItemMapper applyItemMapper;
+    private final com.vladoose.nir.service.ApplyItemEnricher applyItemEnricher;
+    private final com.vladoose.nir.service.ActivityApplyEnricher applyEnricher;
 
     public ActivityApplyController(ActivityApplyService service,
                                    ApplyItemService applyItemService,
@@ -37,7 +39,9 @@ public class ActivityApplyController {
                                    TenderService tenderService,
                                    ApplyAutoFillService autoFillService,
                                    ActivityApplyMapper mapper,
-                                   ApplyItemMapper applyItemMapper) {
+                                   ApplyItemMapper applyItemMapper,
+                                   com.vladoose.nir.service.ApplyItemEnricher applyItemEnricher,
+                                   com.vladoose.nir.service.ActivityApplyEnricher applyEnricher) {
         this.service = service;
         this.applyItemService = applyItemService;
         this.jasperReportService = jasperReportService;
@@ -45,16 +49,18 @@ public class ActivityApplyController {
         this.autoFillService = autoFillService;
         this.mapper = mapper;
         this.applyItemMapper = applyItemMapper;
+        this.applyItemEnricher = applyItemEnricher;
+        this.applyEnricher = applyEnricher;
     }
 
     @GetMapping
     public List<ActivityApplyResponse> findAll() {
-        return mapper.toResponseList(service.findAll());
+        return applyEnricher.toEnrichedResponseList(service.findAll());
     }
 
     @GetMapping("/{id}")
     public ActivityApplyResponse findById(@PathVariable Long id) {
-        return mapper.toResponse(service.findById(id));
+        return applyEnricher.toEnrichedResponse(service.findById(id));
     }
 
     @PostMapping
@@ -83,7 +89,7 @@ public class ActivityApplyController {
 
     @GetMapping("/{id}/items")
     public List<ApplyItemResponse> getItems(@PathVariable Long id) {
-        return applyItemMapper.toResponseList(applyItemService.findByApplyId(id));
+        return applyItemEnricher.toEnrichedResponseList(applyItemService.findByApplyId(id));
     }
 
     @PostMapping("/{id}/auto-fill")

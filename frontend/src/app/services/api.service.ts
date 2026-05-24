@@ -136,6 +136,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/reports/distributor-pr-stats`);
   }
 
+  getProfitabilityReport(): Observable<any> {
+    return this.http.get<any>(`${this.base}/reports/profitability`);
+  }
+
   downloadTenderReport(status?: string): Observable<Blob> {
     const params = status ? `?status=${status}` : '';
     return this.http.get(`${this.base}/reports/tender-pdf${params}`, { responseType: 'blob' });
