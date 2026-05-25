@@ -91,11 +91,12 @@ public class PriceRequestController {
                         .responsePrice(itemReq.getResponsePrice())
                         .responseNote(itemReq.getResponseNote())
                         .build();
-                itemRepository.save(item);
+                PriceRequestItem persisted = itemRepository.save(item);
+                saved.getItems().add(persisted);
             }
         }
 
-        return mapper.toResponse(service.findById(saved.getId()));
+        return mapper.toResponse(saved);
     }
 
     @PutMapping("/{id}")
