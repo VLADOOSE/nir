@@ -106,7 +106,11 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div class="apply-info">
         <h2>Заявка #{{ selectedApply.id }}</h2>
         <div class="info-grid">
-          <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}</span></div>
+          <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}
+            <a *ngIf="selectedApply.tender?.tenderNumber" class="eis-link-inline" [href]="eisLink(selectedApply.tender.tenderNumber)" target="_blank" rel="noopener" title="Открыть в ЕИС">
+              <svg lucideIcon="external-link" [size]="11"></svg> ЕИС
+            </a></span>
+          </div>
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedApply.tender?.facility?.name || '—' }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedApply.status">{{ getStatusLabel(selectedApply.status) }}</span></div>
           <div class="info-item"><span class="info-label">Дата создания</span><span>{{ formatDate(selectedApply.createdAt) }}</span></div>
@@ -261,6 +265,8 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
   `,
   styles: [`
     h2 { margin: 0; font-size: 20px; color: #111827; }
+    .eis-link-inline { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 8px; background: #eff6ff; color: #1a56db; border-radius: 4px; text-decoration: none; font-weight: 500; margin-left: 8px; vertical-align: middle; }
+    .eis-link-inline:hover { background: #dbeafe; }
     h3 { margin: 24px 0 12px; font-size: 17px; color: #111827; }
     .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
     .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
@@ -420,6 +426,10 @@ export class AppliesComponent {
   }
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
+
+  eisLink(tenderNumber: string): string {
+    return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
+  }
 
   loadApplies() {
     this.api.getApplies().subscribe({

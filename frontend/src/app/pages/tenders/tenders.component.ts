@@ -1,18 +1,19 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
+import { LucideDynamicIcon } from '@lucide/angular';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -101,6 +102,9 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
+            <a class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" title="Открыть в ЕИС zakupki.gov.ru">
+              <svg lucideIcon="external-link" [size]="12"></svg> ЕИС
+            </a>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
@@ -135,7 +139,11 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
       <button class="btn btn-back" (click)="onBack()">&#8592; Назад к списку</button>
 
       <div class="tender-info">
-        <h2>Тендер &#8470; {{ selectedTender.tenderNumber }}</h2>
+        <h2>Тендер &#8470; {{ selectedTender.tenderNumber }}
+          <a class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" title="Открыть на zakupki.gov.ru">
+            <svg lucideIcon="external-link" [size]="14"></svg> Открыть в ЕИС
+          </a>
+        </h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || '—' }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedTender.status">{{ getStatusLabel(selectedTender.status) }}</span></div>
@@ -248,7 +256,10 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
             </table>
             <div class="pr-actions">
               <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
-              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-accept-pr" (click)="acceptPr(pr)">Принять КП</button>
+              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-accept-pr cta-pulse" (click)="acceptPr(pr)">Принять КП</button>
+              <button *ngIf="pr.status === 'ACCEPTED' || pr.status === 'RESPONDED'" class="btn btn-create-apply cta-pulse" (click)="createApplyFromPr(pr)">
+                <svg lucideIcon="clipboard-list" [size]="14"></svg> Сформировать заявку
+              </button>
               <button *ngIf="pr.status === 'RESPONDED' || pr.status === 'ACCEPTED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
               <button class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
             </div>
@@ -275,6 +286,10 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
     .tender-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #d1d5db; }
     .tender-card.tender-urgent { border-left: 4px solid #f59e0b; }
     .tender-card.tender-overdue { border-left: 4px solid #ef4444; background: #fef2f2; }
+    .eis-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 8px; background: #f3f4f6; color: #1a56db; border-radius: 4px; text-decoration: none; font-weight: 500; vertical-align: middle; }
+    .eis-link:hover { background: #dbeafe; }
+    .eis-link-h2 { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 10px; background: #eff6ff; color: #1a56db; border-radius: 6px; text-decoration: none; font-weight: 500; margin-left: 12px; }
+    .eis-link-h2:hover { background: #dbeafe; }
     .tender-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .tender-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .tender-number { font-weight: 600; color: #1a56db; font-size: 15px; }
@@ -353,6 +368,10 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
     .btn-close-pr { background: #6b7280; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-accept-pr { background: #10b981; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
     .btn-accept-pr:hover { background: #059669; }
+    .btn-create-apply { background: #1a56db; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-create-apply:hover { background: #1e40af; }
+    @keyframes cta-pulse-anim { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); } 50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } }
+    .cta-pulse { animation: cta-pulse-anim 1.8s infinite; }
   `]
 })
 export class TendersComponent {
@@ -414,6 +433,7 @@ export class TendersComponent {
   bulkPriceTenderId: number | null = null;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
+              private router: Router,
               private notify: NotificationService, private confirm: ConfirmService) {
     this.loadTenders();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
@@ -458,6 +478,38 @@ export class TendersComponent {
           error: err => this.notify.error(err.error?.message || 'Ошибка')
         });
       });
+  }
+
+  createApplyFromPr(_pr: any) {
+    const tenderId = this.selectedTender?.id;
+    if (!tenderId) { this.notify.error('Тендер не определён'); return; }
+    this.api.getApplies().subscribe(applies => {
+      const existing = (applies || []).find((a: any) => a.tender?.id === tenderId && a.status === 'DRAFT');
+      const navigate = (applyId: number) => {
+        this.notify.success('Заявка собрана из принятых КП');
+        this.router.navigate(['/applies'], { queryParams: { openId: applyId } });
+      };
+      if (existing) {
+        this.api.autoFillApply(existing.id).subscribe({
+          next: () => navigate(existing.id),
+          error: () => navigate(existing.id)
+        });
+      } else {
+        this.api.create('applies', { tenderId, status: 'DRAFT' }).subscribe({
+          next: (apply: any) => {
+            this.api.autoFillApply(apply.id).subscribe({
+              next: () => navigate(apply.id),
+              error: () => navigate(apply.id)
+            });
+          },
+          error: err => this.notify.error(err.error?.message || 'Не удалось создать заявку')
+        });
+      }
+    });
+  }
+
+  eisLink(tenderNumber: string): string {
+    return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
   }
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
