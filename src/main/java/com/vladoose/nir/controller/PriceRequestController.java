@@ -144,6 +144,17 @@ public class PriceRequestController {
         return mapper.toResponse(service.save(pr));
     }
 
+    @PostMapping("/{id}/accept")
+    @Transactional
+    public PriceRequestResponse accept(@PathVariable Long id) {
+        PriceRequest pr = service.findById(id);
+        if (!"RESPONDED".equals(pr.getStatus())) {
+            throw new BadRequestException("Принять можно только КП в статусе «Ответ получен»");
+        }
+        pr.setStatus("ACCEPTED");
+        return mapper.toResponse(service.save(pr));
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         service.deleteById(id);

@@ -12,6 +12,22 @@ import { ApiService } from '../../services/api.service';
     <h2>Главная</h2>
     <p class="subtitle">Сводка по текущей деятельности компании</p>
 
+    <div class="alerts-row" *ngIf="urgentTenders.length > 0">
+      <div class="alert-banner" [class.alert-overdue]="urgentTenders[0]._overdue">
+        <svg lucideIcon="triangle-alert" [size]="20"></svg>
+        <div class="alert-text">
+          <strong>{{ urgentTenders[0]._overdue ? 'Просрочены' : 'Срочно (≤ 7 дней)' }}:</strong>
+          {{ urgentTenders.length }}
+          {{ urgentTenders.length === 1 ? 'тендер' : (urgentTenders.length < 5 ? 'тендера' : 'тендеров') }}
+        </div>
+        <div class="alert-items">
+          <a *ngFor="let t of urgentTenders.slice(0, 3)" class="alert-tender" routerLink="/tenders" [queryParams]="{ openId: t.id }">
+            № {{ t.tenderNumber }} <span>{{ getDaysLabel(t.deadline) }}</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
     <div class="stat-cards">
       <div class="stat-card blue">
         <div class="stat-card-value"><svg lucideIcon="clipboard-list" [size]="18" class="card-icon"></svg> {{ activeCount }}</div>
@@ -100,6 +116,15 @@ import { ApiService } from '../../services/api.service';
     .empty { color: #9ca3af; font-size: 13px; padding: 16px 0; text-align: center; }
 
     .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .alerts-row { margin-bottom: 16px; }
+    .alert-banner { display: flex; align-items: center; gap: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; color: #92400e; flex-wrap: wrap; }
+    .alert-banner.alert-overdue { background: #fee2e2; border-left-color: #ef4444; color: #991b1b; }
+    .alert-text { font-size: 14px; }
+    .alert-text strong { font-weight: 700; }
+    .alert-items { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+    .alert-tender { font-size: 12px; padding: 4px 10px; background: rgba(255,255,255,0.6); border-radius: 4px; text-decoration: none; color: inherit; font-weight: 500; }
+    .alert-tender:hover { background: rgba(255,255,255,0.9); }
+    .alert-tender span { color: #6b7280; margin-left: 4px; font-weight: 400; }
     .stat-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
     .stat-card-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
     .stat-card-label { font-size: 13px; color: #6b7280; }
@@ -155,6 +180,7 @@ export class DashboardComponent {
   appliesInWork = 0;
   wonCount = 0;
   upcomingDeadlines: any[] = [];
+  urgentTenders: any[] = [];
   equipmentDemandList: { type: string; count: number }[] = [];
   maxDemand = 0;
   recentApplies: any[] = [];
@@ -174,10 +200,13 @@ export class DashboardComponent {
       this.activeCount = data.filter(t => t.status === 'ACTIVE').length;
       this.draftCount = data.filter(t => t.status === 'DRAFT').length;
       this.completedCount = data.filter(t => t.status === 'COMPLETED').length;
-      this.upcomingDeadlines = data
+      const activeSorted = data
         .filter(t => t.status === 'ACTIVE')
-        .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-        .slice(0, 5);
+        .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+      this.upcomingDeadlines = activeSorted.slice(0, 5);
+      this.urgentTenders = activeSorted
+        .map(t => ({ ...t, _overdue: this.getDaysLeft(t.deadline) < 0 }))
+        .filter(t => this.getDaysLeft(t.deadline) <= 7);
       this.cdr.detectChanges();
     });
 

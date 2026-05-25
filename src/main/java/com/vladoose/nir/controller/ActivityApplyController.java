@@ -69,7 +69,7 @@ public class ActivityApplyController {
         if (request.getTenderId() != null) {
             entity.setTender(tenderService.findById(request.getTenderId()));
         }
-        return mapper.toResponse(service.save(entity));
+        return applyEnricher.toEnrichedResponse(service.save(entity));
     }
 
     @PutMapping("/{id}")
@@ -79,7 +79,7 @@ public class ActivityApplyController {
         if (request.getTenderId() != null) {
             existing.setTender(tenderService.findById(request.getTenderId()));
         }
-        return mapper.toResponse(service.save(existing));
+        return applyEnricher.toEnrichedResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")

@@ -195,4 +195,8 @@ export class ApiService {
   closePriceRequest(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/price-requests/${id}/close`, {});
   }
+
+  acceptPriceRequest(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/price-requests/${id}/accept`, {});
+  }
 }

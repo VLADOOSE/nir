@@ -95,7 +95,9 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
 
       <div *ngIf="filteredTenders.length === 0 && !showTenderForm" class="empty">Нет данных</div>
 
-      <div class="tender-card" *ngFor="let t of filteredTenders" (click)="onOpen(t)">
+      <div class="tender-card" *ngFor="let t of filteredTenders" (click)="onOpen(t)"
+           [class.tender-overdue]="t.status === 'ACTIVE' && isOverdue(t.deadline)"
+           [class.tender-urgent]="t.status === 'ACTIVE' && !isOverdue(t.deadline) && isUrgent(t.deadline)">
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
@@ -219,7 +221,7 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
       <!-- ========== ЗАПРОСЫ КП ========== -->
       <section *ngIf="priceRequests.length > 0" class="pr-section">
         <h3>Запросы КП</h3>
-        <div *ngFor="let pr of priceRequests" class="pr-card" [class.expanded]="pr._expanded">
+        <div *ngFor="let pr of priceRequests" class="pr-card" [class.expanded]="pr._expanded" [class.pr-accepted]="pr.status === 'ACCEPTED'">
           <header class="pr-header" (click)="togglePr(pr)">
             <div class="pr-header-main">
               <strong>{{ pr.distributor?.name }}</strong>
@@ -246,7 +248,8 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
             </table>
             <div class="pr-actions">
               <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
-              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
+              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-accept-pr" (click)="acceptPr(pr)">Принять КП</button>
+              <button *ngIf="pr.status === 'RESPONDED' || pr.status === 'ACCEPTED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
               <button class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
             </div>
           </div>
@@ -270,6 +273,8 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
     .btn-reset-filter { background: #e5e7eb; color: #374151; padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
     .tender-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s; }
     .tender-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #d1d5db; }
+    .tender-card.tender-urgent { border-left: 4px solid #f59e0b; }
+    .tender-card.tender-overdue { border-left: 4px solid #ef4444; background: #fef2f2; }
     .tender-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .tender-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .tender-number { font-weight: 600; color: #1a56db; font-size: 15px; }
@@ -316,7 +321,9 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
     .badge-pr-CREATED { background: #e5e7eb; color: #374151; }
     .badge-pr-SENT { background: #dbeafe; color: #1a56db; }
     .badge-pr-RESPONDED { background: #fef3c7; color: #92400e; }
-    .badge-pr-CLOSED { background: #d1fae5; color: #065f46; }
+    .badge-pr-ACCEPTED { background: #d1fae5; color: #065f46; font-weight: 700; }
+    .badge-pr-CLOSED { background: #f3f4f6; color: #6b7280; }
+    .pr-card.pr-accepted { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
     .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; font-family: inherit; }
@@ -344,6 +351,8 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
     .pr-items input { width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 3px; font-size: 13px; }
     .pr-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
     .btn-close-pr { background: #6b7280; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-accept-pr { background: #10b981; color: #fff; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .btn-accept-pr:hover { background: #059669; }
   `]
 })
 export class TendersComponent {
@@ -437,10 +446,27 @@ export class TendersComponent {
   }
 
   getPrStatusLabel(s: string): string {
-    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Ответ получен', CLOSED: 'Закрыт' } as any)[s] || s;
+    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Ответ получен', ACCEPTED: 'Принят', CLOSED: 'Закрыт' } as any)[s] || s;
+  }
+
+  acceptPr(pr: any) {
+    this.confirm.ask('Принять КП?', 'Позиции из этого КП попадут в авто-сборку заявки как приоритетные.', { confirmLabel: 'Принять' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.acceptPriceRequest(pr.id).subscribe({
+          next: () => { this.notify.success('КП принят'); this.loadPriceRequests(); },
+          error: err => this.notify.error(err.error?.message || 'Ошибка')
+        });
+      });
   }
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
+
+  private daysLeft(deadline: string): number {
+    if (!deadline) return Infinity;
+    return Math.ceil((new Date(deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  }
+  isUrgent(deadline: string): boolean { return this.daysLeft(deadline) <= 7; }
 
   formatDate(d: string): string {
     if (!d) return '—';
@@ -636,10 +662,30 @@ export class TendersComponent {
   }
 
   onSmartMatchRequest(ev: { candidate: any; distributorId: number; distributorName: string }) {
-    this.notify.success(`КП у «${ev.distributorName}» — TODO: подключить к существующему КП-workflow (нужен бридж в форму)`);
-    // Hook into existing PR workflow: openPriceRequestForm(lotId, equipmentId, distributorId).
-    // На данный момент SmartMatchComponent выкидывает событие — интеграцию с реальной формой добавить
-    // отдельной задачей, чтобы не разрастать этот коммит.
+    if (!this.matchLotId || !this.selectedTender) {
+      this.notify.error('Лот не определён');
+      return;
+    }
+    const body = {
+      tenderId: this.selectedTender.id,
+      distributorId: ev.distributorId,
+      status: 'SENT',
+      sentAt: new Date().toISOString(),
+      items: [{
+        tenderLotId: this.matchLotId,
+        medEquipmentId: ev.candidate.equipmentId,
+        requestedQuantity: 1
+      }]
+    };
+    this.api.createPriceRequest(body).subscribe({
+      next: () => {
+        this.notify.success(`КП у «${ev.distributorName}» создан и отправлен`);
+        this.loadPriceRequests();
+        this.matchLotId = null;
+        this.matchLotNumber = null;
+      },
+      error: err => this.notify.error(err.error?.message || 'Не удалось создать КП')
+    });
   }
 
   // ===== Запросы КП =====
