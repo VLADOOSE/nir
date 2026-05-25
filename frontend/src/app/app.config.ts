@@ -2,6 +2,16 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners, provideAppInitia
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import {
+  provideLucideIcons,
+  LucideLayoutDashboard, LucideFileText, LucideStethoscope, LucideClipboardList,
+  LucideBuilding2, LucideTruck, LucideChartBar, LucideMail, LucideTrendingUp,
+  LucideFileSpreadsheet, LucideSearch, LucidePlus, LucidePencil, LucideTrash2,
+  LucideFilter, LucideSettings, LucideCalendar, LucideUsers, LucideX,
+  LucideChevronDown, LucideChevronUp, LucideStar, LucideDownload,
+  LucideTriangleAlert, LucideCircleCheck, LucideClock, LucideLogOut, LucideUser,
+  LucideHandshake, LucideFileBox, LucideHistory, LucideRefreshCw, LucideEye
+} from '@lucide/angular';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './interceptors/auth.interceptor';
@@ -13,6 +23,15 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
+    provideLucideIcons(
+      LucideLayoutDashboard, LucideFileText, LucideStethoscope, LucideClipboardList,
+      LucideBuilding2, LucideTruck, LucideChartBar, LucideMail, LucideTrendingUp,
+      LucideFileSpreadsheet, LucideSearch, LucidePlus, LucidePencil, LucideTrash2,
+      LucideFilter, LucideSettings, LucideCalendar, LucideUsers, LucideX,
+      LucideChevronDown, LucideChevronUp, LucideStar, LucideDownload,
+      LucideTriangleAlert, LucideCircleCheck, LucideClock, LucideLogOut, LucideUser,
+      LucideHandshake, LucideFileBox, LucideHistory, LucideRefreshCw, LucideEye
+    ),
     provideAppInitializer(() => {
       const auth = inject(AuthService);
       return firstValueFrom(auth.loadCurrentUser());

@@ -1,12 +1,13 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { ChartComponent } from '../../components/chart/chart.component';
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass, ChartComponent],
+  imports: [NgFor, NgIf, NgClass, ChartComponent, LucideDynamicIcon],
   template: `
     <h2>Отчёты</h2>
     <p class="subtitle">Аналитика по тендерной деятельности</p>
@@ -14,11 +15,11 @@ import { ChartComponent } from '../../components/chart/chart.component';
     <div class="report-actions">
       <h3>Скачать отчёты</h3>
       <div class="report-buttons">
-        <button class="btn btn-pdf" (click)="downloadPdf()">PDF: все тендеры</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('ACTIVE')">PDF: активные</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('DRAFT')">PDF: подготовка</button>
-        <button class="btn btn-pdf" (click)="downloadPdf('COMPLETED')">PDF: завершённые</button>
-        <button class="btn btn-excel" (click)="downloadProfitabilityExcel()">📊 Excel: прибыльность</button>
+        <button class="btn btn-pdf" (click)="downloadPdf()"><svg lucideIcon="download" [size]="14"></svg> PDF: все тендеры</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('ACTIVE')"><svg lucideIcon="download" [size]="14"></svg> PDF: активные</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('DRAFT')"><svg lucideIcon="download" [size]="14"></svg> PDF: подготовка</button>
+        <button class="btn btn-pdf" (click)="downloadPdf('COMPLETED')"><svg lucideIcon="download" [size]="14"></svg> PDF: завершённые</button>
+        <button class="btn btn-excel" (click)="downloadProfitabilityExcel()"><svg lucideIcon="file-spreadsheet" [size]="14"></svg> Excel: прибыльность</button>
       </div>
     </div>
 

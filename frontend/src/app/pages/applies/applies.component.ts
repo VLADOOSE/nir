@@ -1,6 +1,7 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
@@ -9,7 +10,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 @Component({
   selector: 'app-applies',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, LucideDynamicIcon],
   template: `
     <!-- ========== СПИСОК ЗАЯВОК ========== -->
     <ng-container *ngIf="!selectedApply">
@@ -228,22 +229,22 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
           <h4>Поставка</h4>
           <div class="delivery-steps">
             <div class="delivery-step" [class.active]="!selectedApply.deliveryStatus || selectedApply.deliveryStatus === 'NONE'">
-              <span class="ds-icon">📋</span>
+              <span class="ds-icon"><svg lucideIcon="clipboard-list" [size]="16"></svg></span>
               <span class="ds-label">Не начата</span>
             </div>
             <span class="ds-arrow">→</span>
             <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'ORDERED'" [class.done]="['DELIVERED','PAID'].includes(selectedApply.deliveryStatus)">
-              <span class="ds-icon">📦</span>
+              <span class="ds-icon"><svg lucideIcon="file-box" [size]="16"></svg></span>
               <span class="ds-label">Заказано</span>
             </div>
             <span class="ds-arrow">→</span>
             <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'DELIVERED'" [class.done]="selectedApply.deliveryStatus === 'PAID'">
-              <span class="ds-icon">🚚</span>
+              <span class="ds-icon"><svg lucideIcon="truck" [size]="16"></svg></span>
               <span class="ds-label">Поставлено<small *ngIf="selectedApply.deliveredAt">{{ formatDate(selectedApply.deliveredAt) }}</small></span>
             </div>
             <span class="ds-arrow">→</span>
             <div class="delivery-step" [class.active]="selectedApply.deliveryStatus === 'PAID'">
-              <span class="ds-icon">💵</span>
+              <span class="ds-icon"><svg lucideIcon="handshake" [size]="16"></svg></span>
               <span class="ds-label">Оплачено<small *ngIf="selectedApply.paidAt">{{ formatDate(selectedApply.paidAt) }}</small></span>
             </div>
           </div>

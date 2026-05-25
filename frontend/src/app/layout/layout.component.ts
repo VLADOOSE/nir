@@ -2,6 +2,7 @@ import { Component, HostListener, ChangeDetectorRef } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { NgFor, NgIf, AsyncPipe } from '@angular/common';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { SearchService, SearchResult } from '../services/search.service';
 import { AuthService } from '../services/auth.service';
 import { NotificationComponent } from '../components/notification/notification.component';
@@ -10,7 +11,7 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
 @Component({
   selector: 'app-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, NgFor, NgIf, AsyncPipe, NotificationComponent, ConfirmComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, NgFor, NgIf, AsyncPipe, NotificationComponent, ConfirmComponent, LucideDynamicIcon],
   template: `
     <app-notifications></app-notifications>
     <app-confirm></app-confirm>
@@ -34,39 +35,64 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
           </div>
         </div>
         <div class="header-right" *ngIf="auth.user$ | async as user">
+          <svg lucideIcon="user" [size]="16" class="icon-user"></svg>
           <span class="user-name">{{ user.fullName || user.username }}</span>
           <span class="role-badge" [class.role-admin]="user.role === 'ROLE_ADMIN'">
             {{ user.role === 'ROLE_ADMIN' ? 'Админ' : 'Оператор' }}
           </span>
-          <button class="btn-logout" (click)="onLogout()">Выйти</button>
+          <button class="btn-logout" (click)="onLogout()" title="Выйти">
+            <svg lucideIcon="log-out" [size]="14"></svg> Выйти
+          </button>
         </div>
       </header>
       <div class="body">
         <nav class="sidebar">
           <div class="nav-group">
-            <a routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">🏠 Главная</a>
+            <a routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+              <svg lucideIcon="layout-dashboard" [size]="16"></svg> Главная
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Тендеры</span>
-            <a routerLink="/tenders" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">📋 Все тендеры</a>
-            <a routerLink="/tenders/search" routerLinkActive="active">🔍 Поиск тендеров</a>
+            <a routerLink="/tenders" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+              <svg lucideIcon="file-text" [size]="16"></svg> Все тендеры
+            </a>
+            <a routerLink="/tenders/search" routerLinkActive="active">
+              <svg lucideIcon="search" [size]="16"></svg> Поиск тендеров
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Каталог</span>
-            <a routerLink="/equipment" routerLinkActive="active">🏥 Оборудование</a>
-            <a *ngIf="auth.isAdmin()" routerLink="/equipment-types" routerLinkActive="active">🏷️ Типы оборудования</a>
-            <a routerLink="/facilities" routerLinkActive="active">🏢 Учреждения</a>
-            <a routerLink="/distributors" routerLinkActive="active">🚚 Дистрибьюторы</a>
+            <a routerLink="/equipment" routerLinkActive="active">
+              <svg lucideIcon="stethoscope" [size]="16"></svg> Оборудование
+            </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/equipment-types" routerLinkActive="active">
+              <svg lucideIcon="file-box" [size]="16"></svg> Типы оборудования
+            </a>
+            <a routerLink="/facilities" routerLinkActive="active">
+              <svg lucideIcon="building-2" [size]="16"></svg> Учреждения
+            </a>
+            <a routerLink="/distributors" routerLinkActive="active">
+              <svg lucideIcon="truck" [size]="16"></svg> Дистрибьюторы
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Заявки</span>
-            <a routerLink="/applies" routerLinkActive="active">📝 Заявки на участие</a>
+            <a routerLink="/applies" routerLinkActive="active">
+              <svg lucideIcon="clipboard-list" [size]="16"></svg> Заявки на участие
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Система</span>
-            <a routerLink="/reports" routerLinkActive="active">📊 Отчёты</a>
-            <a *ngIf="auth.isAdmin()" routerLink="/users" routerLinkActive="active">👥 Пользователи</a>
-            <a routerLink="/about" routerLinkActive="active">ℹ️ О системе</a>
+            <a routerLink="/reports" routerLinkActive="active">
+              <svg lucideIcon="chart-bar" [size]="16"></svg> Отчёты
+            </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/users" routerLinkActive="active">
+              <svg lucideIcon="users" [size]="16"></svg> Пользователи
+            </a>
+            <a routerLink="/about" routerLinkActive="active">
+              <svg lucideIcon="circle-check" [size]="16"></svg> О системе
+            </a>
           </div>
         </nav>
         <main class="content">
@@ -122,13 +148,18 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
       color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px;
     }
     .sidebar a {
-      display: block; padding: 9px 20px; color: #374151; text-decoration: none;
+      display: flex; align-items: center; gap: 10px; padding: 9px 20px; color: #374151; text-decoration: none;
       font-size: 14px; transition: all 0.15s; border-left: 3px solid transparent;
     }
+    .sidebar a svg { flex-shrink: 0; opacity: 0.7; }
     .sidebar a:hover { background: #e5e7eb; }
+    .sidebar a:hover svg { opacity: 1; }
     .sidebar a.active {
       background: #1a56db; color: #fff; border-left-color: #fff; font-weight: 500;
     }
+    .sidebar a.active svg { opacity: 1; }
+    .icon-user { opacity: 0.9; }
+    .btn-logout svg { vertical-align: middle; margin-right: 4px; }
     .content { flex: 1; padding: 24px 32px; overflow-y: auto; background: #fff; }
   `]
 })

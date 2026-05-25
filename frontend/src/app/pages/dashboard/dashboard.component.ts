@@ -1,38 +1,39 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass, RouterLink],
+  imports: [NgFor, NgIf, NgClass, RouterLink, LucideDynamicIcon],
   template: `
     <h2>Главная</h2>
     <p class="subtitle">Сводка по текущей деятельности компании</p>
 
     <div class="stat-cards">
       <div class="stat-card blue">
-        <div class="stat-card-value">{{ activeCount }} 📋</div>
+        <div class="stat-card-value"><svg lucideIcon="clipboard-list" [size]="18" class="card-icon"></svg> {{ activeCount }}</div>
         <div class="stat-card-label">Активные тендеры</div>
       </div>
       <div class="stat-card gray">
-        <div class="stat-card-value">{{ draftCount }}</div>
+        <div class="stat-card-value"><svg lucideIcon="file-text" [size]="18" class="card-icon"></svg> {{ draftCount }}</div>
         <div class="stat-card-label">На подготовке</div>
       </div>
       <div class="stat-card yellow">
-        <div class="stat-card-value">{{ appliesInWork }}</div>
+        <div class="stat-card-value"><svg lucideIcon="clock" [size]="18" class="card-icon"></svg> {{ appliesInWork }}</div>
         <div class="stat-card-label">Заявки в работе</div>
       </div>
       <div class="stat-card green">
-        <div class="stat-card-value">{{ wonCount }}</div>
+        <div class="stat-card-value"><svg lucideIcon="circle-check" [size]="18" class="card-icon"></svg> {{ wonCount }}</div>
         <div class="stat-card-label">Выиграно</div>
       </div>
     </div>
 
     <div class="profit-card" *ngIf="profitSummary">
       <div class="profit-card-header">
-        <span class="profit-card-icon">💰</span>
+        <span class="profit-card-icon"><svg lucideIcon="trending-up" [size]="24"></svg></span>
         <div>
           <div class="profit-card-label">Чистая прибыль по выигранным тендерам</div>
           <div class="profit-card-meta">{{ profitSummary.wonApplies || 0 }} заявок · средняя прибыль {{ formatPrice(profitSummary.avgChequeProfit) }} &#8381;</div>
