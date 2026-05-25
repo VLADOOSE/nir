@@ -1,6 +1,6 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
+import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -162,8 +162,8 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
       <form *ngIf="showLotForm" [formGroup]="lotForm" (ngSubmit)="onSaveLot()" class="edit-form">
         <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
         <div class="dims-row">
-          <label>&#8470; лота<input type="number" formControlName="lotNumber" [class.input-error]="validationErrors.lotNumber" /><span class="field-error" *ngIf="validationErrors.lotNumber">{{ validationErrors.lotNumber }}</span></label>
-          <label>Кол-во *<input type="number" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
+          <label>&#8470; лота<input type="number" min="1" formControlName="lotNumber" [class.input-error]="validationErrors.lotNumber" /><span class="field-error" *ngIf="validationErrors.lotNumber">{{ validationErrors.lotNumber }}</span></label>
+          <label>Кол-во *<input type="number" min="1" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
         </div>
         <label>Название оборудования *<input formControlName="equipName" [class.input-error]="validationErrors.equipName" /><span class="field-error" *ngIf="validationErrors.equipName">{{ validationErrors.equipName }}</span></label>
         <label>Тип оборудования
@@ -175,13 +175,13 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
             <option value="Монитор">Монитор</option>
           </select>
         </label>
-        <label>Макс. цена<input type="number" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
+        <label>Макс. цена<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
         <div class="dims-row">
-          <label>Макс. длина<input type="number" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
-          <label>Макс. ширина<input type="number" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
-          <label>Макс. высота<input type="number" formControlName="maxHeightMm" [class.input-error]="validationErrors.maxHeightMm" /><span class="field-error" *ngIf="validationErrors.maxHeightMm">{{ validationErrors.maxHeightMm }}</span></label>
+          <label>Макс. длина<input type="number" min="1" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
+          <label>Макс. ширина<input type="number" min="1" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
+          <label>Макс. высота<input type="number" min="1" formControlName="maxHeightMm" [class.input-error]="validationErrors.maxHeightMm" /><span class="field-error" *ngIf="validationErrors.maxHeightMm">{{ validationErrors.maxHeightMm }}</span></label>
         </div>
-        <label>Макс. вес (кг)<input type="number" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
+        <label>Макс. вес (кг)<input type="number" min="0.01" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
         <label>Требования к спецификации<textarea formControlName="requiredSpec" rows="2"></textarea></label>
         <div class="form-actions">
           <button class="btn btn-save" type="submit">Сохранить</button>
@@ -239,7 +239,7 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
                   <td>{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
                   <td>{{ it.medEquipment?.name }}</td>
                   <td>{{ it.requestedQuantity }}</td>
-                  <td><input type="number" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
+                  <td><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
                   <td><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
                 </tr>
               </tbody>
@@ -386,15 +386,15 @@ export class TendersComponent {
   showLotForm = false;
   editingLotId: number | null = null;
   lotForm = new FormGroup({
-    lotNumber: new FormControl<number | null>(null),
+    lotNumber: new FormControl<number | null>(null, [Validators.min(1)]),
     equipName: new FormControl(''),
     equipType: new FormControl(''),
-    quantity: new FormControl<number | null>(null),
-    maxCost: new FormControl<number | null>(null),
-    maxLengthMm: new FormControl<number | null>(null),
-    maxWidthMm: new FormControl<number | null>(null),
-    maxHeightMm: new FormControl<number | null>(null),
-    maxWeightKg: new FormControl<number | null>(null),
+    quantity: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxCost: new FormControl<number | null>(null, [Validators.min(0.01)]),
+    maxLengthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxWidthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxHeightMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxWeightKg: new FormControl<number | null>(null, [Validators.min(0.01)]),
     requiredSpec: new FormControl('')
   });
 
@@ -660,6 +660,11 @@ export class TendersComponent {
       responsePrice: it._editPrice ?? it.responsePrice,
       responseNote: it._editNote ?? it.responseNote
     }));
+    const bad = updates.find((u: any) => u.responsePrice != null && Number(u.responsePrice) < 0);
+    if (bad) {
+      this.notify.error('Цена ответа КП не может быть отрицательной');
+      return;
+    }
     this.api.updatePriceRequestResponses(pr.id, updates).subscribe({
       next: () => { this.notify.success('Ответы сохранены'); this.loadPriceRequests(); },
       error: err => this.notify.error(err.error?.message || 'Ошибка сохранения')

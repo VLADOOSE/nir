@@ -69,7 +69,11 @@ CREATE TABLE med_equipment (
     width_mm      INTEGER,
     height_mm     INTEGER,
     weight_kg     NUMERIC(10, 2),
-    spec          TEXT
+    spec          TEXT,
+    CONSTRAINT med_equipment_length_positive CHECK (length_mm IS NULL OR length_mm > 0),
+    CONSTRAINT med_equipment_width_positive  CHECK (width_mm  IS NULL OR width_mm  > 0),
+    CONSTRAINT med_equipment_height_positive CHECK (height_mm IS NULL OR height_mm > 0),
+    CONSTRAINT med_equipment_weight_positive CHECK (weight_kg IS NULL OR weight_kg > 0)
 );
 
 CREATE TABLE user_account (
@@ -98,7 +102,8 @@ CREATE TABLE tender (
     contact_first_name  VARCHAR(100),
     contact_middle_name VARCHAR(100),
     contact_phone       VARCHAR(50),
-    contact_email       VARCHAR(255)
+    contact_email       VARCHAR(255),
+    CONSTRAINT tender_total_cost_nonneg CHECK (total_cost IS NULL OR total_cost >= 0)
 );
 
 CREATE TABLE tender_lot (
@@ -113,7 +118,13 @@ CREATE TABLE tender_lot (
     max_width_mm  INTEGER,
     max_height_mm INTEGER,
     max_weight_kg NUMERIC(10, 2),
-    required_spec TEXT
+    required_spec TEXT,
+    CONSTRAINT tender_lot_quantity_positive   CHECK (quantity      IS NULL OR quantity      > 0),
+    CONSTRAINT tender_lot_max_cost_positive   CHECK (max_cost      IS NULL OR max_cost      > 0),
+    CONSTRAINT tender_lot_max_length_positive CHECK (max_length_mm IS NULL OR max_length_mm > 0),
+    CONSTRAINT tender_lot_max_width_positive  CHECK (max_width_mm  IS NULL OR max_width_mm  > 0),
+    CONSTRAINT tender_lot_max_height_positive CHECK (max_height_mm IS NULL OR max_height_mm > 0),
+    CONSTRAINT tender_lot_max_weight_positive CHECK (max_weight_kg IS NULL OR max_weight_kg > 0)
 );
 
 -- ========== Заявки ==========
@@ -137,7 +148,9 @@ CREATE TABLE apply_item (
     med_equip_id   BIGINT REFERENCES med_equipment(id),
     distributor_id BIGINT REFERENCES distributor(id),
     offered_cost   NUMERIC(15, 2),
-    quantity       INTEGER
+    quantity       INTEGER,
+    CONSTRAINT apply_item_offered_cost_positive CHECK (offered_cost IS NULL OR offered_cost > 0),
+    CONSTRAINT apply_item_quantity_positive     CHECK (quantity     IS NULL OR quantity     > 0)
 );
 
 -- ========== Запросы КП ==========
@@ -160,5 +173,7 @@ CREATE TABLE price_request_item (
     med_equipment_id   BIGINT NOT NULL REFERENCES med_equipment(id),
     requested_quantity INTEGER NOT NULL,
     response_price     NUMERIC(15, 2),
-    response_note      TEXT
+    response_note      TEXT,
+    CONSTRAINT price_request_item_qty_positive    CHECK (requested_quantity > 0),
+    CONSTRAINT price_request_item_price_nonneg    CHECK (response_price IS NULL OR response_price >= 0)
 );

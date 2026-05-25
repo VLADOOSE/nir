@@ -1,6 +1,6 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
+import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -143,8 +143,8 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
           </select>
         </label>
         <div class="dims-row">
-          <label>Предложенная цена<input type="number" step="0.01" formControlName="offeredCost" [class.input-error]="validationErrors.offeredCost" /><span class="field-error" *ngIf="validationErrors.offeredCost">{{ validationErrors.offeredCost }}</span></label>
-          <label>Количество<input type="number" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
+          <label>Предложенная цена<input type="number" min="0.01" step="0.01" formControlName="offeredCost" [class.input-error]="validationErrors.offeredCost" /><span class="field-error" *ngIf="validationErrors.offeredCost">{{ validationErrors.offeredCost }}</span></label>
+          <label>Количество<input type="number" min="1" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
         </div>
         <div class="form-actions">
           <button class="btn btn-save" type="submit">Сохранить</button>
@@ -382,7 +382,9 @@ export class AppliesComponent {
   editingItemId: number | null = null;
   itemForm = new FormGroup({
     tenderLotId: new FormControl<number | null>(null), medEquipId: new FormControl<number | null>(null),
-    distributorId: new FormControl<number | null>(null), offeredCost: new FormControl<number | null>(null), quantity: new FormControl<number | null>(null)
+    distributorId: new FormControl<number | null>(null),
+    offeredCost: new FormControl<number | null>(null, [Validators.min(0.01)]),
+    quantity: new FormControl<number | null>(null, [Validators.min(1)])
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,

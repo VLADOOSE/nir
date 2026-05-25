@@ -114,6 +114,12 @@ public class PriceRequestController {
         PriceRequest pr = service.findById(id);
         boolean anyPriceSet = false;
         for (ItemResponseDto u : updates) {
+            if (u.itemId() == null) {
+                throw new BadRequestException("itemId обязателен в каждой позиции");
+            }
+            if (u.responsePrice() != null && u.responsePrice().signum() < 0) {
+                throw new BadRequestException("Цена ответа КП не может быть отрицательной (позиция " + u.itemId() + ")");
+            }
             PriceRequestItem item = itemRepository.findById(u.itemId())
                     .orElseThrow(() -> new BadRequestException("Позиция КП не найдена: " + u.itemId()));
             item.setResponsePrice(u.responsePrice());

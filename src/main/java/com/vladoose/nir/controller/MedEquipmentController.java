@@ -72,7 +72,7 @@ public class MedEquipmentController {
 
     @PostMapping("/match/{lotId}")
     public EquipmentMatchResponse smartMatch(@PathVariable Long lotId,
-                                              @RequestBody(required = false) MatchRequest request) {
+                                              @Valid @RequestBody(required = false) MatchRequest request) {
         MatchRequest req = request != null ? request : new MatchRequest();
         double[] weights = req.resolveWeights();
         return scoringService.scoreLot(lotId, weights, req.getPreset().name());

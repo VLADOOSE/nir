@@ -1,5 +1,7 @@
 package com.vladoose.nir.dto.request;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -12,15 +14,21 @@ public class MatchRequest {
     public enum Preset { BALANCED, MAX_PROFIT, RELIABILITY, CUSTOM }
 
     private Preset preset = Preset.BALANCED;
+
+    @Valid
     private Weights weights;
 
     @Getter
     @Setter
     @NoArgsConstructor
     public static class Weights {
+        @PositiveOrZero(message = "Вес должен быть >= 0")
         private int price;
+        @PositiveOrZero(message = "Вес должен быть >= 0")
         private int margin;
+        @PositiveOrZero(message = "Вес должен быть >= 0")
         private int track;
+        @PositiveOrZero(message = "Вес должен быть >= 0")
         private int dim;
     }
 

@@ -22,10 +22,10 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
     <div class="filter-block">
       <input type="text" placeholder="Поиск по названию, производителю, типу..." [(ngModel)]="searchQuery" (input)="applyFilter()" class="search-input" />
       <div class="dims-filters">
-        <label>Длина до (мм)<input type="number" [(ngModel)]="maxLength" (input)="applyFilter()" /></label>
-        <label>Ширина до (мм)<input type="number" [(ngModel)]="maxWidth" (input)="applyFilter()" /></label>
-        <label>Высота до (мм)<input type="number" [(ngModel)]="maxHeight" (input)="applyFilter()" /></label>
-        <label>Вес до (кг)<input type="number" step="0.1" [(ngModel)]="maxWeight" (input)="applyFilter()" /></label>
+        <label>Длина до (мм)<input type="number" min="1" [(ngModel)]="maxLength" (input)="applyFilter()" /></label>
+        <label>Ширина до (мм)<input type="number" min="1" [(ngModel)]="maxWidth" (input)="applyFilter()" /></label>
+        <label>Высота до (мм)<input type="number" min="1" [(ngModel)]="maxHeight" (input)="applyFilter()" /></label>
+        <label>Вес до (кг)<input type="number" min="0.01" step="0.1" [(ngModel)]="maxWeight" (input)="applyFilter()" /></label>
         <button class="btn btn-reset-filter" (click)="resetFilters()">Сбросить</button>
       </div>
     </div>
@@ -46,11 +46,11 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
         </select>
       </label>
       <div class="dims-row">
-        <label>Длина (мм)<input type="number" formControlName="lengthMm" [class.input-error]="validationErrors.lengthMm" /><span class="field-error" *ngIf="validationErrors.lengthMm">{{ validationErrors.lengthMm }}</span></label>
-        <label>Ширина (мм)<input type="number" formControlName="widthMm" [class.input-error]="validationErrors.widthMm" /><span class="field-error" *ngIf="validationErrors.widthMm">{{ validationErrors.widthMm }}</span></label>
-        <label>Высота (мм)<input type="number" formControlName="heightMm" [class.input-error]="validationErrors.heightMm" /><span class="field-error" *ngIf="validationErrors.heightMm">{{ validationErrors.heightMm }}</span></label>
+        <label>Длина (мм)<input type="number" min="1" formControlName="lengthMm" [class.input-error]="validationErrors.lengthMm" /><span class="field-error" *ngIf="validationErrors.lengthMm">{{ validationErrors.lengthMm }}</span></label>
+        <label>Ширина (мм)<input type="number" min="1" formControlName="widthMm" [class.input-error]="validationErrors.widthMm" /><span class="field-error" *ngIf="validationErrors.widthMm">{{ validationErrors.widthMm }}</span></label>
+        <label>Высота (мм)<input type="number" min="1" formControlName="heightMm" [class.input-error]="validationErrors.heightMm" /><span class="field-error" *ngIf="validationErrors.heightMm">{{ validationErrors.heightMm }}</span></label>
       </div>
-      <label>Вес (кг)<input type="number" step="0.01" formControlName="weightKg" [class.input-error]="validationErrors.weightKg" /><span class="field-error" *ngIf="validationErrors.weightKg">{{ validationErrors.weightKg }}</span></label>
+      <label>Вес (кг)<input type="number" min="0.01" step="0.01" formControlName="weightKg" [class.input-error]="validationErrors.weightKg" /><span class="field-error" *ngIf="validationErrors.weightKg">{{ validationErrors.weightKg }}</span></label>
       <label>Спецификация<textarea formControlName="spec" rows="3"></textarea></label>
       <div class="form-actions">
         <button class="btn btn-save" type="submit" [disabled]="form.invalid">Сохранить</button>
@@ -131,10 +131,10 @@ export class EquipmentComponent {
     name: new FormControl('', Validators.required),
     manufact: new FormControl('', Validators.required),
     equipTypeId: new FormControl<number | null>(null),
-    lengthMm: new FormControl<number | null>(null),
-    widthMm: new FormControl<number | null>(null),
-    heightMm: new FormControl<number | null>(null),
-    weightKg: new FormControl<number | null>(null),
+    lengthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    widthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    heightMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    weightKg: new FormControl<number | null>(null, [Validators.min(0.01)]),
     spec: new FormControl('')
   });
 

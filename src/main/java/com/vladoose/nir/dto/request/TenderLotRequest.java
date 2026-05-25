@@ -26,9 +26,16 @@ public class TenderLotRequest {
     @Positive(message = "Максимальная цена должна быть положительной")
     private BigDecimal maxCost;
 
+    @Positive(message = "Максимальная длина должна быть положительной")
     private Integer maxLengthMm;
+
+    @Positive(message = "Максимальная ширина должна быть положительной")
     private Integer maxWidthMm;
+
+    @Positive(message = "Максимальная высота должна быть положительной")
     private Integer maxHeightMm;
+
+    @Positive(message = "Максимальный вес должен быть положительным")
     private BigDecimal maxWeightKg;
 
     private String requiredSpec;
