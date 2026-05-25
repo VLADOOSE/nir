@@ -1,4 +1,4 @@
-import { Component, ElementRef, Input, OnChanges, OnDestroy, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, ViewChild } from '@angular/core';
 import { Chart, ChartConfiguration, ChartType, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -9,7 +9,7 @@ Chart.register(...registerables);
   template: `<canvas #canvas></canvas>`,
   styles: [`:host { display: block; position: relative; height: 280px; } canvas { max-height: 100%; }`]
 })
-export class ChartComponent implements OnChanges, OnDestroy {
+export class ChartComponent implements OnChanges, OnDestroy, AfterViewInit {
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
   @Input() type: ChartType = 'bar';
   @Input() labels: string[] = [];
@@ -20,8 +20,16 @@ export class ChartComponent implements OnChanges, OnDestroy {
 
   private chart?: Chart;
 
+  ngAfterViewInit(): void {
+    this.render();
+  }
+
   ngOnChanges(): void {
-    if (!this.canvasRef) return;
+    this.render();
+  }
+
+  private render(): void {
+    if (!this.canvasRef?.nativeElement) return;
     if (this.chart) {
       this.chart.destroy();
     }
@@ -42,6 +50,7 @@ export class ChartComponent implements OnChanges, OnDestroy {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         indexAxis: this.horizontal && !isPie ? 'y' : 'x',
         plugins: {
           legend: { display: isPie, position: 'right' },
@@ -54,9 +63,11 @@ export class ChartComponent implements OnChanges, OnDestroy {
             }
           }
         },
-        scales: isPie ? undefined : {
-          y: { beginAtZero: true, ticks: { callback: (v) => this.formatValue(v as number) } }
-        }
+        scales: isPie ? undefined : (
+          this.horizontal
+            ? { x: { beginAtZero: true, ticks: { callback: (v) => this.formatValue(v as number) } } }
+            : { y: { beginAtZero: true, ticks: { callback: (v) => this.formatValue(v as number) } } }
+        )
       }
     };
     this.chart = new Chart(this.canvasRef.nativeElement, config);
@@ -65,6 +76,8 @@ export class ChartComponent implements OnChanges, OnDestroy {
   ngOnDestroy(): void {
     this.chart?.destroy();
   }
+
+
 
   private formatValue(n: number): string {
     if (n == null) return '0';
