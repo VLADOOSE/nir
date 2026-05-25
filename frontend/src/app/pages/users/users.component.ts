@@ -1,6 +1,7 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
@@ -8,13 +9,13 @@ import { ConfirmService } from '../../services/confirm.service';
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule],
+  imports: [NgFor, NgIf, ReactiveFormsModule, LucideDynamicIcon],
   template: `
     <h2>Пользователи</h2>
     <p class="subtitle">Управление учётными записями пользователей системы</p>
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm" (click)="onAdd()"><svg lucideIcon="plus" [size]="14"></svg> Добавить</button>
       <span class="counter" *ngIf="users.length">Найдено: {{ users.length }} записей</span>
     </div>
 
@@ -47,8 +48,8 @@ import { ConfirmService } from '../../services/confirm.service';
         <tr *ngFor="let u of users">
           <td>{{ u.username }}</td><td>{{ u.fullName }}</td><td>{{ u.role }}</td>
           <td class="actions">
-            <button class="btn btn-edit" (click)="onEdit(u)">Редактировать</button>
-            <button class="btn btn-delete" (click)="onDelete(u.id)">Удалить</button>
+            <button class="btn btn-edit" (click)="onEdit(u)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
+            <button class="btn btn-delete" (click)="onDelete(u.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>
           </td>
         </tr>
       </tbody>

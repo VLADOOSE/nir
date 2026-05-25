@@ -2,6 +2,7 @@ import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
@@ -11,7 +12,7 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
 @Component({
   selector: 'app-equipment',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, EquipmentDetailModalComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, EquipmentDetailModalComponent, LucideDynamicIcon],
   template: `
     <h2>Каталог оборудования</h2>
     <p class="subtitle">Медицинское оборудование для участия в тендерах</p>
@@ -30,7 +31,7 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
     </div>
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()"><svg lucideIcon="plus" [size]="14"></svg> Добавить</button>
       <span class="counter" *ngIf="filteredEquipment.length">Найдено: {{ filteredEquipment.length }} записей</span>
     </div>
 
@@ -68,8 +69,8 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
           <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipmentType?.name }}</td>
           <td>{{ e.lengthMm }}×{{ e.widthMm }}×{{ e.heightMm }}</td><td>{{ e.weightKg }}</td>
           <td class="actions" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
-            <button class="btn btn-edit" (click)="onEdit(e)">Редактировать</button>
-            <button class="btn btn-delete" (click)="onDelete(e.id)">Удалить</button>
+            <button class="btn btn-edit" (click)="onEdit(e)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
+            <button class="btn btn-delete" (click)="onDelete(e.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>
           </td>
         </tr>
       </tbody>

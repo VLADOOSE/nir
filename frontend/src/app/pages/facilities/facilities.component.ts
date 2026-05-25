@@ -2,6 +2,7 @@ import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
@@ -10,7 +11,7 @@ import { AuthService } from '../../services/auth.service';
 @Component({
   selector: 'app-facilities',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, LucideDynamicIcon],
   template: `
     <h2>Учреждения</h2>
     <p class="subtitle">Справочник медицинских учреждений — заказчиков тендеров</p>
@@ -18,7 +19,7 @@ import { AuthService } from '../../services/auth.service';
     <input type="text" placeholder="Поиск по названию, ИНН, адресу, фамилии..." [(ngModel)]="searchQuery" (input)="applyFilter()" class="search-input" />
 
     <div class="toolbar">
-      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()">Добавить</button>
+      <button class="btn btn-add" *ngIf="!showForm && auth.isAdmin()" (click)="onAdd()"><svg lucideIcon="plus" [size]="14"></svg> Добавить</button>
       <span class="counter" *ngIf="filteredFacilities.length">Найдено: {{ filteredFacilities.length }} записей</span>
     </div>
 
@@ -49,8 +50,8 @@ import { AuthService } from '../../services/auth.service';
           <td>{{ f.name }}</td><td>{{ f.inn }}</td><td>{{ f.address }}</td>
           <td>{{ f.lastName }} {{ f.firstName }}</td><td>{{ f.phone }}</td><td>{{ f.email }}</td>
           <td class="actions" *ngIf="auth.isAdmin()">
-            <button class="btn btn-edit" (click)="onEdit(f)">Редактировать</button>
-            <button class="btn btn-delete" (click)="onDelete(f.id)">Удалить</button>
+            <button class="btn btn-edit" (click)="onEdit(f)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
+            <button class="btn btn-delete" (click)="onDelete(f.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>
           </td>
         </tr>
       </tbody>
