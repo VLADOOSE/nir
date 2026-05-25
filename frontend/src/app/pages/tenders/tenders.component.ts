@@ -7,11 +7,12 @@ import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
+import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -207,19 +208,13 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
         </tbody>
       </table>
 
-      <div *ngIf="matchLotId !== null" class="match-results">
-        <h3>Подходящее оборудование для лота #{{ matchLotNumber }}</h3>
-        <p *ngIf="matchResults.length === 0">Ничего не найдено</p>
-        <table *ngIf="matchResults.length > 0">
-          <thead><tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Д x Ш x В (мм)</th><th>Вес (кг)</th></tr></thead>
-          <tbody>
-            <tr *ngFor="let m of matchResults">
-              <td>{{ m.name }}</td><td>{{ m.manufact }}</td><td>{{ m.equipmentType?.name }}</td>
-              <td>{{ m.lengthMm }}x{{ m.widthMm }}x{{ m.heightMm }}</td><td>{{ m.weightKg }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <app-smart-match
+        *ngIf="matchLotId !== null"
+        [lotId]="matchLotId"
+        [lotNumber]="matchLotNumber || 0"
+        (close)="closeMatch()"
+        (requestPrice)="onSmartMatchRequest($event)">
+      </app-smart-match>
 
       <!-- ========== ЗАПРОСЫ КП ========== -->
       <section *ngIf="priceRequests.length > 0" class="pr-section">
@@ -633,7 +628,18 @@ export class TendersComponent {
   onMatch(lot: any) {
     this.matchLotId = lot.id;
     this.matchLotNumber = lot.lotNumber;
-    this.api.getMatchingEquipment(lot.id).subscribe(data => { this.matchResults = data; this.cdr.detectChanges(); });
+  }
+
+  closeMatch() {
+    this.matchLotId = null;
+    this.matchLotNumber = null;
+  }
+
+  onSmartMatchRequest(ev: { candidate: any; distributorId: number; distributorName: string }) {
+    this.notify.success(`КП у «${ev.distributorName}» — TODO: подключить к существующему КП-workflow (нужен бридж в форму)`);
+    // Hook into existing PR workflow: openPriceRequestForm(lotId, equipmentId, distributorId).
+    // На данный момент SmartMatchComponent выкидывает событие — интеграцию с реальной формой добавить
+    // отдельной задачей, чтобы не разрастать этот коммит.
   }
 
   // ===== Запросы КП =====

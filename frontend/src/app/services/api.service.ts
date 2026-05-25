@@ -48,8 +48,12 @@ export class ApiService {
     return this.getAll('equipment');
   }
 
-  getMatchingEquipment(lotId: number): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/equipment/match/${lotId}`);
+  getMatchingEquipment(lotId: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/equipment/match/${lotId}`);
+  }
+
+  postMatchEquipment(lotId: number, body: { preset: string; weights?: { price: number; margin: number; track: number; dim: number } }): Observable<any> {
+    return this.http.post<any>(`${this.base}/equipment/match/${lotId}`, body);
   }
 
   // === Users ===
