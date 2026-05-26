@@ -131,11 +131,17 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
           <h3>Собрать позиции из принятых КП</h3>
           <p class="af-desc">Для каждого лота возьмётся <strong>самое дешёвое предложение</strong> из ответов КП.
             Лоты, по которым позиция уже есть, пропускаются.</p>
-          <label class="af-markup">
-            <span>Наценка, %</span>
-            <input type="number" min="0" max="200" step="1" [(ngModel)]="autoFillMarkup" />
-          </label>
-          <input type="range" min="0" max="50" step="1" [(ngModel)]="autoFillMarkup" class="af-slider" />
+          <div class="af-presets-label">Наценка:</div>
+          <div class="af-presets">
+            <button *ngFor="let p of markupPresets" type="button"
+                    [class.active]="+autoFillMarkup === p"
+                    (click)="autoFillMarkup = p">{{ p }}%</button>
+            <label class="af-custom">
+              <span>Своё:</span>
+              <input type="number" min="0" max="200" step="1" [(ngModel)]="autoFillMarkup" />
+              <span>%</span>
+            </label>
+          </div>
           <p class="af-hint">
             <strong>Предл. цена = закупка × (1 + {{ autoFillMarkup }}%)</strong>,
             но не выше максимума лота (потолка заказчика).<br>
@@ -293,9 +299,13 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .af-modal { background: #fff; border-radius: 10px; padding: 24px; width: 440px; max-width: 90vw; box-shadow: 0 12px 32px rgba(0,0,0,0.18); }
     .af-modal h3 { margin: 0 0 8px; font-size: 17px; color: #111827; }
     .af-desc { color: #4b5563; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
-    .af-markup { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 14px; color: #374151; }
-    .af-markup input { width: 90px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
-    .af-slider { width: 100%; margin-bottom: 12px; }
+    .af-presets-label { font-size: 13px; color: #374151; margin: 0 0 8px; font-weight: 500; }
+    .af-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; align-items: center; }
+    .af-presets button { padding: 6px 12px; border: 1px solid #d1d5db; background: #f9fafb; border-radius: 4px; cursor: pointer; font-size: 13px; color: #374151; min-width: 50px; }
+    .af-presets button:hover { background: #f3f4f6; }
+    .af-presets button.active { background: #1a56db; color: #fff; border-color: #1a56db; font-weight: 600; }
+    .af-custom { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 13px; color: #6b7280; }
+    .af-custom input { width: 70px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; text-align: right; }
     .af-hint { background: #eff6ff; border-left: 3px solid #1a56db; padding: 10px 12px; border-radius: 4px; font-size: 12px; color: #1e3a8a; margin: 0 0 16px; line-height: 1.5; }
     .af-hint strong { color: #1a56db; }
     .af-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -419,6 +429,7 @@ export class AppliesComponent {
   showItemForm = false;
   showAutoFillModal = false;
   autoFillMarkup = 25;
+  markupPresets = [0, 10, 15, 20, 25, 30, 40, 50];
   editingItemId: number | null = null;
   itemForm = new FormGroup({
     tenderLotId: new FormControl<number | null>(null), medEquipId: new FormControl<number | null>(null),

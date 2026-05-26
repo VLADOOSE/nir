@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { NgFor, NgIf, DecimalPipe } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -13,7 +13,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, DecimalPipe],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -242,14 +242,38 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </div>
           </header>
           <div *ngIf="pr._expanded" class="pr-body">
+            <div class="pr-markup-calc">
+              <span class="pmc-label">Калькулятор наценки:</span>
+              <button *ngFor="let p of markupPresets" type="button"
+                      [class.active]="(pr._markup ?? 25) === p"
+                      (click)="pr._markup = p">{{ p }}%</button>
+              <label class="pmc-custom">
+                <span>Своё:</span>
+                <input type="number" min="0" max="200" step="1"
+                       [ngModel]="pr._markup ?? 25"
+                       (ngModelChange)="pr._markup = $event"
+                       [ngModelOptions]="{standalone: true}" />
+                <span>%</span>
+              </label>
+            </div>
             <table class="pr-items">
-              <thead><tr><th>Лот</th><th>Модель</th><th>Кол-во</th><th>Цена ответа (₽)</th><th>Заметка</th></tr></thead>
+              <thead><tr>
+                <th>Лот</th><th>Модель</th><th>Кол-во</th>
+                <th>Цена ответа (₽)</th>
+                <th>Предл. цена при {{ pr._markup ?? 25 }}%</th>
+                <th>Маржа</th>
+                <th>Заметка</th>
+              </tr></thead>
               <tbody>
                 <tr *ngFor="let it of pr.items">
                   <td>{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
                   <td>{{ it.medEquipment?.name }}</td>
                   <td>{{ it.requestedQuantity }}</td>
                   <td><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
+                  <td class="pmc-calc">{{ markedPrice(it, pr) | number:'1.0-0' }} ₽
+                    <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
+                  </td>
+                  <td class="pmc-profit">+{{ markedProfit(it, pr) | number:'1.0-0' }} ₽</td>
                   <td><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
                 </tr>
               </tbody>
@@ -339,6 +363,16 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .badge-pr-ACCEPTED { background: #d1fae5; color: #065f46; font-weight: 700; }
     .badge-pr-CLOSED { background: #f3f4f6; color: #6b7280; }
     .pr-card.pr-accepted { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
+    .pr-markup-calc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 12px; border: 1px dashed #d1d5db; }
+    .pmc-label { font-size: 13px; font-weight: 600; color: #374151; margin-right: 4px; }
+    .pr-markup-calc button { padding: 5px 11px; border: 1px solid #d1d5db; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; color: #374151; min-width: 48px; }
+    .pr-markup-calc button:hover { background: #f3f4f6; }
+    .pr-markup-calc button.active { background: #1a56db; color: #fff; border-color: #1a56db; font-weight: 600; }
+    .pmc-custom { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #6b7280; margin-left: 6px; }
+    .pmc-custom input { width: 60px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: right; }
+    .pmc-calc { font-weight: 600; color: #1a56db; }
+    .pmc-calc small { display: block; color: #f59e0b; font-size: 10px; font-weight: 400; }
+    .pmc-profit { color: #059669; font-weight: 600; }
     .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; font-family: inherit; }
@@ -510,6 +544,28 @@ export class TendersComponent {
 
   eisLink(tenderNumber: string): string {
     return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
+  }
+
+  markupPresets = [0, 10, 15, 20, 25, 30, 40, 50];
+
+  private calcMarked(it: any, pr: any): { price: number; clamped: boolean } {
+    const proc = Number(it._editPrice ?? it.responsePrice ?? 0);
+    const markup = Number(pr._markup ?? 25);
+    let price = proc * (1 + markup / 100);
+    const maxCost = Number(it.tenderLot?.maxCost ?? 0);
+    let clamped = false;
+    if (maxCost > 0 && price > maxCost) {
+      price = maxCost;
+      clamped = true;
+    }
+    return { price, clamped };
+  }
+
+  markedPrice(it: any, pr: any): number { return this.calcMarked(it, pr).price; }
+  markedClamped(it: any, pr: any): boolean { return this.calcMarked(it, pr).clamped; }
+  markedProfit(it: any, pr: any): number {
+    const proc = Number(it._editPrice ?? it.responsePrice ?? 0);
+    return this.calcMarked(it, pr).price - proc;
   }
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
