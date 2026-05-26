@@ -126,6 +126,28 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         <span class="counter" *ngIf="items.length">{{ items.length }} позиций — итого: {{ formatPrice(itemsTotal) }} &#8381;</span>
       </div>
 
+      <div *ngIf="showAutoFillModal" class="af-modal-backdrop" (click)="showAutoFillModal = false">
+        <div class="af-modal" (click)="$event.stopPropagation()">
+          <h3>Собрать позиции из принятых КП</h3>
+          <p class="af-desc">Для каждого лота возьмётся <strong>самое дешёвое предложение</strong> из ответов КП.
+            Лоты, по которым позиция уже есть, пропускаются.</p>
+          <label class="af-markup">
+            <span>Наценка, %</span>
+            <input type="number" min="0" max="200" step="1" [(ngModel)]="autoFillMarkup" />
+          </label>
+          <input type="range" min="0" max="50" step="1" [(ngModel)]="autoFillMarkup" class="af-slider" />
+          <p class="af-hint">
+            <strong>Предл. цена = закупка × (1 + {{ autoFillMarkup }}%)</strong>,
+            но не выше максимума лота (потолка заказчика).<br>
+            При наценке 0 — прибыль = 0. Рекомендуется 20–30%.
+          </p>
+          <div class="af-actions">
+            <button class="btn btn-cancel" (click)="showAutoFillModal = false">Отмена</button>
+            <button class="btn btn-save" (click)="confirmAutoFill()">Собрать</button>
+          </div>
+        </div>
+      </div>
+
       <form *ngIf="showItemForm" [formGroup]="itemForm" (ngSubmit)="onSaveItem()" class="edit-form">
         <label>Лот тендера
           <select formControlName="tenderLotId" (change)="onLotSelected()">
@@ -267,6 +289,16 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     h2 { margin: 0; font-size: 20px; color: #111827; }
     .eis-link-inline { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 8px; background: #eff6ff; color: #1a56db; border-radius: 4px; text-decoration: none; font-weight: 500; margin-left: 8px; vertical-align: middle; }
     .eis-link-inline:hover { background: #dbeafe; }
+    .af-modal-backdrop { position: fixed; inset: 0; background: rgba(17,24,39,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .af-modal { background: #fff; border-radius: 10px; padding: 24px; width: 440px; max-width: 90vw; box-shadow: 0 12px 32px rgba(0,0,0,0.18); }
+    .af-modal h3 { margin: 0 0 8px; font-size: 17px; color: #111827; }
+    .af-desc { color: #4b5563; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+    .af-markup { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 14px; color: #374151; }
+    .af-markup input { width: 90px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
+    .af-slider { width: 100%; margin-bottom: 12px; }
+    .af-hint { background: #eff6ff; border-left: 3px solid #1a56db; padding: 10px 12px; border-radius: 4px; font-size: 12px; color: #1e3a8a; margin: 0 0 16px; line-height: 1.5; }
+    .af-hint strong { color: #1a56db; }
+    .af-actions { display: flex; justify-content: flex-end; gap: 8px; }
     h3 { margin: 24px 0 12px; font-size: 17px; color: #111827; }
     .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
     .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
@@ -385,6 +417,8 @@ export class AppliesComponent {
   contractEdit: { contractNumber: string; contractSignedAt: string } = { contractNumber: '', contractSignedAt: '' };
 
   showItemForm = false;
+  showAutoFillModal = false;
+  autoFillMarkup = 25;
   editingItemId: number | null = null;
   itemForm = new FormGroup({
     tenderLotId: new FormControl<number | null>(null), medEquipId: new FormControl<number | null>(null),
@@ -563,20 +597,28 @@ export class AppliesComponent {
   onAddItem() { this.editingItemId = null; this.itemForm.reset(); this.validationErrors = {}; this.showItemForm = true; }
 
   onAutoFill() {
-    this.confirm.ask('Собрать позиции из принятых КП?', 'Для каждого лота возьмётся самое дешёвое предложение. Лоты, по которым позиция уже есть, пропускаются.', { confirmLabel: 'Собрать' })
-      .subscribe(ok => {
-        if (!ok) return;
-        this.api.autoFillApply(this.selectedApply.id).subscribe({
-          next: (resp: any) => {
-            this.notify.success(`Добавлено позиций: ${resp.addedItems}`);
-            if (resp.lotsWithoutResponse?.length) {
-              this.notify.info('Нет КП с ответом по: ' + resp.lotsWithoutResponse.join(', '));
-            }
-            this.loadItems();
-          },
-          error: err => this.notify.error(err.error?.message || 'Ошибка автосборки')
+    this.autoFillMarkup = 25;
+    this.showAutoFillModal = true;
+  }
+
+  confirmAutoFill() {
+    this.showAutoFillModal = false;
+    const markup = Math.max(0, Math.min(200, Number(this.autoFillMarkup) || 0));
+    this.api.autoFillApply(this.selectedApply.id, markup).subscribe({
+      next: (resp: any) => {
+        this.notify.success(`Добавлено позиций: ${resp.addedItems} (наценка ${markup}%)`);
+        if (resp.lotsWithoutResponse?.length) {
+          this.notify.info('Нет КП с ответом по: ' + resp.lotsWithoutResponse.join(', '));
+        }
+        this.loadItems();
+        this.api.getById('applies', this.selectedApply.id).subscribe((updated: any) => {
+          this.selectedApply = updated;
+          this.cdr.detectChanges();
         });
-      });
+        this.loadApplies();
+      },
+      error: err => this.notify.error(err.error?.message || 'Ошибка автосборки')
+    });
   }
   onEditItem(it: any) {
     this.editingItemId = it.id;

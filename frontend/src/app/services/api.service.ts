@@ -178,8 +178,9 @@ export class ApiService {
 
   // === Auto-fill apply ===
 
-  autoFillApply(applyId: number): Observable<any> {
-    return this.http.post<any>(`${this.base}/applies/${applyId}/auto-fill`, {});
+  autoFillApply(applyId: number, markupPercent?: number): Observable<any> {
+    const body = markupPercent != null ? { markupPercent } : {};
+    return this.http.post<any>(`${this.base}/applies/${applyId}/auto-fill`, body);
   }
 
   // === Price Request responses ===

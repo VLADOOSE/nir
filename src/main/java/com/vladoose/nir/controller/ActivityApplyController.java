@@ -93,8 +93,13 @@ public class ActivityApplyController {
     }
 
     @PostMapping("/{id}/auto-fill")
-    public AutoFillResponse autoFill(@PathVariable Long id) {
-        return autoFillService.autoFill(id);
+    public AutoFillResponse autoFill(@PathVariable Long id,
+                                      @RequestBody(required = false) java.util.Map<String, Object> body) {
+        Double markup = 25.0;
+        if (body != null && body.get("markupPercent") instanceof Number n) {
+            markup = n.doubleValue();
+        }
+        return autoFillService.autoFill(id, markup);
     }
 
     @GetMapping(value = "/{id}/pdf", produces = "application/pdf")

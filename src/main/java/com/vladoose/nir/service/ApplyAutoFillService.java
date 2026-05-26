@@ -13,6 +13,8 @@ import com.vladoose.nir.repository.TenderLotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -40,8 +42,18 @@ public class ApplyAutoFillService {
 
     @Transactional
     public AutoFillResponse autoFill(Long applyId) {
+        return autoFill(applyId, 25.0);
+    }
+
+    /**
+     * @param markupPercent наценка в %, например 25 → offered = procurement × 1.25,
+     *   но не выше lot.maxCost (если он задан). null/0 → offered = procurement (без наценки).
+     */
+    @Transactional
+    public AutoFillResponse autoFill(Long applyId, Double markupPercent) {
         ActivityApply apply = applyRepository.findById(applyId)
                 .orElseThrow(() -> new NotFoundException("Заявка не найдена: " + applyId));
+        double markup = markupPercent != null && markupPercent >= 0 ? markupPercent : 0.0;
 
         List<TenderLot> lots = lotRepository.findByTenderId(apply.getTender().getId());
 
@@ -70,12 +82,19 @@ public class ApplyAutoFillService {
             PriceRequestItem best = candidates.stream()
                     .min(Comparator.comparing(PriceRequestItem::getResponsePrice))
                     .orElseThrow();
+            BigDecimal procurement = best.getResponsePrice();
+            BigDecimal offered = procurement.multiply(
+                    BigDecimal.valueOf(1.0 + markup / 100.0)
+            ).setScale(2, RoundingMode.HALF_UP);
+            if (lot.getMaxCost() != null && offered.compareTo(lot.getMaxCost()) > 0) {
+                offered = lot.getMaxCost();
+            }
             ApplyItem ai = ApplyItem.builder()
                     .apply(apply)
                     .tenderLot(lot)
                     .medEquipment(best.getMedEquipment())
                     .distributor(best.getPriceRequest().getDistributor())
-                    .offeredCost(best.getResponsePrice())
+                    .offeredCost(offered)
                     .quantity(lot.getQuantity())
                     .build();
             applyItemRepository.save(ai);
