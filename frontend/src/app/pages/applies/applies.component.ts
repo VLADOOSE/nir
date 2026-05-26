@@ -1,4 +1,5 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -98,7 +99,13 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     <ng-container *ngIf="selectedApply">
       <button class="btn btn-back" (click)="onBack()">&#8592; Назад к списку</button>
       <button class="btn btn-pdf" (click)="downloadPdf()">Скачать PDF</button>
-      <button *ngIf="selectedApply?.status === 'DRAFT'" class="btn btn-submit" (click)="onMarkSubmitted()" [disabled]="items.length === 0 || isDeadlinePassed()">Подали заявку</button>
+      <button *ngIf="selectedApply?.status === 'DRAFT'" class="btn btn-submit"
+              (click)="onMarkSubmitted()"
+              [disabled]="items.length === 0 || isDeadlinePassed()"
+              [title]="submitButtonReason()">Подали заявку</button>
+      <span *ngIf="selectedApply?.status === 'DRAFT' && (items.length === 0 || isDeadlinePassed())" class="btn-submit-hint">
+        ⚠ {{ submitButtonReason() }}
+      </span>
       <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-withdraw" (click)="onWithdrawApply()">Вернуть в черновик</button>
       <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-won" (click)="onMarkResult('WON')">Тендер выигран</button>
       <button *ngIf="selectedApply?.status === 'SUBMITTED'" class="btn btn-lost" (click)="onMarkResult('LOST')">Тендер проигран</button>
@@ -336,6 +343,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .btn-pdf { background: #dc2626; color: #fff; margin-left: 8px; margin-bottom: 16px; }
     .btn-submit { background: #059669; color: #fff; margin-left: 8px; margin-bottom: 16px; }
     .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-submit-hint { display: inline-block; margin-left: 12px; font-size: 12px; color: #b45309; background: #fef3c7; padding: 4px 10px; border-radius: 4px; vertical-align: middle; }
     .btn-withdraw { background: #6b7280; color: #fff; margin-left: 8px; margin-bottom: 16px; }
     .btn-won { background: #059669; color: #fff; margin-left: 8px; margin-bottom: 16px; }
     .btn-lost { background: #dc2626; color: #fff; margin-left: 8px; margin-bottom: 16px; }
@@ -439,7 +447,8 @@ export class AppliesComponent {
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, private confirm: ConfirmService) {
+              private notify: NotificationService, private confirm: ConfirmService,
+              private route: ActivatedRoute) {
     this.loadApplies();
     this.api.getTenders().subscribe({ next: data => { this.tenders = data; this.cdr.detectChanges(); } });
   }
@@ -490,6 +499,12 @@ export class AppliesComponent {
             a._totalCost = items.reduce((s: number, it: any) => s + ((it.offeredCost || 0) * (it.quantity || 1)), 0);
             this.cdr.detectChanges();
           });
+        }
+        // Авто-открытие заявки через ?openId=N (бридж КП → Заявка)
+        const openId = Number(this.route.snapshot.queryParamMap.get('openId'));
+        if (openId && !this.selectedApply) {
+          const apply = this.applies.find((a: any) => a.id === openId);
+          if (apply) this.onOpen(apply);
         }
         this.cdr.detectChanges();
       },
@@ -690,6 +705,12 @@ export class AppliesComponent {
   isDeadlinePassed(): boolean {
     if (!this.selectedApply?.tender?.deadline) return false;
     return new Date(this.selectedApply.tender.deadline) < new Date();
+  }
+
+  submitButtonReason(): string {
+    if (this.items.length === 0) return 'Добавьте хотя бы одну позицию (вручную или через «Собрать из КП»)';
+    if (this.isDeadlinePassed()) return 'Срок подачи заявок по этому тендеру истёк';
+    return '';
   }
 
   onMarkSubmitted() {
