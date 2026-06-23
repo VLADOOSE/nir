@@ -8,7 +8,6 @@ import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
 import org.mapstruct.*;
-import org.mapstruct.AfterMapping;
 
 import java.util.List;
 
@@ -21,11 +20,17 @@ public interface MedEquipmentMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "equipmentType", source = "equipTypeId", qualifiedByName = "equipmentTypeFromId")
+    @Mapping(target = "registrationStatus", ignore = true)
+    @Mapping(target = "registration", ignore = true)
+    @Mapping(target = "registrationCheckedAt", ignore = true)
     MedEquipment toEntity(MedEquipmentRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "equipmentType", source = "equipTypeId", qualifiedByName = "equipmentTypeFromId")
+    @Mapping(target = "registrationStatus", ignore = true)
+    @Mapping(target = "registration", ignore = true)
+    @Mapping(target = "registrationCheckedAt", ignore = true)
     void updateEntity(MedEquipmentRequest request, @MappingTarget MedEquipment entity);
 
     @Named("equipmentTypeFromId")
@@ -38,6 +43,7 @@ public interface MedEquipmentMapper {
 
     @AfterMapping
     default void fillRegistration(MedEquipment entity, @MappingTarget MedEquipmentResponse response) {
+        // registration is always present (a status object); detail fields stay null unless REGISTERED
         EquipmentRegistrationResponse r = new EquipmentRegistrationResponse();
         RegistrationStatus status = entity.getRegistrationStatus() != null
                 ? entity.getRegistrationStatus() : RegistrationStatus.UNCHECKED;

@@ -34,6 +34,7 @@ class MedEquipmentMapperRegistrationTest {
         assertThat(resp.getRegistration().isVatExempt()).isTrue();
         assertThat(resp.getRegistration().getRegNumber()).isEqualTo("РК МИ-TEST");
         assertThat(resp.getRegistration().getProducer()).isEqualTo("OMRON");
+        assertThat(resp.getRegistration().getCountry()).isEqualTo("ЯПОНИЯ");
     }
 
     @Test
