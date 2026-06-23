@@ -72,7 +72,6 @@ class BulkPriceRequestServiceTest {
                 .name(uniq("Оборудование"))
                 .manufact("ТестПроизводитель")
                 .equipmentType(type)
-                .cost(cost)
                 .build());
     }
 
