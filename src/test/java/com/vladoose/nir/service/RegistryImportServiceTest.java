@@ -35,6 +35,10 @@ class RegistryImportServiceTest {
         MedRegistry b = repository.findByRegNumber("ZZIMP-002").orElseThrow();
         assertThat(b.getExpirationDate()).isNull();
         assertThat(b.getUnlimited()).isTrue();
+
+        MedRegistry c = repository.findByRegNumber("ZZIMP-003").orElseThrow();
+        assertThat(c.getRegDate()).isNull();
+        assertThat(c.getUnlimited()).isTrue();
     }
 
     @Test

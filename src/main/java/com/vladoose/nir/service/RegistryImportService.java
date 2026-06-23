@@ -2,7 +2,6 @@ package com.vladoose.nir.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -52,7 +51,7 @@ public class RegistryImportService {
         try (InputStream is = resource.getInputStream()) {
             records = objectMapper.readValue(is, new TypeReference<List<RegistryDumpRecord>>() {});
         } catch (IOException e) {
-            throw new BadRequestException("Не удалось прочитать дамп реестра (" + dumpLocation + "): " + e.getMessage());
+            throw new IllegalStateException("Не удалось прочитать дамп реестра (" + dumpLocation + "): " + e.getMessage(), e);
         }
         List<RegistryDumpRecord> valid = records.stream()
                 .filter(r -> r.getReg() != null && !r.getReg().isBlank())
@@ -79,7 +78,7 @@ public class RegistryImportService {
     }
 
     private static LocalDate parseDate(String iso) {
-        if (iso == null || iso.isBlank()) {
+        if (iso == null || iso.length() < 10) {
             return null;
         }
         return LocalDate.parse(iso.substring(0, 10)); // "2026-06-17T00:00:00" -> 2026-06-17
