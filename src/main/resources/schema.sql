@@ -23,6 +23,9 @@ DROP TABLE IF EXISTS tender_step CASCADE;
 DROP TABLE IF EXISTS tender_founder CASCADE;
 
 -- ========== Реестр медизделий (живучая таблица, не пересоздаётся) ==========
+-- ВАЖНО: БД должна быть создана с UTF-8 локалью (LC_CTYPE/LC_COLLATE), НЕ 'C'/'POSIX' —
+-- иначе pg_trgm даёт пустые триграммы для кириллицы и матчинг молча возвращает 0 кандидатов.
+-- Пример: createdb nirdb --template=template0 --lc-ctype=en_US.UTF-8 --lc-collate=en_US.UTF-8
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS med_registry (

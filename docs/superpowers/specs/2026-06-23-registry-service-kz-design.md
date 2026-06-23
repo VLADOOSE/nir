@@ -200,6 +200,7 @@ LIMIT :limit;          -- по умолчанию 5
 - Двухшаговый рефреш (документируем): запустить Node-fetch → нажать «Обновить реестр» (реимпорт). Кнопка
   **не** дёргает puppeteer (нужен debug-Chrome) — ручной шаг в v1.
 - `CREATE EXTENSION IF NOT EXISTS pg_trgm` в `schema.sql` (нужны права в БД — отметить в setup-инструкции).
+- **Локаль БД:** база обязана быть в UTF-8-локали (не `C`/`POSIX`) — иначе `pg_trgm` даёт пустые триграммы для кириллицы и матчинг молча возвращает 0. Создавать: `createdb --template=template0 --lc-ctype=en_US.UTF-8 --lc-collate=en_US.UTF-8`.
 - Дамп НЦЭЛС лежит локально: `/Users/vlad/IdeaProjects/westmed/scripts/data/rk-mi-registry-full.json`.
 
 ---

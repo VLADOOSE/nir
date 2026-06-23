@@ -49,7 +49,7 @@ public class MedEquipment {
     @Builder.Default
     private RegistrationStatus registrationStatus = RegistrationStatus.UNCHECKED;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "med_registry_reg_number", referencedColumnName = "reg_number")
     private MedRegistry registration;
 
