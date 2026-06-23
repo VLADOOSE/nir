@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.MatchRequest;
 import com.vladoose.nir.dto.request.MedEquipmentRequest;
+import com.vladoose.nir.dto.request.RegistrationActionRequest;
 import com.vladoose.nir.dto.response.EquipmentMatchResponse;
 import com.vladoose.nir.dto.response.EquipmentStatsResponse;
 import com.vladoose.nir.dto.response.MedEquipmentResponse;
@@ -10,6 +11,7 @@ import com.vladoose.nir.mapper.MedEquipmentMapper;
 import com.vladoose.nir.service.EquipmentScoringService;
 import com.vladoose.nir.service.EquipmentStatsService;
 import com.vladoose.nir.service.MedEquipmentService;
+import com.vladoose.nir.service.RegistryMatchService;
 import com.vladoose.nir.service.TenderLotService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,17 +28,20 @@ public class MedEquipmentController {
     private final MedEquipmentMapper mapper;
     private final EquipmentStatsService statsService;
     private final EquipmentScoringService scoringService;
+    private final RegistryMatchService registryMatchService;
 
     public MedEquipmentController(MedEquipmentService service,
                                   TenderLotService tenderLotService,
                                   MedEquipmentMapper mapper,
                                   EquipmentStatsService statsService,
-                                  EquipmentScoringService scoringService) {
+                                  EquipmentScoringService scoringService,
+                                  RegistryMatchService registryMatchService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.mapper = mapper;
         this.statsService = statsService;
         this.scoringService = scoringService;
+        this.registryMatchService = registryMatchService;
     }
 
     @GetMapping
@@ -86,5 +91,13 @@ public class MedEquipmentController {
     @GetMapping("/{id}/stats")
     public EquipmentStatsResponse stats(@PathVariable Long id) {
         return statsService.buildStats(id);
+    }
+
+    @PostMapping("/{id}/registration")
+    @PreAuthorize("hasRole('ADMIN')")
+    public MedEquipmentResponse setRegistration(@PathVariable Long id,
+                                                @Valid @RequestBody RegistrationActionRequest request) {
+        return mapper.toResponse(
+                registryMatchService.applyAction(id, request.getAction(), request.getRegNumber()));
     }
 }
