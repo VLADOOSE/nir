@@ -142,8 +142,8 @@ export class RegistryReconciliationComponent {
         this.statusFilter = '';
         this.expanded[this.focusId] = true;
       }
+      this.load();
     });
-    this.load();
   }
 
   load() {
@@ -177,7 +177,7 @@ export class RegistryReconciliationComponent {
   onRefresh() {
     this.refreshing = true;
     this.api.refreshRegistry().subscribe({
-      next: (res: any) => { this.refreshing = false; this.notify.success('Реестр обновлён: ' + res.imported + ' записей'); this.cdr.detectChanges(); },
+      next: (res: any) => { this.refreshing = false; this.notify.success('Реестр обновлён: ' + res.imported + ' записей'); this.load(); this.cdr.detectChanges(); },
       error: err => { this.refreshing = false; this.notify.error(err.error?.message || 'Ошибка обновления'); this.cdr.detectChanges(); }
     });
   }
