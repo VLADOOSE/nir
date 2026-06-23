@@ -53,12 +53,20 @@ class RegistryMatchServiceTest {
     }
 
     @Test
+    void confirm_withBlankRegNumber_throwsBadRequest() {
+        MedEquipment e = newEquipment();
+        assertThatThrownBy(() -> service.applyAction(e.getId(), RegistrationAction.CONFIRM, ""))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
     void markNotMedical_thenReset_changesStatus() {
         MedEquipment e = newEquipment();
 
         MedEquipment notMed = service.applyAction(e.getId(), RegistrationAction.NOT_MEDICAL, null);
         assertThat(notMed.getRegistrationStatus()).isEqualTo(RegistrationStatus.NOT_MEDICAL);
         assertThat(notMed.getRegistration()).isNull();
+        assertThat(notMed.getRegistrationCheckedAt()).isNotNull();
 
         MedEquipment reset = service.applyAction(e.getId(), RegistrationAction.RESET, null);
         assertThat(reset.getRegistrationStatus()).isEqualTo(RegistrationStatus.UNCHECKED);
