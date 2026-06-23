@@ -1,0 +1,5 @@
+[
+  {"reg":"ZZIMP-001","name":"Тест Аппарат А","producer":"Импорт-Вендор-1","country":"КАЗАХСТАН","regDate":"2025-01-10T00:00:00","exp":"2030-01-10T00:00:00","unlimited":false},
+  {"reg":"ZZIMP-002","name":"Тест Аппарат Б","producer":"Импорт-Вендор-2","country":"РОССИЯ","regDate":"2024-05-01T00:00:00","exp":null,"unlimited":true},
+  {"reg":"ZZIMP-003","name":"Тест Аппарат В","producer":"Импорт-Вендор-3","country":"ГЕРМАНИЯ","regDate":null,"exp":null,"unlimited":true}
+]
