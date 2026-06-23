@@ -200,4 +200,27 @@ export class ApiService {
   acceptPriceRequest(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/price-requests/${id}/accept`, {});
   }
+
+  // === Реестр / сверка ===
+  getRegistryReconciliation(status?: string, candidates: number = 5): Observable<any[]> {
+    let url = `${this.base}/registry/reconciliation?candidates=${candidates}`;
+    if (status) { url += `&status=${encodeURIComponent(status)}`; }
+    return this.http.get<any[]>(url);
+  }
+
+  getRegistryCandidatesForEquipment(equipmentId: number, limit: number = 5): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/registry/candidates/equipment/${equipmentId}?limit=${limit}`);
+  }
+
+  searchRegistry(q: string, limit: number = 20): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/registry/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  }
+
+  setEquipmentRegistration(equipmentId: number, action: string, regNumber?: string): Observable<any> {
+    return this.http.post(`${this.base}/equipment/${equipmentId}/registration`, { action, regNumber });
+  }
+
+  refreshRegistry(): Observable<any> {
+    return this.http.post(`${this.base}/registry/refresh`, {});
+  }
 }

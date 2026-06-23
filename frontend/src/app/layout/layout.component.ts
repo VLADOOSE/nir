@@ -66,6 +66,9 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
             <a routerLink="/equipment" routerLinkActive="active">
               <svg lucideIcon="stethoscope" [size]="16"></svg> Оборудование
             </a>
+            <a routerLink="/registry-reconciliation" routerLinkActive="active">
+              <svg lucideIcon="badge-check" [size]="16"></svg> Сверка с реестром
+            </a>
             <a *ngIf="auth.isAdmin()" routerLink="/equipment-types" routerLinkActive="active">
               <svg lucideIcon="file-box" [size]="16"></svg> Типы оборудования
             </a>

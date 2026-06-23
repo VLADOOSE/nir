@@ -14,6 +14,7 @@ import { ReportsComponent } from './pages/reports/reports.component';
 import { UsersComponent } from './pages/users/users.component';
 import { AboutComponent } from './pages/about/about.component';
 import { EquipmentTypesComponent } from './pages/equipment-types/equipment-types.component';
+import { RegistryReconciliationComponent } from './pages/registry-reconciliation/registry-reconciliation.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -27,6 +28,7 @@ export const routes: Routes = [
       { path: 'tenders/search', component: TenderSearchComponent },
       { path: 'tenders', component: TendersComponent },
       { path: 'equipment', component: EquipmentComponent },
+      { path: 'registry-reconciliation', component: RegistryReconciliationComponent },
       { path: 'facilities', component: FacilitiesComponent },
       { path: 'distributors', component: DistributorsComponent },
       { path: 'applies', component: AppliesComponent },
