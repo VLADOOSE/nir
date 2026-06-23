@@ -22,6 +22,23 @@ DROP TABLE IF EXISTS company CASCADE;
 DROP TABLE IF EXISTS tender_step CASCADE;
 DROP TABLE IF EXISTS tender_founder CASCADE;
 
+-- ========== Реестр медизделий (живучая таблица, не пересоздаётся) ==========
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE TABLE IF NOT EXISTS med_registry (
+    id              BIGSERIAL PRIMARY KEY,
+    reg_number      VARCHAR(100) NOT NULL UNIQUE,   -- № РУ (естественный ключ)
+    name            TEXT NOT NULL,                   -- наименование МИ
+    producer        VARCHAR(500),
+    country         VARCHAR(200),
+    reg_date        DATE,
+    expiration_date DATE,
+    unlimited       BOOLEAN DEFAULT FALSE,
+    imported_at     TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_reg_name_trgm     ON med_registry USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_reg_producer_trgm ON med_registry USING gin (producer gin_trgm_ops);
+
 -- ========== Справочники ==========
 
 CREATE TABLE equipment_type (
@@ -70,6 +87,9 @@ CREATE TABLE med_equipment (
     height_mm     INTEGER,
     weight_kg     NUMERIC(10, 2),
     spec          TEXT,
+    registration_status     VARCHAR(30) NOT NULL DEFAULT 'UNCHECKED',
+    med_registry_reg_number VARCHAR(100) REFERENCES med_registry(reg_number),
+    registration_checked_at TIMESTAMPTZ,
     CONSTRAINT med_equipment_length_positive CHECK (length_mm IS NULL OR length_mm > 0),
     CONSTRAINT med_equipment_width_positive  CHECK (width_mm  IS NULL OR width_mm  > 0),
     CONSTRAINT med_equipment_height_positive CHECK (height_mm IS NULL OR height_mm > 0),
