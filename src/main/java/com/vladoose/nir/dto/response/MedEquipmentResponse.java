@@ -15,4 +15,5 @@ public class MedEquipmentResponse {
     private Integer heightMm;
     private BigDecimal weightKg;
     private String spec;
+    private EquipmentRegistrationResponse registration;
 }
