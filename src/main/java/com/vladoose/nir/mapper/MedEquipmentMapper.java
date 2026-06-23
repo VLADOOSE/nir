@@ -14,6 +14,7 @@ import java.util.List;
 @Mapper(componentModel = "spring", uses = EquipmentTypeMapper.class)
 public interface MedEquipmentMapper {
 
+    @Mapping(target = "registration", ignore = true)
     MedEquipmentResponse toResponse(MedEquipment entity);
 
     List<MedEquipmentResponse> toResponseList(List<MedEquipment> entities);
