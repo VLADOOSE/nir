@@ -1,11 +1,12 @@
 import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
 import { NgIf, NgFor, NgClass } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-equipment-detail-modal',
   standalone: true,
-  imports: [NgIf, NgFor, NgClass],
+  imports: [NgIf, NgFor, NgClass, RouterLink],
   template: `
     <div *ngIf="equipment" class="overlay" (click)="onClose()">
       <aside class="sidebar" (click)="$event.stopPropagation()">
@@ -44,6 +45,28 @@ import { ApiService } from '../../services/api.service';
               <div class="spec-text">{{ equipment.spec }}</div>
             </div>
           </section>
+
+          <!-- Регистрация РК -->
+    <section class="section" *ngIf="equipment?.registration as reg">
+      <h3 class="section-title">Регистрация РК</h3>
+      <div class="reg-row">
+        <span class="reg-label">Статус</span>
+        <span class="reg-badge" [class]="'rb-' + reg.status">{{ regStatusLabel(reg.status) }}</span>
+        <span class="reg-vat" *ngIf="reg.status === 'REGISTERED'">НДС-льгота</span>
+        <span class="reg-vat reg-vat-no" *ngIf="reg.status === 'NOT_REGISTERED' || reg.status === 'NOT_MEDICAL'">облагается НДС 12%</span>
+      </div>
+      <div class="reg-row" *ngIf="reg.regNumber"><span class="reg-label">№ РУ</span><span>{{ reg.regNumber }}</span></div>
+      <div class="reg-row" *ngIf="reg.producer"><span class="reg-label">Держатель</span><span>{{ reg.producer }}</span></div>
+      <div class="reg-row" *ngIf="reg.country"><span class="reg-label">Страна</span><span>{{ reg.country }}</span></div>
+      <div class="reg-row" *ngIf="reg.regNumber"><span class="reg-label">Срок</span>
+        <span *ngIf="reg.unlimited">бессрочно</span>
+        <span *ngIf="!reg.unlimited && reg.expirationDate">до {{ reg.expirationDate }}</span>
+        <span *ngIf="!reg.unlimited && !reg.expirationDate">—</span>
+      </div>
+      <a class="reg-link" [routerLink]="['/registry-reconciliation']" [queryParams]="{ focus: equipment.id }" (click)="onClose()">
+        Изменить привязку →
+      </a>
+    </section>
 
           <!-- Потенциальные поставщики -->
           <section class="section">
@@ -266,6 +289,18 @@ import { ApiService } from '../../services/api.service';
       .body { padding: 16px 20px 24px; }
       .spec-grid { grid-template-columns: 1fr; }
     }
+
+    .reg-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+    .reg-label { color: #6b7280; min-width: 90px; }
+    .reg-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+    .rb-UNCHECKED { background: #e5e7eb; color: #374151; }
+    .rb-REGISTERED { background: #d1fae5; color: #065f46; }
+    .rb-NOT_REGISTERED { background: #fee2e2; color: #991b1b; }
+    .rb-NOT_MEDICAL { background: #fef3c7; color: #92400e; }
+    .reg-vat { font-size: 11px; color: #065f46; font-weight: 600; }
+    .reg-vat-no { color: #92400e; }
+    .reg-link { display: inline-block; margin-top: 8px; color: #1a56db; font-size: 13px; cursor: pointer; text-decoration: none; }
+    .reg-link:hover { text-decoration: underline; }
   `]
 })
 export class EquipmentDetailModalComponent implements OnChanges {
@@ -333,6 +368,10 @@ export class EquipmentDetailModalComponent implements OnChanges {
       case 'CLOSED': return 'badge-closed';
       default: return 'badge-other';
     }
+  }
+
+  regStatusLabel(s: string): string {
+    return { UNCHECKED: 'Не проверено', REGISTERED: 'Зарегистрировано', NOT_REGISTERED: 'Не зарегистрировано', NOT_MEDICAL: 'Не медизделие' }[s] || s;
   }
 
   statusLabel(s: string): string {
