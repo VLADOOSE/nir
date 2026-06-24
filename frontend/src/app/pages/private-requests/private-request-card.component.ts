@@ -33,6 +33,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
             <table *ngIf="lines.length; else noLines">
               <thead>
                 <tr>
+                  <th class="w-40"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll($any($event.target).checked)" /></th>
                   <th>Наименование/модель</th>
                   <th class="w-140">Бренд</th>
                   <th class="w-60">Кол-во</th>
@@ -41,7 +42,11 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
               </thead>
               <tbody>
                 <tr *ngFor="let l of lines">
-                  <td class="name-cell">{{ l.name }}</td>
+                  <td class="w-40"><input type="checkbox" [(ngModel)]="l._selected" /></td>
+                  <td class="name-cell">
+                    {{ l.name }}
+                    <div class="requested-at" *ngIf="requestedDistributorsFor(l.lotId).length">Запрошен у: {{ requestedDistributorsFor(l.lotId).join(', ') }}</div>
+                  </td>
                   <td>{{ l.manufact || '—' }}</td>
                   <td>{{ l.quantity ?? '—' }}</td>
                   <td>
@@ -72,11 +77,11 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 <option [ngValue]="null" disabled>— выберите поставщика —</option>
                 <option *ngFor="let d of distributors" [ngValue]="d.id">{{ d.name }}</option>
               </select>
-              <button class="btn-primary" type="button" (click)="requestPrice()" [disabled]="!selectedDistributorId || !lines.length || sending">
-                Запросить КП
+              <button class="btn-primary" type="button" (click)="requestPrice()" [disabled]="!selectedDistributorId || !selectedCount() || sending">
+                Запросить КП по выбранным ({{ selectedCount() }})
               </button>
             </div>
-            <div class="hint">КП запрашивается по всем строкам заявки ({{ lines.length }}).</div>
+            <div class="hint">Отметьте строки и поставщика, затем запросите КП. Можно несколько раундов разным поставщикам.</div>
           </section>
 
           <!-- Существующие КП / ответы -->
@@ -137,7 +142,8 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
     th { background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
     .name-cell { font-weight: 500; color: #111827; }
-    .w-60 { width: 60px; } .w-140 { width: 140px; } .w-160 { width: 160px; }
+    .w-40 { width: 40px; text-align: center; } .w-60 { width: 60px; } .w-140 { width: 140px; } .w-160 { width: 160px; }
+    .requested-at { font-size: 12px; color: #6b7280; margin-top: 4px; }
 
     .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
     .b-REGISTERED { background: #d1fae5; color: #065f46; }
@@ -213,7 +219,7 @@ export class PrivateRequestCardComponent implements OnChanges {
     this.api.getPrivateRequest(id).subscribe({
       next: (data) => {
         this.request = data || null;
-        this.lines = (data && data.lines) || [];
+        this.lines = ((data && data.lines) || []).map((l: any) => ({ ...l, _selected: false }));
         this.loading = false;
         this.cdr.detectChanges();
       },
@@ -250,18 +256,43 @@ export class PrivateRequestCardComponent implements OnChanges {
     });
   }
 
+  selectedCount(): number {
+    return this.lines.filter(l => l._selected).length;
+  }
+
+  allSelected(): boolean {
+    return this.lines.length > 0 && this.lines.every(l => l._selected);
+  }
+
+  toggleAll(checked: boolean) {
+    for (const l of this.lines) l._selected = checked;
+  }
+
+  requestedDistributorsFor(lotId: any): string[] {
+    if (lotId == null) return [];
+    const names: string[] = [];
+    for (const pr of this.priceRequests) {
+      const hasLot = (pr.items || []).some((it: any) => it.tenderLot?.id === lotId);
+      if (hasLot && pr.distributor?.name && !names.includes(pr.distributor.name)) {
+        names.push(pr.distributor.name);
+      }
+    }
+    return names;
+  }
+
   requestPrice() {
-    if (this.requestId == null || !this.selectedDistributorId || !this.lines.length) return;
+    if (this.requestId == null || !this.selectedDistributorId || !this.selectedCount()) return;
     this.sending = true;
     this.api.createPriceRequest({
       tenderId: this.requestId,
       distributorId: this.selectedDistributorId,
       status: 'SENT',
       sentAt: new Date().toISOString(),
-      items: this.lines.map(l => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
+      items: this.lines.filter(l => l._selected).map(l => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
     }).subscribe({
       next: () => {
         this.sending = false;
+        for (const l of this.lines) l._selected = false;
         this.selectedDistributorId = null;
         this.notify.success('КП запрошено');
         this.loadPriceRequests(this.requestId as number);

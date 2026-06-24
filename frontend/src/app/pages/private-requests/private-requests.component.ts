@@ -49,12 +49,13 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
 
       <div class="loading" *ngIf="loading">Загрузка…</div>
       <table *ngIf="!loading && rows.length">
-        <thead><tr><th>Номер</th><th>Клиент</th><th>Строк</th><th>Статус</th></tr></thead>
+        <thead><tr><th>Номер</th><th>Клиент</th><th>Позиций</th><th>Реестр</th><th>Статус</th></tr></thead>
         <tbody>
           <tr class="row" *ngFor="let r of rows" (click)="openCard(r)">
             <td class="num">{{ r.number }}</td>
             <td>{{ r.client?.name || '—' }}</td>
-            <td>{{ r.lines?.length ?? '—' }}</td>
+            <td>{{ r.lineCount ?? 0 }}</td>
+            <td><span class="reg-summary" [style.color]="(r.registeredCount ?? 0) > 0 ? '#065f46' : '#6b7280'">{{ r.registeredCount ?? 0 }} из {{ r.lineCount ?? 0 }} в реестре</span></td>
             <td><span class="badge">{{ r.status }}</span></td>
           </tr>
         </tbody>
@@ -91,6 +92,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .row td { padding: 9px 10px; }
     .num { font-weight: 600; color: #1a56db; }
     .badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #e5e7eb; color: #374151; }
+    .reg-summary { font-size: 12px; font-weight: 600; }
     .loading, .empty { padding: 30px; text-align: center; color: #9ca3af; }
   `]
 })
