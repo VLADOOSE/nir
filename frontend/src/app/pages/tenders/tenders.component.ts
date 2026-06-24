@@ -1,10 +1,12 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
-import { NgFor, NgIf, DecimalPipe } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { MarketService } from '../../services/market.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
@@ -13,7 +15,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, DecimalPipe],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -102,13 +104,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
-            <a class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" title="Открыть в ЕИС zakupki.gov.ru">
+            <a *ngIf="!isDemoTender(t.tenderNumber)" class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" title="Открыть в ЕИС zakupki.gov.ru">
               <svg lucideIcon="external-link" [size]="12"></svg> ЕИС
             </a>
+            <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в ЕИС">Демо</span>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
-          <div class="tender-price">{{ formatPrice(t.totalCost) }} &#8381;</div>
+          <div class="tender-price">{{ t.totalCost | money }}</div>
         </div>
         <div class="tender-card-title">{{ t.description || 'Без описания' }}</div>
         <div class="tender-card-details">
@@ -140,15 +143,16 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="tender-info">
         <h2>Тендер &#8470; {{ selectedTender.tenderNumber }}
-          <a class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" title="Открыть на zakupki.gov.ru">
+          <a *ngIf="!isDemoTender(selectedTender.tenderNumber)" class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" title="Открыть на zakupki.gov.ru">
             <svg lucideIcon="external-link" [size]="14"></svg> Открыть в ЕИС
           </a>
+          <span *ngIf="isDemoTender(selectedTender.tenderNumber)" class="demo-badge-h2" title="Контрольный пример, не существует в ЕИС">Контрольный пример</span>
         </h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || '—' }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedTender.status">{{ getStatusLabel(selectedTender.status) }}</span></div>
           <div class="info-item"><span class="info-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(selectedTender.purchaseType) }}</span></div>
-          <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ formatPrice(selectedTender.totalCost) }} &#8381;</span></div>
+          <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ selectedTender.totalCost | money }}</span></div>
           <div class="info-item"><span class="info-label">Дата публикации</span><span>{{ formatDate(selectedTender.publishDate) }}</span></div>
           <div class="info-item"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender.deadline)">{{ formatDate(selectedTender.deadline) }}</span></div>
           <div class="info-item"><span class="info-label">Адрес поставки</span><span>{{ selectedTender.deliveryAddress || '—' }}</span></div>
@@ -208,7 +212,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <tbody>
           <tr *ngFor="let l of lots">
             <td>{{ l.lotNumber }}</td><td>{{ l.equipName }}</td><td>{{ l.equipType }}</td><td>{{ l.quantity }}</td>
-            <td>{{ formatPrice(l.maxCost) }} &#8381;</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td><td>{{ l.requiredSpec || '—' }}</td>
+            <td>{{ l.maxCost | money }}</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td><td>{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
               <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
               <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
@@ -259,7 +263,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
             <table class="pr-items">
               <thead><tr>
                 <th>Лот</th><th>Модель</th><th>Кол-во</th>
-                <th>Цена ответа (₽)</th>
+                <th>Цена ответа ({{ market.symbol() }})</th>
                 <th>Предл. цена при {{ pr._markup ?? 25 }}%</th>
                 <th>Маржа</th>
                 <th>Заметка</th>
@@ -270,10 +274,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
                   <td>{{ it.medEquipment?.name }}</td>
                   <td>{{ it.requestedQuantity }}</td>
                   <td><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
-                  <td class="pmc-calc">{{ markedPrice(it, pr) | number:'1.0-0' }} ₽
+                  <td class="pmc-calc">{{ markedPrice(it, pr) | money }}
                     <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
                   </td>
-                  <td class="pmc-profit">+{{ markedProfit(it, pr) | number:'1.0-0' }} ₽</td>
+                  <td class="pmc-profit">+{{ markedProfit(it, pr) | money }}</td>
                   <td><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
                 </tr>
               </tbody>
@@ -314,6 +318,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .eis-link:hover { background: #dbeafe; }
     .eis-link-h2 { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 10px; background: #eff6ff; color: #1a56db; border-radius: 6px; text-decoration: none; font-weight: 500; margin-left: 12px; }
     .eis-link-h2:hover { background: #dbeafe; }
+    .demo-badge { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 6px; background: #fef3c7; color: #92400e; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .demo-badge-h2 { display: inline-flex; align-items: center; font-size: 12px; padding: 4px 10px; background: #fef3c7; color: #92400e; border-radius: 6px; font-weight: 600; margin-left: 12px; }
     .tender-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .tender-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .tender-number { font-weight: 600; color: #1a56db; font-size: 15px; }
@@ -468,7 +474,7 @@ export class TendersComponent {
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
               private router: Router,
-              private notify: NotificationService, private confirm: ConfirmService) {
+              private notify: NotificationService, private confirm: ConfirmService, public market: MarketService) {
     this.loadTenders();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
     this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
@@ -544,6 +550,10 @@ export class TendersComponent {
 
   eisLink(tenderNumber: string): string {
     return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
+  }
+
+  isDemoTender(tenderNumber: string): boolean {
+    return !!tenderNumber && tenderNumber.startsWith('DEMO-');
   }
 
   markupPresets = [0, 10, 15, 20, 25, 30, 40, 50];

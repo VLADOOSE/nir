@@ -3,11 +3,12 @@ import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 @Component({
   selector: 'app-tender-search',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule],
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe],
   template: `
     <h2>Поиск тендеров</h2>
     <p class="subtitle">Расширенный поиск с фильтрацией на сервере</p>
@@ -60,7 +61,7 @@ import { ApiService } from '../../services/api.service';
           <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
           <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
         </div>
-        <div class="tender-price">{{ formatPrice(t.totalCost) }} &#8381;</div>
+        <div class="tender-price">{{ t.totalCost | money }}</div>
       </div>
       <div class="tender-card-title">{{ t.description || 'Без описания' }}</div>
       <div class="tender-card-details">

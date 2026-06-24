@@ -2,12 +2,14 @@ import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
+import { MarketService } from '../../services/market.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { ChartComponent } from '../../components/chart/chart.component';
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass, ChartComponent, LucideDynamicIcon],
+  imports: [NgFor, NgIf, NgClass, ChartComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <h2>Отчёты</h2>
     <p class="subtitle">Аналитика по тендерной деятельности</p>
@@ -38,11 +40,11 @@ import { ChartComponent } from '../../components/chart/chart.component';
         </div>
         <div class="chart-cell" *ngIf="profit?.profitByType?.length">
           <h4>Прибыль по типам оборудования</h4>
-          <app-chart type="bar" label="Прибыль, ₽" [labels]="profitByTypeLabels" [values]="profitByTypeValues" [horizontal]="true"></app-chart>
+          <app-chart type="bar" [label]="'Прибыль, ' + market.symbol()" [labels]="profitByTypeLabels" [values]="profitByTypeValues" [horizontal]="true"></app-chart>
         </div>
         <div class="chart-cell" *ngIf="profit?.distributorRanking?.length">
           <h4>Прибыль по дистрибьюторам</h4>
-          <app-chart type="bar" label="Прибыль, ₽" [labels]="distributorProfitLabels" [values]="distributorProfitValues" [horizontal]="true"></app-chart>
+          <app-chart type="bar" [label]="'Прибыль, ' + market.symbol()" [labels]="distributorProfitLabels" [values]="distributorProfitValues" [horizontal]="true"></app-chart>
         </div>
       </div>
     </div>
@@ -50,12 +52,12 @@ import { ChartComponent } from '../../components/chart/chart.component';
     <div class="report-section profit-section" *ngIf="profit">
       <h3>Прибыльность по выигранным тендерам</h3>
       <div class="summary-grid summary-grid-4">
-        <div class="summary-item highlight"><span class="summary-value">{{ formatPrice(profit.summary?.totalProfit) }} &#8381;</span><span class="summary-label">Чистая прибыль</span></div>
-        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.totalRevenue) }} &#8381;</span><span class="summary-label">Выручка</span></div>
-        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.totalProcurement) }} &#8381;</span><span class="summary-label">Закупка</span></div>
+        <div class="summary-item highlight"><span class="summary-value">{{ profit.summary?.totalProfit | money }}</span><span class="summary-label">Чистая прибыль</span></div>
+        <div class="summary-item"><span class="summary-value">{{ profit.summary?.totalRevenue | money }}</span><span class="summary-label">Выручка</span></div>
+        <div class="summary-item"><span class="summary-value">{{ profit.summary?.totalProcurement | money }}</span><span class="summary-label">Закупка</span></div>
         <div class="summary-item"><span class="summary-value">{{ profit.summary?.marginPercent ?? '—' }} %</span><span class="summary-label">Маржинальность</span></div>
         <div class="summary-item"><span class="summary-value">{{ profit.summary?.wonApplies || 0 }}</span><span class="summary-label">Выиграно заявок</span></div>
-        <div class="summary-item"><span class="summary-value">{{ formatPrice(profit.summary?.avgChequeProfit) }} &#8381;</span><span class="summary-label">Прибыль / заявка</span></div>
+        <div class="summary-item"><span class="summary-value">{{ profit.summary?.avgChequeProfit | money }}</span><span class="summary-label">Прибыль / заявка</span></div>
       </div>
 
       <h4 class="subsection-title">Топ-5 прибыльных тендеров</h4>
@@ -66,8 +68,8 @@ import { ChartComponent } from '../../components/chart/chart.component';
           <tr *ngFor="let t of profit.topTenders">
             <td>&#8470; {{ t.tenderNumber }}</td>
             <td>{{ t.facilityName }}</td>
-            <td>{{ formatPrice(t.revenue) }} &#8381;</td>
-            <td class="positive">{{ formatPrice(t.profit) }} &#8381;</td>
+            <td>{{ t.revenue | money }}</td>
+            <td class="positive">{{ t.profit | money }}</td>
             <td>{{ t.marginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
@@ -81,7 +83,7 @@ import { ChartComponent } from '../../components/chart/chart.component';
           <tr *ngFor="let d of profit.distributorRanking">
             <td>{{ d.name }}</td>
             <td>{{ d.dealsCount }}</td>
-            <td class="positive">{{ formatPrice(d.totalProfit) }} &#8381;</td>
+            <td class="positive">{{ d.totalProfit | money }}</td>
             <td>{{ d.avgMarginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
@@ -95,7 +97,7 @@ import { ChartComponent } from '../../components/chart/chart.component';
           <tr *ngFor="let t of profit.profitByType">
             <td>{{ t.typeName }}</td>
             <td>{{ t.positionsCount }}</td>
-            <td class="positive">{{ formatPrice(t.totalProfit) }} &#8381;</td>
+            <td class="positive">{{ t.totalProfit | money }}</td>
             <td>{{ t.avgMarginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
@@ -106,8 +108,8 @@ import { ChartComponent } from '../../components/chart/chart.component';
       <h3>Сводка</h3>
       <div class="summary-grid">
         <div class="summary-item"><span class="summary-value">{{ totalTendersCount }}</span><span class="summary-label">Всего тендеров</span></div>
-        <div class="summary-item"><span class="summary-value">{{ formatPrice(totalSum) }} ₽</span><span class="summary-label">Общая сумма тендеров</span></div>
-        <div class="summary-item"><span class="summary-value">{{ formatPrice(avgCost) }} ₽</span><span class="summary-label">Средняя стоимость</span></div>
+        <div class="summary-item"><span class="summary-value">{{ totalSum | money }}</span><span class="summary-label">Общая сумма тендеров</span></div>
+        <div class="summary-item"><span class="summary-value">{{ avgCost | money }}</span><span class="summary-label">Средняя стоимость</span></div>
         <div class="summary-item"><span class="summary-value">{{ totalApplies }}</span><span class="summary-label">Всего заявок</span></div>
         <div class="summary-item"><span class="summary-value">{{ totalPriceRequests }}</span><span class="summary-label">Запросов КП</span></div>
         <div class="summary-item"><span class="summary-value">{{ respondedPR }}</span><span class="summary-label">Получено ответов КП</span></div>
@@ -150,7 +152,7 @@ import { ChartComponent } from '../../components/chart/chart.component';
             <td>{{ d.name }}</td>
             <td>{{ d.totalRequests }}</td>
             <td>{{ d.responded }}</td>
-            <td>{{ formatPrice(d.avgPrice) }} &#8381;</td>
+            <td>{{ d.avgPrice | money }}</td>
           </tr>
         </tbody>
       </table>
@@ -222,7 +224,7 @@ export class ReportsComponent {
   get distributorProfitLabels(): string[] { return (this.profit?.distributorRanking || []).map((d: any) => d.name); }
   get distributorProfitValues(): number[] { return (this.profit?.distributorRanking || []).map((d: any) => Number(d.totalProfit || 0)); }
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef) {
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, public market: MarketService) {
     this.loadAll();
   }
 

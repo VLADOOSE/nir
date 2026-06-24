@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, Chang
 import { NgIf, NgFor, NgClass } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 @Component({
   selector: 'app-equipment-detail-modal',
   standalone: true,
-  imports: [NgIf, NgFor, NgClass, RouterLink],
+  imports: [NgIf, NgFor, NgClass, RouterLink, MarketMoneyPipe],
   template: `
     <div *ngIf="equipment" class="overlay" (click)="onClose()">
       <aside class="sidebar" (click)="$event.stopPropagation()">
@@ -100,9 +101,9 @@ import { ApiService } from '../../services/api.service';
                 {{ distributorsWord(stats.summary.distinctDistributors) }}
               </div>
               <div class="summary-row" *ngIf="stats.summary.minPrice != null">
-                Цены ответов: от <strong>{{ formatPrice(stats.summary.minPrice) }} &#8381;</strong>
-                до <strong>{{ formatPrice(stats.summary.maxPrice) }} &#8381;</strong>,
-                средняя <strong>{{ formatPrice(stats.summary.avgPrice) }} &#8381;</strong>
+                Цены ответов: от <strong>{{ stats.summary.minPrice | money }}</strong>
+                до <strong>{{ stats.summary.maxPrice | money }}</strong>,
+                средняя <strong>{{ stats.summary.avgPrice | money }}</strong>
               </div>
               <div class="summary-row muted" *ngIf="stats.summary.minPrice == null && stats.summary.requestsCount">
                 Ответов с ценой пока не получено
@@ -125,7 +126,7 @@ import { ApiService } from '../../services/api.service';
                     <span *ngIf="i === 0" class="best-tag">← лучший</span>
                   </td>
                   <td>{{ r.responsesCount }}</td>
-                  <td>{{ formatPrice(r.avgPrice) }} &#8381;</td>
+                  <td>{{ r.avgPrice | money }}</td>
                 </tr>
               </tbody>
             </table>
@@ -151,7 +152,7 @@ import { ApiService } from '../../services/api.service';
                   <td>{{ h.distributor?.name || '—' }}</td>
                   <td>{{ h.tenderNumber || '—' }}</td>
                   <td>{{ h.requestedQuantity ?? '—' }}</td>
-                  <td>{{ h.responsePrice != null ? formatPrice(h.responsePrice) + ' ₽' : '—' }}</td>
+                  <td>{{ h.responsePrice != null ? (h.responsePrice | money) : '—' }}</td>
                   <td>
                     <span class="badge" [ngClass]="statusClass(h.status)">{{ statusLabel(h.status) }}</span>
                   </td>

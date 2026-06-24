@@ -3,11 +3,12 @@ import { NgFor, NgIf, NgClass } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [NgFor, NgIf, NgClass, RouterLink, LucideDynamicIcon],
+  imports: [NgFor, NgIf, NgClass, RouterLink, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <h2>Главная</h2>
     <p class="subtitle">Сводка по текущей деятельности компании</p>
@@ -52,11 +53,11 @@ import { ApiService } from '../../services/api.service';
         <span class="profit-card-icon"><svg lucideIcon="trending-up" [size]="24"></svg></span>
         <div>
           <div class="profit-card-label">Чистая прибыль по выигранным тендерам</div>
-          <div class="profit-card-meta">{{ profitSummary.wonApplies || 0 }} заявок · средняя прибыль {{ formatPrice(profitSummary.avgChequeProfit) }} &#8381;</div>
+          <div class="profit-card-meta">{{ profitSummary.wonApplies || 0 }} заявок · средняя прибыль {{ profitSummary.avgChequeProfit | money }}</div>
         </div>
       </div>
       <div class="profit-card-value">
-        {{ formatPrice(profitSummary.totalProfit) }} &#8381;
+        {{ profitSummary.totalProfit | money }}
         <span class="profit-card-margin" *ngIf="profitSummary.marginPercent != null">({{ profitSummary.marginPercent }}% маржинальность)</span>
       </div>
     </div>

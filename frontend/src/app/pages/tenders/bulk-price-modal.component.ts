@@ -180,10 +180,10 @@ import { NotificationService } from '../../services/notification.service';
       margin-bottom: 14px; background: #fafbfc;
     }
     .group-header {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+      display: flex; flex-direction: column; align-items: flex-start;
+      gap: 8px; margin-bottom: 12px;
     }
-    .group-title { font-size: 15px; color: #111827; }
+    .group-title { font-size: 15px; color: #111827; line-height: 1.4; }
     .group-title strong { color: #1a56db; }
     .contact { color: #6b7280; font-size: 13px; }
     .group-types { display: flex; gap: 6px; flex-wrap: wrap; }

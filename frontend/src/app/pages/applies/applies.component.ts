@@ -6,12 +6,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { MarketService } from '../../services/market.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 
 @Component({
   selector: 'app-applies',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, LucideDynamicIcon],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <!-- ========== СПИСОК ЗАЯВОК ========== -->
     <ng-container *ngIf="!selectedApply">
@@ -83,7 +85,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
               <span *ngIf="a.status !== 'WON'" class="muted">—</span>
             </td>
             <td>{{ a._itemCount || 0 }}</td>
-            <td>{{ formatPrice(a._totalCost) }} &#8381;</td>
+            <td>{{ a._totalCost | money }}</td>
             <td>{{ formatDate(a.createdAt) }}</td>
             <td class="actions">
               <button class="btn btn-open" (click)="onOpen(a)">Открыть</button>
@@ -114,9 +116,10 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         <h2>Заявка #{{ selectedApply.id }}</h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}
-            <a *ngIf="selectedApply.tender?.tenderNumber" class="eis-link-inline" [href]="eisLink(selectedApply.tender.tenderNumber)" target="_blank" rel="noopener" title="Открыть в ЕИС">
+            <a *ngIf="selectedApply.tender?.tenderNumber && !isDemoTender(selectedApply.tender.tenderNumber)" class="eis-link-inline" [href]="eisLink(selectedApply.tender.tenderNumber)" target="_blank" rel="noopener" title="Открыть в ЕИС">
               <svg lucideIcon="external-link" [size]="11"></svg> ЕИС
-            </a></span>
+            </a>
+            <span *ngIf="selectedApply.tender?.tenderNumber && isDemoTender(selectedApply.tender.tenderNumber)" class="demo-badge-inline" title="Контрольный пример, не существует в ЕИС">Демо</span></span>
           </div>
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedApply.tender?.facility?.name || '—' }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedApply.status">{{ getStatusLabel(selectedApply.status) }}</span></div>
@@ -130,7 +133,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showItemForm" (click)="onAddItem()">Добавить позицию</button>
         <button class="btn btn-autofill" *ngIf="selectedApply?.status === 'DRAFT' && !showItemForm" (click)="onAutoFill()">Собрать из КП</button>
-        <span class="counter" *ngIf="items.length">{{ items.length }} позиций — итого: {{ formatPrice(itemsTotal) }} &#8381;</span>
+        <span class="counter" *ngIf="items.length">{{ items.length }} позиций — итого: {{ itemsTotal | money }}</span>
       </div>
 
       <div *ngIf="showAutoFillModal" class="af-modal-backdrop" (click)="showAutoFillModal = false">
@@ -208,10 +211,10 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
             <td>{{ it.tenderLot?.equipName || '—' }}</td>
             <td>{{ it.medEquipment?.name || '—' }}</td>
             <td>{{ it.distributor?.name || '—' }}</td>
-            <td class="num-col">{{ formatPrice(it.offeredCost) }} &#8381;</td>
-            <td class="num-col">{{ it.procurementCost != null ? formatPrice(it.procurementCost) + ' ₽' : '—' }}</td>
+            <td class="num-col">{{ it.offeredCost | money }}</td>
+            <td class="num-col">{{ it.procurementCost != null ? (it.procurementCost | money) : '—' }}</td>
             <td class="num-col" [class.positive]="it.margin > 0" [class.negative]="it.margin < 0">
-              {{ it.margin != null ? formatPrice(it.margin) + ' ₽' : '—' }}
+              {{ it.margin != null ? (it.margin | money) : '—' }}
             </td>
             <td class="num-col" [class.positive]="it.marginPercent > 0" [class.negative]="it.marginPercent < 0">
               {{ it.marginPercent != null ? it.marginPercent + ' %' : '—' }}
@@ -228,17 +231,17 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div *ngIf="items.length > 0 && selectedApply" class="profit-summary">
         <div class="ps-row">
           <span class="ps-label">Выручка</span>
-          <span class="ps-value">{{ formatPrice(selectedApply.totalRevenue) }} &#8381;</span>
+          <span class="ps-value">{{ selectedApply.totalRevenue | money }}</span>
         </div>
         <div class="ps-row" *ngIf="selectedApply.totalProcurement != null">
           <span class="ps-label">Закупка</span>
-          <span class="ps-value">{{ formatPrice(selectedApply.totalProcurement) }} &#8381;</span>
+          <span class="ps-value">{{ selectedApply.totalProcurement | money }}</span>
         </div>
         <div class="ps-row ps-profit" *ngIf="selectedApply.totalProfit != null"
              [class.positive]="selectedApply.totalProfit > 0"
              [class.negative]="selectedApply.totalProfit < 0">
           <span class="ps-label">Прибыль</span>
-          <span class="ps-value">{{ formatPrice(selectedApply.totalProfit) }} &#8381;
+          <span class="ps-value">{{ selectedApply.totalProfit | money }}
             <span *ngIf="selectedApply.marginPercent != null" class="ps-percent">({{ selectedApply.marginPercent }}%)</span>
           </span>
         </div>
@@ -302,6 +305,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     h2 { margin: 0; font-size: 20px; color: #111827; }
     .eis-link-inline { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 8px; background: #eff6ff; color: #1a56db; border-radius: 4px; text-decoration: none; font-weight: 500; margin-left: 8px; vertical-align: middle; }
     .eis-link-inline:hover { background: #dbeafe; }
+    .demo-badge-inline { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 6px; background: #fef3c7; color: #92400e; border-radius: 4px; font-weight: 600; margin-left: 8px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.04em; }
     .af-modal-backdrop { position: fixed; inset: 0; background: rgba(17,24,39,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
     .af-modal { background: #fff; border-radius: 10px; padding: 24px; width: 440px; max-width: 90vw; box-shadow: 0 12px 32px rgba(0,0,0,0.18); }
     .af-modal h3 { margin: 0 0 8px; font-size: 17px; color: #111827; }
@@ -448,7 +452,7 @@ export class AppliesComponent {
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
-              private route: ActivatedRoute) {
+              private route: ActivatedRoute, public market: MarketService) {
     this.loadApplies();
     this.api.getTenders().subscribe({ next: data => { this.tenders = data; this.cdr.detectChanges(); } });
   }
@@ -483,6 +487,10 @@ export class AppliesComponent {
 
   eisLink(tenderNumber: string): string {
     return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
+  }
+
+  isDemoTender(tenderNumber: string): boolean {
+    return !!tenderNumber && tenderNumber.startsWith('DEMO-');
   }
 
   loadApplies() {
@@ -659,7 +667,7 @@ export class AppliesComponent {
     if (v.offeredCost && v.tenderLotId) {
       const lot = this.lots.find((l: any) => l.id === +v.tenderLotId!);
       if (lot && lot.maxCost != null && +v.offeredCost! > +lot.maxCost) {
-        this.validationErrors = { offeredCost: 'Превышает макс. цену лота (' + lot.maxCost + ' ₽)' };
+        this.validationErrors = { offeredCost: 'Превышает макс. цену лота (' + lot.maxCost + ' ' + this.market.symbol() + ')' };
         return;
       }
     }

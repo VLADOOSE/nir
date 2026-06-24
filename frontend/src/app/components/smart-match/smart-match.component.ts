@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 type Preset = 'BALANCED' | 'MAX_PROFIT' | 'RELIABILITY' | 'CUSTOM';
 
@@ -14,7 +15,7 @@ const LS_KEY = 'smartMatch.v1';
 @Component({
   selector: 'app-smart-match',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MarketMoneyPipe],
   template: `
     <div class="sm-panel">
       <div class="sm-header">
@@ -77,7 +78,7 @@ const LS_KEY = 'smartMatch.v1';
                   <li><strong>Опыт:</strong> {{ c.breakdown.track.raw }}</li>
                   <li><strong>Габариты:</strong> {{ c.breakdown.dim.raw }}</li>
                 </ul>
-                <p *ngIf="c.estimatedPrice" class="estim">Оценочная цена: <strong>{{ formatMoney(c.estimatedPrice) }} ₽</strong> · ожидаемая маржа: <strong>{{ formatMoney(c.estimatedMargin) }} ₽</strong></p>
+                <p *ngIf="c.estimatedPrice" class="estim">Оценочная цена: <strong>{{ c.estimatedPrice | money }}</strong> · ожидаемая маржа: <strong>{{ c.estimatedMargin | money }}</strong></p>
                 <button *ngIf="c.bestDistributor" class="btn-pr" (click)="requestPrice.emit({ candidate: c, distributorId: c.bestDistributor.distributorId, distributorName: c.bestDistributor.name })">
                   Запросить КП у {{ c.bestDistributor.name }}
                 </button>
