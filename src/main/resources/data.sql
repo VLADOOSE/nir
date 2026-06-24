@@ -1070,4 +1070,4 @@ INSERT INTO tender (tender_number, facility_id, status, source, market, descript
 
 INSERT INTO tender_lot (tender_id, lot_number, equip_name, manufact, quantity) VALUES
   ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 1, 'Электрокардиограф BeneHeart R12', 'Mindray', 2),
-  ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 2, 'Иглы для биопсии BioPin-200', 'БиоПин', 1);
+  ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 2, 'Криосауна CryoSpace', 'КриоСпейс', 1);
