@@ -13,6 +13,7 @@ import java.util.List;
 
 @FilterDef(name = "marketFilter", parameters = @ParamDef(name = "market", type = String.class))
 @Filter(name = "marketFilter", condition = "market = :market")
+@EntityListeners(MarketStampingListener.class)
 @Entity
 @Table(name = "tender")
 @Getter
@@ -20,7 +21,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Tender {
+public class Tender implements MarketScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -75,8 +76,7 @@ public class Tender {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
-    @Builder.Default
-    private Market market = Market.RF;
+    private Market market;
 
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

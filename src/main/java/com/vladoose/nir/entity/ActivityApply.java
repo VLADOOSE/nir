@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Filter(name = "marketFilter", condition = "market = :market")
+@EntityListeners(MarketStampingListener.class)
 @Entity
 @Table(name = "activity_apply")
 @Getter
@@ -17,7 +18,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ActivityApply {
+public class ActivityApply implements MarketScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,8 +58,7 @@ public class ActivityApply {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
-    @Builder.Default
-    private Market market = Market.RF;
+    private Market market;
 
     @OneToMany(mappedBy = "apply", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

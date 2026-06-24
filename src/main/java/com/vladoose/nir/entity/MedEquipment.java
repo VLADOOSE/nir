@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Filter(name = "marketFilter", condition = "market = :market")
+@EntityListeners(MarketStampingListener.class)
 @Entity
 @Table(name = "med_equipment")
 @Getter
@@ -15,7 +16,7 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class MedEquipment {
+public class MedEquipment implements MarketScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,8 +49,7 @@ public class MedEquipment {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
-    @Builder.Default
-    private Market market = Market.RF;
+    private Market market;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "registration_status", nullable = false, length = 30)

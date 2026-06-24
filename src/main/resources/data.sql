@@ -1056,3 +1056,9 @@ INSERT INTO med_equipment (name, manufact, equip_type_id, length_mm, width_mm, h
 INSERT INTO tender (tender_number, facility_id, status, deadline, total_cost, currency, description, market) VALUES
   ('KZ-2026-0001', (SELECT id FROM facility WHERE name='ГКП «Городская больница №1 г. Алматы»'), 'NEW',
    DATE '2026-08-15', 45000000.00, 'KZT', 'Закуп УЗИ-аппарата для горбольницы №1 (Алматы)', 'KZ');
+
+-- KZ дистрибьюторы — привязка к типам оборудования (УЗИ, ИВЛ) для bulk-КП "eligible distributors"
+INSERT INTO distributor_equipment_type (distributor_id, equipment_type_id)
+SELECT d.id, et.id FROM distributor d, equipment_type et
+WHERE d.name IN ('ТОО «МедСнаб Казахстан»','ТОО «Алматы Медтехника»')
+  AND et.name IN ('УЗИ','ИВЛ');

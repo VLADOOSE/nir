@@ -18,6 +18,9 @@ public class MarketInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // SECURITY NOTE: X-Market — это клиентски-утверждаемый заголовок UI-переключения рынка,
+        // НЕ граница авторизации tenant-а. Если потребуется изоляция по классам пользователей,
+        // рынок нужно выводить из допустимых рынков пользователя на сервере, а не из заголовка.
         MarketContext.set(Market.fromHeader(request.getHeader("X-Market")));
         return true;
     }

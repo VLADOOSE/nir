@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.Filter;
 
 @Filter(name = "marketFilter", condition = "market = :market")
+@EntityListeners(MarketStampingListener.class)
 @Entity
 @Table(name = "facility")
 @Getter
@@ -12,7 +13,7 @@ import org.hibernate.annotations.Filter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Facility {
+public class Facility implements MarketScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -44,6 +45,5 @@ public class Facility {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
-    @Builder.Default
-    private Market market = Market.RF;
+    private Market market;
 }
