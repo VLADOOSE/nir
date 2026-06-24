@@ -27,7 +27,7 @@ public class PriceRequestItem {
     private TenderLot tenderLot;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "med_equipment_id", nullable = false)
+    @JoinColumn(name = "med_equipment_id")
     private MedEquipment medEquipment;
 
     @Column(name = "requested_quantity", nullable = false)

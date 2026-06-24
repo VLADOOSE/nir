@@ -18,6 +18,7 @@ public class TenderResponse {
     private LocalDate publishDate;
     private BigDecimal totalCost;
     private String currency;
+    private String source;
     private String description;
     private String deliveryAddress;
     private String contactLastName;

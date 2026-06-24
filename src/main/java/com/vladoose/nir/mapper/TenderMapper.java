@@ -29,6 +29,7 @@ public interface TenderMapper {
     @Mapping(target = "lots", ignore = true)
     @Mapping(target = "facility", source = "facilityId", qualifiedByName = "facilityFromId")
     @Mapping(target = "market", ignore = true)
+    @Mapping(target = "source", ignore = true)
     Tender toEntity(TenderRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -36,6 +37,7 @@ public interface TenderMapper {
     @Mapping(target = "lots", ignore = true)
     @Mapping(target = "facility", source = "facilityId", qualifiedByName = "facilityFromId")
     @Mapping(target = "market", ignore = true)
+    @Mapping(target = "source", ignore = true)
     void updateEntity(TenderRequest request, @MappingTarget Tender entity);
 
     @Mapping(target = "id", source = "id")
@@ -47,6 +49,7 @@ public interface TenderMapper {
     @Mapping(target = "id", source = "id")
     @Mapping(target = "lotNumber", source = "lotNumber")
     @Mapping(target = "equipName", source = "equipName")
+    @Mapping(target = "manufact", source = "manufact")
     @Mapping(target = "equipmentType", source = "equipmentType")
     @Mapping(target = "quantity", source = "quantity")
     @Mapping(target = "maxCost", source = "maxCost")

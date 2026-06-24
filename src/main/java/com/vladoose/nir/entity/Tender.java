@@ -40,7 +40,7 @@ public class Tender implements MarketScoped {
     @Column(name = "purchase_type", length = 50)
     private String purchaseType;
 
-    @Column(nullable = false)
+    @Column
     private LocalDate deadline;
 
     @Column(name = "publish_date")
@@ -52,6 +52,11 @@ public class Tender implements MarketScoped {
     @Column(length = 10)
     @Builder.Default
     private String currency = "RUB";
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private Source source = Source.PUBLIC_TENDER;
 
     @Column(columnDefinition = "TEXT")
     private String description;

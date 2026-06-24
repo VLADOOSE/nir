@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
@@ -24,7 +25,7 @@ public class TenderService {
     }
 
     public List<Tender> findAll() {
-        return repository.findAll();
+        return repository.findBySource(Source.PUBLIC_TENDER);
     }
 
     public Tender findById(Long id) {

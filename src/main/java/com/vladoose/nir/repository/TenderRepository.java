@@ -1,5 +1,6 @@
 package com.vladoose.nir.repository;
 
+import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -13,7 +14,10 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     boolean existsByFacilityId(Long facilityId);
 
+    List<Tender> findBySource(Source source);
+
     @Query("SELECT DISTINCT t FROM Tender t JOIN t.lots l WHERE " +
+           "t.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER AND " +
            "(:status IS NULL OR t.status = :status) AND " +
            "(:facilityId IS NULL OR t.facility.id = :facilityId) AND " +
            "(:equipType IS NULL OR l.equipmentType.name = :equipType) AND " +

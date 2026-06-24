@@ -17,6 +17,8 @@ public class TenderLotRequest {
     @NotBlank(message = "Название оборудования обязательно")
     private String equipName;
 
+    private String manufact;
+
     private Long equipTypeId;
 
     @NotNull(message = "Количество обязательно")

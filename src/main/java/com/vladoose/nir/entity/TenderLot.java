@@ -28,6 +28,9 @@ public class TenderLot {
     @Column(name = "equip_name")
     private String equipName;
 
+    @Column(length = 255)
+    private String manufact;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "equip_type_id")
     private EquipmentType equipmentType;

@@ -10,6 +10,7 @@ public class TenderLotResponse {
     private TenderShortResponse tender;
     private Integer lotNumber;
     private String equipName;
+    private String manufact;
     private EquipmentTypeResponse equipmentType;
     private Integer quantity;
     private BigDecimal maxCost;
