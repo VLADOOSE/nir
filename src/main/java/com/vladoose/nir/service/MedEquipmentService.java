@@ -33,6 +33,7 @@ public class MedEquipmentService {
 
     @Transactional
     public MedEquipment save(MedEquipment equipment) {
+        equipment.setMarket(com.vladoose.nir.context.MarketContext.get());
         return repository.save(equipment);
     }
 

@@ -40,6 +40,7 @@ public class PriceRequestService {
 
     @Transactional
     public PriceRequest save(PriceRequest priceRequest) {
+        priceRequest.setMarket(com.vladoose.nir.context.MarketContext.get());
         return repository.save(priceRequest);
     }
 
