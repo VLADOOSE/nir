@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
+import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.PrivateRequestResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.mapper.FacilityMapper;
@@ -25,14 +26,20 @@ public class PrivateRequestController {
 
     @GetMapping
     public List<PrivateRequestResponse> findAll() {
-        return service.findAll().stream().map(this::toShort).toList();
+        return service.findAll().stream().map(t -> {
+            PrivateRequestResponse r = toShort(t);
+            applyCounts(r, service.linesWithRegistration(t.getId()));
+            return r;
+        }).toList();
     }
 
     @GetMapping("/{id}")
     public PrivateRequestResponse findById(@PathVariable Long id) {
         Tender t = service.findById(id);
         PrivateRequestResponse r = toShort(t);
-        r.setLines(service.linesWithRegistration(id));
+        List<PrivateRequestLineResponse> lines = service.linesWithRegistration(id);
+        applyCounts(r, lines);
+        r.setLines(lines);
         return r;
     }
 
@@ -41,7 +48,9 @@ public class PrivateRequestController {
     public PrivateRequestResponse create(@Valid @RequestBody PrivateRequestCreate request) {
         Tender t = service.createFromLines(request);
         PrivateRequestResponse r = toShort(t);
-        r.setLines(service.linesWithRegistration(t.getId()));
+        List<PrivateRequestLineResponse> lines = service.linesWithRegistration(t.getId());
+        applyCounts(r, lines);
+        r.setLines(lines);
         return r;
     }
 
@@ -54,5 +63,12 @@ public class PrivateRequestController {
             r.setClient(facilityMapper.toResponse(t.getFacility()));
         }
         return r;
+    }
+
+    private void applyCounts(PrivateRequestResponse r, List<PrivateRequestLineResponse> lines) {
+        r.setLineCount(lines.size());
+        r.setRegisteredCount((int) lines.stream()
+                .filter(l -> "REGISTERED".equals(l.getRegistrationStatus()))
+                .count());
     }
 }

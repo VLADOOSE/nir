@@ -12,5 +12,7 @@ public class PrivateRequestResponse {
     private FacilityResponse client;
     private String status;
     private OffsetDateTime createdAt;
+    private int lineCount;
+    private int registeredCount;
     private List<PrivateRequestLineResponse> lines;
 }
