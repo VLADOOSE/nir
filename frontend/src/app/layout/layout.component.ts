@@ -201,8 +201,8 @@ export class LayoutComponent {
   onMarketChange(e: Event) {
     const m = (e.target as HTMLSelectElement).value as Market;
     this.market.setMarket(m);
-    // полный сброс данных текущего рынка: перезагрузка на дашборд
-    this.router.navigateByUrl('/dashboard').then(() => location.reload());
+    // перезагружаем ТЕКУЩУЮ страницу (URL сохраняется) — данные перечитаются под новый рынок
+    location.reload();
   }
 
   onLogout() {
