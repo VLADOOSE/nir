@@ -48,12 +48,12 @@ class MedRegistryRepositoryTest {
 
     @Test
     void findCandidates_shortBrandMatchesLongProducerName_viaWordSimilarity() {
+        // name НЕ совпадает (ищем по несвязанному имени) → строку можно найти ТОЛЬКО по producer word_similarity
         repository.save(row("ZZWS-001", "Электрокардиограф BeneHeart R12",
                 "Shenzhen ZZBrandUniq Bio-Medical Electronics Co., Ltd."));
         repository.flush();
-        // короткий бренд как слово внутри длинного производителя
         List<RegistryCandidateRow> result =
-                repository.findCandidates("Электрокардиограф", "ZZBrandUniq", 5);
+                repository.findCandidates("СовершенноДругоеИмяZZ", "ZZBrandUniq", 5);
         assertThat(result).extracting(RegistryCandidateRow::getRegNumber).contains("ZZWS-001");
     }
 
