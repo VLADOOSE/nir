@@ -1062,3 +1062,12 @@ INSERT INTO distributor_equipment_type (distributor_id, equipment_type_id)
 SELECT d.id, et.id FROM distributor d, equipment_type et
 WHERE d.name IN ('ТОО «МедСнаб Казахстан»','ТОО «Алматы Медтехника»')
   AND et.name IN ('УЗИ','ИВЛ');
+
+-- KZ частная заявка (демо потока «частники»: tender source=PRIVATE_REQUEST, deadline null)
+INSERT INTO tender (tender_number, facility_id, status, source, market, description) VALUES
+  ('ЧЗ-2026-0001', (SELECT id FROM facility WHERE name='ГКП «Городская больница №1 г. Алматы»'),
+   'NEW', 'PRIVATE_REQUEST', 'KZ', 'Запрос от частной клиники: ЭКГ и расходники');
+
+INSERT INTO tender_lot (tender_id, lot_number, equip_name, manufact, quantity) VALUES
+  ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 1, 'Электрокардиограф BeneHeart R12', 'Mindray', 2),
+  ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 2, 'Иглы для биопсии BioPin-200', 'БиоПин', 1);
