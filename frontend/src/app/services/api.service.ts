@@ -223,4 +223,15 @@ export class ApiService {
   refreshRegistry(): Observable<any> {
     return this.http.post(`${this.base}/registry/refresh`, {});
   }
+
+  // === Частные заявки ===
+  getPrivateRequests(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/private-requests`);
+  }
+  getPrivateRequest(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/private-requests/${id}`);
+  }
+  createPrivateRequest(body: any): Observable<any> {
+    return this.http.post<any>(`${this.base}/private-requests`, body);
+  }
 }

@@ -89,6 +89,9 @@ import { MarketService, Market } from '../services/market.service';
             <a routerLink="/applies" routerLinkActive="active">
               <svg lucideIcon="clipboard-list" [size]="16"></svg> Заявки на участие
             </a>
+            <a routerLink="/private-requests" routerLinkActive="active">
+              <svg lucideIcon="clipboard-list" [size]="16"></svg> Частные заявки
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Система</span>
