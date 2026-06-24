@@ -16,9 +16,11 @@ import java.time.format.DateTimeFormatter;
 public class ProfitabilityExcelService {
 
     private final ProfitabilityReportService reportService;
+    private final CompanyInfoProvider companyInfoProvider;
 
-    public ProfitabilityExcelService(ProfitabilityReportService reportService) {
+    public ProfitabilityExcelService(ProfitabilityReportService reportService, CompanyInfoProvider companyInfoProvider) {
         this.reportService = reportService;
+        this.companyInfoProvider = companyInfoProvider;
     }
 
     public byte[] generate() throws IOException {
@@ -33,18 +35,20 @@ public class ProfitabilityExcelService {
 
             // --- Лист 1: Сводка ---
             Sheet summarySheet = wb.createSheet("Сводка");
-            Row r0 = summarySheet.createRow(0);
-            Cell c0 = r0.createCell(0);
-            c0.setCellValue("Отчёт по прибыльности — ООО «Регион-Мед»");
-            c0.setCellStyle(title);
-            summarySheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 1));
+            int row = ExcelCompanyHeader.writeTo(summarySheet, wb, companyInfoProvider.current());
 
-            Row r1 = summarySheet.createRow(1);
-            r1.createCell(0).setCellValue("Дата отчёта:");
-            r1.createCell(1).setCellValue(LocalDate.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+            Row titleRow = summarySheet.createRow(row++);
+            Cell c0 = titleRow.createCell(0);
+            c0.setCellValue("Отчёт по прибыльности по выигранным тендерам");
+            c0.setCellStyle(title);
+            summarySheet.addMergedRegion(new CellRangeAddress(titleRow.getRowNum(), titleRow.getRowNum(), 0, 4));
+
+            Row dateRow = summarySheet.createRow(row++);
+            dateRow.createCell(0).setCellValue("Дата отчёта:");
+            dateRow.createCell(1).setCellValue(LocalDate.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+            row++;  // пустая строка-разделитель
 
             ProfitabilityReportResponse.Summary s = report.getSummary();
-            int row = 3;
             putKV(summarySheet, row++, "Выиграно заявок", val(s.getWonApplies()), label, null);
             putKV(summarySheet, row++, "Выручка", num(s.getTotalRevenue()), label, money);
             putKV(summarySheet, row++, "Закупка", num(s.getTotalProcurement()), label, money);
@@ -53,12 +57,12 @@ public class ProfitabilityExcelService {
             putKV(summarySheet, row++, "Средняя прибыль на заявку", num(s.getAvgChequeProfit()), label, money);
 
             summarySheet.setColumnWidth(0, 8000);
-            summarySheet.setColumnWidth(1, 5000);
+            summarySheet.setColumnWidth(1, 7000);
 
             // --- Лист 2: Топ тендеров ---
             Sheet topSheet = wb.createSheet("Топ тендеров");
-            writeRow(topSheet, 0, new String[]{"№ тендера", "Заказчик", "Выручка", "Прибыль", "Маржа %"}, header);
-            int rt = 1;
+            int rt = ExcelCompanyHeader.writeTo(topSheet, wb, companyInfoProvider.current());
+            writeRow(topSheet, rt++, new String[]{"№ тендера", "Заказчик", "Выручка", "Прибыль", "Маржа %"}, header);
             for (var t : report.getTopTenders()) {
                 Row r = topSheet.createRow(rt++);
                 r.createCell(0).setCellValue(t.getTenderNumber() != null ? t.getTenderNumber() : "");
@@ -71,8 +75,8 @@ public class ProfitabilityExcelService {
 
             // --- Лист 3: Дистрибьюторы ---
             Sheet distSheet = wb.createSheet("Дистрибьюторы");
-            writeRow(distSheet, 0, new String[]{"Дистрибьютор", "Сделок", "Прибыль", "Средняя маржа %"}, header);
-            int rd = 1;
+            int rd = ExcelCompanyHeader.writeTo(distSheet, wb, companyInfoProvider.current());
+            writeRow(distSheet, rd++, new String[]{"Дистрибьютор", "Сделок", "Прибыль", "Средняя маржа %"}, header);
             for (var d : report.getDistributorRanking()) {
                 Row r = distSheet.createRow(rd++);
                 r.createCell(0).setCellValue(d.getName() != null ? d.getName() : "");
@@ -84,8 +88,8 @@ public class ProfitabilityExcelService {
 
             // --- Лист 4: Типы оборудования ---
             Sheet typeSheet = wb.createSheet("Типы оборудования");
-            writeRow(typeSheet, 0, new String[]{"Тип", "Позиций", "Прибыль", "Средняя маржа %"}, header);
-            int rty = 1;
+            int rty = ExcelCompanyHeader.writeTo(typeSheet, wb, companyInfoProvider.current());
+            writeRow(typeSheet, rty++, new String[]{"Тип", "Позиций", "Прибыль", "Средняя маржа %"}, header);
             for (var t : report.getProfitByType()) {
                 Row r = typeSheet.createRow(rty++);
                 r.createCell(0).setCellValue(t.getTypeName() != null ? t.getTypeName() : "");

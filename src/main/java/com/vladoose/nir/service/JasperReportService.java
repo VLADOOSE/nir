@@ -20,9 +20,11 @@ import java.util.List;
 public class JasperReportService {
 
     private final TenderRepository tenderRepository;
+    private final CompanyInfoProvider companyInfoProvider;
 
-    public JasperReportService(TenderRepository tenderRepository) {
+    public JasperReportService(TenderRepository tenderRepository, CompanyInfoProvider companyInfoProvider) {
         this.tenderRepository = tenderRepository;
+        this.companyInfoProvider = companyInfoProvider;
     }
 
     public byte[] generateTenderReport(String status) throws Exception {
@@ -49,6 +51,8 @@ public class JasperReportService {
         Font cellFont = new Font(bf, 9);
         Font subtitleFont = new Font(bf, 10);
         Font boldFont = new Font(bf, 11, Font.BOLD);
+
+        PdfCompanyHeader.addTo(document, bf, companyInfoProvider.current());
 
         String title = "Отчёт по тендерам";
         if (status != null) title += " (статус: " + getStatusLabel(status) + ")";
@@ -135,6 +139,8 @@ public class JasperReportService {
         Font labelFont = new Font(bf, 10, Font.BOLD);
         Font valueFont = new Font(bf, 10);
 
+        PdfCompanyHeader.addTo(document, bf, companyInfoProvider.current());
+
         Paragraph title = new Paragraph("Заявка на участие в тендере", titleFont);
         title.setAlignment(Element.ALIGN_CENTER);
         title.setSpacingAfter(15);
@@ -190,7 +196,7 @@ public class JasperReportService {
             document.add(totalPara);
         }
 
-        document.add(new Paragraph("\n\n\nДата: _______________     Подпись: _______________", valueFont));
+        PdfCompanyHeader.addDirectorSignature(document, bf);
 
         document.close();
         return out.toByteArray();
