@@ -28,7 +28,7 @@ public class JasperReportService {
     }
 
     public byte[] generateTenderReport(String status) throws Exception {
-        List<Tender> tenders = tenderRepository.findAll();
+        List<Tender> tenders = tenderRepository.findBySource(com.vladoose.nir.entity.Source.PUBLIC_TENDER);
         if (status != null && !status.isEmpty()) {
             tenders = tenders.stream().filter(t -> status.equals(t.getStatus())).toList();
         }

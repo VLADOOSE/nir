@@ -12,6 +12,6 @@ public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
 
     List<TenderLot> findByEquipmentTypeId(Long equipmentTypeId);
 
-    @Query("SELECT l.equipmentType.name, COUNT(l) FROM TenderLot l WHERE l.equipmentType IS NOT NULL GROUP BY l.equipmentType.name ORDER BY COUNT(l) DESC")
+    @Query("SELECT l.equipmentType.name, COUNT(l) FROM TenderLot l WHERE l.equipmentType IS NOT NULL AND l.tender.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER GROUP BY l.equipmentType.name ORDER BY COUNT(l) DESC")
     List<Object[]> countByEquipType();
 }

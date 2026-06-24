@@ -82,6 +82,12 @@ public class ApplyAutoFillService {
             PriceRequestItem best = candidates.stream()
                     .min(Comparator.comparing(PriceRequestItem::getResponsePrice))
                     .orElseThrow();
+            if (best.getMedEquipment() == null) {
+                // КП частной заявки может не иметь привязки к каталогу оборудования —
+                // без med_equipment позицию заявки построить нельзя, считаем лот без КП.
+                missing.add("Лот " + lot.getLotNumber() + ": " + lot.getEquipName());
+                continue;
+            }
             BigDecimal procurement = best.getResponsePrice();
             BigDecimal offered = procurement.multiply(
                     BigDecimal.valueOf(1.0 + markup / 100.0)

@@ -28,7 +28,7 @@ public class ReportService {
     }
 
     public Map<String, Long> getTenderStatsByStatus() {
-        return tenderRepository.findAll().stream()
+        return tenderRepository.findBySource(com.vladoose.nir.entity.Source.PUBLIC_TENDER).stream()
                 .collect(Collectors.groupingBy(
                         t -> t.getStatus(),
                         LinkedHashMap::new,
