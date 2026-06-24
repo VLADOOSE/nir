@@ -29,6 +29,8 @@ class MarketScopingTest {
     }
 
     private void enableFilter(Market m) {
+        // Источник истины для фильтра — MarketContext (его читает MarketFilterAspect).
+        MarketContext.set(m);
         entityManager.unwrap(Session.class)
                 .enableFilter("marketFilter").setParameter("market", m.name());
     }
