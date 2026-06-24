@@ -19,9 +19,11 @@ public interface FacilityMapper {
     List<FacilityResponse> toResponseList(List<Facility> entities);
 
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "market", ignore = true)
     Facility toEntity(FacilityRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "market", ignore = true)
     void updateEntity(FacilityRequest request, @MappingTarget Facility entity);
 }

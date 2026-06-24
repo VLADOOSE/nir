@@ -24,6 +24,7 @@ public interface MedEquipmentMapper {
     @Mapping(target = "registrationStatus", ignore = true)
     @Mapping(target = "registration", ignore = true)
     @Mapping(target = "registrationCheckedAt", ignore = true)
+    @Mapping(target = "market", ignore = true)
     MedEquipment toEntity(MedEquipmentRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -32,6 +33,7 @@ public interface MedEquipmentMapper {
     @Mapping(target = "registrationStatus", ignore = true)
     @Mapping(target = "registration", ignore = true)
     @Mapping(target = "registrationCheckedAt", ignore = true)
+    @Mapping(target = "market", ignore = true)
     void updateEntity(MedEquipmentRequest request, @MappingTarget MedEquipment entity);
 
     @Named("equipmentTypeFromId")

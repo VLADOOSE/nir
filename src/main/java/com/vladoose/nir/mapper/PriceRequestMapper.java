@@ -22,6 +22,7 @@ public interface PriceRequestMapper {
     @Mapping(target = "tender", source = "tenderId", qualifiedByName = "tenderFromId")
     @Mapping(target = "distributor", source = "distributorId", qualifiedByName = "distributorFromId")
     @Mapping(target = "items", ignore = true)
+    @Mapping(target = "market", ignore = true)
     PriceRequest toEntity(PriceRequestRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -29,6 +30,7 @@ public interface PriceRequestMapper {
     @Mapping(target = "tender", ignore = true)
     @Mapping(target = "distributor", ignore = true)
     @Mapping(target = "items", ignore = true)
+    @Mapping(target = "market", ignore = true)
     void updateEntity(PriceRequestRequest request, @MappingTarget PriceRequest entity);
 
     @Named("tenderShort")

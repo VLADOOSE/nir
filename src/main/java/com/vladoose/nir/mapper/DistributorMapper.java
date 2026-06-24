@@ -18,11 +18,13 @@ public interface DistributorMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "equipmentTypes", source = "equipmentTypeIds", qualifiedByName = "equipmentTypesFromIds")
+    @Mapping(target = "market", ignore = true)
     Distributor toEntity(DistributorRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "equipmentTypes", source = "equipmentTypeIds", qualifiedByName = "equipmentTypesFromIds")
+    @Mapping(target = "market", ignore = true)
     void updateEntity(DistributorRequest request, @MappingTarget Distributor entity);
 
     @Named("equipmentTypesFromIds")

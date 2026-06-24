@@ -30,12 +30,14 @@ public interface ActivityApplyMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "items", ignore = true)
     @Mapping(target = "tender", source = "tenderId", qualifiedByName = "tenderFromId")
+    @Mapping(target = "market", ignore = true)
     ActivityApply toEntity(ActivityApplyRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "items", ignore = true)
     @Mapping(target = "tender", source = "tenderId", qualifiedByName = "tenderFromId")
+    @Mapping(target = "market", ignore = true)
     void updateEntity(ActivityApplyRequest request, @MappingTarget ActivityApply entity);
 
     @Named("tenderFromId")

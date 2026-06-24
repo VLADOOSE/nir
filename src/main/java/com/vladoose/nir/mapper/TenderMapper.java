@@ -28,12 +28,14 @@ public interface TenderMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "lots", ignore = true)
     @Mapping(target = "facility", source = "facilityId", qualifiedByName = "facilityFromId")
+    @Mapping(target = "market", ignore = true)
     Tender toEntity(TenderRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "lots", ignore = true)
     @Mapping(target = "facility", source = "facilityId", qualifiedByName = "facilityFromId")
+    @Mapping(target = "market", ignore = true)
     void updateEntity(TenderRequest request, @MappingTarget Tender entity);
 
     @Mapping(target = "id", source = "id")
