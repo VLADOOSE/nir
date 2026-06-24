@@ -21,9 +21,11 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, " +
             "m.country AS country, m.reg_date AS regDate, m.expiration_date AS expirationDate, " +
             "m.unlimited AS unlimited, " +
-            "(0.6 * similarity(m.producer, :manufact) + 0.4 * similarity(m.name, :name)) AS score " +
+            "(0.6 * GREATEST(similarity(m.producer, :manufact), word_similarity(:manufact, m.producer)) + " +
+            " 0.4 * GREATEST(similarity(m.name, :name),         word_similarity(:name, m.name))) AS score " +
             "FROM med_registry m " +
             "WHERE m.producer % :manufact OR m.name % :name " +
+            "   OR :manufact <% m.producer OR :name <% m.name " +
             "ORDER BY score DESC " +
             "LIMIT :limit")
     List<RegistryCandidateRow> findCandidates(@Param("name") String name,
