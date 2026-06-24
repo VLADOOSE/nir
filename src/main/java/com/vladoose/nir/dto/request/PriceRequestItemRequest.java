@@ -14,7 +14,8 @@ public class PriceRequestItemRequest {
     @NotNull
     private Long tenderLotId;
 
-    @NotNull
+    // nullable: частная заявка называет бренд/модель, которого может не быть в нашем каталоге
+    // (тендерный поток всё равно всегда передаёт medEquipmentId)
     private Long medEquipmentId;
 
     @NotNull
