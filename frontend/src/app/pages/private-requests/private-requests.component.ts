@@ -5,11 +5,12 @@ import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketService } from '../../services/market.service';
+import { PrivateRequestCardComponent } from './private-request-card.component';
 
 @Component({
   selector: 'app-private-requests',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule],
+  imports: [NgFor, NgIf, FormsModule, PrivateRequestCardComponent],
   template: `
     <div class="page">
       <header class="head">
@@ -60,8 +61,7 @@ import { MarketService } from '../../services/market.service';
       </table>
       <div class="empty" *ngIf="!loading && !rows.length">Заявок пока нет.</div>
 
-      <!-- карточка подключается в Task 5 -->
-      <!-- <app-private-request-card *ngIf="cardId !== null" [requestId]="cardId" (close)="cardId = null; load()"></app-private-request-card> -->
+      <app-private-request-card *ngIf="cardId !== null" [requestId]="cardId" (close)="cardId = null; load()"></app-private-request-card>
     </div>
   `,
   styles: [`

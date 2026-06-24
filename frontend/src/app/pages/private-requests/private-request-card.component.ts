@@ -1,0 +1,302 @@
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
+import { NgIf, NgFor } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
+import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+
+@Component({
+  selector: 'app-private-request-card',
+  standalone: true,
+  imports: [NgIf, NgFor, FormsModule, MarketMoneyPipe],
+  template: `
+    <div *ngIf="requestId !== null" class="overlay" (click)="onClose()">
+      <aside class="sidebar" (click)="$event.stopPropagation()">
+        <header class="head">
+          <div class="title-block">
+            <h2 class="title">Заявка {{ request?.number || '' }}</h2>
+            <div class="subtitle">
+              <span>{{ request?.client?.name || '—' }}</span>
+              <span class="dot" *ngIf="request?.status">·</span>
+              <span class="type-pill" *ngIf="request?.status">{{ request?.status }}</span>
+            </div>
+          </div>
+          <button class="close-btn" type="button" (click)="onClose()" aria-label="Закрыть">&times;</button>
+        </header>
+
+        <div class="body">
+          <div *ngIf="loading" class="loading">Загрузка…</div>
+
+          <!-- Строки заявки + реестр-статус -->
+          <section class="section" *ngIf="!loading">
+            <h3 class="section-title">Строки заявки</h3>
+            <table *ngIf="lines.length; else noLines">
+              <thead>
+                <tr>
+                  <th>Наименование/модель</th>
+                  <th class="w-140">Бренд</th>
+                  <th class="w-60">Кол-во</th>
+                  <th>Реестр НЦЭЛС</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let l of lines">
+                  <td class="name-cell">{{ l.name }}</td>
+                  <td>{{ l.manufact || '—' }}</td>
+                  <td>{{ l.quantity ?? '—' }}</td>
+                  <td>
+                    <div class="reg-block" *ngIf="l.registrationStatus === 'REGISTERED'; else notFound">
+                      <span class="badge b-REGISTERED">Зарегистрировано</span>
+                      <span class="vat">НДС-льгота</span>
+                      <div class="reg-meta" *ngIf="l.topCandidate as c">
+                        № РУ {{ c.regNumber }}<span *ngIf="c.producer"> · {{ c.producer }}</span><span *ngIf="c.country"> · {{ c.country }}</span>
+                      </div>
+                    </div>
+                    <ng-template #notFound>
+                      <span class="badge b-NOT_FOUND">Не найдено в реестре</span>
+                    </ng-template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <ng-template #noLines>
+              <div class="empty">В заявке нет строк</div>
+            </ng-template>
+          </section>
+
+          <!-- Запросить КП -->
+          <section class="section" *ngIf="!loading">
+            <h3 class="section-title">Запросить КП</h3>
+            <div class="ask-row">
+              <select [(ngModel)]="selectedDistributorId" class="dist-select">
+                <option [ngValue]="null" disabled>— выберите поставщика —</option>
+                <option *ngFor="let d of distributors" [ngValue]="d.id">{{ d.name }}</option>
+              </select>
+              <button class="btn-primary" type="button" (click)="requestPrice()" [disabled]="!selectedDistributorId || !lines.length || sending">
+                Запросить КП
+              </button>
+            </div>
+            <div class="hint">КП запрашивается по всем строкам заявки ({{ lines.length }}).</div>
+          </section>
+
+          <!-- Существующие КП / ответы -->
+          <section class="section" *ngIf="!loading">
+            <h3 class="section-title">Существующие КП</h3>
+            <div class="empty" *ngIf="!priceRequests.length">КП по этой заявке ещё не запрашивались</div>
+            <div class="pr-card" *ngFor="let pr of priceRequests">
+              <div class="pr-head">
+                <span class="pr-dist">{{ pr.distributor?.name || '—' }}</span>
+                <span class="badge" [class]="'b-status'">{{ pr.status }}</span>
+              </div>
+              <table class="pr-items">
+                <thead>
+                  <tr><th>Позиция</th><th class="w-60">Кол-во</th><th class="w-160">Цена ответа</th><th>Примечание</th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let it of pr.items">
+                    <td>{{ it.tenderLot?.equipName || it.medEquipment?.name || '—' }}</td>
+                    <td>{{ it.requestedQuantity ?? '—' }}</td>
+                    <td>
+                      <input type="number" min="0" class="price-input" [(ngModel)]="it._editPrice" placeholder="0" />
+                      <span class="cur-price" *ngIf="it.responsePrice != null">тек.: {{ it.responsePrice | money }}</span>
+                    </td>
+                    <td><input class="note-input" [(ngModel)]="it._editNote" placeholder="—" /></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="pr-actions">
+                <button class="btn-primary" type="button" (click)="saveResponses(pr)">Сохранить ответы</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  `,
+  styles: [`
+    .overlay { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1000; animation: fadeIn 0.15s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .sidebar { position: fixed; top: 0; right: 0; bottom: 0; width: 720px; max-width: 100vw; background: #fff; box-shadow: -8px 0 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 32px 16px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+    .title-block { min-width: 0; flex: 1; }
+    .title { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; color: #111827; word-break: break-word; }
+    .subtitle { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: #6b7280; }
+    .dot { color: #d1d5db; }
+    .type-pill { display: inline-block; padding: 2px 10px; background: #eef2ff; color: #3730a3; border-radius: 999px; font-size: 12px; font-weight: 500; }
+    .close-btn { background: transparent; border: none; cursor: pointer; font-size: 28px; line-height: 1; color: #9ca3af; padding: 0 4px; border-radius: 4px; transition: color 0.15s, background 0.15s; }
+    .close-btn:hover { color: #ef4444; background: #fef2f2; }
+
+    .body { flex: 1; overflow-y: auto; padding: 24px 32px 32px; }
+    .section { margin-bottom: 28px; }
+    .section:last-child { margin-bottom: 0; }
+    .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+    th { background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .name-cell { font-weight: 500; color: #111827; }
+    .w-60 { width: 60px; } .w-140 { width: 140px; } .w-160 { width: 160px; }
+
+    .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+    .b-REGISTERED { background: #d1fae5; color: #065f46; }
+    .b-NOT_FOUND { background: #e5e7eb; color: #374151; }
+    .b-status { background: #dbeafe; color: #1e40af; }
+    .vat { margin-left: 8px; font-size: 11px; color: #065f46; font-weight: 600; }
+    .reg-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+    .ask-row { display: flex; gap: 10px; align-items: center; }
+    .dist-select { padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; min-width: 300px; }
+    .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+
+    .pr-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
+    .pr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .pr-dist { font-weight: 600; color: #111827; font-size: 14px; }
+    .pr-items th, .pr-items td { padding: 6px 8px; }
+    .price-input { width: 110px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .note-input { width: 100%; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .cur-price { display: block; font-size: 11px; color: #9ca3af; margin-top: 2px; }
+    .pr-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+    .btn-primary { background: #1a56db; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    .empty { color: #9ca3af; font-size: 13px; padding: 16px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 6px; text-align: center; }
+    .loading { color: #6b7280; font-size: 13px; text-align: center; padding: 12px; }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 100vw; }
+      .head { padding: 16px 20px 12px; }
+      .body { padding: 16px 20px 24px; }
+      .dist-select { min-width: 0; flex: 1; }
+    }
+  `]
+})
+export class PrivateRequestCardComponent implements OnChanges {
+  @Input() requestId: number | null = null;
+  @Output() close = new EventEmitter<void>();
+
+  request: any = null;
+  lines: any[] = [];
+  priceRequests: any[] = [];
+  distributors: any[] = [];
+  selectedDistributorId: number | null = null;
+  loading = false;
+  sending = false;
+
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['requestId']) {
+      const cur = changes['requestId'].currentValue;
+      const prev = changes['requestId'].previousValue;
+      if (cur != null && cur !== prev) {
+        this.loadAll(cur);
+      }
+      if (cur == null) {
+        this.request = null;
+        this.lines = [];
+        this.priceRequests = [];
+      }
+    }
+  }
+
+  loadAll(id: number) {
+    this.loading = true;
+    this.request = null;
+    this.lines = [];
+    this.priceRequests = [];
+    this.selectedDistributorId = null;
+    this.cdr.detectChanges();
+
+    this.api.getPrivateRequest(id).subscribe({
+      next: (data) => {
+        this.request = data || null;
+        this.lines = (data && data.lines) || [];
+        this.loading = false;
+        this.cdr.detectChanges();
+      },
+      error: (e) => {
+        this.loading = false;
+        this.notify.error('Ошибка загрузки заявки: ' + (e.error?.message || e.message));
+        this.cdr.detectChanges();
+      }
+    });
+
+    this.loadPriceRequests(id);
+
+    if (!this.distributors.length) {
+      this.api.getDistributors().subscribe({
+        next: (d) => { this.distributors = d || []; this.cdr.detectChanges(); },
+        error: () => {}
+      });
+    }
+  }
+
+  loadPriceRequests(id: number) {
+    this.api.getPriceRequestsByTender(id).subscribe({
+      next: (prs) => {
+        this.priceRequests = prs || [];
+        for (const pr of this.priceRequests) {
+          for (const it of (pr.items || [])) {
+            it._editPrice = it.responsePrice;
+            it._editNote = it.responseNote;
+          }
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => { this.priceRequests = []; this.cdr.detectChanges(); }
+    });
+  }
+
+  requestPrice() {
+    if (this.requestId == null || !this.selectedDistributorId || !this.lines.length) return;
+    this.sending = true;
+    this.api.createPriceRequest({
+      tenderId: this.requestId,
+      distributorId: this.selectedDistributorId,
+      status: 'SENT',
+      sentAt: new Date().toISOString(),
+      items: this.lines.map(l => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
+    }).subscribe({
+      next: () => {
+        this.sending = false;
+        this.selectedDistributorId = null;
+        this.notify.success('КП запрошено');
+        this.loadPriceRequests(this.requestId as number);
+      },
+      error: (e) => {
+        this.sending = false;
+        this.notify.error('Ошибка запроса КП: ' + (e.error?.message || e.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  saveResponses(pr: any) {
+    const updates = (pr.items || []).map((it: any) => ({
+      itemId: it.id,
+      responsePrice: it._editPrice ?? it.responsePrice,
+      responseNote: it._editNote ?? it.responseNote
+    }));
+    const bad = updates.find((u: any) => u.responsePrice != null && Number(u.responsePrice) < 0);
+    if (bad) { this.notify.error('Цена не может быть отрицательной'); return; }
+    this.api.updatePriceRequestResponses(pr.id, updates).subscribe({
+      next: () => {
+        this.notify.success('Ответы сохранены');
+        this.loadPriceRequests(this.requestId as number);
+      },
+      error: (e) => { this.notify.error('Ошибка сохранения: ' + (e.error?.message || e.message)); this.cdr.detectChanges(); }
+    });
+  }
+
+  onClose() {
+    this.close.emit();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.requestId !== null) this.onClose();
+  }
+}
