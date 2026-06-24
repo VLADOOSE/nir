@@ -36,4 +36,16 @@ class MarketStampingTest {
                 Facility.builder().name("ZZSTAMP-RF учреждение").build());
         assertThat(saved.getMarket()).isEqualTo(Market.RF);
     }
+
+    @Test
+    void update_preservesMarket_doesNotRestamp() {
+        MarketContext.set(Market.KZ);
+        Facility f = facilityService.save(Facility.builder().name("ZZUPD-KZ учреждение").build());
+        assertThat(f.getMarket()).isEqualTo(Market.KZ);
+        // переключаемся на RF и сохраняем существующую (id!=null) — рынок должен сохраниться KZ
+        MarketContext.set(Market.RF);
+        f.setAddress("обновлённый адрес");
+        Facility updated = facilityService.save(f);
+        assertThat(updated.getMarket()).isEqualTo(Market.KZ);
+    }
 }

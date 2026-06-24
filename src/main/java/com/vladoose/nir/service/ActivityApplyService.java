@@ -32,7 +32,9 @@ public class ActivityApplyService {
 
     @Transactional
     public ActivityApply save(ActivityApply apply) {
-        apply.setMarket(com.vladoose.nir.context.MarketContext.get());
+        if (apply.getId() == null) {
+            apply.setMarket(com.vladoose.nir.context.MarketContext.get());
+        }
         return repository.save(apply);
     }
 

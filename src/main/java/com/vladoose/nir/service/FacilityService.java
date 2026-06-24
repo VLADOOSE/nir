@@ -32,7 +32,9 @@ public class FacilityService {
 
     @Transactional
     public Facility save(Facility facility) {
-        facility.setMarket(com.vladoose.nir.context.MarketContext.get());
+        if (facility.getId() == null) {
+            facility.setMarket(com.vladoose.nir.context.MarketContext.get());
+        }
         return repository.save(facility);
     }
 

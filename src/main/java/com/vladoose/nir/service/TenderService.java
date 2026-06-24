@@ -34,8 +34,10 @@ public class TenderService {
 
     @Transactional
     public Tender save(Tender tender) {
-        tender.setMarket(com.vladoose.nir.context.MarketContext.get());
-        tender.setCurrency(com.vladoose.nir.context.MarketContext.get().currencyCode());
+        if (tender.getId() == null) {
+            tender.setMarket(com.vladoose.nir.context.MarketContext.get());
+            tender.setCurrency(com.vladoose.nir.context.MarketContext.get().currencyCode());
+        }
         return repository.save(tender);
     }
 

@@ -28,7 +28,9 @@ public class DistributorService {
 
     @Transactional
     public Distributor save(Distributor distributor) {
-        distributor.setMarket(com.vladoose.nir.context.MarketContext.get());
+        if (distributor.getId() == null) {
+            distributor.setMarket(com.vladoose.nir.context.MarketContext.get());
+        }
         return repository.save(distributor);
     }
 
