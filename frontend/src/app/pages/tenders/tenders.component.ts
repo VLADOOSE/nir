@@ -104,10 +104,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
-            <a *ngIf="!isDemoTender(t.tenderNumber)" class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" title="Открыть в ЕИС zakupki.gov.ru">
-              <svg lucideIcon="external-link" [size]="12"></svg> ЕИС
+            <a *ngIf="!isDemoTender(t.tenderNumber)" class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" [title]="'Открыть в ' + procurementPortalLabel() + ' ' + procurementPortalHost()">
+              <svg lucideIcon="external-link" [size]="12"></svg> {{ procurementPortalLabel() }}
             </a>
-            <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в ЕИС">Демо</span>
+            <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в реестре закупок">Демо</span>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
@@ -143,10 +143,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="tender-info">
         <h2>Тендер &#8470; {{ selectedTender.tenderNumber }}
-          <a *ngIf="!isDemoTender(selectedTender.tenderNumber)" class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" title="Открыть на zakupki.gov.ru">
-            <svg lucideIcon="external-link" [size]="14"></svg> Открыть в ЕИС
+          <a *ngIf="!isDemoTender(selectedTender.tenderNumber)" class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" [title]="'Открыть на ' + procurementPortalHost()">
+            <svg lucideIcon="external-link" [size]="14"></svg> Открыть в {{ procurementPortalLabel() }}
           </a>
-          <span *ngIf="isDemoTender(selectedTender.tenderNumber)" class="demo-badge-h2" title="Контрольный пример, не существует в ЕИС">Контрольный пример</span>
+          <span *ngIf="isDemoTender(selectedTender.tenderNumber)" class="demo-badge-h2" title="Контрольный пример, не существует в реестре закупок">Контрольный пример</span>
         </h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || '—' }}</span></div>
@@ -549,7 +549,18 @@ export class TendersComponent {
   }
 
   eisLink(tenderNumber: string): string {
-    return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
+    const q = encodeURIComponent(tenderNumber);
+    return this.market.value === 'KZ'
+      ? `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`
+      : `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}`;
+  }
+
+  // Название площадки госзакупок активного рынка (РФ — ЕИС, KZ — Госзакуп РК)
+  procurementPortalLabel(): string {
+    return this.market.value === 'KZ' ? 'Госзакуп' : 'ЕИС';
+  }
+  procurementPortalHost(): string {
+    return this.market.value === 'KZ' ? 'goszakup.gov.kz' : 'zakupki.gov.ru';
   }
 
   isDemoTender(tenderNumber: string): boolean {
