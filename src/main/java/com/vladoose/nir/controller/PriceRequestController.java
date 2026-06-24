@@ -82,15 +82,17 @@ public class PriceRequestController {
 
         if (request.getItems() != null) {
             for (var itemReq : request.getItems()) {
-                if (itemReq.getTenderLotId() == null || itemReq.getMedEquipmentId() == null) continue;
+                if (itemReq.getTenderLotId() == null) continue;
                 PriceRequestItem item = PriceRequestItem.builder()
                         .priceRequest(saved)
                         .tenderLot(tenderLotService.findById(itemReq.getTenderLotId()))
-                        .medEquipment(medEquipmentService.findById(itemReq.getMedEquipmentId()))
                         .requestedQuantity(itemReq.getRequestedQuantity())
                         .responsePrice(itemReq.getResponsePrice())
                         .responseNote(itemReq.getResponseNote())
                         .build();
+                if (itemReq.getMedEquipmentId() != null) {
+                    item.setMedEquipment(medEquipmentService.findById(itemReq.getMedEquipmentId()));
+                }
                 PriceRequestItem persisted = itemRepository.save(item);
                 saved.getItems().add(persisted);
             }
