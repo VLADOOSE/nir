@@ -2,7 +2,9 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Filter;
 
+@Filter(name = "marketFilter", condition = "market = :market")
 @Entity
 @Table(name = "facility")
 @Getter
@@ -39,4 +41,9 @@ public class Facility {
 
     @Column(length = 255)
     private String email;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 2)
+    @Builder.Default
+    private Market market = Market.RF;
 }

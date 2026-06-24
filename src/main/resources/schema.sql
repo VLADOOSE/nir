@@ -58,8 +58,10 @@ CREATE TABLE facility (
     first_name  VARCHAR(100),
     middle_name VARCHAR(100),
     phone       VARCHAR(50),
-    email       VARCHAR(255)
+    email       VARCHAR(255),
+    market      VARCHAR(2) NOT NULL DEFAULT 'RF'
 );
+CREATE INDEX IF NOT EXISTS idx_facility_market ON facility(market);
 
 CREATE TABLE distributor (
     id          BIGSERIAL PRIMARY KEY,
@@ -71,8 +73,10 @@ CREATE TABLE distributor (
     middle_name VARCHAR(100),
     phone       VARCHAR(50),
     email       VARCHAR(255),
-    website     VARCHAR(255)
+    website     VARCHAR(255),
+    market      VARCHAR(2) NOT NULL DEFAULT 'RF'
 );
+CREATE INDEX IF NOT EXISTS idx_distributor_market ON distributor(market);
 
 CREATE TABLE distributor_equipment_type (
     distributor_id    BIGINT NOT NULL REFERENCES distributor(id) ON DELETE CASCADE,
@@ -93,11 +97,13 @@ CREATE TABLE med_equipment (
     registration_status     VARCHAR(30) NOT NULL DEFAULT 'UNCHECKED',
     med_registry_reg_number VARCHAR(100) REFERENCES med_registry(reg_number),
     registration_checked_at TIMESTAMPTZ,
+    market      VARCHAR(2) NOT NULL DEFAULT 'RF',
     CONSTRAINT med_equipment_length_positive CHECK (length_mm IS NULL OR length_mm > 0),
     CONSTRAINT med_equipment_width_positive  CHECK (width_mm  IS NULL OR width_mm  > 0),
     CONSTRAINT med_equipment_height_positive CHECK (height_mm IS NULL OR height_mm > 0),
     CONSTRAINT med_equipment_weight_positive CHECK (weight_kg IS NULL OR weight_kg > 0)
 );
+CREATE INDEX IF NOT EXISTS idx_med_equipment_market ON med_equipment(market);
 
 CREATE TABLE user_account (
     id            BIGSERIAL PRIMARY KEY,
@@ -126,8 +132,10 @@ CREATE TABLE tender (
     contact_middle_name VARCHAR(100),
     contact_phone       VARCHAR(50),
     contact_email       VARCHAR(255),
+    market              VARCHAR(2) NOT NULL DEFAULT 'RF',
     CONSTRAINT tender_total_cost_nonneg CHECK (total_cost IS NULL OR total_cost >= 0)
 );
+CREATE INDEX IF NOT EXISTS idx_tender_market ON tender(market);
 
 CREATE TABLE tender_lot (
     id            BIGSERIAL PRIMARY KEY,
@@ -161,8 +169,10 @@ CREATE TABLE activity_apply (
     contract_signed_at  DATE,
     delivery_status     VARCHAR(50) DEFAULT 'NONE',
     delivered_at        DATE,
-    paid_at             DATE
+    paid_at             DATE,
+    market              VARCHAR(2) NOT NULL DEFAULT 'RF'
 );
+CREATE INDEX IF NOT EXISTS idx_activity_apply_market ON activity_apply(market);
 
 CREATE TABLE apply_item (
     id             BIGSERIAL PRIMARY KEY,
@@ -186,8 +196,10 @@ CREATE TABLE price_request (
     sent_at        TIMESTAMPTZ,
     response_date  DATE,
     note           TEXT,
-    created_at     TIMESTAMPTZ DEFAULT now()
+    created_at     TIMESTAMPTZ DEFAULT now(),
+    market         VARCHAR(2) NOT NULL DEFAULT 'RF'
 );
+CREATE INDEX IF NOT EXISTS idx_price_request_market ON price_request(market);
 
 CREATE TABLE price_request_item (
     id                 BIGSERIAL PRIMARY KEY,

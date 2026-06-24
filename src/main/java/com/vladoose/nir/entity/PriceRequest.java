@@ -2,12 +2,14 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Filter(name = "marketFilter", condition = "market = :market")
 @Entity
 @Table(name = "price_request")
 @Getter
@@ -44,6 +46,11 @@ public class PriceRequest {
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 2)
+    @Builder.Default
+    private Market market = Market.RF;
 
     @OneToMany(mappedBy = "priceRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

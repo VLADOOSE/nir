@@ -2,12 +2,14 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Filter(name = "marketFilter", condition = "market = :market")
 @Entity
 @Table(name = "activity_apply")
 @Getter
@@ -52,6 +54,11 @@ public class ActivityApply {
 
     @Column(name = "paid_at")
     private LocalDate paidAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 2)
+    @Builder.Default
+    private Market market = Market.RF;
 
     @OneToMany(mappedBy = "apply", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

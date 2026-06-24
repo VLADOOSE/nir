@@ -2,12 +2,17 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.ParamDef;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+@FilterDef(name = "marketFilter", parameters = @ParamDef(name = "market", type = String.class))
+@Filter(name = "marketFilter", condition = "market = :market")
 @Entity
 @Table(name = "tender")
 @Getter
@@ -67,6 +72,11 @@ public class Tender {
 
     @Column(name = "contact_email")
     private String contactEmail;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 2)
+    @Builder.Default
+    private Market market = Market.RF;
 
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

@@ -2,10 +2,12 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Filter;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Filter(name = "marketFilter", condition = "market = :market")
 @Entity
 @Table(name = "distributor")
 @Getter
@@ -45,6 +47,11 @@ public class Distributor {
 
     @Column(length = 255)
     private String website;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 2)
+    @Builder.Default
+    private Market market = Market.RF;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
