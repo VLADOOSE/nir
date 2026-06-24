@@ -16,6 +16,7 @@ import {
 
 import { routes } from './app.routes';
 import { authInterceptor } from './interceptors/auth.interceptor';
+import { marketInterceptor } from './interceptors/market.interceptor';
 import { AuthService } from './services/auth.service';
 
 export const appConfig: ApplicationConfig = {
@@ -23,7 +24,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor, marketInterceptor])),
     provideLucideIcons(
       LucideLayoutDashboard, LucideFileText, LucideStethoscope, LucideClipboardList,
       LucideBuilding2, LucideTruck, LucideChartBar, LucideMail, LucideTrendingUp,
