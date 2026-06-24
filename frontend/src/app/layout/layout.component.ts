@@ -7,6 +7,7 @@ import { SearchService, SearchResult } from '../services/search.service';
 import { AuthService } from '../services/auth.service';
 import { NotificationComponent } from '../components/notification/notification.component';
 import { ConfirmComponent } from '../components/confirm/confirm.component';
+import { MarketService, Market } from '../services/market.service';
 
 @Component({
   selector: 'app-layout',
@@ -18,8 +19,12 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
     <div class="layout">
       <header class="header">
         <div class="header-left">
-          <span class="logo">РМ</span>
-          <span class="header-title">АИС Регион-Мед</span>
+          <span class="logo">{{ market.logo() }}</span>
+          <span class="header-title">{{ market.companyLabel() }}</span>
+          <select class="market-select" [value]="market.value" (change)="onMarketChange($event)">
+            <option value="RF">Регион-Мед (РФ) ₽</option>
+            <option value="KZ">West-Med (KZ) ₸</option>
+          </select>
         </div>
         <div class="header-search">
           <input type="text" placeholder="Поиск по тендерам, оборудованию, учреждениям..."
@@ -117,6 +122,8 @@ import { ConfirmComponent } from '../components/confirm/confirm.component';
       font-weight: 700; font-size: 13px; letter-spacing: 1px;
     }
     .header-title { font-weight: 600; font-size: 16px; }
+    .market-select { margin-left: 10px; background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .market-select option { color: #111827; }
     .header-right { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: 0.95; }
     .user-name { font-weight: 500; }
     .role-badge { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -171,7 +178,7 @@ export class LayoutComponent {
   searchResults: SearchResult[] = [];
   showResults = false;
 
-  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService) {}
+  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService) {}
 
   onSearch() {
     this.searchService.search(this.searchQuery).subscribe(results => {
@@ -189,6 +196,13 @@ export class LayoutComponent {
     } else {
       this.router.navigate([r.route]);
     }
+  }
+
+  onMarketChange(e: Event) {
+    const m = (e.target as HTMLSelectElement).value as Market;
+    this.market.setMarket(m);
+    // полный сброс данных текущего рынка: перезагрузка на дашборд
+    this.router.navigateByUrl('/dashboard').then(() => location.reload());
   }
 
   onLogout() {
