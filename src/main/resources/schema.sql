@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS distributor_brand CASCADE;
 DROP TABLE IF EXISTS med_equipment CASCADE;
 DROP TABLE IF EXISTS distributor CASCADE;
 DROP TABLE IF EXISTS equipment_type CASCADE;
+DROP TABLE IF EXISTS header_synonym CASCADE;
 DROP TABLE IF EXISTS facility CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
 
@@ -48,6 +49,12 @@ CREATE INDEX IF NOT EXISTS idx_reg_producer_trgm ON med_registry USING gin (prod
 CREATE TABLE equipment_type (
     id   BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL
+);
+
+CREATE TABLE header_synonym (
+    id          BIGSERIAL PRIMARY KEY,
+    header_norm VARCHAR(255) UNIQUE NOT NULL,
+    field       VARCHAR(20) NOT NULL
 );
 
 CREATE TABLE facility (

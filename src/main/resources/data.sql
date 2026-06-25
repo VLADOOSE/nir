@@ -1079,3 +1079,9 @@ WHERE name = 'ТОО «МедСнаб Казахстан»';
 INSERT INTO distributor_brand (distributor_id, brand)
 SELECT id, b FROM distributor, (VALUES ('Philips'), ('GE Healthcare')) AS x(b)
 WHERE name = 'ТОО «Алматы Медтехника»';
+
+-- ========== Синонимы заголовков для импорта (обучаемый парсер, блок D1) ==========
+INSERT INTO header_synonym (header_norm, field) VALUES
+  ('наименование', 'NAME'), ('наименование товара', 'NAME'), ('модель', 'NAME'), ('товар', 'NAME'), ('изделие', 'NAME'), ('позиция', 'NAME'), ('оборудование', 'NAME'),
+  ('бренд', 'MANUFACT'), ('производитель', 'MANUFACT'), ('изготовитель', 'MANUFACT'), ('марка', 'MANUFACT'), ('вендор', 'MANUFACT'),
+  ('кол-во', 'QUANTITY'), ('количество', 'QUANTITY'), ('шт', 'QUANTITY'), ('штук', 'QUANTITY'), ('q-ty', 'QUANTITY'), ('qty', 'QUANTITY');
