@@ -146,8 +146,8 @@ public class MailReceiveService {
                 .receivedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .type(type)
                 .matchedPriceRequestId(matchedId)
-                .attachmentName(attachmentName)
-                .attachment(attachment)
+                .attachmentName(type == InboundType.CLIENT_REQUEST ? attachmentName : null)
+                .attachment(type == InboundType.CLIENT_REQUEST ? attachment : null)
                 .excerpt(trunc(text.toString(), 2000))
                 .status(InboundStatus.NEW)
                 .build();
@@ -157,12 +157,19 @@ public class MailReceiveService {
     /** Найти PriceRequest по id из токена и пометить RESPONDED. Возвращает id, если сопоставлено. */
     private Long matchSupplierResponse(Long priceRequestId, String body) {
         Optional<PriceRequest> opt = priceRequestRepository.findById(priceRequestId);
-        if (opt.isEmpty()) return null;
+        if (opt.isEmpty()) {
+            log.info("Ответ с токеном [КП-{}], но КП не найден в активном рынке (другой рынок/удалён)", priceRequestId);
+            return null;
+        }
         PriceRequest pr = opt.get();
-        pr.setStatus("RESPONDED");
-        pr.setResponseDate(LocalDate.now());
-        pr.setNote(trunc(body, 4000));
-        priceRequestRepository.save(pr);
+        // Понижаем до RESPONDED только из открытых статусов — не затираем ACCEPTED/REJECTED/CLOSED/уже-RESPONDED
+        String st = pr.getStatus();
+        if ("CREATED".equals(st) || "SENT".equals(st)) {
+            pr.setStatus("RESPONDED");
+            pr.setResponseDate(LocalDate.now());
+            pr.setNote(trunc(body, 4000));
+            priceRequestRepository.save(pr);
+        }
         return priceRequestId;
     }
 
