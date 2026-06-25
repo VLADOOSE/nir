@@ -237,4 +237,14 @@ export class ApiService {
   createPrivateRequest(body: any): Observable<any> {
     return this.http.post<any>(`${this.base}/private-requests`, body);
   }
+
+  previewImport(file: File): Observable<any> {
+    const fd = new FormData();
+    fd.append('file', file);
+    return this.http.post<any>(`${this.base}/private-requests/import/preview`, fd);
+  }
+
+  commitImport(body: any): Observable<any> {
+    return this.http.post<any>(`${this.base}/private-requests/import/commit`, body);
+  }
 }

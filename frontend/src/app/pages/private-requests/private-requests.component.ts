@@ -18,8 +18,56 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
           <h1>Частные заявки</h1>
           <p class="sub">Заявки от частных клиник ({{ market.companyLabel() }}). Клиника называет бренд/модель — проверяем регистрацию и запрашиваем КП.</p>
         </div>
-        <button class="btn-primary" (click)="openForm()">+ Новая заявка</button>
+        <div class="head-actions">
+          <button class="btn-line" (click)="openImport()">⬆ Импорт из файла</button>
+          <button class="btn-primary" (click)="openForm()">+ Новая заявка</button>
+        </div>
       </header>
+
+      <!-- панель импорта -->
+      <div class="import-panel" *ngIf="showImport">
+        <div class="import-head">
+          <h3>Импорт заявки из Excel</h3>
+          <button class="x" (click)="showImport=false">×</button>
+        </div>
+        <input type="file" accept=".xlsx,.xls" (change)="onImportFile($event)" />
+        <p class="hint">Загрузите таблицу — система разметит колонки сама, поправьте при необходимости.</p>
+
+        <div *ngIf="importPreview">
+          <label class="lbl">Клиент</label>
+          <select [(ngModel)]="importClientId" class="client-sel">
+            <option [ngValue]="null" disabled>— выберите —</option>
+            <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
+          </select>
+
+          <div class="grid-wrap">
+            <table class="import-grid">
+              <thead>
+                <tr>
+                  <th *ngFor="let c of importPreview.columns">
+                    <div class="ih">{{ c.header || '—' }}</div>
+                    <select [(ngModel)]="c.field" [ngModelOptions]="{standalone:true}">
+                      <option *ngFor="let o of fieldOptions" [ngValue]="o.v">{{ o.l }}</option>
+                    </select>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of importPreview.rows">
+                  <td *ngFor="let cell of row">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="err" *ngIf="importError">{{ importError }}</div>
+          <div class="import-actions">
+            <button class="btn-primary" [disabled]="importing" (click)="createFromImport()">Создать заявку</button>
+            <button class="btn-line" (click)="showImport=false">Отмена</button>
+          </div>
+        </div>
+        <div class="err" *ngIf="importError && !importPreview">{{ importError }}</div>
+      </div>
 
       <!-- форма создания -->
       <div class="form-card" *ngIf="showForm">
@@ -94,6 +142,21 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #e5e7eb; color: #374151; }
     .reg-summary { font-size: 12px; font-weight: 600; }
     .loading, .empty { padding: 30px; text-align: center; color: #9ca3af; }
+    .head-actions { display: flex; gap: 8px; align-items: center; }
+    .import-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 12px 0; background: #fff; }
+    .import-head { display: flex; justify-content: space-between; align-items: center; }
+    .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: #6b7280; }
+    .import-panel .hint { color: #6b7280; font-size: 12px; margin: 6px 0 12px; }
+    .import-panel .lbl { display: block; font-size: 12px; color: #374151; margin-bottom: 4px; }
+    .client-sel { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 12px; min-width: 260px; }
+    .grid-wrap { overflow-x: auto; border: 1px solid #eee; border-radius: 8px; }
+    .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .import-grid th { background: #f9fafb; padding: 8px; border: 1px solid #eee; vertical-align: top; }
+    .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
+    .import-grid th select { width: 100%; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
+    .import-grid td { padding: 6px 8px; border: 1px solid #f0f0f0; white-space: nowrap; }
+    .import-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-line { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
   `]
 })
 export class PrivateRequestsComponent {
@@ -104,6 +167,18 @@ export class PrivateRequestsComponent {
   formError = '';
   cardId: number | null = null;
   form: { clientFacilityId: number | null; note: string; lines: any[] } = this.emptyForm();
+
+  showImport = false;
+  importPreview: any = null;
+  importClientId: number | null = null;
+  importError = '';
+  importing = false;
+  fieldOptions = [
+    { v: 'NAME', l: 'Наименование' },
+    { v: 'MANUFACT', l: 'Бренд' },
+    { v: 'QUANTITY', l: 'Кол-во' },
+    { v: 'IGNORE', l: 'Игнорировать' },
+  ];
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private route: ActivatedRoute, private notify: NotificationService,
@@ -134,6 +209,59 @@ export class PrivateRequestsComponent {
     this.api.createPrivateRequest({ clientFacilityId: this.form.clientFacilityId, note: this.form.note, lines }).subscribe({
       next: () => { this.showForm = false; this.notify.success('Заявка создана'); this.load(); },
       error: e => { this.formError = e.error?.message || 'Ошибка создания'; this.cdr.detectChanges(); }
+    });
+  }
+
+  openImport() {
+    this.showImport = true;
+    this.importPreview = null;
+    this.importClientId = null;
+    this.importError = '';
+  }
+
+  onImportFile(event: any) {
+    const file: File = event.target?.files?.[0];
+    if (!file) return;
+    this.importError = '';
+    this.api.previewImport(file).subscribe({
+      next: (p) => { this.importPreview = p; this.cdr.detectChanges(); },
+      error: (e) => { this.importError = e.error?.message || 'Не удалось прочитать файл'; this.cdr.detectChanges(); },
+    });
+  }
+
+  createFromImport() {
+    if (!this.importClientId) { this.importError = 'Выберите клиента'; return; }
+    const cols = this.importPreview?.columns || [];
+    const nameCol = cols.find((c: any) => c.field === 'NAME');
+    if (!nameCol) { this.importError = 'Отметьте колонку с наименованием'; return; }
+    const manuCol = cols.find((c: any) => c.field === 'MANUFACT');
+    const qtyCol = cols.find((c: any) => c.field === 'QUANTITY');
+    const lines = (this.importPreview.rows || [])
+      .map((row: string[]) => ({
+        name: row[nameCol.index],
+        manufact: manuCol ? row[manuCol.index] : null,
+        quantity: qtyCol ? (parseInt(row[qtyCol.index], 10) || 1) : 1,
+      }))
+      .filter((l: any) => l.name && String(l.name).trim());
+    if (!lines.length) { this.importError = 'Нет строк с наименованием'; return; }
+    const mappings = cols
+      .filter((c: any) => c.field && c.field !== 'IGNORE')
+      .map((c: any) => ({ header: c.header, field: c.field }));
+    this.importing = true;
+    this.api.commitImport({ clientFacilityId: this.importClientId, mappings, lines }).subscribe({
+      next: (created: any) => {
+        this.importing = false;
+        this.showImport = false;
+        this.notify.success('Заявка создана из файла');
+        this.load();
+        if (created?.id) this.cardId = created.id;
+        this.cdr.detectChanges();
+      },
+      error: (e: any) => {
+        this.importing = false;
+        this.importError = e.error?.message || 'Ошибка импорта';
+        this.cdr.detectChanges();
+      },
     });
   }
 }
