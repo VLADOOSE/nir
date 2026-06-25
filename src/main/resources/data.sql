@@ -1071,3 +1071,11 @@ INSERT INTO tender (tender_number, facility_id, status, source, market, descript
 INSERT INTO tender_lot (tender_id, lot_number, equip_name, manufact, quantity) VALUES
   ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 1, 'Электрокардиограф BeneHeart R12', 'Mindray', 2),
   ((SELECT id FROM tender WHERE tender_number='ЧЗ-2026-0001'), 2, 'Криосауна CryoSpace', 'КриоСпейс', 1);
+
+-- KZ поставщики — бренды (для подбора поставщиков по брендам в частных заявках, блок C)
+INSERT INTO distributor_brand (distributor_id, brand)
+SELECT id, b FROM distributor, (VALUES ('Mindray'), ('Hamilton Medical'), ('Drager')) AS x(b)
+WHERE name = 'ТОО «МедСнаб Казахстан»';
+INSERT INTO distributor_brand (distributor_id, brand)
+SELECT id, b FROM distributor, (VALUES ('Philips'), ('GE Healthcare')) AS x(b)
+WHERE name = 'ТОО «Алматы Медтехника»';
