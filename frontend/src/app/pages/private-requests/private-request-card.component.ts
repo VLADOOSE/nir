@@ -69,6 +69,29 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
             </ng-template>
           </section>
 
+          <!-- Подобрать поставщиков (по брендам) -->
+          <section class="section" *ngIf="!loading && sourcing">
+            <h3 class="section-title">Подобрать поставщиков</h3>
+            <div class="empty" *ngIf="!sourcing.groups?.length">Нет поставщиков с подходящими брендами. Добавьте бренды в карточках поставщиков или запросите вручную ниже.</div>
+            <div class="src-group" *ngFor="let g of sourcing.groups">
+              <div class="src-head">
+                <span class="src-dist">{{ g.distributor?.name }}</span>
+                <button class="btn-primary" type="button" (click)="requestGroup(g)" [disabled]="sendingGroupId === g.distributor?.id">
+                  Запросить КП ({{ g.lines?.length || 0 }})
+                </button>
+              </div>
+              <ul class="src-lines">
+                <li *ngFor="let l of g.lines">{{ l.name }} <span class="src-brand">· {{ l.manufact }}</span> × {{ l.quantity }}</li>
+              </ul>
+            </div>
+            <div class="src-unmatched" *ngIf="sourcing.unmatchedLines?.length">
+              <div class="src-unmatched-title">Без поставщика ({{ sourcing.unmatchedLines.length }}):</div>
+              <ul class="src-lines">
+                <li *ngFor="let l of sourcing.unmatchedLines">{{ l.name }} <span class="src-brand">· {{ l.manufact || 'бренд не указан' }}</span></li>
+              </ul>
+            </div>
+          </section>
+
           <!-- Запросить КП -->
           <section class="section" *ngIf="!loading">
             <h3 class="section-title">Запросить КП</h3>
@@ -168,6 +191,14 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .btn-primary { background: #1a56db; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
     .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
 
+    .src-group { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+    .src-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .src-dist { font-weight: 600; color: #111827; font-size: 14px; }
+    .src-lines { margin: 0; padding-left: 18px; font-size: 13px; color: #374151; }
+    .src-brand { color: #6b7280; }
+    .src-unmatched { margin-top: 10px; padding: 10px 12px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 8px; }
+    .src-unmatched-title { font-size: 12px; color: #92400e; font-weight: 600; margin-bottom: 4px; }
+
     .empty { color: #9ca3af; font-size: 13px; padding: 16px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 6px; text-align: center; }
     .loading { color: #6b7280; font-size: 13px; text-align: center; padding: 12px; }
 
@@ -190,6 +221,8 @@ export class PrivateRequestCardComponent implements OnChanges {
   selectedDistributorId: number | null = null;
   loading = false;
   sending = false;
+  sourcing: any = null;
+  sendingGroupId: number | null = null;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
 
@@ -204,6 +237,7 @@ export class PrivateRequestCardComponent implements OnChanges {
         this.request = null;
         this.lines = [];
         this.priceRequests = [];
+        this.sourcing = null;
       }
     }
   }
@@ -214,6 +248,7 @@ export class PrivateRequestCardComponent implements OnChanges {
     this.lines = [];
     this.priceRequests = [];
     this.selectedDistributorId = null;
+    this.sourcing = null;
     this.cdr.detectChanges();
 
     this.api.getPrivateRequest(id).subscribe({
@@ -231,6 +266,11 @@ export class PrivateRequestCardComponent implements OnChanges {
     });
 
     this.loadPriceRequests(id);
+
+    this.api.getPrivateRequestSourcing(id).subscribe({
+      next: (s) => { this.sourcing = s || null; this.cdr.detectChanges(); },
+      error: () => { this.sourcing = null; }
+    });
 
     if (!this.distributors.length) {
       this.api.getDistributors().subscribe({
@@ -302,6 +342,26 @@ export class PrivateRequestCardComponent implements OnChanges {
         this.notify.error('Ошибка запроса КП: ' + (e.error?.message || e.message));
         this.cdr.detectChanges();
       }
+    });
+  }
+
+  requestGroup(group: any) {
+    if (this.requestId == null || !group?.distributor?.id || !group.lines?.length) return;
+    this.sendingGroupId = group.distributor.id;
+    this.api.createPriceRequest({
+      tenderId: this.requestId,
+      distributorId: group.distributor.id,
+      status: 'SENT',
+      sentAt: new Date().toISOString(),
+      items: group.lines.map((l: any) => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
+    }).subscribe({
+      next: () => {
+        this.sendingGroupId = null;
+        this.notify.success('КП запрошено у «' + group.distributor.name + '»');
+        this.loadPriceRequests(this.requestId as number);
+        this.api.getPrivateRequestSourcing(this.requestId as number).subscribe({ next: s => { this.sourcing = s; this.cdr.detectChanges(); } });
+      },
+      error: (e) => { this.sendingGroupId = null; this.notify.error('Ошибка: ' + (e.error?.message || e.message)); this.cdr.detectChanges(); }
     });
   }
 

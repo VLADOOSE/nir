@@ -231,6 +231,9 @@ export class ApiService {
   getPrivateRequest(id: number): Observable<any> {
     return this.http.get<any>(`${this.base}/private-requests/${id}`);
   }
+  getPrivateRequestSourcing(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/private-requests/${id}/sourcing`);
+  }
   createPrivateRequest(body: any): Observable<any> {
     return this.http.post<any>(`${this.base}/private-requests`, body);
   }
