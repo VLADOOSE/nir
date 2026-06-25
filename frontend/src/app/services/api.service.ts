@@ -247,4 +247,18 @@ export class ApiService {
   commitImport(body: any): Observable<any> {
     return this.http.post<any>(`${this.base}/private-requests/import/commit`, body);
   }
+
+  // === Входящие письма ===
+  getInbound(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/inbound`);
+  }
+  pollInbound(): Observable<any> {
+    return this.http.post<any>(`${this.base}/inbound/poll`, {});
+  }
+  previewInbound(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/inbound/${id}/preview`, {});
+  }
+  markInboundProcessed(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/inbound/${id}/processed`, {});
+  }
 }
