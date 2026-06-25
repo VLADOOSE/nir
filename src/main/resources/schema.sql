@@ -1,6 +1,7 @@
 -- DEV ONLY: пересоздаёт все таблицы при каждом запуске
 
 -- Удаление таблиц в обратном порядке зависимостей
+DROP TABLE IF EXISTS inbound_email CASCADE;
 DROP TABLE IF EXISTS price_request_item CASCADE;
 DROP TABLE IF EXISTS price_request CASCADE;
 DROP TABLE IF EXISTS apply_item CASCADE;
@@ -226,4 +227,18 @@ CREATE TABLE price_request_item (
     response_note      TEXT,
     CONSTRAINT price_request_item_qty_positive    CHECK (requested_quantity > 0),
     CONSTRAINT price_request_item_price_nonneg    CHECK (response_price IS NULL OR response_price >= 0)
+);
+
+CREATE TABLE inbound_email (
+    id                       BIGSERIAL PRIMARY KEY,
+    from_address             VARCHAR(320),
+    subject                  VARCHAR(998),
+    received_at              TIMESTAMPTZ,
+    type                     VARCHAR(20) NOT NULL,
+    matched_price_request_id BIGINT REFERENCES price_request(id) ON DELETE SET NULL,
+    attachment_name          VARCHAR(255),
+    attachment               BYTEA,
+    excerpt                  VARCHAR(2000),
+    status                   VARCHAR(20) NOT NULL DEFAULT 'NEW',
+    market                   VARCHAR(2) NOT NULL
 );
