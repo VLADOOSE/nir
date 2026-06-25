@@ -48,3 +48,5 @@ mail:
     protocol: ${MAIL_IMAP_PROTOCOL:imap}
     market: ${MAIL_IMAP_MARKET:KZ}
     poll-ms: ${MAIL_IMAP_POLL_MS:300000}
+    # обрабатывать только письма за последние N минут (не трогаем старый бэклог ящика)
+    since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}

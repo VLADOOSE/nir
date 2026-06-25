@@ -35,6 +35,7 @@ public class MailReceiveService {
     private final String password;
     private final String protocol;
     private final Market mailboxMarket;
+    private final long sinceMinutes;
 
     public MailReceiveService(PriceRequestRepository priceRequestRepository,
                               InboundEmailRepository inboundEmailRepository,
@@ -44,7 +45,8 @@ public class MailReceiveService {
                               @Value("${mail.imap.username:}") String username,
                               @Value("${mail.imap.password:}") String password,
                               @Value("${mail.imap.protocol:imap}") String protocol,
-                              @Value("${mail.imap.market:KZ}") String market) {
+                              @Value("${mail.imap.market:KZ}") String market,
+                              @Value("${mail.imap.since-minutes:60}") long sinceMinutes) {
         this.priceRequestRepository = priceRequestRepository;
         this.inboundEmailRepository = inboundEmailRepository;
         this.enabled = enabled;
@@ -54,6 +56,7 @@ public class MailReceiveService {
         this.password = password;
         this.protocol = protocol;
         this.mailboxMarket = Market.fromHeader(market);
+        this.sinceMinutes = sinceMinutes;
     }
 
     public Market getMailboxMarket() {
@@ -80,13 +83,21 @@ public class MailReceiveService {
             inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_WRITE);
 
+            long cutoffMs = System.currentTimeMillis() - sinceMinutes * 60_000L;
             Message[] messages = inbox.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
+            int skippedOld = 0;
             for (Message msg : messages) {
+                java.util.Date received = msg.getReceivedDate();
+                if (received != null && received.getTime() < cutoffMs) {
+                    skippedOld++;   // старое непрочитанное письмо — не трогаем (не помечаем SEEN, не ингестим)
+                    continue;
+                }
                 handle(msg, result);
                 msg.setFlag(Flags.Flag.SEEN, true);
                 result.setFetched(result.getFetched() + 1);
             }
-            result.setMessage("Обработано писем: " + result.getFetched());
+            result.setMessage("Обработано свежих писем (за " + sinceMinutes + " мин): " + result.getFetched()
+                    + (skippedOld > 0 ? "; пропущено старых: " + skippedOld : ""));
         } catch (Exception e) {
             log.warn("Ошибка приёма почты: {}", e.getMessage());
             result.setMessage("Ошибка подключения к почте: " + e.getMessage());
