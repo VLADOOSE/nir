@@ -47,6 +47,17 @@ import { AuthService } from '../../services/auth.service';
         </label>
       </div>
 
+      <label class="specialization-label">Бренды (что возит)</label>
+      <div class="brands-block">
+        <span class="brand-chip" *ngFor="let b of brands; let i = index">
+          {{ b }} <button type="button" class="brand-x" (click)="removeBrand(i)">×</button>
+        </span>
+      </div>
+      <div class="brand-add">
+        <input [(ngModel)]="newBrand" [ngModelOptions]="{standalone: true}" placeholder="напр. Mindray" (keyup.enter)="addBrand()" />
+        <button type="button" class="btn-line" (click)="addBrand()">+ бренд</button>
+      </div>
+
       <div class="form-actions">
         <button class="btn btn-save" type="submit" [disabled]="form.invalid">Сохранить</button>
         <button class="btn btn-cancel" type="button" (click)="onCancel()">Отмена</button>
@@ -108,6 +119,12 @@ import { AuthService } from '../../services/auth.service';
     .type-checkbox input[disabled] { opacity: 0.6; cursor: not-allowed; }
     .tag { display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 12px; margin-right: 4px; margin-bottom: 2px; }
     .tag-all { background: #fef3c7; color: #92400e; font-weight: 600; }
+    .brands-block { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .brand-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+    .brand-x { background: none; border: none; color: #6366f1; cursor: pointer; font-size: 14px; line-height: 1; }
+    .brand-add { display: flex; gap: 8px; align-items: center; }
+    .brand-add input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .btn-line { background: #fff; border: 1px dashed #9ca3af; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: #374151; }
   `]
 })
 export class DistributorsComponent {
@@ -119,6 +136,8 @@ export class DistributorsComponent {
   editingId: number | null = null;
   allTypes: any[] = [];
   selectedTypeIds: Set<number> = new Set();
+  brands: string[] = [];
+  newBrand = '';
   get isUniversal(): boolean { return this.selectedTypeIds.size === 0; }
   form = new FormGroup({
     name: new FormControl('', Validators.required),
@@ -145,6 +164,15 @@ export class DistributorsComponent {
     if (checked) this.selectedTypeIds.add(id); else this.selectedTypeIds.delete(id);
   }
 
+  addBrand() {
+    const b = (this.newBrand || '').trim();
+    if (b && !this.brands.some(x => x.toLowerCase() === b.toLowerCase())) {
+      this.brands.push(b);
+    }
+    this.newBrand = '';
+  }
+  removeBrand(i: number) { this.brands.splice(i, 1); }
+
   loadData() {
     this.api.getDistributors().subscribe({
       next: data => { this.distributors = data; this.applyFilter(); this.cdr.detectChanges(); },
@@ -164,17 +192,19 @@ export class DistributorsComponent {
   onAdd() {
     this.editingId = null; this.form.reset(); this.validationErrors = {};
     this.selectedTypeIds = new Set();
+    this.brands = [];
     this.showForm = true;
   }
   onEdit(d: any) {
     this.editingId = d.id; this.form.patchValue(d); this.validationErrors = {};
     this.selectedTypeIds = new Set((d.equipmentTypes || []).map((t: any) => t.id));
+    this.brands = [...(d.brands || [])];
     this.showForm = true;
   }
   onCancel() { this.showForm = false; }
 
   onSave() {
-    const body: any = { ...this.form.value, equipmentTypeIds: Array.from(this.selectedTypeIds) };
+    const body: any = { ...this.form.value, equipmentTypeIds: Array.from(this.selectedTypeIds), brands: this.brands };
     const req = this.editingId ? this.api.update('distributors', this.editingId, body) : this.api.create('distributors', body);
     const wasEditing = this.editingId !== null;
     req.subscribe({
