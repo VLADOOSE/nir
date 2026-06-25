@@ -3,6 +3,7 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
+import com.vladoose.nir.util.KpToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -93,7 +94,8 @@ public class BulkPriceRequestService {
         String body = buildEmailBody(tender, dist, items);
         try {
             emailService.sendEmail(dist.getEmail() == null ? "" : dist.getEmail(),
-                    "Запрос КП по тендеру №" + tender.getTenderNumber(), body);
+                    KpToken.subjectToken(pr.getId())
+                            + " Запрос КП по тендеру №" + tender.getTenderNumber(), body);
         } catch (Exception ex) {
             log.warn("Не удалось отправить КП на {}: {}. Запрос сохранён в БД (id={}).",
                     dist.getEmail(), ex.getMessage(), pr.getId());
