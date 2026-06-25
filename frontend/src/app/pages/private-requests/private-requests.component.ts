@@ -19,7 +19,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
           <p class="sub">Заявки от частных клиник ({{ market.companyLabel() }}). Клиника называет бренд/модель — проверяем регистрацию и запрашиваем КП.</p>
         </div>
         <div class="head-actions">
-          <button class="btn-line" (click)="openImport()">⬆ Импорт из файла</button>
+          <button class="btn-line-solid" (click)="openImport()">⬆ Импорт из файла</button>
           <button class="btn-primary" (click)="openForm()">+ Новая заявка</button>
         </div>
       </header>
@@ -63,7 +63,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
           <div class="err" *ngIf="importError">{{ importError }}</div>
           <div class="import-actions">
             <button class="btn-primary" [disabled]="importing" (click)="createFromImport()">Создать заявку</button>
-            <button class="btn-line" (click)="showImport=false">Отмена</button>
+            <button class="btn-line-solid" (click)="showImport=false">Отмена</button>
           </div>
         </div>
         <div class="err" *ngIf="importError && !importPreview">{{ importError }}</div>
@@ -156,7 +156,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .import-grid th select { width: 100%; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
     .import-grid td { padding: 6px 8px; border: 1px solid #f0f0f0; white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .btn-line { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
+    .btn-line-solid { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
   `]
 })
 export class PrivateRequestsComponent {
