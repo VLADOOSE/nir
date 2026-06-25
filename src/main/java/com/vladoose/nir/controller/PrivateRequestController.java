@@ -3,9 +3,11 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
 import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.PrivateRequestResponse;
+import com.vladoose.nir.dto.response.SourcingPreviewResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.mapper.FacilityMapper;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.PrivateRequestSourcingService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,10 +20,13 @@ public class PrivateRequestController {
 
     private final PrivateRequestService service;
     private final FacilityMapper facilityMapper;
+    private final PrivateRequestSourcingService sourcingService;
 
-    public PrivateRequestController(PrivateRequestService service, FacilityMapper facilityMapper) {
+    public PrivateRequestController(PrivateRequestService service, FacilityMapper facilityMapper,
+                                    PrivateRequestSourcingService sourcingService) {
         this.service = service;
         this.facilityMapper = facilityMapper;
+        this.sourcingService = sourcingService;
     }
 
     @GetMapping
@@ -52,6 +57,11 @@ public class PrivateRequestController {
         applyCounts(r, lines);
         r.setLines(lines);
         return r;
+    }
+
+    @GetMapping("/{id}/sourcing")
+    public SourcingPreviewResponse sourcing(@PathVariable Long id) {
+        return sourcingService.buildSourcing(id);
     }
 
     private PrivateRequestResponse toShort(Tender t) {
