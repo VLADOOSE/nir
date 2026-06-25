@@ -37,3 +37,14 @@ spring:
 
 server:
   port: 8080
+
+mail:
+  imap:
+    enabled: ${MAIL_IMAP_ENABLED:false}
+    host: ${MAIL_IMAP_HOST:localhost}
+    port: ${MAIL_IMAP_PORT:3143}
+    username: ${MAIL_IMAP_USERNAME:zakup@westmed.kz}
+    password: ${MAIL_IMAP_PASSWORD:}
+    protocol: ${MAIL_IMAP_PROTOCOL:imap}
+    market: ${MAIL_IMAP_MARKET:KZ}
+    poll-ms: ${MAIL_IMAP_POLL_MS:300000}
