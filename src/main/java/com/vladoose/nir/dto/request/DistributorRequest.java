@@ -25,4 +25,5 @@ public class DistributorRequest {
     private String email;
     private String website;
     private List<Long> equipmentTypeIds;
+    private java.util.List<String> brands;
 }

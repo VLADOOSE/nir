@@ -61,4 +61,10 @@ public class Distributor implements MarketScoped {
     )
     @Builder.Default
     private List<EquipmentType> equipmentTypes = new ArrayList<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "distributor_brand", joinColumns = @JoinColumn(name = "distributor_id"))
+    @Column(name = "brand", nullable = false, length = 255)
+    @Builder.Default
+    private List<String> brands = new ArrayList<>();
 }

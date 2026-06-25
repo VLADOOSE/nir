@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS activity_apply CASCADE;
 DROP TABLE IF EXISTS tender_lot CASCADE;
 DROP TABLE IF EXISTS tender CASCADE;
 DROP TABLE IF EXISTS distributor_equipment_type CASCADE;
+DROP TABLE IF EXISTS distributor_brand CASCADE;
 DROP TABLE IF EXISTS med_equipment CASCADE;
 DROP TABLE IF EXISTS distributor CASCADE;
 DROP TABLE IF EXISTS equipment_type CASCADE;
@@ -82,6 +83,11 @@ CREATE TABLE distributor_equipment_type (
     distributor_id    BIGINT NOT NULL REFERENCES distributor(id) ON DELETE CASCADE,
     equipment_type_id BIGINT NOT NULL REFERENCES equipment_type(id) ON DELETE CASCADE,
     PRIMARY KEY (distributor_id, equipment_type_id)
+);
+
+CREATE TABLE distributor_brand (
+    distributor_id BIGINT NOT NULL REFERENCES distributor(id) ON DELETE CASCADE,
+    brand          VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE med_equipment (

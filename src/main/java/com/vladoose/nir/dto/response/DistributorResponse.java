@@ -17,4 +17,5 @@ public class DistributorResponse {
     private String email;
     private String website;
     private List<EquipmentTypeResponse> equipmentTypes;
+    private java.util.List<String> brands;
 }
