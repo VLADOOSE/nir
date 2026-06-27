@@ -136,7 +136,7 @@ public class MailReceiveService {
         InboundEmail ie = InboundEmail.builder()
                 .fromAddress(trunc(from, 320))
                 .subject(trunc(subject, 998))
-                .receivedAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .receivedAt(receivedDate(msg))
                 .type(type)
                 .matchedPriceRequestId(matchedId)
                 .attachmentName(type == InboundType.CLIENT_REQUEST ? attachmentName : null)
@@ -145,6 +145,17 @@ public class MailReceiveService {
                 .status(InboundStatus.NEW)
                 .build();
         inboundEmailRepository.save(ie);  // @PrePersist стампит market из MarketContext
+    }
+
+    /** Время получения письма: дата с сервера (получено) → дата отправки → сейчас. */
+    private static OffsetDateTime receivedDate(Message msg) {
+        try {
+            java.util.Date d = msg.getReceivedDate();
+            if (d == null) d = msg.getSentDate();
+            if (d != null) return d.toInstant().atOffset(ZoneOffset.UTC);
+        } catch (Exception ignored) {
+        }
+        return OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     /** Найти PriceRequest по id из токена и пометить RESPONDED. Возвращает id, если сопоставлено. */

@@ -20,12 +20,13 @@ import { NotificationService } from '../../services/notification.service';
 
     <table class="grid" *ngIf="rows.length">
       <thead>
-        <tr><th>Отправитель</th><th>Тема</th><th>Тип</th><th>Статус</th><th></th></tr>
+        <tr><th>Отправитель</th><th>Тема</th><th>Получено</th><th>Тип</th><th>Статус</th><th></th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let r of rows">
           <td>{{ r.fromAddress }}</td>
           <td>{{ r.subject }}</td>
+          <td class="when">{{ formatReceived(r.receivedAt) }}</td>
           <td>
             <span class="badge" [class.b-sup]="r.type==='SUPPLIER_RESPONSE'"
                   [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'">
@@ -120,6 +121,7 @@ import { NotificationService } from '../../services/notification.service';
     .b-cli { background: #dbeafe; color: #1e40af; }
     .b-unm { background: #f3f4f6; color: #6b7280; }
     .muted { color: #6b7280; font-size: 12px; }
+    .when { white-space: nowrap; color: #374151; font-size: 12px; }
     .empty { color: #6b7280; padding: 20px 0; }
     .import-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-top: 16px; background: #fff; }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
@@ -210,6 +212,19 @@ export class InboundComponent {
   typeLabel(t: string): string {
     return t === 'SUPPLIER_RESPONSE' ? 'Ответ поставщика'
       : t === 'CLIENT_REQUEST' ? 'Письмо клиники' : 'Прочее';
+  }
+
+  formatReceived(iso: string): string {
+    if (!iso) return '—';
+    try {
+      const s = new Intl.DateTimeFormat('ru-RU', {
+        weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }).format(new Date(iso));
+      return s.charAt(0).toUpperCase() + s.slice(1);   // «Пн, 22.06.2026, 16:56»
+    } catch {
+      return iso;
+    }
   }
 
   openImport(r: any) {
