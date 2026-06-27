@@ -50,34 +50,36 @@ public class PrivateRequestService {
             t.setDescription(dto.getNote());
         }
         List<PrivateRequestUpdate.Line> incoming = dto.getLines() != null ? dto.getLines() : List.of();
-        List<TenderLot> existing = tenderLotRepository.findByTenderId(id);
-        Set<Long> keep = new HashSet<>();
+
+        Set<Long> incomingIds = new HashSet<>();
+        for (PrivateRequestUpdate.Line line : incoming) {
+            if (line.getLotId() != null) incomingIds.add(line.getLotId());
+        }
+        // Лоты — cascade=ALL + orphanRemoval: управляем через коллекцию t.getLots(), НЕ через repository.delete
+        // (иначе cascade на flush вернёт удалённое). Выкинутые строки удаляем, КРОМЕ тех, по которым уже
+        // запрашивали КП (FK price_request_item) — их оставляем.
+        t.getLots().removeIf(lot -> !incomingIds.contains(lot.getId())
+                && priceRequestItemRepository.findByTenderLotId(lot.getId()).isEmpty());
 
         int lotNo = 1;
         for (PrivateRequestUpdate.Line line : incoming) {
             if (line.getName() == null || line.getName().isBlank()) continue;
             TenderLot lot = null;
             if (line.getLotId() != null) {
-                lot = existing.stream().filter(e -> e.getId().equals(line.getLotId())).findFirst().orElse(null);
+                for (TenderLot e : t.getLots()) {
+                    if (e.getId() != null && e.getId().equals(line.getLotId())) { lot = e; break; }
+                }
             }
             if (lot == null) {
                 lot = TenderLot.builder().tender(t).build();
-            } else {
-                keep.add(lot.getId());
+                t.getLots().add(lot);
             }
             lot.setLotNumber(lotNo++);
             lot.setEquipName(line.getName());
             lot.setManufact(line.getManufact());
             lot.setQuantity(line.getQuantity() != null ? line.getQuantity() : 1);
-            tenderLotRepository.save(lot);
         }
-        // удаляем выкинутые строки, но НЕ те, по которым уже запрашивали КП (FK price_request_item)
-        for (TenderLot lot : existing) {
-            if (!keep.contains(lot.getId())
-                    && priceRequestItemRepository.findByTenderLotId(lot.getId()).isEmpty()) {
-                tenderLotRepository.delete(lot);
-            }
-        }
+        tenderRepository.save(t);   // cascade: сохранит новые лоты, orphanRemoval удалит выкинутые
         return findById(id);
     }
 
