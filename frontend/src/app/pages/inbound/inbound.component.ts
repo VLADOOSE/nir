@@ -13,7 +13,7 @@ import { NotificationService } from '../../services/notification.service';
     <div class="head">
       <div>
         <h1>Входящие письма</h1>
-        <p class="sub">Ящик zakup@westmed.kz: ответы поставщиков на КП и письма клиник с таблицами.</p>
+        <p class="sub">Входящие запросы клиентов с почты info@westmed.kz — письма с таблицами оборудования.</p>
       </div>
       <button class="btn-primary" [disabled]="polling" (click)="poll()">⟳ Проверить почту</button>
     </div>
