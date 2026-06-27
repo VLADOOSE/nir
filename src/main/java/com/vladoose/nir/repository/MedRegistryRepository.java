@@ -24,8 +24,10 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "(0.6 * GREATEST(similarity(m.producer, :manufact), word_similarity(:manufact, m.producer)) + " +
             " 0.4 * GREATEST(similarity(m.name, :name),         word_similarity(:name, m.name))) AS score " +
             "FROM med_registry m " +
-            "WHERE m.producer % :manufact OR m.name % :name " +
-            "   OR :manufact <% m.producer OR :name <% m.name " +
+            // только word_similarity (<%) — он индексо-дружелюбен (GIN gin_trgm_ops); оператор % (similarity)
+            // по всему длинному названию форсил seq scan по 14k записям (~600мс/строку). Качество матчинга
+            // сохраняется (word_similarity ловит вхождение названия изделия в реестр).
+            "WHERE :manufact <% m.producer OR :name <% m.name " +
             "ORDER BY score DESC " +
             "LIMIT :limit")
     List<RegistryCandidateRow> findCandidates(@Param("name") String name,

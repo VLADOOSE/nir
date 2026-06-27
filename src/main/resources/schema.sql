@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS med_registry (
 );
 CREATE INDEX IF NOT EXISTS idx_reg_name_trgm     ON med_registry USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_reg_producer_trgm ON med_registry USING gin (producer gin_trgm_ops);
+-- ВАЖНО (производительность): на маленькой таблице (~14k) планировщик иначе игнорирует GIN-индекс
+-- и уходит в seq scan (~600мс на строку при word_similarity по длинным названиям). Один раз на БД:
+--   ALTER DATABASE nirdb SET random_page_cost = 1.1;   -- стандарт для SSD; форсит индекс → ~9мс/запрос
+-- (нельзя в этом скрипте: ALTER DATABASE не выполняется внутри транзакции инициализации)
 
 -- ========== Справочники ==========
 
