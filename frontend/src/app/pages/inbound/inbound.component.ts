@@ -49,6 +49,19 @@ import { NotificationService } from '../../services/notification.service';
         <h3>Импорт заявки из письма</h3>
         <button class="x" (click)="closeImport()">×</button>
       </div>
+
+      <div class="msg-preview">
+        <div class="msg-meta">
+          <span class="msg-from">{{ importFrom || '—' }}</span>
+          <span class="msg-subj" *ngIf="importSubject">· {{ importSubject }}</span>
+        </div>
+        <div class="msg-body" [class.clamped]="!messageExpanded">{{ importExcerpt || '(в письме нет текста)' }}</div>
+        <button type="button" class="msg-toggle" *ngIf="importExcerpt && importExcerpt.length > 160"
+                (click)="messageExpanded = !messageExpanded">
+          {{ messageExpanded ? '▲ Свернуть' : '▼ Развернуть сообщение' }}
+        </button>
+      </div>
+
       <div *ngIf="importPreview">
         <label class="lbl">Клиент</label>
         <div class="client-row">
@@ -127,6 +140,12 @@ import { NotificationService } from '../../services/notification.service';
     .new-client { margin: 8px 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
     .new-client input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; min-width: 320px; }
     .hint-sm { color: #6b7280; font-size: 12px; margin-left: 8px; }
+    .msg-preview { background: #f9fafb; border: 1px solid #eef0f3; border-radius: 8px; padding: 10px 12px; margin: 8px 0 14px; }
+    .msg-meta { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .msg-from { font-weight: 600; color: #374151; }
+    .msg-body { font-size: 13px; color: #1f2937; white-space: pre-wrap; line-height: 1.5; }
+    .msg-body.clamped { max-height: 4.5em; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent); }
+    .msg-toggle { margin-top: 6px; background: none; border: none; color: #2563eb; cursor: pointer; font-size: 12px; padding: 0; }
   `],
 })
 export class InboundComponent {
@@ -141,6 +160,9 @@ export class InboundComponent {
   importError = '';
   importing = false;
   importFrom = '';
+  importSubject = '';
+  importExcerpt = '';
+  messageExpanded = false;
   newClientMode = false;
   newClientName = '';
   fieldOptions = [
@@ -196,6 +218,9 @@ export class InboundComponent {
     this.importClientId = null;
     this.importError = '';
     this.importFrom = r.fromAddress || '';
+    this.importSubject = r.subject || '';
+    this.importExcerpt = r.excerpt || '';
+    this.messageExpanded = false;
     this.newClientMode = false;
     this.newClientName = '';
     this.api.previewInbound(r.id).subscribe({
