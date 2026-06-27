@@ -51,10 +51,20 @@ import { NotificationService } from '../../services/notification.service';
       </div>
       <div *ngIf="importPreview">
         <label class="lbl">Клиент</label>
-        <select [(ngModel)]="importClientId" class="client-sel">
-          <option [ngValue]="null" disabled>— выберите —</option>
-          <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
-        </select>
+        <div class="client-row">
+          <select [(ngModel)]="importClientId" class="client-sel" [disabled]="newClientMode">
+            <option [ngValue]="null" disabled>— выберите —</option>
+            <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
+          </select>
+          <button type="button" class="btn-line-solid" (click)="toggleNewClient()">
+            {{ newClientMode ? '✕ Отмена' : '＋ Новый клиент' }}
+          </button>
+        </div>
+        <div class="new-client" *ngIf="newClientMode">
+          <input [(ngModel)]="newClientName" [ngModelOptions]="{standalone:true}"
+                 placeholder="Название клиента/клиники из письма" />
+          <span class="hint-sm">Создастся новое учреждение и привяжется к заявке.</span>
+        </div>
         <div class="grid-wrap">
           <table class="import-grid">
             <thead>
@@ -112,6 +122,11 @@ import { NotificationService } from '../../services/notification.service';
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
     .err { color: #b91c1c; font-size: 13px; margin: 8px 0; }
     .btn-line-solid { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
+    .client-row { display: flex; gap: 8px; align-items: center; }
+    .client-sel:disabled { background: #f3f4f6; color: #9ca3af; }
+    .new-client { margin: 8px 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
+    .new-client input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; min-width: 320px; }
+    .hint-sm { color: #6b7280; font-size: 12px; margin-left: 8px; }
   `],
 })
 export class InboundComponent {
@@ -125,6 +140,9 @@ export class InboundComponent {
   importClientId: number | null = null;
   importError = '';
   importing = false;
+  importFrom = '';
+  newClientMode = false;
+  newClientName = '';
   fieldOptions = [
     { v: 'NAME', l: 'Наименование' },
     { v: 'MANUFACT', l: 'Бренд' },
@@ -177,6 +195,9 @@ export class InboundComponent {
     this.importPreview = null;
     this.importClientId = null;
     this.importError = '';
+    this.importFrom = r.fromAddress || '';
+    this.newClientMode = false;
+    this.newClientName = '';
     this.api.previewInbound(r.id).subscribe({
       next: (p) => { this.importPreview = p; this.cdr.detectChanges(); },
       error: (e) => { this.importError = e.error?.message || 'Не удалось разобрать вложение'; this.cdr.detectChanges(); },
@@ -185,9 +206,23 @@ export class InboundComponent {
 
   closeImport() { this.importEmailId = null; this.importPreview = null; }
 
+  toggleNewClient() {
+    this.newClientMode = !this.newClientMode;
+    this.importError = '';
+    if (this.newClientMode) {
+      this.importClientId = null;
+      if (!this.newClientName) this.newClientName = this.displayName(this.importFrom);
+    }
+  }
+
+  private displayName(from: string): string {
+    if (!from) return '';
+    const m = from.match(/^(.*?)\s*<.*>$/);
+    return (m ? m[1] : from).trim().replace(/^"|"$/g, '');
+  }
+
   createFromImport() {
     if (this.importEmailId === null) return;
-    if (!this.importClientId) { this.importError = 'Выберите клиента'; return; }
     const cols = this.importPreview?.columns || [];
     const nameCol = cols.find((c: any) => c.field === 'NAME');
     if (!nameCol) { this.importError = 'Отметьте колонку с наименованием'; return; }
@@ -204,9 +239,29 @@ export class InboundComponent {
     const mappings = cols
       .filter((c: any) => c.field && c.field !== 'IGNORE')
       .map((c: any) => ({ header: c.header, field: c.field }));
+
+    if (this.newClientMode) {
+      const name = this.newClientName.trim();
+      if (!name) { this.importError = 'Введите название клиента'; return; }
+      this.importing = true;
+      this.api.create('facilities', { name }).subscribe({
+        next: (created: any) => { this.doCommit(created.id, mappings, lines); },
+        error: (e: any) => {
+          this.importing = false;
+          this.importError = 'Не удалось создать клиента: ' + (e.error?.message || e.message);
+          this.cdr.detectChanges();
+        },
+      });
+    } else {
+      if (!this.importClientId) { this.importError = 'Выберите клиента или создайте нового'; return; }
+      this.importing = true;
+      this.doCommit(this.importClientId, mappings, lines);
+    }
+  }
+
+  private doCommit(clientId: number, mappings: any[], lines: any[]) {
     const emailId = this.importEmailId;
-    this.importing = true;
-    this.api.commitImport({ clientFacilityId: this.importClientId, mappings, lines }).subscribe({
+    this.api.commitImport({ clientFacilityId: clientId, mappings, lines }).subscribe({
       next: () => {
         this.api.markInboundProcessed(emailId as number).subscribe({ next: () => {}, error: () => {} });
         this.importing = false;
