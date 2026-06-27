@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.ImportCommitRequest;
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
+import com.vladoose.nir.dto.request.PrivateRequestUpdate;
 import com.vladoose.nir.dto.response.ImportPreviewResponse;
 import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.PrivateRequestResponse;
@@ -68,6 +69,12 @@ public class PrivateRequestController {
     @PreAuthorize("hasRole('ADMIN')")
     public PrivateRequestResponse create(@Valid @RequestBody PrivateRequestCreate request) {
         return buildFull(service.createFromLines(request));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestResponse update(@PathVariable Long id, @Valid @RequestBody PrivateRequestUpdate request) {
+        return buildFull(service.update(id, request));
     }
 
     @PostMapping("/import/preview")

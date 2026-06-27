@@ -1,12 +1,14 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
+import com.vladoose.nir.dto.request.PrivateRequestUpdate;
 import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.FacilityRepository;
+import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Service;
@@ -15,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class PrivateRequestService {
@@ -24,15 +28,57 @@ public class PrivateRequestService {
     private final TenderLotRepository tenderLotRepository;
     private final FacilityRepository facilityRepository;
     private final RegistryMatchService registryMatchService;
+    private final PriceRequestItemRepository priceRequestItemRepository;
 
     public PrivateRequestService(TenderRepository tenderRepository,
                                  TenderLotRepository tenderLotRepository,
                                  FacilityRepository facilityRepository,
-                                 RegistryMatchService registryMatchService) {
+                                 RegistryMatchService registryMatchService,
+                                 PriceRequestItemRepository priceRequestItemRepository) {
         this.tenderRepository = tenderRepository;
         this.tenderLotRepository = tenderLotRepository;
         this.facilityRepository = facilityRepository;
         this.registryMatchService = registryMatchService;
+        this.priceRequestItemRepository = priceRequestItemRepository;
+    }
+
+    /** Редактирование заявки: правка/добавление/удаление строк. Строки с уже запрошенным КП не удаляются. */
+    @Transactional
+    public Tender update(Long id, PrivateRequestUpdate dto) {
+        Tender t = findById(id);   // source-guarded (PRIVATE_REQUEST)
+        if (dto.getNote() != null) {
+            t.setDescription(dto.getNote());
+        }
+        List<PrivateRequestUpdate.Line> incoming = dto.getLines() != null ? dto.getLines() : List.of();
+        List<TenderLot> existing = tenderLotRepository.findByTenderId(id);
+        Set<Long> keep = new HashSet<>();
+
+        int lotNo = 1;
+        for (PrivateRequestUpdate.Line line : incoming) {
+            if (line.getName() == null || line.getName().isBlank()) continue;
+            TenderLot lot = null;
+            if (line.getLotId() != null) {
+                lot = existing.stream().filter(e -> e.getId().equals(line.getLotId())).findFirst().orElse(null);
+            }
+            if (lot == null) {
+                lot = TenderLot.builder().tender(t).build();
+            } else {
+                keep.add(lot.getId());
+            }
+            lot.setLotNumber(lotNo++);
+            lot.setEquipName(line.getName());
+            lot.setManufact(line.getManufact());
+            lot.setQuantity(line.getQuantity() != null ? line.getQuantity() : 1);
+            tenderLotRepository.save(lot);
+        }
+        // удаляем выкинутые строки, но НЕ те, по которым уже запрашивали КП (FK price_request_item)
+        for (TenderLot lot : existing) {
+            if (!keep.contains(lot.getId())
+                    && priceRequestItemRepository.findByTenderLotId(lot.getId()).isEmpty()) {
+                tenderLotRepository.delete(lot);
+            }
+        }
+        return findById(id);
     }
 
     /** Шов приёма: создаёт частную заявку (tender source=PRIVATE_REQUEST) + лоты из строк.

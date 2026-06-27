@@ -29,8 +29,11 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
           <!-- Строки заявки + реестр-статус -->
           <section class="section" *ngIf="!loading">
-            <h3 class="section-title">Строки заявки</h3>
-            <table *ngIf="lines.length; else noLines">
+            <div class="section-head">
+              <h3 class="section-title">Строки заявки</h3>
+              <button class="btn-line" type="button" *ngIf="!editMode" (click)="startEdit()">✎ Редактировать</button>
+            </div>
+            <table *ngIf="!editMode && lines.length">
               <thead>
                 <tr>
                   <th class="w-40"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll($any($event.target).checked)" /></th>
@@ -64,9 +67,30 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 </tr>
               </tbody>
             </table>
-            <ng-template #noLines>
-              <div class="empty">В заявке нет строк</div>
-            </ng-template>
+            <div class="empty" *ngIf="!editMode && !lines.length">В заявке нет строк</div>
+
+            <!-- режим редактирования строк -->
+            <div *ngIf="editMode" class="edit-block">
+              <table class="edit-grid">
+                <thead>
+                  <tr><th>Наименование/модель</th><th class="w-160">Бренд</th><th class="w-80">Кол-во</th><th class="w-40"></th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let l of editLines; let i = index">
+                    <td><input [(ngModel)]="l.name" [ngModelOptions]="{standalone:true}" placeholder="наименование/модель" /></td>
+                    <td><input [(ngModel)]="l.manufact" [ngModelOptions]="{standalone:true}" placeholder="бренд" /></td>
+                    <td><input type="number" min="1" [(ngModel)]="l.quantity" [ngModelOptions]="{standalone:true}" class="qty" /></td>
+                    <td><button type="button" class="x-row" (click)="removeEditLine(i)" title="удалить строку">×</button></td>
+                  </tr>
+                </tbody>
+              </table>
+              <button type="button" class="btn-line add-line" (click)="addEditLine()">+ строка</button>
+              <div class="edit-err" *ngIf="editError">{{ editError }}</div>
+              <div class="edit-actions">
+                <button class="btn-primary" type="button" [disabled]="saving" (click)="saveEdit()">Сохранить</button>
+                <button class="btn-line" type="button" (click)="cancelEdit()">Отмена</button>
+              </div>
+            </div>
           </section>
 
           <!-- Подобрать поставщиков (по брендам) -->
@@ -160,6 +184,19 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .section { margin-bottom: 28px; }
     .section:last-child { margin-bottom: 0; }
     .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+    .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .section-head .section-title { margin: 0; }
+    .btn-line { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: #374151; }
+    .edit-grid { width: 100%; border-collapse: collapse; }
+    .edit-grid th { text-align: left; font-size: 11px; color: #6b7280; padding: 4px 6px; text-transform: uppercase; }
+    .edit-grid td { padding: 4px 6px; }
+    .edit-grid input { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+    .edit-grid input.qty { width: 64px; }
+    .x-row { background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer; line-height: 1; }
+    .add-line { margin-top: 6px; border-style: dashed; }
+    .edit-err { color: #b91c1c; font-size: 13px; margin: 8px 0; }
+    .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .w-160 { width: 160px; } .w-80 { width: 80px; }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
@@ -223,8 +260,52 @@ export class PrivateRequestCardComponent implements OnChanges {
   sending = false;
   sourcing: any = null;
   sendingGroupId: number | null = null;
+  editMode = false;
+  editLines: any[] = [];
+  editError = '';
+  saving = false;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
+
+  startEdit() {
+    this.editLines = this.lines.map((l: any) => ({
+      lotId: l.lotId, name: l.name, manufact: l.manufact || '', quantity: l.quantity ?? 1,
+    }));
+    this.editError = '';
+    this.editMode = true;
+    this.cdr.detectChanges();
+  }
+
+  addEditLine() { this.editLines.push({ lotId: null, name: '', manufact: '', quantity: 1 }); }
+  removeEditLine(i: number) { this.editLines.splice(i, 1); }
+  cancelEdit() { this.editMode = false; this.editError = ''; }
+
+  saveEdit() {
+    if (this.requestId == null) return;
+    const lines = this.editLines
+      .filter((l: any) => l.name && String(l.name).trim())
+      .map((l: any) => ({
+        lotId: l.lotId ?? null,
+        name: String(l.name).trim(),
+        manufact: l.manufact && String(l.manufact).trim() ? String(l.manufact).trim() : null,
+        quantity: parseInt(l.quantity, 10) || 1,
+      }));
+    if (!lines.length) { this.editError = 'Нужна хотя бы одна строка с наименованием'; return; }
+    this.saving = true;
+    this.api.update('private-requests', this.requestId, { lines }).subscribe({
+      next: () => {
+        this.saving = false;
+        this.editMode = false;
+        this.notify.success('Заявка обновлена');
+        this.loadAll(this.requestId as number);
+      },
+      error: (e: any) => {
+        this.saving = false;
+        this.editError = e.error?.message || 'Ошибка сохранения';
+        this.cdr.detectChanges();
+      },
+    });
+  }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['requestId']) {
@@ -249,6 +330,7 @@ export class PrivateRequestCardComponent implements OnChanges {
     this.priceRequests = [];
     this.selectedDistributorId = null;
     this.sourcing = null;
+    this.editMode = false;
     this.cdr.detectChanges();
 
     this.api.getPrivateRequest(id).subscribe({
