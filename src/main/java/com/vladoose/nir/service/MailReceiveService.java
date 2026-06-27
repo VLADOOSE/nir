@@ -109,32 +109,14 @@ public class MailReceiveService {
     }
 
     private void handle(Message msg, PollResultResponse result) throws Exception {
-        String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? msg.getFrom()[0].toString() : "";
+        String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? decode(msg.getFrom()[0].toString()) : "";
         String subject = msg.getSubject() == null ? "" : msg.getSubject();
 
-        StringBuilder text = new StringBuilder();
-        byte[] attachment = null;
-        String attachmentName = null;
-
-        Object content = msg.getContent();
-        if (content instanceof Multipart mp) {
-            for (int i = 0; i < mp.getCount(); i++) {
-                BodyPart part = mp.getBodyPart(i);
-                String fileName = part.getFileName();
-                if (attachment == null && fileName != null && (fileName.toLowerCase().endsWith(".xlsx")
-                        || fileName.toLowerCase().endsWith(".xls"))) {   // берём ПЕРВОЕ Excel-вложение
-                    try (InputStream is = part.getInputStream()) {
-                        attachment = is.readAllBytes();
-                        attachmentName = fileName;
-                    }
-                } else if (part.isMimeType("text/plain")) {
-                    Object pc = part.getContent();
-                    if (pc != null) text.append(pc);
-                }
-            }
-        } else if (content != null) {
-            text.append(content);
-        }
+        Extracted ex = new Extracted();
+        collect(msg, ex);
+        StringBuilder text = ex.text;
+        byte[] attachment = ex.attachment;
+        String attachmentName = ex.attachmentName;
 
         Optional<Long> kp = KpToken.parse(subject);
         InboundType type;
@@ -187,5 +169,48 @@ public class MailReceiveService {
     private static String trunc(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /** Рекурсивно обходит части письма (в т.ч. вложенные multipart): собирает text/plain
+     *  и ПЕРВОЕ Excel-вложение; имя файла декодируется из MIME (RFC 2047), тип распознаётся
+     *  и по расширению, и по Content-Type. */
+    private void collect(Part part, Extracted ex) throws Exception {
+        if (part.isMimeType("multipart/*")) {
+            Multipart mp = (Multipart) part.getContent();
+            for (int i = 0; i < mp.getCount(); i++) {
+                collect(mp.getBodyPart(i), ex);
+            }
+            return;
+        }
+        String fileName = decode(part.getFileName());
+        boolean excel = (fileName != null
+                && (fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xls")))
+                || part.isMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                || part.isMimeType("application/vnd.ms-excel");
+        if (ex.attachment == null && excel) {
+            try (InputStream is = part.getInputStream()) {
+                ex.attachment = is.readAllBytes();
+            }
+            ex.attachmentName = fileName != null ? fileName : "attachment.xlsx";
+        } else if (part.isMimeType("text/plain")) {
+            Object c = part.getContent();
+            if (c != null) ex.text.append(c);
+        }
+    }
+
+    /** Декод MIME-encoded-words (RFC 2047) в заголовках (имя файла, From). */
+    private static String decode(String s) {
+        if (s == null) return null;
+        try {
+            return jakarta.mail.internet.MimeUtility.decodeText(s);
+        } catch (Exception e) {
+            return s;
+        }
+    }
+
+    private static class Extracted {
+        final StringBuilder text = new StringBuilder();
+        byte[] attachment;
+        String attachmentName;
     }
 }

@@ -132,4 +132,49 @@ class MailReceiveServiceIntegrationTest {
             return out.toByteArray();
         }
     }
+
+    /** Реальная структура письма от почтового клиента: вложенный multipart/alternative (text+html)
+     *  + xlsx-вложение с MIME-закодированным кириллическим именем. Раньше → UNMATCHED. */
+    @Test
+    void poll_handlesNestedMultipart_withEncodedCyrillicFilename() throws Exception {
+        MarketContext.set(Market.KZ);
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+
+        MimeMultipart alt = new MimeMultipart("alternative");
+        MimeBodyPart textPart = new MimeBodyPart();
+        textPart.setText("Прошу выставить КП по списку", "UTF-8");
+        MimeBodyPart htmlPart = new MimeBodyPart();
+        htmlPart.setContent("<p>Прошу выставить КП по списку</p>", "text/html; charset=UTF-8");
+        alt.addBodyPart(textPart);
+        alt.addBodyPart(htmlPart);
+        MimeBodyPart altPart = new MimeBodyPart();
+        altPart.setContent(alt);
+
+        MimeBodyPart filePart = new MimeBodyPart();
+        filePart.setContent(sampleXlsx(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        filePart.setFileName(MimeUtility.encodeText("Список ТХ Тлендиева.xlsx", "UTF-8", "B"));
+        filePart.setDisposition(MimeBodyPart.ATTACHMENT);
+
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        mixed.addBodyPart(altPart);
+        mixed.addBodyPart(filePart);
+
+        MimeMessage msg = new MimeMessage((Session) null);
+        msg.setFrom(new InternetAddress("clinic@x.kz"));
+        msg.setRecipient(Message.RecipientType.TO, new InternetAddress("zakup@westmed.kz"));
+        msg.setSubject("Заявка на оборудование", "UTF-8");
+        msg.setContent(mixed);
+        msg.saveChanges();
+        user.deliver(msg);
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        InboundEmail client = inboundEmailRepository.findAll().stream()
+                .filter(e -> e.getType() == InboundType.CLIENT_REQUEST).findFirst().orElseThrow();
+        assertThat(client.getAttachment()).isNotNull();                       // вложение извлечено
+        assertThat(client.getAttachmentName().toLowerCase()).endsWith(".xlsx");
+        assertThat(client.getAttachmentName()).contains("Список");            // MIME-имя декодировано
+        assertThat(client.getExcerpt()).contains("Прошу выставить КП");       // вложенный text/plain собран
+    }
 }
