@@ -103,7 +103,10 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
             <td class="num">{{ r.number }}</td>
             <td>{{ r.client?.name || '—' }}</td>
             <td>{{ r.lineCount ?? 0 }}</td>
-            <td><span class="reg-summary" [style.color]="(r.registeredCount ?? 0) > 0 ? '#065f46' : '#6b7280'">{{ r.registeredCount ?? 0 }} из {{ r.lineCount ?? 0 }} в реестре</span></td>
+            <td>
+              <span *ngIf="(r.registeredCount ?? -1) >= 0" class="reg-summary" [style.color]="r.registeredCount > 0 ? '#065f46' : '#6b7280'">{{ r.registeredCount }} из {{ r.lineCount ?? 0 }} в реестре</span>
+              <span *ngIf="(r.registeredCount ?? -1) < 0" class="reg-summary" style="color:#9ca3af">в карточке</span>
+            </td>
             <td><span class="badge">{{ r.status }}</span></td>
           </tr>
         </tbody>

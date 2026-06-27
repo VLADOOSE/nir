@@ -44,9 +44,12 @@ public class PrivateRequestController {
 
     @GetMapping
     public List<PrivateRequestResponse> findAll() {
+        // Реестр-матчинг (trigram по всему реестру на каждую строку) дорогой → в списке его НЕ считаем:
+        // показываем только число позиций; полный реестр-статус строк — в карточке (findById).
         return service.findAll().stream().map(t -> {
             PrivateRequestResponse r = toShort(t);
-            applyCounts(r, service.linesWithRegistration(t.getId()));
+            r.setLineCount(t.getLots().size());
+            r.setRegisteredCount(-1);   // -1 = не вычислялось в списке
             return r;
         }).toList();
     }

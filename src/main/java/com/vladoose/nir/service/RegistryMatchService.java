@@ -36,6 +36,10 @@ public class RegistryMatchService {
         if (n.isBlank() && m.isBlank()) {
             return List.of();
         }
+        // Длинные названия из смет (200+ симв.) → seq scan по реестру (~600мс): обрезаем до начала
+        // (наименование изделия идёт первым; спецификация для матчинга не нужна) — быстрее и точнее.
+        if (n.length() > 80) n = n.substring(0, 80);
+        if (m.length() > 80) m = m.substring(0, 80);
         return registryRepository.findCandidates(n, m, limit).stream()
                 .map(row -> {
                     RegistryCandidateResponse c = new RegistryCandidateResponse();
