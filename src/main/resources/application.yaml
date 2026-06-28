@@ -57,3 +57,17 @@ mail:
     poll-ms: ${MAIL_IMAP_POLL_MS:300000}
     # обрабатывать только письма за последние N минут (не трогаем старый бэклог ящика)
     since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}
+
+goszakup:
+  api:
+    base-url: ${GOSZAKUP_BASE_URL:https://ows.goszakup.gov.kz/v2}
+    token: ${GOSZAKUP_TOKEN:}
+    page-size: ${GOSZAKUP_PAGE_SIZE:50}
+  import:
+    enabled: ${GOSZAKUP_IMPORT_ENABLED:false}
+    poll-ms: ${GOSZAKUP_POLL_MS:21600000}   # 6 часов
+    since-days: ${GOSZAKUP_SINCE_DAYS:30}
+    max-pages: ${GOSZAKUP_MAX_PAGES:20}      # предохранитель от бесконечной пагинации
+    # пустой statuses = брать все статусы (точные id активных статусов уточняются токеном, Task 9)
+    statuses: ${GOSZAKUP_STATUSES:}
+    keywords: ${GOSZAKUP_KEYWORDS:аппарат,узи,ультразвук,томограф,рентген,монитор пациента,дефибриллятор,ивл,наркозн,анализатор,центрифуг,стерилизатор,автоклав,эндоскоп,маммограф,флюорограф,электрокардиограф,кардиомонитор,инкубатор,облучатель,спирометр,хирургическ,реанимац,медицинск}
