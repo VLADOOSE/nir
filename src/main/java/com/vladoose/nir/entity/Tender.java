@@ -83,6 +83,21 @@ public class Tender implements MarketScoped {
     @Column(nullable = false, length = 2)
     private Market market;
 
+    @Column(name = "source_ext_id", length = 64)
+    private String sourceExtId;
+
+    @Column(length = 100)
+    private String region;
+
+    @Column(name = "region_kato", length = 20)
+    private String regionKato;
+
+    @Column(name = "customer_name", length = 500)
+    private String customerName;
+
+    @Column(name = "customer_bin", length = 20)
+    private String customerBin;
+
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TenderLot> lots = new ArrayList<>();

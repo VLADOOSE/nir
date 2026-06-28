@@ -9,12 +9,15 @@ import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     boolean existsByFacilityId(Long facilityId);
 
     List<Tender> findBySource(Source source);
+
+    Optional<Tender> findBySourceExtId(String sourceExtId);
 
     @Query("SELECT DISTINCT t FROM Tender t JOIN t.lots l WHERE " +
            "t.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER AND " +

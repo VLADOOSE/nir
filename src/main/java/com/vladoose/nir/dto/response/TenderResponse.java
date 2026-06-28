@@ -21,6 +21,10 @@ public class TenderResponse {
     private String source;
     private String description;
     private String deliveryAddress;
+    private String region;
+    private String regionKato;
+    private String customerName;
+    private String customerBin;
     private String contactLastName;
     private String contactFirstName;
     private String contactMiddleName;
