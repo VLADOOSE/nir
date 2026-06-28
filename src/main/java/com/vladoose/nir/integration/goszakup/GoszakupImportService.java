@@ -55,15 +55,24 @@ public class GoszakupImportService {
             sum.setMessage("Токен goszakup не настроен (GOSZAKUP_TOKEN)");
             return sum;
         }
-        // Task 4: одна страница. Task 5 заменит на цикл по cursor + since-days + max-pages.
-        TrdBuyPageDto page = client.fetchTrdBuyPage(null);
-        List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
-        sum.setFetched(items.size());
-        for (TrdBuyDto d : items) {
-            if (!statusOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-            sum.setMatched(sum.getMatched() + 1);
-            upsert(d, sum);
-        }
+        LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
+        String cursor = null;
+        int pagesRead = 0;
+        do {
+            TrdBuyPageDto page = client.fetchTrdBuyPage(cursor);
+            List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
+            for (TrdBuyDto d : items) {
+                sum.setFetched(sum.getFetched() + 1);
+                LocalDate pub = parseDate(d.getPublishDate());
+                if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
+                if (!statusOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
+                sum.setMatched(sum.getMatched() + 1);
+                upsert(d, sum);
+            }
+            cursor = page.getNextPage();
+            pagesRead++;
+        } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
+
         sum.setMessage(String.format("Получено %d, релевантных %d, создано %d, обновлено %d",
                 sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated()));
         return sum;
@@ -77,13 +86,47 @@ public class GoszakupImportService {
         return keywords.stream().anyMatch(name::contains);
     }
 
-    /** Task 4: только create. Task 5 добавит ветку update + лоты + регион. */
     private void upsert(TrdBuyDto d, ImportSummary sum) {
-        Tender t = new Tender();
-        t.setSourceExtId(d.getNumberAnno());
+        Tender t = tenderRepository.findBySourceExtId(d.getNumberAnno()).orElse(null);
+        boolean isNew = (t == null);
+        if (isNew) { t = new Tender(); t.setSourceExtId(d.getNumberAnno()); }
         applyFields(t, d);
+        resolveRegion(t, d);
+        rebuildLots(t, d);
         tenderRepository.save(t);
-        sum.setCreated(sum.getCreated() + 1);
+        if (isNew) sum.setCreated(sum.getCreated() + 1);
+        else sum.setUpdated(sum.getUpdated() + 1);
+    }
+
+    private void resolveRegion(Tender t, TrdBuyDto d) {
+        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = client.fetchSubject(d.getCustomerBin());
+        String customerName = subj != null ? subj.getNameRu() : null;
+        String address = subj != null ? subj.getAddress() : null;
+        String kato = subj != null ? subj.getKatoId() : null;
+        t.setCustomerName(customerName);
+        t.setRegionKato(kato);
+        if (address != null) t.setDeliveryAddress(address);
+        t.setRegion(regionResolver.resolve(customerName, address)); // null допустим
+    }
+
+    private void rebuildLots(Tender t, TrdBuyDto d) {
+        // §7/§14: управлять лотами ТОЛЬКО через коллекцию (orphanRemoval), не через repository.delete
+        t.getLots().clear();
+        List<com.vladoose.nir.integration.goszakup.dto.LotDto> lots = client.fetchLots(d.getNumberAnno());
+        for (com.vladoose.nir.integration.goszakup.dto.LotDto l : lots) {
+            com.vladoose.nir.entity.TenderLot lot = new com.vladoose.nir.entity.TenderLot();
+            lot.setTender(t);
+            lot.setLotNumber(parseInt(l.getLotNumber()));
+            lot.setEquipName(l.getNameRu());
+            lot.setQuantity(l.getCount());
+            lot.setMaxCost(l.getAmount());
+            t.getLots().add(lot);
+        }
+    }
+
+    static Integer parseInt(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return Integer.valueOf(s.trim()); } catch (NumberFormatException e) { return null; }
     }
 
     private void applyFields(Tender t, TrdBuyDto d) {
