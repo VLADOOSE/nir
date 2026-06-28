@@ -1,29 +1,5 @@
--- DEV ONLY: пересоздаёт все таблицы при каждом запуске
-
--- Удаление таблиц в обратном порядке зависимостей
-DROP TABLE IF EXISTS inbound_email CASCADE;
-DROP TABLE IF EXISTS price_request_item CASCADE;
-DROP TABLE IF EXISTS price_request CASCADE;
-DROP TABLE IF EXISTS apply_item CASCADE;
-DROP TABLE IF EXISTS activity_apply CASCADE;
-DROP TABLE IF EXISTS tender_lot CASCADE;
-DROP TABLE IF EXISTS tender CASCADE;
-DROP TABLE IF EXISTS distributor_equipment_type CASCADE;
-DROP TABLE IF EXISTS distributor_brand CASCADE;
-DROP TABLE IF EXISTS med_equipment CASCADE;
-DROP TABLE IF EXISTS distributor CASCADE;
-DROP TABLE IF EXISTS equipment_type CASCADE;
-DROP TABLE IF EXISTS header_synonym CASCADE;
-DROP TABLE IF EXISTS facility CASCADE;
-DROP TABLE IF EXISTS user_account CASCADE;
-
--- Удаление старых таблиц
-DROP TABLE IF EXISTS med_equipment_offer CASCADE;
-DROP TABLE IF EXISTS med_equipment_request CASCADE;
-DROP TABLE IF EXISTS company_member CASCADE;
-DROP TABLE IF EXISTS company CASCADE;
-DROP TABLE IF EXISTS tender_step CASCADE;
-DROP TABLE IF EXISTS tender_founder CASCADE;
+-- Flyway V1: схема (создаётся один раз; данные живут между перезапусками).
+-- Источник: бывший schema.sql, без DROP-блока (Flyway не пересоздаёт таблицы).
 
 -- ========== Реестр медизделий (живучая таблица, не пересоздаётся) ==========
 -- ВАЖНО: БД должна быть создана с UTF-8 локалью (LC_CTYPE/LC_COLLATE), НЕ 'C'/'POSIX' —
