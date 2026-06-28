@@ -1,162 +1,178 @@
-# CLAUDE.md — АИС учёта участия в тендерах на медицинское оборудование
+# CLAUDE.md — АИС «Регион-Мед / West-Med»: тендеры и частные заявки на медоборудование
 
-## Обзор проекта
+## 1. Что это за проект (актуально)
 
-Дипломный проект: автоматизированная информационная система (АИС) для учёта участия торговой компании ООО «Регион-Мед» в тендерах на закупку медицинского оборудования.
+Изначально — дипломная АИС для ООО «Регион-Мед» (РФ). **Диплом защищён; теперь это дорабатывается как реальный продукт** для двух связанных компаний:
 
-Система решает задачу автоматизации подбора оборудования из внутреннего каталога под требования тендеров — это **система поддержки принятия решений**, а не просто CRUD.
+- **Регион-Мед (РФ, рубли ₽)** — тендеры на госзакупках (zakupki.gov.ru). По закону в тендерах нельзя называть бренды → заказчик даёт параметры → наш **автоподбор** оборудования из каталога.
+- **West-Med (KZ, тенге ₸)** — частные клиники Казахстана. Клиника **прямо называет бренд/модель** (заявка) → проверяем **регистрацию в реестре НЦЭЛС РК** + сорсинг (запрос КП у поставщиков). West-Med закупает у дистрибьюторов; если что-то выгоднее купить в РФ — берётся на Регион-Мед, который продаёт/везёт в Казахстан для West-Med.
 
-## Стек технологий
+Компании **не работают вместе**, у каждой свой рынок. Реализован **глобальный переключатель рынка** (РФ ↔ KZ) — одна БД, колонка `market`, данные одного рынка не видны на другом.
 
-- **Backend:** Java 17, Spring Boot 3.5.x, Spring Web (REST API), Spring Data JPA (Hibernate), Lombok
-- **Frontend:** Angular (переписывается с Next.js)
-- **Database:** PostgreSQL, нормализация до 3НФ
-- **Сборка:** Gradle
-- **Архитектура:** Монолит, layered (Controller → Service → Repository → DTO), REST API, JSON
+Поток «**Частники**» (West-Med) — главное направление доработок: клиника пишет на **info@westmed.kz** с таблицей оборудования (Excel) → система читает почту, парсит → частная заявка → проверка реестра → подбор поставщиков по брендам → запрос КП дистрибьюторам с **zakup@westmed.kz**.
 
-## Структура проекта
+## 2. Стандартные инструкции пользователя (соблюдать всегда)
 
-```
-nir2/
-├── build.gradle
-├── settings.gradle
-├── src/main/java/com/vladoose/nir/
-│   ├── Nir2Application.java
-│   ├── config/
-│   ├── controller/
-│   ├── dto/
-│   ├── entity/
-│   ├── exception/
-│   ├── mapper/
-│   ├── repository/
-│   └── service/
-├── src/main/resources/
-│   ├── application.yaml
-│   └── schema.sql
-└── frontend/          # Angular (в процессе миграции с Next.js)
-```
+- **Все делегируемые агенты (Agent/subagent) — на Opus 4.8** (`model: 'opus'`). Это явное требование пользователя.
+- **Строй как реальный продукт, не как диплом** — диплом сдан, дипломные ограничения не нужны.
+- **После каждого блока** — давать «куда смотреть» (click-by-click тур) и **проверять фичу вживую в браузере (Playwright)** перед заявлением «готово».
+- Пользователь технический, любит скорость; даёт рекомендации делать «как лучше».
 
-## Модель данных (8 сущностей)
+## 3. Рабочий процесс (superpowers)
 
-### Справочники
-- **facility** — медучреждения-заказчики (id, name UK, inn, address, contact)
-- **distributor** — дистрибьюторы/поставщики (id, name UK, inn UK, contact)
-- **med_equipment** — каталог оборудования (id, name, manufact, equip_type, cost, length_mm, width_mm, height_mm, weight_kg, spec)
-- **user_account** — пользователи системы (id, username UK, full_name, role)
+Каждый блок: **brainstorming → spec → writing-plans → subagent-driven-development (SDD) → whole-branch review (Opus) → мерж в main**.
+- Спеки: `docs/superpowers/specs/YYYY-MM-DD-<тема>-design.md`. Планы: `docs/superpowers/plans/YYYY-MM-DD-<тема>.md`.
+- SDD: per-task реализатор + ревьюер (оба Opus) + fix-loop + финальный whole-branch ревью; ledger в `.superpowers/sdd/progress.md`.
+- Мелкие правки/фиксы — инлайн на короткой ветке + мерж (не на main напрямую: `git checkout -b ...` → commit → `merge --ff-only` → удалить ветку).
+- Каждый commit заканчивать: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- Иногда вылезают **транзиентные срывы субагентов** (0 tool_uses) — переотправить или сделать инлайн.
 
-### Слой требований (что хочет заказчик)
-- **tender** — тендер (id, tender_number, facility_id FK, status, deadline, total_cost, description)
-- **tender_lot** — лот тендера (id, tender_id FK, lot_number, equip_name, equip_type, quantity, max_cost, max_length_mm, max_width_mm, max_height_mm, max_weight_kg, required_spec)
+## 4. Стек
 
-### Слой предложений (что мы предлагаем)
-- **activity_apply** — заявка на тендер (id, tender_id FK, status, created_at)
-- **apply_item** — позиция заявки (id, apply_id FK, tender_lot_id FK, med_equip_id FK, distributor_id FK, offered_cost, quantity)
+- **Backend:** Java 17, Spring Boot **3.5.6**, Spring Web (REST), Spring Data JPA / Hibernate 6, Spring Security (method security), MapStruct 1.5.5, Lombok, Gradle 8.14.
+- **Миграции БД:** **Flyway** (схема + сид — версионные миграции; см. §10). PostgreSQL 17.
+- **Excel:** Apache POI 5.2.5 (`poi-ooxml` + `poi` транзитивно — чтение/запись `.xlsx`/`.xls`).
+- **Почта:** `spring-boot-starter-mail` (JavaMailSender для SMTP) + сырой `jakarta.mail` (IMAP — `Store`/`Folder`). GreenMail (`com.icegreen:greenmail-junit5:2.1.2`) — встроенный IMAP/SMTP в тестах.
+- **Отчёты:** JasperReports 6.21, профит-Excel.
+- **Frontend:** Angular **21** (standalone-компоненты, инлайн-шаблоны + `styles: []` SCSS). `ApiService` (база `/api`, прокси на :8080).
 
-### Связи
-```
-FACILITY 1:N TENDER
-TENDER 1:N TENDER_LOT
-TENDER 1:N ACTIVITY_APPLY
-ACTIVITY_APPLY 1:N APPLY_ITEM
-TENDER_LOT 1:N APPLY_ITEM
-MED_EQUIPMENT 1:N APPLY_ITEM
-DISTRIBUTOR 1:N APPLY_ITEM
-```
+## 5. Среда разработки (КРИТИЧНО для свежей сессии)
 
-## Ключевая фича — автоматический подбор оборудования
+### Запуск
+- **Backend:** `./gradlew bootRun` (порт **8080**). Компилирует + стартует.
+- **Frontend:** `cd frontend && npm start` (dev-сервер **4200**, HMR подхватывает правки).
+- **Логин в UI:** `admin` / `admin` (или `operator` / `operator`). Переключатель рынка слева вверху: «Регион-Мед (РФ) ₽» / «West-Med (KZ) ₸». Смена рынка перезагружает страницу, `localStorage['ais.market']` = `RF`/`KZ`.
 
-При просмотре лота тендера система фильтрует каталог `med_equipment` по параметрам:
-- `equip_type` — совпадение типа
-- `length_mm <= max_length_mm` — габариты вписываются
-- `width_mm <= max_width_mm`
-- `height_mm <= max_height_mm`
-- `weight_kg <= max_weight_kg`
-- `cost <= max_cost` — цена в бюджете
+### Песочница Bash и БД ⚠️
+- **Bash-sandbox блокирует localhost:5432** → ЛЮБЫЕ `./gradlew` и команды к БД запускать с `dangerouslyDisableSandbox: true`.
+- **psql:** `/Library/PostgreSQL/17/bin/psql` (там же `dropdb`/`createdb`), `PGPASSWORD=admin`, пользователь `postgres`, БД **`nirdb`**.
+- **nirdb ДОЛЖНА быть UTF-8 локалью** (LC_CTYPE/LC_COLLATE = `en_US.UTF-8`, НЕ `C`/`POSIX`) — иначе pg_trgm даёт пустые триграммы для кириллицы и реестр-матчинг молча возвращает 0. Пересоздание: `dropdb nirdb` + `createdb nirdb --template=template0 --lc-ctype=en_US.UTF-8 --lc-collate=en_US.UTF-8`, затем `ALTER DATABASE nirdb SET random_page_cost = 1.1;` (см. §11).
 
-Все ограничения nullable (если заказчик не указал — фильтр не применяется). Результат ранжируется по цене ASC.
+### SMTP (dev) — MailHog
+- `spring.mail.*` настроен на **MailHog** (фейковый SMTP, `localhost:1025`, UI `http://localhost:8025`, без auth). Запуск: `docker run -d --name nir2-mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`.
 
-## Бизнес-процесс
+### Живой приём почты (IMAP) — Mail.ru
+Ящики хостятся на **Mail.ru для бизнеса** (домен westmed.kz). Для Mail.ru нужен **пароль приложения** (не основной пароль; Настройки → Безопасность → «Пароли для внешних приложений», + включить доступ по IMAP).
+- **info@westmed.kz** — входящие запросы от клиентов (читаем). Пароль приложения держим в `/tmp/info.pass` (вне репо).
+- **zakup@westmed.kz** — отправка дистрибьюторам (+ ответы поставщиков). Пароль в `/tmp/imap.pass`.
+- IMAP: `imap.mail.ru:993` (imaps). SMTP: `smtp.mail.ru:465` (SSL) / `587` (STARTTLS).
+- **Команда запуска бэка с живым приёмом info@** (приём по умолчанию ВЫКЛ):
+  ```
+  MAIL_IMAP_ENABLED=true MAIL_IMAP_HOST=imap.mail.ru MAIL_IMAP_PORT=993 \
+  MAIL_IMAP_PROTOCOL=imaps MAIL_IMAP_USERNAME=info@westmed.kz \
+  MAIL_IMAP_PASSWORD="$(cat /tmp/info.pass)" MAIL_IMAP_MARKET=KZ \
+  MAIL_IMAP_SINCE_MINUTES=1440 ./gradlew bootRun
+  ```
+- Если перезапустить **без** этих env — приём почты выключится (это нормальное состояние по умолчанию).
+- ⚠️ **Безопасность:** пароли приложений Mail.ru пользователь вставлял в чат — на проде их стоит перевыпустить. Никогда не эхо-печатать содержимое `/tmp/*.pass` (читать только через `$(cat ...)`).
 
-1. **Регистрация тендера** — номер, дедлайн, привязка к facility, статус «Новый»
-2. **Разбор лотов** — текстовые требования + габаритные ограничения из тендерной документации
-3. **Подбор оборудования** — автоматический по параметрам из каталога med_equipment
-4. **Формирование заявки** — ACTIVITY_APPLY + APPLY_ITEM, статусы: Черновик → Подана → Выиграна / Отклонена
+### Браузерная проверка (Playwright MCP)
+- Навигация на `http://localhost:4200`, логин admin/admin, `localStorage.setItem('ais.market','KZ')`, навигация на нужную страницу (`?openId=<id>` открывает карточку). Сессия слетает при рестарте бэка — логиниться заново.
+- Заполнять инпуты через `browser_type`/`fill` (триггерит ngModel); `browser_evaluate` с нативным сеттером Angular не всегда подхватывает. Refs в снапшотах устаревают — снимать свежий снапшот прямо перед кликом.
 
-## Статусы
+## 6. Архитектура
 
-### Тендер
-- Новый → Анализ → Заявка подана → Завершён (выигран/проигран)
+Монолит, layered: Controller → Service → Repository → DTO (MapStruct мапперы). REST/JSON. Entity на Lombok, PK BIGSERIAL (IDENTITY). Сервисы — constructor injection без `@Autowired`, `@Transactional` на записи. Контроллеры `@RestController`, «голые» DTO; записи под `@PreAuthorize("hasRole('ADMIN')")` (method security включена в `SecurityConfig`). `@EnableScheduling` на `Nir2Application`. OSIV включён.
 
-### Заявка (activity_apply)
-- Черновик → Подана → Выиграна / Отклонена
+### Многорыночность (РФ/KZ) — КРИТИЧНАЯ механика
+Изоляция данных по рынку через один `ThreadLocal` **`MarketContext`** + 4 части:
+1. **`MarketContext`** (`context/`): `get()` → по умолчанию **`Market.RF`** (НЕ null!), `set(Market)`, `clear()`.
+2. **Штамп при вставке:** `MarketStampingListener` (`@PrePersist`) на рыночных сущностях через `@EntityListeners(...)` — ставит `market = MarketContext.get()` при INSERT, если null. Сервисы ещё и пред-штампуют при create (id==null) — defense-in-depth.
+3. **Фильтр на чтение:** Hibernate `@FilterDef(name="marketFilter")` объявлен **ОДИН раз на `Tender`** + `@Filter(name="marketFilter", condition="market = :market")` на каждой рыночной сущности. **НЕ переобъявлять `@FilterDef`** на других сущностях. Включает фильтр `MarketFilterAspect` (`@Before` на каждом вызове Spring Data `Repository`): берёт привязанный (tx/OSIV) EntityManager и включает фильтр из `MarketContext`. Без привязанной сессии — НЕ фильтрует.
+4. **HTTP:** `MarketInterceptor` (для `/api/**`) ставит `MarketContext` из заголовка `X-Market` в preHandle, чистит в afterCompletion. Фронт: `marketInterceptor` (HttpInterceptorFn) сам вешает `X-Market` на каждый запрос.
 
-## Что было удалено из старой схемы (и почему)
+**⚠️ Гард `@Scheduled`/фоновых потоков (нет HTTP, нет OSIV):** у фонового потока НЕТ `MarketContext` (дефолт RF) и НЕТ привязанной сессии. Правило: **вызывающий ставит `MarketContext.set(market)` ДО вызова + `clear()` в finally; работа с БД — в `@Transactional`-методе ОТДЕЛЬНОГО бина (не self-invoke)**, чтобы аспект получил привязанную сессию. Пример — приём почты ставит рынок ящика вокруг `@Transactional MailReceiveService.poll()`.
 
-| Удалено | Причина |
-|---------|---------|
-| `tender_step` | Избыточно — логика через статус тендера |
-| `tender_founder` | Не использовался, заменён на description |
-| `company`, `company_member` | Отслеживание конкурентов не нужно |
-| `med_equipment_request` | Заменена на `tender_lot` |
-| `med_equipment_offer` | Заменена на `apply_item` |
-| Составные PK | Заменены на простые BIGSERIAL — упрощение JPA |
-| `items_json` в activity_apply | Нарушение 1НФ — нормализовано в `apply_item` |
+Рыночные сущности: `Tender`, `TenderLot` (через tender), `ActivityApply`, `ApplyItem`, `Facility`, `Distributor`, `MedEquipment`, `PriceRequest`, `InboundEmail`. Общие (без рынка): `MedRegistry`, `EquipmentType`, `HeaderSynonym`, `UserAccount`.
 
-## Правила разработки
+## 7. Модель данных (PostgreSQL, схема — Flyway V1)
 
-- Все первичные ключи — `BIGSERIAL` (простые, без `@IdClass`)
-- Entity используют Lombok (`@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder`)
-- Валидация — пока убрана, будет добавлена позже
-- MVP без DTO — контроллеры принимают entity напрямую через `@RequestBody`
-- Именование таблиц — snake_case, полей entity — camelCase
-- `ddl-auto: none`, schema.sql управляет схемой (dev: пересоздание при каждом запуске)
-- Constructor injection без `@Autowired`, `@Transactional` на методах записи
+- **Справочники:** `facility` (учреждение/клиника; контакты разнесены: last/first/middle_name, phone, email — 1НФ), `distributor` (поставщик: name UK, inn, email; + `@ElementCollection distributor_brand` — какие бренды возит; + `distributor_equipment_type`), `med_equipment` (каталог: name, manufact, equip_type, габариты, weight, spec), `equipment_type`, `user_account`.
+- **Реестр:** `med_registry` (≈14072 записи реестра НЦЭЛС РК: reg_number UK, name TEXT, producer, country, reg_date, expiration_date, unlimited). **Наполняется Java-инициализатором из JSON** (`registry/rk-mi-registry-full.json`), не сидом. GIN-trgm индексы `idx_reg_name_trgm`/`idx_reg_producer_trgm`.
+- **Слой требований:** `tender` (tender_number, facility_id, status String, deadline nullable, total_cost, description, **`source` PUBLIC_TENDER/PRIVATE_REQUEST**, market), `tender_lot` (tender_id, lot_number, equip_name, equip_type, quantity, max_габариты, **`manufact`** — бренд/модель для частных заявок, required_spec).
+- **Слой предложений:** `activity_apply`, `apply_item`, `price_request` (КП: status CREATED→SENT→RESPONDED→ACCEPTED/REJECTED/CLOSED, sentAt, responseDate, note, market; tender+distributor ManyToOne; items OneToMany **cascade ALL + orphanRemoval**), `price_request_item` (tenderLot, medEquipment nullable, requestedQuantity, responsePrice, responseNote).
+- **Почта/импорт:** `inbound_email` (from_address, subject, received_at, type SUPPLIER_RESPONSE/CLIENT_REQUEST/UNMATCHED, matched_price_request_id, attachment_name, **attachment BYTEA**, excerpt, status NEW/PROCESSED, market), `header_synonym` (обучаемый словарь заголовков Excel: header_norm UK, field NAME/MANUFACT/QUANTITY).
 
-## Контекст: дипломная работа
+**`Tender.lots` — `@OneToMany cascade=ALL, orphanRemoval=true`** → лотами управлять **через коллекцию `t.getLots()`** (removeIf/add), НЕ через `tenderLotRepository.delete` (cascade на flush вернёт удалённое). Этот баг ловили в `PrivateRequestService.update`.
 
-Это проект для защиты диплома. Параллельно пишется пояснительная записка (отдельный чат в проекте). Форматирование записки: Times New Roman 14pt, 1.5 интервал, отступ 1.25см. Генерация docx через Node.js библиотеку `docx`.
+## 8. Реализованные блоки (всё в main)
 
-## Текущее состояние проекта
+- **A — Переключатель рынка** РФ/₽ ↔ KZ/₸ (вся §6-механика). При смене рынка остаётся на текущей странице.
+- **B — Частные заявки** (`/private-requests`): tender с `source=PRIVATE_REQUEST`, автономер `ЧЗ-<год>-NNNN`. Карточка: строки (модель/бренд/кол-во) + **инлайн реестр-статус** (Зарегистрировано/Не найдено + НДС-бейдж + топ-кандидат РУ) + запрос КП per-поставщик + ввод ответов. Шов приёма `PrivateRequestService.createFromLines(PrivateRequestCreate)`.
+- **C — Подбор поставщиков по брендам:** справочник брендов в карточке поставщика; `PrivateRequestSourcingService.buildSourcing(id)` группирует строки заявки по поставщикам, у кого есть бренд строки (`manufact`, case-insensitive); блок «Подобрать поставщиков» + «Запросить КП» по группе (`GET /api/private-requests/{id}/sourcing`).
+- **D1 — Импорт заявки из Excel:** `LineExtractor`/`RuleBasedLineExtractor` (POI) разбирает .xlsx/.xls в грид; разметка колонок по **обучаемому словарю** `header_synonym` (пополняется правками оператора при коммите). `POST /import/preview` (multipart) + `POST /import/commit` (переиспуют `createFromLines`).
+- **D2 — Почта (round-trip + входящие):** см. §9.
+- **Редактирование частной заявки:** `PUT /api/private-requests/{id}` (`PrivateRequestUpdate`) — правка/добавление/удаление строк (через коллекцию orphanRemoval; строки с уже запрошенным КП не удаляются — FK). UI: «✎ Редактировать» в карточке → инлайн-грид (наименование/бренд/кол-во).
+- **Импорт из письма + «➕ Новый клиент»:** письмо клиники из «Входящих» → тот же грид D1 из сохранённого вложения; нет клиента — завести нового прямо в диалоге (имя из отправителя). Превью текста письма (свернуть/развернуть), колонка «Получено» (дата + день недели, `Intl` ru-RU).
+- **Реестр-сверка** (`/registry-reconciliation`), отчёты, дашборд, глобальный поиск, типы оборудования, учреждения, дистрибьюторы — есть.
 
-Backend полностью перестроен и работает:
-- schema.sql: 9 таблиц (facility, distributor, med_equipment, user_account, tender, tender_lot, activity_apply, apply_item, **price_request**)
-- 9 entity-классов с Lombok, простые BIGSERIAL PK, без @IdClass
-- 9 репозиториев (включая JPQL findMatchingEquipment в MedEquipmentRepository, searchTenders в TenderRepository, countByEquipType в TenderLotRepository, distributorStats в ApplyItemRepository)
-- 10 сервисов: 9 CRUD + ReportService + EmailService
-- 11 REST-контроллеров (включая PriceRequestController, ReportController, EmailController)
-- data.sql с тестовыми данными (5 учреждений, 4 дистрибьютора, 8 единиц оборудования, 2 пользователя, 3 тендера, 5 лотов)
-- SecurityConfig: csrf disabled, всё permitAll (dev)
-- spring.jpa.hibernate.ddl-auto: none, schema.sql управляет схемой
-- Gradle 8.14, Spring Boot стартует на порту 8080
+## 9. Почта — детально (блок D2)
 
-### Ключевые доработки
+Модель: **info@ = входящие запросы клиентов (читаем и парсим), zakup@ = отправка дистрибьюторам (+ их ответы)**.
+- **Отправка КП:** живой путь — `BulkPriceRequestService.sendGroup` → `EmailService.sendEmail(...)`. Тема несёт токен `[КП-<id>]` (хелпер `KpToken.subjectToken/parse`, regex `\[КП-(\d+)\]`). Отдельного `/api/email/send` НЕТ (устаревшее упоминание из старого CLAUDE.md).
+- **Приём (IMAP):** `MailReceiveService.poll()` (сырой `jakarta.mail`, поиск непрочитанных `FlagTerm`). По умолчанию ВЫКЛ (`mail.imap.enabled=false`). Классификация: токен в теме → `SUPPLIER_RESPONSE` (матч к `PriceRequest` по id; статус CREATED/SENT → RESPONDED, ACCEPTED/REJECTED/CLOSED не трогаем); есть .xlsx/.xls вложение → `CLIENT_REQUEST` (в «Входящие», вложение в BYTEA); иначе → `UNMATCHED`. Помечает SEEN (идемпотентно). **Гард `mail.imap.since-minutes` (дефолт 60)** — обрабатывает только письма за последние N минут (не трогает старый бэклог реального ящика). Рынок ящика — `mail.imap.market` (KZ).
+- **Парсинг письма (важно для реальных писем):** **рекурсивный обход multipart** (вложение часто во вложенном `multipart/alternative`); **декод MIME-имени файла** (`MimeUtility.decodeText` — кириллица в `=?UTF-8?B?...?=`); распознавание Excel и по Content-Type. `received_at` берётся из письма (`getReceivedDate`/`getSentDate`), не из времени опроса.
+- **`InboundController`** (`/api/inbound`): GET список, POST `/poll`, POST `/{id}/preview` (грид D1 по сохранённому вложению), POST `/{id}/processed`.
+- **UI «Входящие письма»** (`/inbound`, группа «Заявки»): список с бейджами типа + «Проверить почту»; письмо клиники → «Импортировать» (грид D1 + «➕ Новый клиент»).
+- **Тест:** `MailReceiveServiceIntegrationTest` на GreenMail (встроенный IMAP, `ServerSetupTest.IMAP`:3143) — в т.ч. кейс «вложенный multipart + MIME-кириллическое имя». Без реальных адресатов.
 
-- **PriceRequest** — 9-я сущность, таблица `price_request`. Workflow статусов: CREATED → SENT → RESPONDED → ACCEPTED → REJECTED. Связана с tender_lot, med_equipment, distributor.
-- **Нормализация контактов** — в facility, distributor, tender контактные данные разнесены на отдельные поля: `last_name`, `first_name`, `middle_name`, `phone`, `email` (для tender — с префиксом `contact_`). Это устраняет нарушение 1НФ.
-- **EmailService + EmailController** — отправка КП дистрибьюторам через JavaMailSender (`spring-boot-starter-mail`). Конфигурация SMTP в application.yaml через переменные окружения `MAIL_USERNAME` / `MAIL_PASSWORD`. Endpoint `POST /api/email/send`.
-- **Расширенный серверный поиск тендеров** — `GET /api/tenders/search` с 7 фильтрами (status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo) через JPQL JOIN на лоты.
-- **Отчёты** — `GET /api/reports/{tender-stats,equipment-demand,distributor-stats}` через ReportService с агрегациями GROUP BY/COUNT/AVG.
+## 10. Персистентность — Flyway (важно!)
 
-### Frontend (Angular)
+**Данные ЖИВУТ между перезапусками.** Раньше `schema.sql`+`data.sql` с `spring.sql.init.mode=always` дропали все таблицы при каждом старте → рантайм-данные (реальные заявки, письма, клиенты) слетали; и прогон `./gradlew test` тоже затирал базу. Теперь:
+- Схема и демо-сид — **миграции Flyway** в `src/main/resources/db/migration/`: `V1__init_schema.sql` (схема **без DROP**), `V2__seed_demo.sql` (демо-данные). Накатываются один раз; дальше «up to date, no migration necessary».
+- `application.yaml`: `spring.sql.init.mode: never`, `ddl-auto: none`, `spring.flyway.enabled: true`, `baseline-on-migrate: true`. **`schema.sql`/`data.sql` удалены** — единственный источник схемы это миграции.
+- **Менять схему — ТОЛЬКО новыми миграциями V3, V4…** (не править V1/V2).
+- Тесты идут на nirdb через Flyway + `@Transactional`-откат (изолированы, базу не затирают).
+- **Реестр** (med_registry) Flyway не сеет — наполняет Java-инициализатор из JSON; переживает рестарт (`CREATE TABLE IF NOT EXISTS` + проверка пустоты).
+- **Демо-данные пока остаются** (на время разработки). При деплое на сервер: убрать/заменить `V2` на реальные (оставить справочные — реестр, словарь синонимов), применить `ALTER DATABASE <name> SET random_page_cost = 1.1` один раз.
+- **Пересоздать БД с нуля:** `dropdb`+`createdb` (UTF-8, см. §5) → старт → Flyway накатит V1+V2, реестр переимпортируется. Иначе Flyway упрётся в существующие таблицы.
 
-- **Дашборд** (главная) — счётчики по статусам, ближайшие дедлайны, спрос на типы оборудования (progress bars), последние заявки.
-- **Глобальный поиск в шапке** — `SearchService` с `forkJoin` параллельно по 4 сущностям (тендеры/оборудование/учреждения/дистрибьюторы) с `catchError`, фильтрация на клиенте, выпадающий список с цветными бейджами.
-- **Расширенный поиск тендеров** — отдельная страница с серверной фильтрацией.
-- **Страница отчётов** — три секции с горизонтальными bar-чартами и таблицами.
-- **Workflow КП в детальном просмотре тендера** — кнопка «Запросить КП» в строке лота → форма выбора оборудования и дистрибьютора → автогенерация шаблона email с реквизитами лота/тендера → 3 действия (копировать в буфер / отправить из системы через `/api/email/send` / открыть mailto) → ручное обновление статуса КП → при ACCEPTED появляется кнопка «В заявку», создающая позицию в черновике activity_apply.
-- **Поддержка `?openId=...`** — переходы на детали тендера с дашборда, поиска и глобального поиска.
+## 11. Реестр-матчинг и производительность
 
-## API endpoints
+- Примитив `MedRegistryRepository.findCandidates(name, manufact, limit)` (нативный, `word_similarity` `<%` — индексо-дружелюбный; раньше был оператор `%` similarity → seq scan по 14k на длинных названиях смет ~600мс). Скоринг 0.6·производитель + 0.4·название. `RegistryMatchService.findCandidates` обрезает названия до 80 символов.
+- **`ALTER DATABASE nirdb SET random_page_cost = 1.1`** — обязательно, иначе планировщик на маленькой таблице (14k) игнорирует GIN-индекс и уходит в seq scan. Применено к nirdb; в V1 закомментировано (ALTER DATABASE нельзя в транзакции инициализации); на новой БД применить вручную.
+- **Список частных заявок НЕ считает реестр** (было 10.6с → 6мс): показывает только число позиций; полный реестр-статус строк — только в карточке (`findById`). Карточка сметы (16 строк): ~9с → ~0.2с.
 
-- GET/POST /api/facilities, GET/PUT/DELETE /api/facilities/{id}
-- GET/POST /api/distributors, GET/PUT/DELETE /api/distributors/{id}
-- GET/POST /api/equipment, GET/PUT/DELETE /api/equipment/{id}, GET /api/equipment/match/{lotId}
-- GET/POST /api/users, GET/PUT/DELETE /api/users/{id}
-- GET/POST /api/tenders, GET/PUT/DELETE /api/tenders/{id}, GET /api/tenders/{id}/lots, GET /api/tenders/{id}/applies
-- GET/POST /api/lots, GET/PUT/DELETE /api/lots/{id}
-- GET/POST /api/applies, GET/PUT/DELETE /api/applies/{id}, GET /api/applies/{id}/items
-- GET/POST /api/apply-items, GET/PUT/DELETE /api/apply-items/{id}
+## 12. Frontend (Angular 21)
 
-## Следующий шаг
+Standalone-компоненты, инлайн-шаблоны + `styles: []`. `ApiService` (база `/api`): generic `getAll/getById/create/update/delete` + доменные методы (напр. `getPrivateRequest`, `getPrivateRequestSourcing`). `marketInterceptor` вешает `X-Market`. `NotificationService.success(string)/error(string)`. Компоненты руками зовут `cdr.detectChanges()` после async. Роуты — дети `LayoutComponent` под `authGuard`; сайдбар инлайн в `layout.component.ts` (группы Тендеры/Каталог/Заявки/Система). Карточки заявок — инлайн-компоненты, открываются по `?openId=`/`@Input requestId`.
 
-Создание Angular-фронтенда под новый API.
+Грид импорта D1 (per-column `<select>` NAME/MANUFACT/QUANTITY/IGNORE) переиспользуется в `private-requests` (импорт файла) и `inbound` (импорт письма).
+
+## 13. Тестирование
+
+- `./gradlew test` (sandbox off). **Ожидаемо 2 падения — `ApplyAutoFillServiceTest` (2)**, пред-существующие (расхождение assertion по наценке ×1.25, в бэклоге). Гейт «зелёного»: «только эти 2». Остальные (рынки, частные заявки, сорсинг, импорт, почта-GreenMail, реестр, update) — зелёные.
+- Бэк-тесты — `@SpringBootTest @Transactional` на реальном Postgres (nirdb). Почта — GreenMail.
+- Перед прогоном глушить лишний `bootRun`: `lsof -ti :8080 | xargs kill -9`.
+- Фронт — тестов нет, гейт = `cd frontend && npm run build`.
+
+## 14. Ключевые gotchas / уроки
+
+- **`./gradlew test` раньше затирал nirdb** (schema.sql DROP) — теперь нет (Flyway). Если данные «пропали» — проверь, что используется Flyway-путь.
+- **`@FilterDef` — только на `Tender`**; дубль на новой сущности = коллизия при старте.
+- **`@Scheduled` без `MarketContext`** → дефолт RF + нет фильтра (см. §6).
+- **JPA orphanRemoval**: лотами управлять через коллекцию, не `repository.delete`.
+- **Mail.ru**: только пароль приложения; реальные письма — вложенный multipart + MIME-имена; обязательны рекурсивный обход + декод.
+- **pg_trgm + кириллица**: nirdb обязан быть UTF-8 локалью; `random_page_cost=1.1` чтобы юзался индекс.
+- Ручной клик-тест ловит то, что юнит-тесты (минуя `@Valid`) пропускают — проверять фичи в браузере.
+
+## 15. API (основное)
+
+`/api/auth/login`; `/api/facilities`, `/api/distributors`, `/api/equipment` (+ `/match/{lotId}`), `/api/equipment-types`, `/api/users`; `/api/tenders` (+ `/search`, `/{id}/lots`, `/{id}/applies`), `/api/lots`; `/api/applies`, `/api/apply-items`; `/api/private-requests` (GET/POST/**PUT {id}**, `/{id}/sourcing`, `/import/preview` multipart, `/import/commit`); `/api/price-requests` (+ `/{id}/responses`, accept/close), `/api/bulk-price/*`; `/api/inbound` (GET, `/poll`, `/{id}/preview`, `/{id}/processed`); `/api/registry-*` (сверка), `/api/reports/*`. Записи — `@PreAuthorize ADMIN`.
+
+## 16. Roadmap / бэклог
+
+Поток «Частники» (West-Med) — основной — закрыт (A→D2 + edit + perf + Flyway). Дальше:
+- **Hardening живого IMAP** перед регулярным включением: вынести IMAP-I/O из транзакции (вложенный multipart — уже сделано).
+- Авто-резолв клиента по адресу отправителя (match `facility.email`).
+- Структурный разбор ответа поставщика (цена → `PriceRequestItem.responsePrice`).
+- LLM-парсер вложений (опт-ин по Anthropic API-ключу — отдельная оплата по токенам; дёшево на Haiku) как фолбэк к правилам; CSV/PDF.
+- Нечёткий матч брендов (pg_trgm/синонимы/транслит: «Mindray»↔«Майндрей»↔«Shenzhen Mindray»).
+- Парсер казахстанских смет: пропуск служебных строк (нумерация, ИТОГО), сид типовых заголовков.
+- RF-реестр (Росздравнадзор) для рынка РФ.
+- КП-генератор клиенту (НДС/происхождение).
+- Починить 2 `ApplyAutoFillServiceTest` (assertion vs наценка ×1.25).
+- Деплой на сервер: убрать демо-сид (V2), реальные данные, перевыпустить пароли приложений.
+
+## Контекст: дипломная записка
+Параллельно писалась пояснительная записка (отдельный чат). Форматирование: Times New Roman 14pt, интервал 1.5, отступ 1.25см; генерация docx через Node.js `docx`. **Диплом сдан — это уже не приоритет.**
