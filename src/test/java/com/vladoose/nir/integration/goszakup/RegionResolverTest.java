@@ -26,4 +26,11 @@ class RegionResolverTest {
         assertThat(r.resolve(null, "", "что-то без региона")).isNull();
         assertThat(r.resolve(null, "г. Шымкент")).isEqualTo("г. Шымкент");
     }
+    @Test void abbreviationNotMatchedInsideWord() {
+        assertThat(r.resolve("Республиканское государственное предприятие «Городская больница»")).isNull();
+        assertThat(r.resolve("Поликлиника, СКО")).isEqualTo("Северо-Казахстанская область");
+    }
+    @Test void oblastBeforeCity_whenBothPresent() {
+        assertThat(r.resolve("Управление здравоохранения Алматинской области, г. Алматы")).isEqualTo("Алматинская область");
+    }
 }

@@ -1,9 +1,12 @@
 package com.vladoose.nir.integration.goszakup;
 
 import org.springframework.stereotype.Component;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class RegionResolver {
@@ -52,8 +55,13 @@ public class RegionResolver {
         }
         String hay = sb.toString();
         if (hay.isBlank()) return null;
+        // короткие аббревиатуры (вко/зко/ско) матчим как отдельный токен,
+        // чтобы «ско» не ловилось внутри «республиканское» и т.п.
+        Set<String> tokens = new HashSet<>(Arrays.asList(hay.split("[^\\p{L}]+")));
         for (Map.Entry<String, String> e : PATTERNS.entrySet()) {
-            if (hay.contains(e.getKey())) return e.getValue();
+            String key = e.getKey();
+            boolean matched = key.length() <= 3 ? tokens.contains(key) : hay.contains(key);
+            if (matched) return e.getValue();
         }
         return null;
     }
