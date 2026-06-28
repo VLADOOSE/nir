@@ -76,6 +76,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/tenders/${tenderId}/applies`);
   }
 
+  importKzTenders(): Observable<any> {
+    return this.http.post<any>(`${this.base}/tenders/import-kz`, {});
+  }
+
   // === Applies ===
 
   getApplies(): Observable<any[]> {

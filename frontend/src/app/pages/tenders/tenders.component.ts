@@ -41,6 +41,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showTenderForm" (click)="onAddTender()">Добавить тендер</button>
+        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing">
+          {{ importing ? 'Обновление…' : 'Обновить тендеры' }}
+        </button>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
       </div>
 
@@ -616,6 +619,31 @@ export class TendersComponent {
     this.api.getTenders().subscribe({
       next: data => { this.tenders = data; this.applyTendersFilter(); this.cdr.detectChanges(); },
       error: err => this.notify.error('Ошибка загрузки тендеров: ' + (err.error?.message || err.message))
+    });
+  }
+
+  importing = false;
+
+  isKz(): boolean { return this.market.value === 'KZ'; }
+
+  onImportKz() {
+    this.importing = true;
+    this.api.importKzTenders().subscribe({
+      next: (s: any) => {
+        this.importing = false;
+        if (s && s.enabled === false) {
+          this.notify.error(s.message || 'Импорт выключен: не настроен токен goszakup');
+        } else {
+          this.notify.success(`Импорт завершён: создано ${s?.created ?? 0}, обновлено ${s?.updated ?? 0}`);
+          this.loadTenders();
+        }
+        this.cdr.detectChanges();
+      },
+      error: err => {
+        this.importing = false;
+        this.notify.error('Ошибка импорта: ' + (err.error?.message || err.message));
+        this.cdr.detectChanges();
+      }
     });
   }
 
