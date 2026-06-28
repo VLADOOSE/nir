@@ -6,6 +6,8 @@ import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.integration.goszakup.GoszakupImportScheduler;
+import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.mapper.TenderMapper;
@@ -14,6 +16,7 @@ import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -30,19 +33,22 @@ public class TenderController {
     private final TenderMapper mapper;
     private final TenderLotMapper tenderLotMapper;
     private final ActivityApplyMapper activityApplyMapper;
+    private final GoszakupImportScheduler goszakupScheduler;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
                             ActivityApplyService activityApplyService,
                             TenderMapper mapper,
                             TenderLotMapper tenderLotMapper,
-                            ActivityApplyMapper activityApplyMapper) {
+                            ActivityApplyMapper activityApplyMapper,
+                            GoszakupImportScheduler goszakupScheduler) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
         this.mapper = mapper;
         this.tenderLotMapper = tenderLotMapper;
         this.activityApplyMapper = activityApplyMapper;
+        this.goszakupScheduler = goszakupScheduler;
     }
 
     @GetMapping
@@ -100,5 +106,12 @@ public class TenderController {
     @GetMapping("/{id}/applies")
     public List<ActivityApplyResponse> getApplies(@PathVariable Long id) {
         return activityApplyMapper.toResponseList(activityApplyService.findByTenderId(id));
+    }
+
+    @PostMapping("/import-kz")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ImportSummary importKz() {
+        // рынок KZ ставится явно внутри scheduler.run() (§6), независимо от X-Market
+        return goszakupScheduler.run();
     }
 }
