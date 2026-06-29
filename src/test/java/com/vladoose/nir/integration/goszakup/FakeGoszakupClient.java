@@ -17,6 +17,7 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final Map<String, TrdBuyPageDto> pages = new HashMap<>();
     public final Map<String, List<LotDto>> lotsByAnno = new HashMap<>();
     public final Map<String, SubjectDto> subjectsByBin = new HashMap<>();
+    public final java.util.Set<String> failingSubjectBins = new java.util.HashSet<>();
 
     @Override public boolean isConfigured() { return configured; }
     @Override public TrdBuyPageDto fetchTrdBuyPage(String cursor) {
@@ -27,7 +28,10 @@ public class FakeGoszakupClient implements GoszakupClient {
     @Override public List<LotDto> fetchLots(String numberAnno) {
         return lotsByAnno.getOrDefault(numberAnno, List.of());
     }
-    @Override public SubjectDto fetchSubject(String bin) { return subjectsByBin.get(bin); }
+    @Override public SubjectDto fetchSubject(String bin) {
+        if (failingSubjectBins.contains(bin)) throw new RuntimeException("fake subject failure: " + bin);
+        return subjectsByBin.get(bin);
+    }
 
     // --- builders для тестов ---
     public static TrdBuyDto buy(String anno, String name, int status, String customerBin, String publishIso, String endIso) {

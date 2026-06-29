@@ -61,10 +61,10 @@ public class GoszakupHttpClient implements GoszakupClient {
     @Override
     public SubjectDto fetchSubject(String bin) {
         if (bin == null || bin.isBlank()) return null;
-        try { return get(baseUrl + "/subject/" + enc(bin), SubjectDto.class); }
-        catch (RuntimeException e) {
-            log.warn("goszakup: не удалось получить subject bin={}: {}", bin, e.toString());
-            return null;
+        try {
+            return get(baseUrl + "/subject/" + enc(bin), SubjectDto.class);
+        } catch (GoszakupNotFoundException notFound) {
+            return null; // организации нет в реестре — регион просто не определится
         }
     }
 
@@ -92,6 +92,9 @@ public class GoszakupHttpClient implements GoszakupClient {
                     .header("Accept", "application/json")
                     .timeout(Duration.ofSeconds(30)).GET().build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() == 404) {
+                throw new GoszakupNotFoundException("goszakup 404 на " + url);
+            }
             if (resp.statusCode() / 100 != 2) {
                 throw new IllegalStateException("goszakup API " + resp.statusCode() + " на " + url);
             }

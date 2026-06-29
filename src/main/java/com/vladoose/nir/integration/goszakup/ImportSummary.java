@@ -10,5 +10,6 @@ public class ImportSummary {
     private int created;
     private int updated;
     private int skipped;
+    private int errors;
     private String message;
 }
