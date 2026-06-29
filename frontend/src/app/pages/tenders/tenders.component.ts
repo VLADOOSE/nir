@@ -654,7 +654,7 @@ export class TendersComponent {
         if (s && s.enabled === false) {
           this.notify.error(s.message || 'Импорт выключен: не настроен токен goszakup');
         } else {
-          this.notify.success(`Импорт завершён: создано ${s?.created ?? 0}, обновлено ${s?.updated ?? 0}`);
+          this.notify.success(`Импорт завершён: создано ${s?.created ?? 0}, обновлено ${s?.updated ?? 0}` + (s?.errors ? `, ошибок ${s.errors}` : ''));
           this.loadTenders();
         }
         this.cdr.detectChanges();

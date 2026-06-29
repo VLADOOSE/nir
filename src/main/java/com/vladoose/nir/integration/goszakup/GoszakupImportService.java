@@ -79,7 +79,7 @@ public class GoszakupImportService {
                 sum.setFetched(sum.getFetched() + 1);
                 LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
                 if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-                if (!statusOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
+                if (!statusOk(d) || !systemOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
                 sum.setMatched(sum.getMatched() + 1);
                 importOne(d, sum);
             }
@@ -100,6 +100,7 @@ public class GoszakupImportService {
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
             else sum.setUpdated(sum.getUpdated() + 1);
+            // non-404 ошибка subject/lots → объявление откладывается до следующего поллинга (учтено в errors, не потеряно)
         } catch (RuntimeException e) {
             sum.setErrors(sum.getErrors() + 1);
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
@@ -108,6 +109,10 @@ public class GoszakupImportService {
 
     private boolean statusOk(TrdBuyDto d) {
         return statuses.isEmpty() || (d.getRefBuyStatusId() != null && statuses.contains(d.getRefBuyStatusId()));
+    }
+    /** Только текущий модуль госзакупа (system_id=3); null трактуем как «брать» (поле может отсутствовать). */
+    private boolean systemOk(TrdBuyDto d) {
+        return d.getSystemId() == null || d.getSystemId() == 3;
     }
     private boolean keywordOk(TrdBuyDto d) {
         String name = d.getNameRu() == null ? "" : d.getNameRu().toLowerCase(Locale.ROOT);

@@ -162,4 +162,19 @@ class GoszakupImportServiceTest {
         assertThat(tenderRepository.findBySourceExtId("OK-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("ERR-1")).isEmpty();
     }
+
+    @Test
+    void skipsNonCurrentSystemId() {
+        // system_id: 1=ценовые предложения, 2=конкурс/аукцион, 3=текущая версия госзакупа.
+        var legacy = FakeGoszakupClient.buy("LEG-2", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
+        legacy.setSystemId(2);
+        var current = FakeGoszakupClient.buy("CUR-3", "Аппарат УЗИ", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
+        current.setSystemId(3);
+        fake.page(null, null, legacy, current);
+
+        svc("аппарат", "", 3650).importMedicalTenders();
+
+        assertThat(tenderRepository.findBySourceExtId("CUR-3")).isPresent();
+        assertThat(tenderRepository.findBySourceExtId("LEG-2")).isEmpty(); // system_id=2 отброшен
+    }
 }

@@ -19,4 +19,5 @@ public class TrdBuyDto {
     @JsonProperty("publish_date") private String publishDate;
     @JsonProperty("start_date") private String startDate;
     @JsonProperty("end_date") private String endDate;
+    @JsonProperty("system_id") private Integer systemId;
 }
