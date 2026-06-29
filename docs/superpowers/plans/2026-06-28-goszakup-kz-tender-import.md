@@ -1362,6 +1362,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 > **Требует `GOSZAKUP_TOKEN`** (положить в `/tmp/goszakup.token`, не коммитить). Выполняется, когда токен получен. Закрывает 2 точки верификации из спеки.
 
+**Hardening-гейты из финального whole-branch ревью (must-do на T9 — валидируются живым трафиком):**
+1. **Вынести сетевой I/O из транзакции + per-item устойчивость.** Сейчас весь `importMedicalTenders()` — одна `@Transactional`, внутри блокирующие HTTP (страницы + per-item `fetchSubject`/`fetchLots`): до 1000×2 вызовов по 30с держат DB-коннект минутами, а одна ошибка в середине роллбэчит весь прогон. Перестроить: сетевые fetch — ВНЕ транзакции; апсерт одного тендера — `@Transactional` на ОТДЕЛЬНОМ бине (per-item граница); цикл ловит ошибку элемента в try/catch → инкремент счётчика, продолжает. **Вернуть `ImportSummary.errors`** (спека §3.2 его закладывала, реализация потеряла) и показывать в сводке/нотификации.
+2. **Сузить `GoszakupHttpClient.fetchSubject`** с `catch(RuntimeException)→null` до настоящего not-found (404) — остальные ошибки (500/таймаут) пробрасывать/считать как ошибку элемента (см. гейт 1), а не молча терять регион. Сейчас (полиш-волна) уже логируется `log.warn`; на T9 — довести до корректного разделения 404 vs сбой.
+
 **Files:**
 - Возможные правки: `src/main/java/com/vladoose/nir/integration/goszakup/dto/SubjectDto.java` (реальные имена полей региона/КАТО), `GoszakupImportService.mapStatus` / `resolveRegion`, `application.yaml` (`goszakup.import.statuses` — реальные id).
 
