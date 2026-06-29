@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,8 @@ import java.util.List;
 
 @Component
 public class GoszakupHttpClient implements GoszakupClient {
+
+    private static final Logger log = LoggerFactory.getLogger(GoszakupHttpClient.class);
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15)).build();
@@ -58,7 +62,10 @@ public class GoszakupHttpClient implements GoszakupClient {
     public SubjectDto fetchSubject(String bin) {
         if (bin == null || bin.isBlank()) return null;
         try { return get(baseUrl + "/subject/" + enc(bin), SubjectDto.class); }
-        catch (RuntimeException e) { return null; }
+        catch (RuntimeException e) {
+            log.warn("goszakup: не удалось получить subject bin={}: {}", bin, e.toString());
+            return null;
+        }
     }
 
     // --- helpers ---

@@ -37,7 +37,7 @@ public class GoszakupImportService {
         this.regionResolver = regionResolver;
         this.tenderRepository = tenderRepository;
         this.keywords = csv(keywordsCsv).stream().map(s -> s.toLowerCase(Locale.ROOT)).toList();
-        this.statuses = csv(statusesCsv).stream().map(Integer::valueOf).collect(java.util.stream.Collectors.toSet());
+        this.statuses = parseStatuses(statusesCsv);
         this.sinceDays = sinceDays;
         this.maxPages = maxPages;
     }
@@ -45,6 +45,15 @@ public class GoszakupImportService {
     private static List<String> csv(String s) {
         if (s == null || s.isBlank()) return List.of();
         return Arrays.stream(s.split(",")).map(String::trim).filter(x -> !x.isBlank()).toList();
+    }
+
+    /** Лояльный разбор статусов: нечисловые токены пропускаем, чтобы кривой конфиг не ронял старт. */
+    private static java.util.Set<Integer> parseStatuses(String s) {
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
+        for (String token : csv(s)) {
+            try { ids.add(Integer.valueOf(token)); } catch (NumberFormatException ignored) { /* skip non-numeric */ }
+        }
+        return ids;
     }
 
     @Transactional
@@ -145,6 +154,7 @@ public class GoszakupImportService {
 
     static String mapStatus(Integer refBuyStatusId) {
         // дефолт: импортные тендеры считаем активными (точный маппинг id уточняется на Task 9)
+        // TODO(T9): map real ref_buy_status_id → domain status (ids confirmed against live API token)
         return "ACTIVE";
     }
 

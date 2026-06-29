@@ -100,6 +100,24 @@ class GoszakupImportServiceTest {
     }
 
     @Test
+    void lenientStatusesParse_skipsNonNumericTokenAndStillFiltersByValidId() {
+        // statuses="230,foo": кривой токен "foo" не должен ронять конструктор бина,
+        // при этом фильтрация по валидному id 230 продолжает работать
+        fake.page(null, null,
+                FakeGoszakupClient.buy("OK-230", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("NO-999", "Аппарат УЗИ", 999, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+
+        // конструкция с нечисловым токеном не бросает
+        service = new GoszakupImportService(fake, regionResolver, tenderRepository,
+                "аппарат", "230,foo", 3650, 20);
+        ImportSummary s = service.importMedicalTenders();
+
+        assertThat(s.getMatched()).isEqualTo(1);
+        assertThat(tenderRepository.findBySourceExtId("OK-230")).isPresent();   // статус 230 распознан
+        assertThat(tenderRepository.findBySourceExtId("NO-999")).isEmpty();     // 999 отфильтрован → фильтр активен, "foo" проигнорирован
+    }
+
+    @Test
     void resolvesRegionFromSubject() {
         fake.page(null, null,
                 FakeGoszakupClient.buy("100-1", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));

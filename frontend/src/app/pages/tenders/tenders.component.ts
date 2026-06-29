@@ -38,7 +38,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <input type="date" [(ngModel)]="filterDeadlineTo" (change)="applyTendersFilter()" class="filter-date" title="Дедлайн до" />
         <select *ngIf="isKz()" [(ngModel)]="filterRegion" (change)="applyTendersFilter()" class="filter-select" title="Регион">
           <option value="">Все регионы</option>
-          <option value="__none__">Регион не указан</option>
+          <option [value]="NO_REGION">Регион не указан</option>
           <option *ngFor="let r of REGIONS" [value]="r">{{ r }}</option>
         </select>
         <button class="btn btn-reset-filter" (click)="resetTendersFilter()">Сбросить</button>
@@ -432,6 +432,7 @@ export class TendersComponent {
   filterQuery = '';
   filterStatus = '';
   filterRegion = '';
+  protected readonly NO_REGION = '__none__';
   readonly REGIONS: string[] = [
     'г. Астана', 'г. Алматы', 'г. Шымкент',
     'Абайская область', 'Акмолинская область', 'Актюбинская область', 'Алматинская область',
@@ -680,7 +681,7 @@ export class TendersComponent {
       if (this.filterFacilityId != null && t.facility?.id !== this.filterFacilityId) return false;
       if (from && t.deadline && new Date(t.deadline) < from) return false;
       if (to && t.deadline && new Date(t.deadline) > to) return false;
-      if (this.filterRegion === '__none__') { if (t.region) return false; }
+      if (this.filterRegion === this.NO_REGION) { if (t.region) return false; }
       else if (this.filterRegion && t.region !== this.filterRegion) return false;
       return true;
     });
