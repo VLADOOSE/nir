@@ -36,6 +36,11 @@ import { LucideDynamicIcon } from '@lucide/angular';
         </select>
         <input type="date" [(ngModel)]="filterDeadlineFrom" (change)="applyTendersFilter()" class="filter-date" title="Дедлайн от" />
         <input type="date" [(ngModel)]="filterDeadlineTo" (change)="applyTendersFilter()" class="filter-date" title="Дедлайн до" />
+        <select *ngIf="isKz()" [(ngModel)]="filterRegion" (change)="applyTendersFilter()" class="filter-select" title="Регион">
+          <option value="">Все регионы</option>
+          <option value="__none__">Регион не указан</option>
+          <option *ngFor="let r of REGIONS" [value]="r">{{ r }}</option>
+        </select>
         <button class="btn btn-reset-filter" (click)="resetTendersFilter()">Сбросить</button>
       </div>
 
@@ -121,6 +126,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <div class="detail-row">
             <div class="detail"><span class="detail-label">Заказчик</span><span>{{ t.facility?.name || '—' }}</span></div>
             <div class="detail"><span class="detail-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(t.purchaseType) }}</span></div>
+          </div>
+          <div class="detail-row" *ngIf="t.region || t.customerName">
+            <div class="detail"><span class="detail-label">Регион</span><span>{{ t.region || '—' }}</span></div>
+            <div class="detail"><span class="detail-label">Госзаказчик</span><span>{{ t.customerName || '—' }}</span></div>
           </div>
           <div class="detail-row">
             <div class="detail"><span class="detail-label">Дата публикации</span><span>{{ formatDate(t.publishDate) }}</span></div>
@@ -422,6 +431,16 @@ export class TendersComponent {
   filteredTenders: any[] = [];
   filterQuery = '';
   filterStatus = '';
+  filterRegion = '';
+  readonly REGIONS: string[] = [
+    'г. Астана', 'г. Алматы', 'г. Шымкент',
+    'Абайская область', 'Акмолинская область', 'Актюбинская область', 'Алматинская область',
+    'Атырауская область', 'Восточно-Казахстанская область', 'Жамбылская область',
+    'Жетысуская область', 'Западно-Казахстанская область', 'Карагандинская область',
+    'Костанайская область', 'Кызылординская область', 'Мангистауская область',
+    'Павлодарская область', 'Северо-Казахстанская область', 'Туркестанская область',
+    'Улытауская область'
+  ];
   filterFacilityId: number | null = null;
   filterDeadlineFrom = '';
   filterDeadlineTo = '';
@@ -661,6 +680,8 @@ export class TendersComponent {
       if (this.filterFacilityId != null && t.facility?.id !== this.filterFacilityId) return false;
       if (from && t.deadline && new Date(t.deadline) < from) return false;
       if (to && t.deadline && new Date(t.deadline) > to) return false;
+      if (this.filterRegion === '__none__') { if (t.region) return false; }
+      else if (this.filterRegion && t.region !== this.filterRegion) return false;
       return true;
     });
   }
@@ -668,6 +689,7 @@ export class TendersComponent {
   resetTendersFilter() {
     this.filterQuery = '';
     this.filterStatus = '';
+    this.filterRegion = '';
     this.filterFacilityId = null;
     this.filterDeadlineFrom = '';
     this.filterDeadlineTo = '';
