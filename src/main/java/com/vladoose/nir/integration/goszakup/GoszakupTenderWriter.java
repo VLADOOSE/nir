@@ -76,6 +76,7 @@ public class GoszakupTenderWriter {
             lot.setTender(t);
             lot.setLotNumber(GoszakupParse.intOrNull(l.getLotNumber()));
             lot.setEquipName(l.getNameRu());
+            lot.setRequiredSpec(l.getDescriptionRu());
             lot.setQuantity(l.getCount());
             lot.setMaxCost(l.getAmount());
             t.getLots().add(lot);

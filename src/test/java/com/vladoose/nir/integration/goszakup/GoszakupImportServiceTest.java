@@ -182,6 +182,41 @@ class GoszakupImportServiceTest {
     }
 
     @Test
+    void lotDescriptionRu_savedAsRequiredSpec() {
+        fake.page(null, null,
+                FakeGoszakupClient.buy("100-1", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        com.vladoose.nir.integration.goszakup.dto.LotDto lot = new com.vladoose.nir.integration.goszakup.dto.LotDto();
+        lot.setNameRu("Аппарат УЗИ");
+        lot.setDescriptionRu("УЗИ экспертного класса, не менее 3 датчиков, доплер");
+        lot.setAmount(new java.math.BigDecimal("6000000")); lot.setCount(1);
+        fake.lotsByAnno.put("100-1", java.util.List.of(lot));
+
+        svc("аппарат", "", 3650).importMedicalTenders();
+
+        var t = tenderRepository.findBySourceExtId("100-1").orElseThrow();
+        assertThat(t.getLots().get(0).getRequiredSpec())
+                .isEqualTo("УЗИ экспертного класса, не менее 3 датчиков, доплер");
+    }
+
+    @Test
+    void stopsPaginating_whenWholePageOlderThanCutoff() {
+        // лента /trd-buy отсортирована по id DESC → страница целиком старше cutoff
+        // означает «дальше только старее», вторую страницу запрашивать не нужно
+        String oldIso = java.time.LocalDate.now().minusDays(400) + "T00:00:00";
+        fake.page(null, "/v2/trd-buy?page=next&search_after=1",
+                FakeGoszakupClient.buy("OLD-1", "Аппарат УЗИ", 230, "BIN1", oldIso, oldIso),
+                FakeGoszakupClient.buy("OLD-2", "Аппарат УЗИ", 230, "BIN2", oldIso, oldIso));
+        String recentIso = java.time.LocalDate.now().minusDays(5) + "T00:00:00";
+        fake.page("/v2/trd-buy?page=next&search_after=1", null,
+                FakeGoszakupClient.buy("LATE-1", "Аппарат УЗИ", 230, "BIN3", recentIso, recentIso));
+
+        ImportSummary s = svc("аппарат", "", 30).importMedicalTenders();
+
+        assertThat(s.getFetched()).isEqualTo(2); // вторая страница не читалась
+        assertThat(tenderRepository.findBySourceExtId("LATE-1")).isEmpty();
+    }
+
+    @Test
     void skipsNonCurrentSystemId() {
         // system_id: 1=ценовые предложения, 2=конкурс/аукцион, 3=текущая версия госзакупа.
         var legacy = FakeGoszakupClient.buy("LEG-2", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00");

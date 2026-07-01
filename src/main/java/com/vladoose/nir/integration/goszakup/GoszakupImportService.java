@@ -83,6 +83,8 @@ public class GoszakupImportService {
                 sum.setMatched(sum.getMatched() + 1);
                 importOne(d, sum);
             }
+            // лента отсортирована по id DESC: страница целиком старше cutoff → дальше только старее
+            if (wholePageOlderThan(items, cutoff)) break;
             cursor = page.getNextPage();
             pagesRead++;
         } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
@@ -105,6 +107,15 @@ public class GoszakupImportService {
             sum.setErrors(sum.getErrors() + 1);
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
         }
+    }
+
+    private static boolean wholePageOlderThan(List<TrdBuyDto> items, LocalDate cutoff) {
+        if (items.isEmpty()) return false;
+        for (TrdBuyDto d : items) {
+            LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
+            if (pub == null || !pub.isBefore(cutoff)) return false; // без даты — консервативно продолжаем
+        }
+        return true;
     }
 
     private boolean statusOk(TrdBuyDto d) {

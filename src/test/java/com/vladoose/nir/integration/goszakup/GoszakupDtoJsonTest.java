@@ -79,4 +79,16 @@ class GoszakupDtoJsonTest {
         assertThat(lot.getNameRu()).isEqualTo("Аппарат УЗИ портативный");
         assertThat(lot.getCount()).isEqualTo(2);
     }
+
+    @Test
+    void parsesLot_liveShape_descriptionRuIsSpec() throws Exception {
+        // живой /v2/lots/number-anno/{anno}: description_ru — техспека лота, lot_number со суффиксом
+        String live = """
+            {"lot_number":"87197521-ОИ2","name_ru":"Работы по ремонту/модернизации медицинского оборудования",
+             "description_ru":"Работы по ремонту/модернизации медицинского/санитарного/терапевтического оборудования",
+             "count":1,"amount":540000,"ref_lot_status_id":220,"trd_buy_number_anno":"17276387-1"}
+            """;
+        LotDto lot = om.readValue(live, LotDto.class);
+        assertThat(lot.getDescriptionRu()).startsWith("Работы по ремонту/модернизации медицинского/санитарного");
+    }
 }
