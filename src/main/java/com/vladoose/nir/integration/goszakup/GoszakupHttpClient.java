@@ -58,9 +58,16 @@ public class GoszakupHttpClient implements GoszakupClient {
     public SubjectDto fetchSubject(String bin) {
         if (bin == null || bin.isBlank()) return null;
         try {
-            return get(baseUrl + "/subject/" + enc(bin), SubjectDto.class);
+            // поиск по БИН — /subject/biin/{биин} (/subject/{id} — по внутреннему id);
+            // на неизвестный БИН живой API отвечает 200 и "[]", не 404
+            byte[] body = rawGet(baseUrl + "/subject/biin/" + enc(bin));
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            if (node == null || !node.isObject()) return null;
+            return objectMapper.treeToValue(node, SubjectDto.class);
         } catch (GoszakupNotFoundException notFound) {
             return null; // организации нет в реестре — регион просто не определится
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("goszakup: разбор JSON: " + e.getMessage(), e);
         }
     }
 

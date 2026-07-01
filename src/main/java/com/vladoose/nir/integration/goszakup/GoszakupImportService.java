@@ -95,7 +95,7 @@ public class GoszakupImportService {
     /** Сеть — ВНЕ транзакции; запись — в отдельной per-item транзакции writer'а. Ошибка элемента не валит прогон. */
     private void importOne(TrdBuyDto d, ImportSummary sum) {
         try {
-            SubjectDto subj = client.fetchSubject(d.getCustomerBin());
+            SubjectDto subj = client.fetchSubject(d.effectiveBin());
             List<LotDto> lots = client.fetchLots(d.getNumberAnno());
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);

@@ -130,6 +130,24 @@ class GoszakupImportServiceTest {
     }
 
     @Test
+    void fallsBackToOrgBin_whenCustomerBinAbsent() {
+        // живой /v2/trd-buy отдаёт только org_bin (customer_bin в ответе нет) —
+        // subject всё равно должен подтянуться, а BIN — сохраниться в тендере
+        var d = FakeGoszakupClient.buy("ORG-1", "Аппарат УЗИ", 230, null, "2026-06-01T00:00:00", "2026-06-20T00:00:00");
+        d.setOrgBin("971240005114");
+        fake.page(null, null, d);
+        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = new com.vladoose.nir.integration.goszakup.dto.SubjectDto();
+        subj.setBin("971240005114"); subj.setNameRu("Городская поликлиника №5 г. Алматы");
+        fake.subjectsByBin.put("971240005114", subj);
+
+        svc("аппарат", "", 3650).importMedicalTenders();
+
+        var t = tenderRepository.findBySourceExtId("ORG-1").orElseThrow();
+        assertThat(t.getCustomerBin()).isEqualTo("971240005114");
+        assertThat(t.getCustomerName()).isEqualTo("Городская поликлиника №5 г. Алматы");
+    }
+
+    @Test
     void paginatesAcrossPages_andSkipsOldBySinceDays() {
         String recentIso = java.time.LocalDate.now().minusDays(5) + "T00:00:00";
         String oldIso = java.time.LocalDate.now().minusDays(400) + "T00:00:00";

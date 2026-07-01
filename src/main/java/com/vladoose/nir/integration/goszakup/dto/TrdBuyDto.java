@@ -20,4 +20,9 @@ public class TrdBuyDto {
     @JsonProperty("start_date") private String startDate;
     @JsonProperty("end_date") private String endDate;
     @JsonProperty("system_id") private Integer systemId;
+
+    /** Живой /v2/trd-buy отдаёт только org_bin; customer_bin (если вдруг есть) — приоритетнее. */
+    public String effectiveBin() {
+        return customerBin != null && !customerBin.isBlank() ? customerBin : orgBin;
+    }
 }

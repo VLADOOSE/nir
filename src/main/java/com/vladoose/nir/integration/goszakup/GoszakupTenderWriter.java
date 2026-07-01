@@ -54,13 +54,13 @@ public class GoszakupTenderWriter {
         t.setTotalCost(d.getTotalSum());
         t.setPublishDate(GoszakupParse.localDate(d.getPublishDate()));
         t.setDeadline(GoszakupParse.localDate(d.getEndDate()));
-        t.setCustomerBin(d.getCustomerBin());
+        t.setCustomerBin(d.effectiveBin());
     }
 
     private void applyRegion(Tender t, SubjectDto subj) {
         String customerName = subj != null ? subj.getNameRu() : null;
-        String address = subj != null ? subj.getAddress() : null;
-        String kato = subj != null ? subj.getKatoId() : null;
+        String address = subj != null ? subj.firstAddress() : null;
+        String kato = subj != null ? subj.firstKato() : null;
         t.setCustomerName(customerName);
         t.setRegionKato(kato);
         if (address != null) t.setDeliveryAddress(address);

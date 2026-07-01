@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
+import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,43 @@ class GoszakupDtoJsonTest {
         assertThat(page.getItems().get(0).getNameRu()).isEqualTo("Аппарат УЗИ");
         assertThat(page.getItems().get(0).getRefBuyStatusId()).isEqualTo(230);
         assertThat(page.getItems().get(0).getTotalSum()).isEqualByComparingTo("12000000.50");
+    }
+
+    @Test
+    void effectiveBin_fallsBackToOrgBin_liveTrdBuyShape() throws Exception {
+        // живой /v2/trd-buy НЕ отдаёт customer_bin — только org_bin
+        String live = """
+            {"id":17276577,"number_anno":"17276577-1","name_ru":"Приобретение краски",
+             "org_bin":"971240005114","ref_buy_status_id":210,"system_id":3,
+             "publish_date":"2026-07-01 23:39:51","total_sum":100000}
+            """;
+        TrdBuyDto d = om.readValue(live, TrdBuyDto.class);
+        assertThat(d.getCustomerBin()).isNull();
+        assertThat(d.effectiveBin()).isEqualTo("971240005114");
+    }
+
+    @Test
+    void effectiveBin_prefersCustomerBin_whenBothPresent() {
+        TrdBuyDto d = new TrdBuyDto();
+        d.setCustomerBin("111111111111");
+        d.setOrgBin("222222222222");
+        assertThat(d.effectiveBin()).isEqualTo("111111111111");
+    }
+
+    @Test
+    void parsesSubject_liveShape_addressArray() throws Exception {
+        // живой /v2/subject/biin/{биин}: address — МАССИВ объектов, КАТО и адрес внутри элементов
+        String live = """
+            {"pid":2787,"bin":"971240005114","name_ru":"КГУ \\"Школа-гимназия имени Шокана Уалиханова\\"",
+             "address":[{"id":"1854","pid":"2787","country_code":"398","kato_code":"352810000",
+                         "address_type":"1","address":"Карагандинская область, г.Шахтинск, ул. Парковая, дом 23/1",
+                         "phone":"872-156-39336"}]}
+            """;
+        com.vladoose.nir.integration.goszakup.dto.SubjectDto s =
+                om.readValue(live, com.vladoose.nir.integration.goszakup.dto.SubjectDto.class);
+        assertThat(s.getNameRu()).startsWith("КГУ");
+        assertThat(s.firstAddress()).startsWith("Карагандинская область");
+        assertThat(s.firstKato()).isEqualTo("352810000");
     }
 
     @Test
