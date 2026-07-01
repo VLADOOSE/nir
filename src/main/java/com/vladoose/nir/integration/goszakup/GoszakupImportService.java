@@ -29,6 +29,7 @@ public class GoszakupImportService {
 
     private final GoszakupClient client;
     private final GoszakupTenderWriter writer;
+    private final KatoDictionary katoDictionary;
     private final List<String> keywords;
     private final Set<Integer> statuses;
     private final int sinceDays;
@@ -36,12 +37,14 @@ public class GoszakupImportService {
 
     public GoszakupImportService(GoszakupClient client,
                                  GoszakupTenderWriter writer,
+                                 KatoDictionary katoDictionary,
                                  @Value("${goszakup.import.keywords:}") String keywordsCsv,
                                  @Value("${goszakup.import.statuses:}") String statusesCsv,
                                  @Value("${goszakup.import.since-days:30}") int sinceDays,
                                  @Value("${goszakup.import.max-pages:20}") int maxPages) {
         this.client = client;
         this.writer = writer;
+        this.katoDictionary = katoDictionary;
         this.keywords = csv(keywordsCsv).stream().map(s -> s.toLowerCase(Locale.ROOT)).toList();
         this.statuses = parseStatuses(statusesCsv);
         this.sinceDays = sinceDays;
@@ -63,6 +66,11 @@ public class GoszakupImportService {
     }
 
     public ImportSummary importMedicalTenders() {
+        return importMedicalTenders(null);
+    }
+
+    /** region — каноническое имя области/города (как в фильтре UI) или null: вся лента. */
+    public ImportSummary importMedicalTenders(String region) {
         ImportSummary sum = new ImportSummary();
         if (!client.isConfigured()) {
             sum.setEnabled(false);
@@ -70,36 +78,68 @@ public class GoszakupImportService {
             return sum;
         }
         LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
-        String cursor = null;
-        int pagesRead = 0;
-        do {
-            TrdBuyPageDto page = client.fetchTrdBuyPage(cursor);
-            List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
-            for (TrdBuyDto d : items) {
-                sum.setFetched(sum.getFetched() + 1);
-                LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
-                if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-                if (!statusOk(d) || !systemOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-                sum.setMatched(sum.getMatched() + 1);
-                importOne(d, sum);
-            }
-            // лента отсортирована по id DESC: страница целиком старше cutoff → дальше только старее
-            if (wholePageOlderThan(items, cutoff)) break;
-            cursor = page.getNextPage();
-            pagesRead++;
-        } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
-
+        if (region == null || region.isBlank()) {
+            fetchWholeFeed(cutoff, sum);
+        } else if (!fetchRegionFeed(region, cutoff, sum)) {
+            return sum; // регион не распознан — message уже установлен
+        }
         sum.setMessage(String.format("Получено %d, релевантных %d, создано %d, обновлено %d, ошибок %d",
                 sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated(), sum.getErrors()));
         return sum;
     }
 
+    private void fetchWholeFeed(LocalDate cutoff, ImportSummary sum) {
+        String cursor = null;
+        int pagesRead = 0;
+        do {
+            TrdBuyPageDto page = client.fetchTrdBuyPage(cursor);
+            List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
+            processItems(items, cutoff, sum, null);
+            // лента отсортирована по id DESC: страница целиком старше cutoff → дальше только старее
+            if (wholePageOlderThan(items, cutoff)) break;
+            cursor = page.getNextPage();
+            pagesRead++;
+        } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
+    }
+
+    /** false — регион не распознан (КАТО-префикс неизвестен), импорт не выполнялся. */
+    private boolean fetchRegionFeed(String region, LocalDate cutoff, ImportSummary sum) {
+        List<String> katoCodes = katoDictionary.codesForRegion(region);
+        if (katoCodes.isEmpty()) {
+            sum.setEnabled(false);
+            sum.setMessage("Не удалось определить КАТО-коды региона: " + region);
+            return false;
+        }
+        Long after = null;
+        int pagesRead = 0;
+        do {
+            var page = client.fetchTrdBuyPageByKato(katoCodes, after);
+            List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
+            processItems(items, cutoff, sum, region);
+            if (wholePageOlderThan(items, cutoff)) break;
+            after = page.getNextAfter();
+            pagesRead++;
+        } while (after != null && pagesRead < maxPages);
+        return true;
+    }
+
+    private void processItems(List<TrdBuyDto> items, LocalDate cutoff, ImportSummary sum, String regionOverride) {
+        for (TrdBuyDto d : items) {
+            sum.setFetched(sum.getFetched() + 1);
+            LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
+            if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
+            if (!statusOk(d) || !systemOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
+            sum.setMatched(sum.getMatched() + 1);
+            importOne(d, sum, regionOverride);
+        }
+    }
+
     /** Сеть — ВНЕ транзакции; запись — в отдельной per-item транзакции writer'а. Ошибка элемента не валит прогон. */
-    private void importOne(TrdBuyDto d, ImportSummary sum) {
+    private void importOne(TrdBuyDto d, ImportSummary sum, String regionOverride) {
         try {
             SubjectDto subj = client.fetchSubject(d.effectiveBin());
             List<LotDto> lots = client.fetchLots(d.getNumberAnno());
-            GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots);
+            GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
             else sum.setUpdated(sum.getUpdated() + 1);
             // non-404 ошибка subject/lots → объявление откладывается до следующего поллинга (учтено в errors, не потеряно)

@@ -1,9 +1,12 @@
 package com.vladoose.nir.integration.goszakup;
 
+import com.vladoose.nir.integration.goszakup.dto.KatoRefDto;
+import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
+import com.vladoose.nir.integration.goszakup.dto.TrdBuyV3PageDto;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,12 +21,32 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final Map<String, List<LotDto>> lotsByAnno = new HashMap<>();
     public final Map<String, SubjectDto> subjectsByBin = new HashMap<>();
     public final java.util.Set<String> failingSubjectBins = new java.util.HashSet<>();
+    /** after (null=первая) → v3-страница региона. */
+    public final Map<Long, TrdBuyV3PageDto> v3Pages = new HashMap<>();
+    /** cursor (null=первая) → страница справочника КАТО. */
+    public final Map<String, KatoRefPageDto> katoPages = new HashMap<>();
+    public int trdBuyFetches = 0;
+    public int katoFetches = 0;
+    public List<String> lastKatoFilter;
 
     @Override public boolean isConfigured() { return configured; }
     @Override public TrdBuyPageDto fetchTrdBuyPage(String cursor) {
+        trdBuyFetches++;
         TrdBuyPageDto p = pages.get(cursor);
         if (p != null) return p;
         TrdBuyPageDto empty = new TrdBuyPageDto(); empty.setItems(new ArrayList<>()); return empty;
+    }
+    @Override public TrdBuyV3PageDto fetchTrdBuyPageByKato(List<String> katoCodes, Long after) {
+        lastKatoFilter = katoCodes;
+        TrdBuyV3PageDto p = v3Pages.get(after);
+        if (p != null) return p;
+        TrdBuyV3PageDto empty = new TrdBuyV3PageDto(); empty.setItems(new ArrayList<>()); return empty;
+    }
+    @Override public KatoRefPageDto fetchKatoPage(String cursor) {
+        katoFetches++;
+        KatoRefPageDto p = katoPages.get(cursor);
+        if (p != null) return p;
+        KatoRefPageDto empty = new KatoRefPageDto(); empty.setItems(new ArrayList<>()); return empty;
     }
     @Override public List<LotDto> fetchLots(String numberAnno) {
         return lotsByAnno.getOrDefault(numberAnno, List.of());
@@ -45,5 +68,20 @@ public class FakeGoszakupClient implements GoszakupClient {
         TrdBuyPageDto p = new TrdBuyPageDto();
         p.setItems(new ArrayList<>(List.of(items))); p.setNextPage(nextPage);
         pages.put(cursor, p); return p;
+    }
+    public TrdBuyV3PageDto v3Page(Long after, Long nextAfter, TrdBuyDto... items) {
+        TrdBuyV3PageDto p = new TrdBuyV3PageDto();
+        p.setItems(new ArrayList<>(List.of(items))); p.setNextAfter(nextAfter);
+        v3Pages.put(after, p); return p;
+    }
+    public KatoRefPageDto katoPage(String cursor, String nextPage, KatoRefDto... items) {
+        KatoRefPageDto p = new KatoRefPageDto();
+        p.setItems(new ArrayList<>(List.of(items))); p.setNextPage(nextPage);
+        katoPages.put(cursor, p); return p;
+    }
+    public static KatoRefDto kato(String ab, String cd, String ef, String hij) {
+        KatoRefDto k = new KatoRefDto();
+        k.setAb(ab); k.setCd(cd); k.setEf(ef); k.setHij(hij);
+        return k;
     }
 }

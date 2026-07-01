@@ -33,11 +33,19 @@ public class GoszakupTenderWriter {
 
     @Transactional
     public Result upsertOne(TrdBuyDto d, SubjectDto subj, List<LotDto> lots) {
+        return upsertOne(d, subj, lots, null);
+    }
+
+    /** regionOverride — регион ПОСТАВКИ при регион-импорте (сервер уже отфильтровал по КАТО поставки). */
+    @Transactional
+    public Result upsertOne(TrdBuyDto d, SubjectDto subj, List<LotDto> lots, String regionOverride) {
         Tender t = tenderRepository.findBySourceExtId(d.getNumberAnno()).orElse(null);
         boolean isNew = (t == null);
         if (isNew) { t = new Tender(); t.setSourceExtId(d.getNumberAnno()); }
         applyFields(t, d);
         applyRegion(t, subj);
+        // заказчик может быть республиканским (юрадрес в другом регионе) — поставка важнее
+        if (regionOverride != null && !regionOverride.isBlank()) t.setRegion(regionOverride);
         rebuildLots(t, lots);
         tenderRepository.save(t);
         return isNew ? Result.CREATED : Result.UPDATED;

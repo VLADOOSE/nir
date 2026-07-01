@@ -46,8 +46,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showTenderForm" (click)="onAddTender()">Добавить тендер</button>
-        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing">
-          {{ importing ? 'Обновление…' : 'Обновить тендеры' }}
+        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing"
+                [title]="importRegion() ? 'Импорт с goszakup только по региону: ' + importRegion() : 'Импорт всей ленты goszakup'">
+          {{ importing ? 'Обновление…' : ('Обновить тендеры' + (importRegion() ? ' — ' + importRegion() : '')) }}
         </button>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
       </div>
@@ -635,9 +636,14 @@ export class TendersComponent {
 
   isKz(): boolean { return this.market.value === 'KZ'; }
 
+  /** Регион для импорта: выбранный в фильтре, кроме спец-значения «Регион не указан». */
+  importRegion(): string | undefined {
+    return this.filterRegion && this.filterRegion !== this.NO_REGION ? this.filterRegion : undefined;
+  }
+
   onImportKz() {
     this.importing = true;
-    this.api.importKzTenders().subscribe({
+    this.api.importKzTenders(this.importRegion()).subscribe({
       next: (s: any) => {
         this.importing = false;
         if (s && s.enabled === false) {

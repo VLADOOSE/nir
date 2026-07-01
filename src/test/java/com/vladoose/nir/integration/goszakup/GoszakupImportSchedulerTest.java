@@ -15,7 +15,7 @@ class GoszakupImportSchedulerTest {
     void run_setsKzMarketContext_aroundServiceCall() {
         GoszakupImportService service = mock(GoszakupImportService.class);
         AtomicReference<Market> seen = new AtomicReference<>();
-        when(service.importMedicalTenders()).thenAnswer(inv -> { seen.set(MarketContext.get()); return new ImportSummary(); });
+        when(service.importMedicalTenders(null)).thenAnswer(inv -> { seen.set(MarketContext.get()); return new ImportSummary(); });
 
         GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, true);
         scheduler.run();
@@ -34,9 +34,9 @@ class GoszakupImportSchedulerTest {
     @Test
     void tick_enabled_callsService() {
         GoszakupImportService service = mock(GoszakupImportService.class);
-        when(service.importMedicalTenders()).thenReturn(new ImportSummary());
+        when(service.importMedicalTenders(null)).thenReturn(new ImportSummary());
         new GoszakupImportScheduler(service, true).tick();
-        verify(service, times(1)).importMedicalTenders();
+        verify(service, times(1)).importMedicalTenders(null);
         MarketContext.clear();
     }
 }

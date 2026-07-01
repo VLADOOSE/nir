@@ -25,6 +25,7 @@ class GoszakupImportServiceTest {
 
     FakeGoszakupClient fake;
     GoszakupTenderWriter writer;
+    KatoDictionary kato;
     GoszakupImportService service;
 
     @BeforeEach
@@ -32,14 +33,15 @@ class GoszakupImportServiceTest {
         MarketContext.set(Market.KZ);
         fake = new FakeGoszakupClient();
         writer = new GoszakupTenderWriter(tenderRepository, regionResolver);
-        service = new GoszakupImportService(fake, writer, "аппарат,узи", "", 3650, 20);
+        kato = new KatoDictionary(fake);
+        service = new GoszakupImportService(fake, writer, kato, "аппарат,узи", "", 3650, 20);
     }
 
     @AfterEach
     void tearDown() { MarketContext.clear(); }
 
     private GoszakupImportService svc(String keywords, String statuses, int sinceDays) {
-        return new GoszakupImportService(fake, writer, keywords, statuses, sinceDays, 20);
+        return new GoszakupImportService(fake, writer, kato, keywords, statuses, sinceDays, 20);
     }
 
     @Test
@@ -214,6 +216,51 @@ class GoszakupImportServiceTest {
 
         assertThat(s.getFetched()).isEqualTo(2); // вторая страница не читалась
         assertThat(tenderRepository.findBySourceExtId("LATE-1")).isEmpty();
+    }
+
+    @Test
+    void regionImport_usesKatoFilteredV3Path_withSameKeywordFilter() {
+        fake.katoPage(null, null, FakeGoszakupClient.kato("27", "10", "10", "000"));
+        fake.v3Page(null, 100L,
+                FakeGoszakupClient.buy("ZKO-1", "Аппарат УЗИ для ЗКО", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.v3Page(100L, null,
+                FakeGoszakupClient.buy("ZKO-2", "Канцтовары", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+
+        ImportSummary s = svc("аппарат", "", 3650).importMedicalTenders("Западно-Казахстанская область");
+
+        assertThat(fake.lastKatoFilter).containsExactly("271010000"); // серверный фильтр région
+        assertThat(s.getFetched()).isEqualTo(2);                      // обе v3-страницы прочитаны
+        assertThat(s.getCreated()).isEqualTo(1);                      // ключевые слова работают и тут
+        assertThat(tenderRepository.findBySourceExtId("ZKO-1")).isPresent();
+        assertThat(tenderRepository.findBySourceExtId("ZKO-2")).isEmpty();
+        assertThat(fake.trdBuyFetches).isZero();                      // общая лента v2 не тронута
+    }
+
+    @Test
+    void regionImport_overridesResolvedRegion_withRequestedOne() {
+        // республиканский заказчик (юрадрес Астана) с поставкой в ЗКО: сервер отфильтровал
+        // по КАТО поставки → регион тендера ставим запрошенный, а не регион заказчика
+        fake.katoPage(null, null, FakeGoszakupClient.kato("27", "10", "10", "000"));
+        fake.v3Page(null, null,
+                FakeGoszakupClient.buy("ZKO-3", "Аппарат ИВЛ", 230, "BINAST", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = new com.vladoose.nir.integration.goszakup.dto.SubjectDto();
+        subj.setBin("BINAST"); subj.setNameRu("РГКП «Центр судебных экспертиз» г. Астана");
+        fake.subjectsByBin.put("BINAST", subj);
+
+        svc("аппарат", "", 3650).importMedicalTenders("Западно-Казахстанская область");
+
+        var t = tenderRepository.findBySourceExtId("ZKO-3").orElseThrow();
+        assertThat(t.getRegion()).isEqualTo("Западно-Казахстанская область");
+        assertThat(t.getCustomerName()).contains("Центр судебных экспертиз"); // заказчик не потерян
+    }
+
+    @Test
+    void regionImport_unknownRegion_returnsMessageWithoutFetching() {
+        ImportSummary s = service.importMedicalTenders("Марс");
+
+        assertThat(s.isEnabled()).isFalse();
+        assertThat(s.getMessage()).contains("Марс");
+        assertThat(fake.trdBuyFetches).isZero();
     }
 
     @Test

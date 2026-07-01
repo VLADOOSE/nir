@@ -25,9 +25,14 @@ public class GoszakupImportScheduler {
 
     /** §6: ставит рынок KZ вокруг @Transactional-сервиса (отдельный бин → аспект/прокси работают), чистит. */
     public ImportSummary run() {
+        return run(null);
+    }
+
+    /** region — каноническое имя региона для серверного КАТО-фильтра, null = вся лента. */
+    public ImportSummary run(String region) {
         MarketContext.set(Market.KZ);
         try {
-            return importService.importMedicalTenders();
+            return importService.importMedicalTenders(region);
         } finally {
             MarketContext.clear();
         }

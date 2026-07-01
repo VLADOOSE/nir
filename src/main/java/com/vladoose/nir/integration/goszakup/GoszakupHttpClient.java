@@ -1,10 +1,15 @@
 package com.vladoose.nir.integration.goszakup;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
+import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
+import com.vladoose.nir.integration.goszakup.dto.TrdBuyV3PageDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -47,6 +52,52 @@ public class GoszakupHttpClient implements GoszakupClient {
     }
 
     @Override
+    public TrdBuyV3PageDto fetchTrdBuyPageByKato(List<String> katoCodes, Long after) {
+        // v3 GraphQL: единственный способ серверно сузить ленту до региона (фильтр kato —
+        // массив точных 9-значных кодов). Алиасы приводят поля ответа к snake_case v2,
+        // чтобы парсить тем же TrdBuyDto. Пагинация: after=lastId, сортировка id DESC.
+        String query = "query($k:[String],$l:Int,$a:Int){ TrdBuy(filter:{kato:$k}, limit:$l, after:$a){ "
+                + "id number_anno:numberAnno name_ru:nameRu total_sum:totalSum "
+                + "ref_buy_status_id:refBuyStatusId customer_bin:customerBin org_bin:orgBin "
+                + "publish_date:publishDate end_date:endDate system_id:systemId } }";
+        try {
+            ObjectNode vars = objectMapper.createObjectNode();
+            vars.set("k", objectMapper.valueToTree(katoCodes));
+            vars.put("l", pageSize);
+            if (after != null) vars.put("a", after);
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("query", query);
+            body.set("variables", vars);
+
+            JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
+            if (root.path("errors").size() > 0) {
+                throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+            }
+            List<TrdBuyDto> items = new java.util.ArrayList<>();
+            for (JsonNode n : root.path("data").path("TrdBuy")) {
+                items.add(objectMapper.treeToValue(n, TrdBuyDto.class));
+            }
+            JsonNode pageInfo = root.path("extensions").path("pageInfo");
+            Long nextAfter = (!items.isEmpty() && pageInfo.path("hasNextPage").asBoolean(false))
+                    ? pageInfo.path("lastId").asLong() : null;
+            TrdBuyV3PageDto page = new TrdBuyV3PageDto();
+            page.setItems(items);
+            page.setNextAfter(nextAfter);
+            return page;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public KatoRefPageDto fetchKatoPage(String cursor) {
+        String url = (cursor != null && !cursor.isBlank())
+                ? origin() + cursor
+                : baseUrl + "/refs/ref_kato?limit=500"; // 500 — потолок страницы справочника
+        return get(url, KatoRefPageDto.class);
+    }
+
+    @Override
     public List<LotDto> fetchLots(String numberAnno) {
         // лоты приходят в обёртке-странице {items:[...]}
         TypeRefPage<LotDto> page = get(baseUrl + "/lots/number-anno/" + enc(numberAnno),
@@ -80,6 +131,7 @@ public class GoszakupHttpClient implements GoszakupClient {
         int i = baseUrl.indexOf("/", baseUrl.indexOf("://") + 3);
         return i > 0 ? baseUrl.substring(0, i) : baseUrl;
     }
+    private String graphqlUrl() { return origin() + "/v3/graphql"; }
     private static String enc(String s) { return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8); }
 
     private <T> T get(String url, Class<T> type) {
@@ -89,11 +141,19 @@ public class GoszakupHttpClient implements GoszakupClient {
         return parse(rawGet(url), b -> objectMapper.readValue(b, type));
     }
     private byte[] rawGet(String url) {
+        return raw(HttpRequest.newBuilder(URI.create(url)).GET(), url);
+    }
+    private byte[] rawPost(String url, byte[] body) {
+        return raw(HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)), url);
+    }
+    private byte[] raw(HttpRequest.Builder builder, String url) {
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest req = builder
                     .header("Authorization", "Bearer " + token)
                     .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(30)).GET().build();
+                    .timeout(Duration.ofSeconds(30)).build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
             if (resp.statusCode() == 404) {
                 throw new GoszakupNotFoundException("goszakup 404 на " + url);
