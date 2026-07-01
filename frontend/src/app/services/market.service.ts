@@ -30,6 +30,24 @@ export class MarketService {
   logo(): string { return MARKETS[this.current].logo; }
   meta(m: Market): MarketMeta { return MARKETS[m]; }
 
+  // Название/хост площадки госзакупок активного рынка (РФ — ЕИС, KZ — Госзакуп РК)
+  portalLabel(): string { return this.current === 'KZ' ? 'Госзакуп' : 'ЕИС'; }
+  portalHost(): string { return this.current === 'KZ' ? 'goszakup.gov.kz' : 'zakupki.gov.ru'; }
+
+  /** Ссылка на тендер на площадке активного рынка. */
+  portalLink(tenderNumber: string): string {
+    const q = encodeURIComponent(tenderNumber || '');
+    if (this.current !== 'KZ') {
+      return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}`;
+    }
+    // Импортированный с goszakup номер "17276387-1" → страница объявления по id (часть до дефиса);
+    // ручные номера (KZ-2026-0001) на портале не существуют — оставляем поиск по лотам
+    const m = /^(\d+)-\d+$/.exec(tenderNumber || '');
+    return m
+      ? `https://goszakup.gov.kz/ru/announce/index/${m[1]}`
+      : `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`;
+  }
+
   setMarket(m: Market) {
     if (m === this.current) return;
     this.current = m;

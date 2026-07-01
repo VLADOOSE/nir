@@ -116,8 +116,8 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         <h2>Заявка #{{ selectedApply.id }}</h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}
-            <a *ngIf="selectedApply.tender?.tenderNumber && !isDemoTender(selectedApply.tender.tenderNumber)" class="eis-link-inline" [href]="eisLink(selectedApply.tender.tenderNumber)" target="_blank" rel="noopener" title="Открыть в ЕИС">
-              <svg lucideIcon="external-link" [size]="11"></svg> ЕИС
+            <a *ngIf="selectedApply.tender?.tenderNumber && !isDemoTender(selectedApply.tender.tenderNumber)" class="eis-link-inline" [href]="eisLink(selectedApply.tender.tenderNumber)" target="_blank" rel="noopener" [title]="'Открыть в ' + market.portalLabel()">
+              <svg lucideIcon="external-link" [size]="11"></svg> {{ market.portalLabel() }}
             </a>
             <span *ngIf="selectedApply.tender?.tenderNumber && isDemoTender(selectedApply.tender.tenderNumber)" class="demo-badge-inline" title="Контрольный пример, не существует в ЕИС">Демо</span></span>
           </div>
@@ -485,9 +485,7 @@ export class AppliesComponent {
 
   formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
 
-  eisLink(tenderNumber: string): string {
-    return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${encodeURIComponent(tenderNumber)}`;
-  }
+  eisLink(tenderNumber: string): string { return this.market.portalLink(tenderNumber); }
 
   isDemoTender(tenderNumber: string): boolean {
     return !!tenderNumber && tenderNumber.startsWith('DEMO-');

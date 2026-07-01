@@ -571,20 +571,9 @@ export class TendersComponent {
     });
   }
 
-  eisLink(tenderNumber: string): string {
-    const q = encodeURIComponent(tenderNumber);
-    return this.market.value === 'KZ'
-      ? `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`
-      : `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}`;
-  }
-
-  // Название площадки госзакупок активного рынка (РФ — ЕИС, KZ — Госзакуп РК)
-  procurementPortalLabel(): string {
-    return this.market.value === 'KZ' ? 'Госзакуп' : 'ЕИС';
-  }
-  procurementPortalHost(): string {
-    return this.market.value === 'KZ' ? 'goszakup.gov.kz' : 'zakupki.gov.ru';
-  }
+  eisLink(tenderNumber: string): string { return this.market.portalLink(tenderNumber); }
+  procurementPortalLabel(): string { return this.market.portalLabel(); }
+  procurementPortalHost(): string { return this.market.portalHost(); }
 
   isDemoTender(tenderNumber: string): boolean {
     return !!tenderNumber && tenderNumber.startsWith('DEMO-');
