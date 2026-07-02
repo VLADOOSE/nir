@@ -57,12 +57,17 @@ public class GoszakupTenderWriter {
         t.setMarket(Market.KZ);
         t.setCurrency("KZT");
         t.setFacility(null);
-        t.setStatus(mapStatus(d.getRefBuyStatusId()));
         t.setDescription(d.getNameRu());
         t.setTotalCost(d.getTotalSum());
         t.setPublishDate(GoszakupParse.localDate(d.getPublishDate()));
         t.setDeadline(GoszakupParse.localDate(d.getEndDate()));
         t.setCustomerBin(d.effectiveBin());
+        String status = mapStatus(d.getRefBuyStatusId());
+        // площадка может держать «Опубликовано…» и после дедлайна — локально приём уже закрыт
+        if ("ACTIVE".equals(status) && t.getDeadline() != null && t.getDeadline().isBefore(java.time.LocalDate.now())) {
+            status = "COMPLETED";
+        }
+        t.setStatus(status);
     }
 
     private void applyRegion(Tender t, SubjectDto subj) {
@@ -91,8 +96,11 @@ public class GoszakupTenderWriter {
         }
     }
 
+    /** Словарь /v2/refs/ref_buy_status: 210–245 «Опубликовано…», 250+ рассмотрение/итоги, 410/420/430 отказ/пауза/отмена. */
     static String mapStatus(Integer refBuyStatusId) {
-        // TODO(T9): map real ref_buy_status_id → domain status (ids confirmed against live API token)
+        if (refBuyStatusId == null) return "ACTIVE";
+        if (refBuyStatusId == 410 || refBuyStatusId == 420 || refBuyStatusId == 430) return "CANCELLED";
+        if (refBuyStatusId >= 250) return "COMPLETED"; // приём заявок закончен
         return "ACTIVE";
     }
 }

@@ -115,4 +115,9 @@ public class TenderController {
         // region — серверный КАТО-фильтр goszakup (тянет только выбранную область)
         return goszakupScheduler.run(region);
     }
+
+    @GetMapping("/import-kz/status")
+    public GoszakupImportScheduler.ImportStatus importKzStatus() {
+        return goszakupScheduler.status();
+    }
 }

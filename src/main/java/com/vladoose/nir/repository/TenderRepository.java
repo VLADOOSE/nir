@@ -19,6 +19,8 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     Optional<Tender> findBySourceExtId(String sourceExtId);
 
+    List<Tender> findByStatusAndDeadlineBefore(String status, LocalDate deadline);
+
     @Query("SELECT DISTINCT t FROM Tender t JOIN t.lots l WHERE " +
            "t.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER AND " +
            "(:status IS NULL OR t.status = :status) AND " +

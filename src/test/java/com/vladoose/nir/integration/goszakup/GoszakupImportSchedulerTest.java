@@ -39,4 +39,25 @@ class GoszakupImportSchedulerTest {
         verify(service, times(1)).importMedicalTenders(null);
         MarketContext.clear();
     }
+
+    @Test
+    void status_reflectsLastRun() {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        ImportSummary sum = new ImportSummary();
+        sum.setCreated(3);
+        when(service.importMedicalTenders("ЗКО")).thenReturn(sum);
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        assertThat(scheduler.status().running()).isFalse();
+        assertThat(scheduler.status().lastFinishedAt()).isNull(); // ещё не бегали
+
+        scheduler.run("ЗКО");
+
+        var st = scheduler.status();
+        assertThat(st.running()).isFalse();
+        assertThat(st.lastFinishedAt()).isNotNull();
+        assertThat(st.lastRegion()).isEqualTo("ЗКО");
+        assertThat(st.lastSummary().getCreated()).isEqualTo(3);
+        MarketContext.clear();
+    }
 }

@@ -29,6 +29,11 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <option value="DRAFT">Подготовка</option>
           <option value="ACTIVE">Приём заявок</option>
           <option value="COMPLETED">Завершён</option>
+          <option value="CANCELLED">Отменён</option>
+        </select>
+        <select [(ngModel)]="sortMode" (change)="applyTendersFilter()" class="filter-select" title="Сортировка">
+          <option value="published">Сначала новые</option>
+          <option value="deadline">Скоро дедлайн</option>
         </select>
         <select [(ngModel)]="filterFacilityId" (change)="applyTendersFilter()" class="filter-select">
           <option [ngValue]="null">Все учреждения</option>
@@ -50,6 +55,12 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 [title]="importRegion() ? 'Импорт с goszakup только по региону: ' + importRegion() : 'Импорт всей ленты goszakup'">
           {{ importing ? 'Обновление…' : ('Обновить тендеры' + (importRegion() ? ' — ' + importRegion() : '')) }}
         </button>
+        <span class="import-status" *ngIf="isKz() && importStatus">
+          <ng-container *ngIf="importStatus.running">⏳ импорт выполняется…</ng-container>
+          <ng-container *ngIf="!importStatus.running && importStatus.lastFinishedAt">
+            Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
+          </ng-container>
+        </span>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
       </div>
 
@@ -123,6 +134,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <div class="tender-price">{{ t.totalCost | money }}</div>
         </div>
         <div class="tender-card-title">{{ t.description || 'Без описания' }}</div>
+        <div class="lot-mini-list" *ngIf="t.lots?.length">
+          <span class="lot-mini" *ngFor="let l of t.lots.slice(0, 3)" [title]="l.requiredSpec || l.equipName">{{ l.equipName }}</span>
+          <span class="lot-mini lot-mini-more" *ngIf="t.lots.length > 3">+{{ t.lots.length - 3 }} ещё</span>
+        </div>
         <div class="tender-card-details">
           <div class="detail-row">
             <div class="detail"><span class="detail-label">Заказчик</span><span>{{ t.facility?.name || '—' }}</span></div>
@@ -225,7 +240,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <tbody>
           <tr *ngFor="let l of lots">
             <td>{{ l.lotNumber }}</td><td>{{ l.equipName }}</td><td>{{ l.equipType }}</td><td>{{ l.quantity }}</td>
-            <td>{{ l.maxCost | money }}</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td><td>{{ l.requiredSpec || '—' }}</td>
+            <td>{{ l.maxCost | money }}</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td>
+            <td class="spec-cell" [class.spec-open]="l._specOpen" (click)="toggleSpec(l)"
+                [title]="l._specOpen ? 'Свернуть' : 'Развернуть спецификацию'">{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
               <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
               <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
@@ -376,6 +393,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .badge-DRAFT { background: #e5e7eb; color: #374151; }
     .badge-ACTIVE { background: #dbeafe; color: #1a56db; }
     .badge-COMPLETED { background: #d1fae5; color: #065f46; }
+    .badge-CANCELLED { background: #fee2e2; color: #b91c1c; }
+    .import-status { color: #6b7280; font-size: 12.5px; margin-left: 10px; }
+    .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+    .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
+                max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lot-mini-more { background: #e5e7eb; color: #6b7280; }
+    .spec-cell { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .spec-cell.spec-open { white-space: pre-wrap; max-width: none; overflow: visible; }
     .badge-pr-CREATED { background: #e5e7eb; color: #374151; }
     .badge-pr-SENT { background: #dbeafe; color: #1a56db; }
     .badge-pr-RESPONDED { background: #fef3c7; color: #92400e; }
@@ -500,6 +525,7 @@ export class TendersComponent {
               private router: Router,
               private notify: NotificationService, private confirm: ConfirmService, public market: MarketService) {
     this.loadTenders();
+    this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
     this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
     this.api.getAllApplyItems().subscribe({
@@ -519,7 +545,7 @@ export class TendersComponent {
   }
 
   getStatusLabel(status: string): string {
-    const labels: any = { DRAFT: 'Подготовка', ACTIVE: 'Приём заявок', COMPLETED: 'Завершён' };
+    const labels: any = { DRAFT: 'Подготовка', ACTIVE: 'Приём заявок', COMPLETED: 'Завершён', CANCELLED: 'Отменён' };
     return labels[status] || status;
   }
 
@@ -652,6 +678,7 @@ export class TendersComponent {
           this.notify.success(`Импорт завершён: создано ${s?.created ?? 0}, обновлено ${s?.updated ?? 0}` + (s?.errors ? `, ошибок ${s.errors}` : ''));
           this.loadTenders();
         }
+        this.refreshImportStatus();
         this.cdr.detectChanges();
       },
       error: err => {
@@ -661,6 +688,8 @@ export class TendersComponent {
       }
     });
   }
+
+  sortMode: 'published' | 'deadline' = 'published';
 
   applyTendersFilter() {
     const q = (this.filterQuery || '').toLowerCase();
@@ -680,6 +709,56 @@ export class TendersComponent {
       else if (this.filterRegion && t.region !== this.filterRegion) return false;
       return true;
     });
+    this.sortTenders();
+  }
+
+  private sortTenders() {
+    const ts = (d: any) => d ? new Date(d).getTime() : null;
+    if (this.sortMode === 'deadline') {
+      // «скоро дедлайн»: будущие — ближайший первым; затем прошедшие (свежие выше); без дедлайна — вниз
+      const now = Date.now();
+      this.filteredTenders.sort((a, b) => {
+        const da = ts(a.deadline), db = ts(b.deadline);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        const fa = da >= now ? 0 : 1, fb = db >= now ? 0 : 1;
+        if (fa !== fb) return fa - fb;
+        return fa === 0 ? da - db : db - da;
+      });
+    } else {
+      // «сначала новые»: по дате публикации DESC; без даты — вниз; при равенстве — новее по id
+      this.filteredTenders.sort((a, b) => {
+        const pa = ts(a.publishDate), pb = ts(b.publishDate);
+        if (pa == null && pb == null) return (b.id || 0) - (a.id || 0);
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        return (pb - pa) || ((b.id || 0) - (a.id || 0));
+      });
+    }
+  }
+
+  toggleSpec(l: any) {
+    l._specOpen = !l._specOpen;
+    this.cdr.detectChanges();
+  }
+
+  importStatus: any = null;
+
+  refreshImportStatus() {
+    if (!this.isKz()) { this.importStatus = null; return; }
+    this.api.getKzImportStatus().subscribe({
+      next: st => { this.importStatus = st; this.cdr.detectChanges(); },
+      error: () => { /* статус — вспомогательная информация, ошибку не показываем */ }
+    });
+  }
+
+  formatImportTime(iso: string): string {
+    const t = new Date(iso).getTime();
+    const mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 1) return 'только что';
+    if (mins < 60) return `${mins} мин назад`;
+    return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
   resetTendersFilter() {

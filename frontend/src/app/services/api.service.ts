@@ -81,6 +81,10 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/tenders/import-kz`, {}, params);
   }
 
+  getKzImportStatus(): Observable<any> {
+    return this.http.get<any>(`${this.base}/tenders/import-kz/status`);
+  }
+
   // === Applies ===
 
   getApplies(): Observable<any[]> {

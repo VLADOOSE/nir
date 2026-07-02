@@ -264,6 +264,20 @@ class GoszakupImportServiceTest {
     }
 
     @Test
+    void expiredDeadline_overridesPortalActiveStatus() {
+        // площадка может держать 220 «Опубликовано (приём заявок)» после дедлайна —
+        // локально такой тендер сразу COMPLETED (без дребезга до ночного джоба)
+        String past = java.time.LocalDate.now().minusDays(2) + "T00:00:00";
+        fake.page(null, null,
+                FakeGoszakupClient.buy("EXP-1", "Аппарат УЗИ", 220, "BIN1", past, past));
+
+        svc("аппарат", "", 3650).importMedicalTenders();
+
+        assertThat(tenderRepository.findBySourceExtId("EXP-1").orElseThrow().getStatus())
+                .isEqualTo("COMPLETED");
+    }
+
+    @Test
     void skipsNonCurrentSystemId() {
         // system_id: 1=ценовые предложения, 2=конкурс/аукцион, 3=текущая версия госзакупа.
         var legacy = FakeGoszakupClient.buy("LEG-2", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
