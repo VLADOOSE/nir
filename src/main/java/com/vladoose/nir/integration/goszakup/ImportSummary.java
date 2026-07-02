@@ -11,5 +11,8 @@ public class ImportSummary {
     private int updated;
     private int skipped;
     private int errors;
+    /** Прогресс для UI: страниц ленты прочитано / потолок страниц. */
+    private int pagesRead;
+    private int maxPages;
     private String message;
 }

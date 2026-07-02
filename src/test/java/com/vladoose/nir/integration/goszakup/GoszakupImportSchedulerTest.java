@@ -15,7 +15,8 @@ class GoszakupImportSchedulerTest {
     void run_setsKzMarketContext_aroundServiceCall() {
         GoszakupImportService service = mock(GoszakupImportService.class);
         AtomicReference<Market> seen = new AtomicReference<>();
-        when(service.importMedicalTenders(null)).thenAnswer(inv -> { seen.set(MarketContext.get()); return new ImportSummary(); });
+        doAnswer(inv -> { seen.set(MarketContext.get()); return null; })
+                .when(service).fillImport(eq(null), any(ImportSummary.class));
 
         GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, true);
         scheduler.run();
@@ -34,18 +35,36 @@ class GoszakupImportSchedulerTest {
     @Test
     void tick_enabled_callsService() {
         GoszakupImportService service = mock(GoszakupImportService.class);
-        when(service.importMedicalTenders(null)).thenReturn(new ImportSummary());
         new GoszakupImportScheduler(service, true).tick();
-        verify(service, times(1)).importMedicalTenders(null);
+        verify(service, times(1)).fillImport(eq(null), any(ImportSummary.class));
         MarketContext.clear();
+    }
+
+    @Test
+    void startAsync_returnsImmediately_thenCompletesInBackground() throws Exception {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(inv -> { hold.await(); return null; })
+                .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        var st = scheduler.startAsync("ЗКО");
+
+        assertThat(st.running()).isTrue();          // вернулись сразу, импорт в фоне
+        assertThat(st.lastSummary()).isNotNull();   // живой прогресс-объект уже отдан
+
+        hold.countDown();
+        long deadline = System.currentTimeMillis() + 3000;
+        while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
+        assertThat(scheduler.status().running()).isFalse();
+        assertThat(scheduler.status().lastFinishedAt()).isNotNull();
     }
 
     @Test
     void status_reflectsLastRun() {
         GoszakupImportService service = mock(GoszakupImportService.class);
-        ImportSummary sum = new ImportSummary();
-        sum.setCreated(3);
-        when(service.importMedicalTenders("ЗКО")).thenReturn(sum);
+        doAnswer(inv -> { ((ImportSummary) inv.getArgument(1)).setCreated(3); return null; })
+                .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
 
         GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
         assertThat(scheduler.status().running()).isFalse();

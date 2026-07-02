@@ -72,20 +72,26 @@ public class GoszakupImportService {
     /** region — каноническое имя области/города (как в фильтре UI) или null: вся лента. */
     public ImportSummary importMedicalTenders(String region) {
         ImportSummary sum = new ImportSummary();
+        fillImport(region, sum);
+        return sum;
+    }
+
+    /** Наполняет ПЕРЕДАННЫЙ summary по ходу работы — вызывающий может показывать живой прогресс. */
+    public void fillImport(String region, ImportSummary sum) {
         if (!client.isConfigured()) {
             sum.setEnabled(false);
             sum.setMessage("Токен goszakup не настроен (GOSZAKUP_TOKEN)");
-            return sum;
+            return;
         }
+        sum.setMaxPages(maxPages);
         LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
         if (region == null || region.isBlank()) {
             fetchWholeFeed(cutoff, sum);
         } else if (!fetchRegionFeed(region, cutoff, sum)) {
-            return sum; // регион не распознан — message уже установлен
+            return; // регион не распознан — message уже установлен
         }
         sum.setMessage(String.format("Получено %d, релевантных %d, создано %d, обновлено %d, ошибок %d",
                 sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated(), sum.getErrors()));
-        return sum;
     }
 
     private void fetchWholeFeed(LocalDate cutoff, ImportSummary sum) {
@@ -95,10 +101,11 @@ public class GoszakupImportService {
             TrdBuyPageDto page = client.fetchTrdBuyPage(cursor);
             List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
             processItems(items, cutoff, sum, null);
+            pagesRead++;
+            sum.setPagesRead(pagesRead);
             // лента отсортирована по id DESC: страница целиком старше cutoff → дальше только старее
             if (wholePageOlderThan(items, cutoff)) break;
             cursor = page.getNextPage();
-            pagesRead++;
         } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
     }
 
@@ -116,9 +123,10 @@ public class GoszakupImportService {
             var page = client.fetchTrdBuyPageByKato(katoCodes, after);
             List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
             processItems(items, cutoff, sum, region);
+            pagesRead++;
+            sum.setPagesRead(pagesRead);
             if (wholePageOlderThan(items, cutoff)) break;
             after = page.getNextAfter();
-            pagesRead++;
         } while (after != null && pagesRead < maxPages);
         return true;
     }

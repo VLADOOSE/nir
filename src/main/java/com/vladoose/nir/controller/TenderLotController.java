@@ -18,18 +18,28 @@ public class TenderLotController {
     private final TenderLotService service;
     private final TenderService tenderService;
     private final TenderLotMapper mapper;
+    private final com.vladoose.nir.service.RegistryMatchService registryMatchService;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
-                               TenderLotMapper mapper) {
+                               TenderLotMapper mapper,
+                               com.vladoose.nir.service.RegistryMatchService registryMatchService) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
+        this.registryMatchService = registryMatchService;
     }
 
     @GetMapping("/{id}")
     public TenderLotResponse findById(@PathVariable Long id) {
         return mapper.toResponse(service.findById(id));
+    }
+
+    /** Кандидаты реестра НЦЭЛС по лоту: «что это за изделие» (топ по похожести названия). */
+    @GetMapping("/{id}/registry-candidates")
+    public java.util.List<com.vladoose.nir.dto.response.RegistryCandidateResponse> registryCandidates(
+            @PathVariable Long id, @RequestParam(defaultValue = "5") int limit) {
+        return registryMatchService.candidatesForLot(id, Math.min(limit, 20));
     }
 
     @PostMapping

@@ -7,6 +7,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
@@ -22,6 +24,11 @@ public class GoszakupImportScheduler {
     private volatile Instant lastFinishedAt;
     private volatile String lastRegion;
     private volatile ImportSummary lastSummary;
+    private final ExecutorService importExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "goszakup-import");
+        t.setDaemon(true);
+        return t;
+    });
 
     public GoszakupImportScheduler(GoszakupImportService importService,
                                    @Value("${goszakup.import.enabled:false}") boolean enabled) {
@@ -51,16 +58,39 @@ public class GoszakupImportScheduler {
             busy.setMessage("Импорт уже выполняется — дождитесь окончания");
             return busy;
         }
+        ImportSummary sum = new ImportSummary();
+        lastRegion = region;
+        lastSummary = sum;
         MarketContext.set(Market.KZ);
         try {
-            ImportSummary sum = importService.importMedicalTenders(region);
-            lastRegion = region;
-            lastSummary = sum;
+            importService.fillImport(region, sum);
             return sum;
         } finally {
             lastFinishedAt = Instant.now();
             running.set(false);
             MarketContext.clear();
         }
+    }
+
+    /** Стартует импорт в фоне и сразу возвращает статус; lastSummary наполняется по ходу (живой прогресс). */
+    public ImportStatus startAsync(String region) {
+        if (!running.compareAndSet(false, true)) {
+            return status(); // уже идёт — вернём текущий прогресс
+        }
+        ImportSummary sum = new ImportSummary();
+        lastRegion = region;
+        lastSummary = sum;
+        importExecutor.submit(() -> {
+            // §6: рынок ставится В ФОНОВОМ потоке (ThreadLocal), не в HTTP-потоке
+            MarketContext.set(Market.KZ);
+            try {
+                importService.fillImport(region, sum);
+            } finally {
+                lastFinishedAt = Instant.now();
+                running.set(false);
+                MarketContext.clear();
+            }
+        });
+        return status();
     }
 }

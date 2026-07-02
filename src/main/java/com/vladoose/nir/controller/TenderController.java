@@ -110,10 +110,10 @@ public class TenderController {
 
     @PostMapping("/import-kz")
     @PreAuthorize("hasRole('ADMIN')")
-    public ImportSummary importKz(@RequestParam(required = false) String region) {
-        // рынок KZ ставится явно внутри scheduler.run() (§6), независимо от X-Market;
-        // region — серверный КАТО-фильтр goszakup (тянет только выбранную область)
-        return goszakupScheduler.run(region);
+    public GoszakupImportScheduler.ImportStatus importKz(@RequestParam(required = false) String region) {
+        // импорт идёт в фоне (рынок KZ ставится в фоновом потоке, §6);
+        // region — серверный КАТО-фильтр goszakup; прогресс — GET /import-kz/status
+        return goszakupScheduler.startAsync(region);
     }
 
     @GetMapping("/import-kz/status")

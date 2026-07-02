@@ -51,15 +51,22 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showTenderForm" (click)="onAddTender()">Добавить тендер</button>
-        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing"
+        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing || importStatus?.running"
                 [title]="importRegion() ? 'Импорт с goszakup только по региону: ' + importRegion() : 'Импорт всей ленты goszakup'">
-          {{ importing ? 'Обновление…' : ('Обновить тендеры' + (importRegion() ? ' — ' + importRegion() : '')) }}
+          {{ (importing || importStatus?.running) ? 'Обновление…' : ('Обновить тендеры' + (importRegion() ? ' — ' + importRegion() : '')) }}
         </button>
-        <span class="import-status" *ngIf="isKz() && importStatus">
-          <ng-container *ngIf="importStatus.running">⏳ импорт выполняется…</ng-container>
-          <ng-container *ngIf="!importStatus.running && importStatus.lastFinishedAt">
-            Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
-          </ng-container>
+        <div class="import-progress" *ngIf="isKz() && importStatus?.running">
+          <div class="import-bar"><div class="import-bar-fill" [style.width.%]="importPct()"></div></div>
+          <span class="import-progress-text">
+            стр. {{ importStatus.lastSummary?.pagesRead || 0 }}/{{ importStatus.lastSummary?.maxPages || '…' }}
+            · получено {{ importStatus.lastSummary?.fetched || 0 }}
+            · подходящих {{ importStatus.lastSummary?.matched || 0 }}
+            · создано {{ importStatus.lastSummary?.created || 0 }}
+            · обновлено {{ importStatus.lastSummary?.updated || 0 }}<ng-container *ngIf="importStatus.lastSummary?.errors"> · ошибок {{ importStatus.lastSummary.errors }}</ng-container>
+          </span>
+        </div>
+        <span class="import-status" *ngIf="isKz() && importStatus && !importStatus.running && importStatus.lastFinishedAt">
+          Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
         </span>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
       </div>
@@ -244,6 +251,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
             <td class="spec-cell" [class.spec-open]="l._specOpen" (click)="toggleSpec(l)"
                 [title]="l._specOpen ? 'Свернуть' : 'Развернуть спецификацию'">{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
+              <button class="btn btn-registry" (click)="onLotRegistry(l)">Реестр</button>
               <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
               <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteLot(l.id)">Удалить</button>
@@ -251,6 +259,28 @@ import { LucideDynamicIcon } from '@lucide/angular';
           </tr>
         </tbody>
       </table>
+
+      <div class="registry-panel" *ngIf="registryPanel">
+        <div class="registry-panel-head">
+          <span><b>Реестр НЦЭЛС РК:</b> {{ registryPanel.lot.equipName }}</span>
+          <button class="btn btn-cancel" (click)="closeRegistryPanel()">✕ Закрыть</button>
+        </div>
+        <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
+        <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
+        <table *ngIf="!registryPanel.loading && registryPanel.items.length" class="registry-table">
+          <thead><tr><th>Похожесть</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let c of registryPanel.items">
+              <td><span class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span></td>
+              <td>{{ c.regNumber }}</td>
+              <td>{{ c.name }}</td>
+              <td>{{ c.producer || '—' }}</td>
+              <td>{{ c.country || '—' }}</td>
+              <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <app-smart-match
         *ngIf="matchLotId !== null"
@@ -395,6 +425,18 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .badge-COMPLETED { background: #d1fae5; color: #065f46; }
     .badge-CANCELLED { background: #fee2e2; color: #b91c1c; }
     .import-status { color: #6b7280; font-size: 12.5px; margin-left: 10px; }
+    .import-progress { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
+    .import-bar { width: 150px; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .import-bar-fill { height: 100%; background: #2563eb; border-radius: 3px; transition: width .5s ease; }
+    .import-progress-text { color: #374151; font-size: 12.5px; white-space: nowrap; }
+    .btn-registry { background: #ede9fe; color: #5b21b6; }
+    .registry-panel { margin: 10px 0 16px; padding: 12px 14px; border: 1px solid #ddd6fe; border-radius: 8px; background: #faf5ff; }
+    .registry-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
+    .registry-loading { color: #6b7280; padding: 6px 0; }
+    .registry-table { width: 100%; }
+    .registry-table th { text-align: left; font-size: 12px; color: #6b7280; }
+    .score-badge { background: #e5e7eb; color: #374151; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
+    .score-badge.score-good { background: #d1fae5; color: #065f46; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -669,16 +711,16 @@ export class TendersComponent {
 
   onImportKz() {
     this.importing = true;
+    // POST стартует импорт в фоне и сразу возвращает статус — дальше поллим прогресс
     this.api.importKzTenders(this.importRegion()).subscribe({
-      next: (s: any) => {
-        this.importing = false;
-        if (s && s.enabled === false) {
-          this.notify.error(s.message || 'Импорт выключен: не настроен токен goszakup');
+      next: (st: any) => {
+        this.importStatus = st;
+        if (st?.lastSummary?.enabled === false) {
+          this.importing = false;
+          this.notify.error(st.lastSummary.message || 'Импорт выключен: не настроен токен goszakup');
         } else {
-          this.notify.success(`Импорт завершён: создано ${s?.created ?? 0}, обновлено ${s?.updated ?? 0}` + (s?.errors ? `, ошибок ${s.errors}` : ''));
-          this.loadTenders();
+          this.startImportPolling();
         }
-        this.refreshImportStatus();
         this.cdr.detectChanges();
       },
       error: err => {
@@ -744,14 +786,75 @@ export class TendersComponent {
   }
 
   importStatus: any = null;
+  private importPollTimer: any = null;
 
   refreshImportStatus() {
     if (!this.isKz()) { this.importStatus = null; return; }
     this.api.getKzImportStatus().subscribe({
-      next: st => { this.importStatus = st; this.cdr.detectChanges(); },
+      next: st => {
+        this.importStatus = st;
+        if (st?.running) this.startImportPolling(); // импорт мог быть запущен из другой вкладки/сессии
+        this.cdr.detectChanges();
+      },
       error: () => { /* статус — вспомогательная информация, ошибку не показываем */ }
     });
   }
+
+  importPct(): number {
+    const s = this.importStatus?.lastSummary;
+    if (!s?.maxPages) return 5;
+    return Math.max(5, Math.min(100, Math.round(100 * (s.pagesRead || 0) / s.maxPages)));
+  }
+
+  startImportPolling() {
+    if (this.importPollTimer) return;
+    this.importPollTimer = setInterval(() => {
+      this.api.getKzImportStatus().subscribe({
+        next: st => {
+          const wasRunning = this.importStatus?.running;
+          this.importStatus = st;
+          if (!st.running) {
+            this.stopImportPolling();
+            this.importing = false;
+            if (wasRunning) { // прогон закончился на наших глазах — итоговый тост + обновить список
+              const s = st.lastSummary;
+              if (s?.enabled === false) {
+                this.notify.error(s.message || 'Импорт выключен: не настроен токен goszakup');
+              } else {
+                if (s?.message) this.notify.success('Импорт завершён: ' + s.message);
+                this.loadTenders();
+              }
+            }
+          }
+          this.cdr.detectChanges();
+        },
+        error: () => { this.stopImportPolling(); this.importing = false; this.cdr.detectChanges(); }
+      });
+    }, 2500);
+  }
+
+  private stopImportPolling() {
+    if (this.importPollTimer) { clearInterval(this.importPollTimer); this.importPollTimer = null; }
+  }
+
+  registryPanel: { lot: any; loading: boolean; items: any[] } | null = null;
+
+  onLotRegistry(l: any) {
+    this.registryPanel = { lot: l, loading: true, items: [] };
+    this.cdr.detectChanges();
+    this.api.getLotRegistryCandidates(l.id).subscribe({
+      next: items => { this.registryPanel = { lot: l, loading: false, items: items || [] }; this.cdr.detectChanges(); },
+      error: err => {
+        this.registryPanel = null;
+        this.notify.error('Реестр: ' + (err.error?.message || err.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  closeRegistryPanel() { this.registryPanel = null; this.cdr.detectChanges(); }
+
+  scorePct(c: any): number { return Math.round((c?.score || 0) * 100); }
 
   formatImportTime(iso: string): string {
     const t = new Date(iso).getTime();

@@ -8,8 +8,10 @@ import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
+import com.vladoose.nir.repository.TenderLotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,11 +24,14 @@ public class RegistryMatchService {
 
     private final MedRegistryRepository registryRepository;
     private final MedEquipmentRepository equipmentRepository;
+    private final TenderLotRepository tenderLotRepository;
 
     public RegistryMatchService(MedRegistryRepository registryRepository,
-                                MedEquipmentRepository equipmentRepository) {
+                                MedEquipmentRepository equipmentRepository,
+                                TenderLotRepository tenderLotRepository) {
         this.registryRepository = registryRepository;
         this.equipmentRepository = equipmentRepository;
+        this.tenderLotRepository = tenderLotRepository;
     }
 
     /** Переиспользуемый примитив: (наименование, производитель) -> кандидаты реестра. */
@@ -60,6 +65,13 @@ public class RegistryMatchService {
         MedEquipment e = equipmentRepository.findById(equipmentId)
                 .orElseThrow(() -> new NotFoundException("Оборудование не найдено: id=" + equipmentId));
         return findCandidates(e.getName(), e.getManufact(), limit);
+    }
+
+    /** Кандидаты реестра по лоту тендера — «что это за изделие» (у KZ-импорта manufact обычно пуст). */
+    public List<RegistryCandidateResponse> candidatesForLot(Long lotId, int limit) {
+        TenderLot lot = tenderLotRepository.findById(lotId)
+                .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
+        return findCandidates(lot.getEquipName(), lot.getManufact(), limit);
     }
 
     @Transactional

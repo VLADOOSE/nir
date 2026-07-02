@@ -163,6 +163,9 @@ class GoszakupImportServiceTest {
         assertThat(s.getFetched()).isEqualTo(2);
         assertThat(tenderRepository.findBySourceExtId("NEW-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("OLD-1")).isEmpty();
+        // прогресс для UI: прочитанные страницы и потолок
+        assertThat(s.getPagesRead()).isEqualTo(2);
+        assertThat(s.getMaxPages()).isEqualTo(20);
     }
 
     @Test
