@@ -18,6 +18,16 @@ public class EquipmentMatchResponse {
     private String preset;
     private WeightsUsed weightsUsed;
     private List<Candidate> candidates;
+    private SpecDerived specDerived; // ограничения, извлечённые из текста спеки (null — не применялись)
+
+    @Getter @Setter @NoArgsConstructor
+    public static class SpecDerived {
+        private Integer lengthMm;
+        private Integer widthMm;
+        private Integer heightMm;
+        private BigDecimal weightKg;
+        private List<String> snippets;
+    }
 
     @Getter @Setter @NoArgsConstructor
     public static class WeightsUsed {

@@ -11,6 +11,7 @@ import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
+import com.vladoose.nir.util.SpecConstraintExtractor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -44,8 +45,23 @@ public class EquipmentScoringService {
                 .orElseThrow(() -> new NotFoundException("Lot not found: " + lotId));
 
         Long equipTypeId = lot.getEquipmentType() != null ? lot.getEquipmentType().getId() : null;
+
+        // Эффективные ограничения: структурные поля лота, а при их полном отсутствии — из текста спеки
+        Integer effLen = lot.getMaxLengthMm(), effWid = lot.getMaxWidthMm(), effHei = lot.getMaxHeightMm();
+        BigDecimal effWeight = lot.getMaxWeightKg();
+        SpecConstraintExtractor.SpecConstraints derived = null;
+        boolean noStructured = effLen == null && effWid == null && effHei == null && effWeight == null;
+        if (noStructured && lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) {
+            SpecConstraintExtractor.SpecConstraints c = SpecConstraintExtractor.extract(lot.getRequiredSpec());
+            if (!c.isEmpty()) {
+                derived = c;
+                effLen = c.maxLengthMm(); effWid = c.maxWidthMm(); effHei = c.maxHeightMm();
+                effWeight = c.maxWeightKg();
+            }
+        }
+
         List<MedEquipment> shortlist = equipRepo.findMatchingEquipment(
-                equipTypeId, lot.getMaxLengthMm(), lot.getMaxWidthMm(), lot.getMaxHeightMm(), lot.getMaxWeightKg());
+                equipTypeId, effLen, effWid, effHei, effWeight);
 
         Set<Long> equipIds = shortlist.stream().map(MedEquipment::getId).collect(Collectors.toSet());
         Set<Long> typeIds = shortlist.stream()
@@ -57,7 +73,7 @@ public class EquipmentScoringService {
 
         List<Candidate> candidates = new ArrayList<>();
         for (MedEquipment e : shortlist) {
-            candidates.add(buildCandidate(e, lot, stats, weights));
+            candidates.add(buildCandidate(e, lot, stats, weights, effLen, effWid, effHei, effWeight));
         }
         candidates.sort(Comparator.comparingDouble(Candidate::getScore).reversed());
         for (int i = 0; i < candidates.size(); i++) {
@@ -76,12 +92,22 @@ public class EquipmentScoringService {
         wu.setPrice(weights[0]); wu.setMargin(weights[1]); wu.setTrack(weights[2]); wu.setDim(weights[3]);
         resp.setWeightsUsed(wu);
         resp.setCandidates(candidates);
+        if (derived != null) {
+            EquipmentMatchResponse.SpecDerived sd = new EquipmentMatchResponse.SpecDerived();
+            sd.setLengthMm(derived.maxLengthMm());
+            sd.setWidthMm(derived.maxWidthMm());
+            sd.setHeightMm(derived.maxHeightMm());
+            sd.setWeightKg(derived.maxWeightKg());
+            sd.setSnippets(derived.snippets());
+            resp.setSpecDerived(sd);
+        }
         return resp;
     }
 
     private Candidate buildCandidate(MedEquipment e, TenderLot lot,
                                       EquipmentHistoryStatsService.Stats stats,
-                                      double[] w) {
+                                      double[] w,
+                                      Integer effLen, Integer effWid, Integer effHei, BigDecimal effWeight) {
         Long eId = e.getId();
         Long tId = e.getEquipmentType() != null ? e.getEquipmentType().getId() : null;
 
@@ -115,7 +141,7 @@ public class EquipmentScoringService {
         double trackV = Math.min(100.0, 25.0 * (Math.log(wins + 1) / Math.log(2)));
         SubScore track = new SubScore(round1(trackV), false, "побед: " + wins);
 
-        SubScore dim = computeDimScore(e, lot);
+        SubScore dim = computeDimScore(e, effLen, effWid, effHei, effWeight);
 
         double score = w[0]*price.getValue() + w[1]*margin.getValue() + w[2]*track.getValue() + w[3]*dim.getValue();
 
@@ -149,20 +175,20 @@ public class EquipmentScoringService {
         return c;
     }
 
-    private SubScore computeDimScore(MedEquipment e, TenderLot lot) {
+    private SubScore computeDimScore(MedEquipment e, Integer maxLen, Integer maxWid, Integer maxHei, BigDecimal maxWeight) {
         double sumUsed = 0;
         int count = 0;
-        if (lot.getMaxLengthMm() != null && lot.getMaxLengthMm() > 0 && e.getLengthMm() != null) {
-            sumUsed += (double) e.getLengthMm() / lot.getMaxLengthMm(); count++;
+        if (maxLen != null && maxLen > 0 && e.getLengthMm() != null) {
+            sumUsed += (double) e.getLengthMm() / maxLen; count++;
         }
-        if (lot.getMaxWidthMm() != null && lot.getMaxWidthMm() > 0 && e.getWidthMm() != null) {
-            sumUsed += (double) e.getWidthMm() / lot.getMaxWidthMm(); count++;
+        if (maxWid != null && maxWid > 0 && e.getWidthMm() != null) {
+            sumUsed += (double) e.getWidthMm() / maxWid; count++;
         }
-        if (lot.getMaxHeightMm() != null && lot.getMaxHeightMm() > 0 && e.getHeightMm() != null) {
-            sumUsed += (double) e.getHeightMm() / lot.getMaxHeightMm(); count++;
+        if (maxHei != null && maxHei > 0 && e.getHeightMm() != null) {
+            sumUsed += (double) e.getHeightMm() / maxHei; count++;
         }
-        if (lot.getMaxWeightKg() != null && lot.getMaxWeightKg().signum() > 0 && e.getWeightKg() != null) {
-            sumUsed += e.getWeightKg().doubleValue() / lot.getMaxWeightKg().doubleValue(); count++;
+        if (maxWeight != null && maxWeight.signum() > 0 && e.getWeightKg() != null) {
+            sumUsed += e.getWeightKg().doubleValue() / maxWeight.doubleValue(); count++;
         }
         if (count == 0) {
             return new SubScore(100.0, false, "габариты лота не заданы");
