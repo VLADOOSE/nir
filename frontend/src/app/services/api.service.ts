@@ -183,6 +183,30 @@ export class ApiService {
     return this.http.post<number>(`${this.base}/bulk-price/send`, body);
   }
 
+  /** Единый канал отправки КП: письма поставщикам + записи PriceRequest. */
+  sendPriceRequests(body: {
+    tenderId: number;
+    distributorIds: number[];
+    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number }[];
+  }): Observable<any[]> {
+    return this.http.post<any[]>(`${this.base}/price-requests/send`, body);
+  }
+
+  /** Подсказки поставщиков для запроса КП по лотам тендера. */
+  getLotSourcing(tenderId: number, lotIds: number[]): Observable<any> {
+    return this.http.get<any>(`${this.base}/tenders/${tenderId}/lot-sourcing`, {
+      params: { lotIds: lotIds.join(',') },
+    });
+  }
+
+  setProposedEquipment(lotId: number, equipmentId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/proposed-equipment`, { equipmentId });
+  }
+
+  clearProposedEquipment(lotId: number): Observable<any> {
+    return this.http.delete<any>(`${this.base}/lots/${lotId}/proposed-equipment`);
+  }
+
   // === Equipment stats ===
 
   getEquipmentStats(id: number): Observable<any> {
