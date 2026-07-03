@@ -336,6 +336,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
         *ngIf="matchLotId !== null"
         [lotId]="matchLotId"
         [lotNumber]="matchLotNumber || 0"
+        [proposedEquipmentId]="matchLotProposedId()"
+        (proposedChanged)="loadLots()"
         (close)="closeMatch()"
         (requestPrice)="onSmartMatchRequest($event)">
       </app-smart-match>
@@ -1092,30 +1094,33 @@ export class TendersComponent {
     this.matchLotNumber = null;
   }
 
+  matchLotProposedId(): number | null {
+    const lot = this.lots.find((l: any) => l.id === this.matchLotId);
+    return lot?.proposedEquipment?.id ?? null;
+  }
+
   onSmartMatchRequest(ev: { candidate: any; distributorId: number; distributorName: string }) {
     if (!this.matchLotId || !this.selectedTender) {
       this.notify.error('Лот не определён');
       return;
     }
-    const body = {
+    const lot = this.lots.find((l: any) => l.id === this.matchLotId);
+    this.api.sendPriceRequests({
       tenderId: this.selectedTender.id,
-      distributorId: ev.distributorId,
-      status: 'SENT',
-      sentAt: new Date().toISOString(),
+      distributorIds: [ev.distributorId],
       items: [{
         tenderLotId: this.matchLotId,
         medEquipmentId: ev.candidate.equipmentId,
-        requestedQuantity: 1
+        requestedQuantity: lot?.quantity ?? 1
       }]
-    };
-    this.api.createPriceRequest(body).subscribe({
-      next: () => {
-        this.notify.success(`КП у «${ev.distributorName}» создан и отправлен`);
+    }).subscribe({
+      next: (results) => {
+        this.kpToastFromResults(results);
         this.loadPriceRequests();
         this.matchLotId = null;
         this.matchLotNumber = null;
       },
-      error: err => this.notify.error(err.error?.message || 'Не удалось создать КП')
+      error: err => this.notify.error(err.error?.message || 'Не удалось отправить запрос КП')
     });
   }
 

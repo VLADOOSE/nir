@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 type Preset = 'BALANCED' | 'MAX_PROFIT' | 'RELIABILITY' | 'CUSTOM';
@@ -40,6 +41,12 @@ const LS_KEY = 'smartMatch.v1';
 
       <div class="sm-coldstart" *ngIf="result && !result.hasHistory">
         ⚠ Истории сделок пока нет — рекомендации основаны только на габаритах. После первых выигранных тендеров система будет учитывать маржу, цену и опыт.
+      </div>
+
+      <div class="sm-specderived" *ngIf="result?.specDerived as sd">
+        📐 Ограничения из спеки:
+        <ng-container *ngIf="sd.lengthMm">≤ {{ sd.lengthMm }}×{{ sd.widthMm }}×{{ sd.heightMm }} мм</ng-container>
+        <ng-container *ngIf="sd.weightKg"><span *ngIf="sd.lengthMm">, </span>≤ {{ sd.weightKg }} кг</ng-container>
       </div>
 
       <div class="sm-loading" *ngIf="loading">Загрузка…</div>
@@ -82,6 +89,10 @@ const LS_KEY = 'smartMatch.v1';
                 <button *ngIf="c.bestDistributor" class="btn-pr" (click)="requestPrice.emit({ candidate: c, distributorId: c.bestDistributor.distributorId, distributorName: c.bestDistributor.name })">
                   Запросить КП у {{ c.bestDistributor.name }}
                 </button>
+                <button class="btn-approve" *ngIf="proposedEquipmentId !== c.equipmentId" (click)="approve(c)">
+                  ☑ Утвердить модель
+                </button>
+                <span class="approved-badge" *ngIf="proposedEquipmentId === c.equipmentId">Предложена для лота</span>
               </td>
             </tr>
           </ng-container>
@@ -128,6 +139,10 @@ const LS_KEY = 'smartMatch.v1';
     .sm-table .estim strong { color: #059669; }
     .btn-pr { background: #1a56db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .btn-pr:hover { background: #1e40af; }
+    .sm-specderived { background: #eef2ff; border-left: 3px solid #6366f1; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #3730a3; }
+    .btn-approve { background: #0e9f6e; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px; }
+    .btn-approve:hover { background: #057a55; }
+    .approved-badge { display: inline-block; margin-left: 8px; background: #d1fae5; color: #065f46; border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
     .sm-toggle { background: #f3f4f6; border: 1px solid #d1d5db; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: #374151; }
     .sm-toggle:hover { background: #e5e7eb; }
     .sm-empty { text-align: center; color: #6b7280; padding: 24px; font-size: 13px; }
@@ -136,8 +151,10 @@ const LS_KEY = 'smartMatch.v1';
 export class SmartMatchComponent implements OnChanges {
   @Input() lotId!: number;
   @Input() lotNumber: number = 0;
+  @Input() proposedEquipmentId: number | null = null;
   @Output() close = new EventEmitter<void>();
   @Output() requestPrice = new EventEmitter<{ candidate: any; distributorId: number; distributorName: string }>();
+  @Output() proposedChanged = new EventEmitter<void>();
 
   preset: Preset = 'BALANCED';
   weights: Weights = { price: 25, margin: 25, track: 25, dim: 25 };
@@ -146,7 +163,7 @@ export class SmartMatchComponent implements OnChanges {
   expanded = new Set<number>();
   private debouncer = new Subject<void>();
 
-  constructor(private api: ApiService) {
+  constructor(private api: ApiService, private notify: NotificationService) {
     const saved = localStorage.getItem(LS_KEY);
     if (saved) {
       try {
@@ -162,6 +179,16 @@ export class SmartMatchComponent implements OnChanges {
     if (changes['lotId'] && this.lotId) {
       this.fetch();
     }
+  }
+
+  approve(c: any) {
+    this.api.setProposedEquipment(this.lotId, c.equipmentId).subscribe({
+      next: () => {
+        this.notify.success(`Модель «${c.name}» предложена для лота`);
+        this.proposedChanged.emit();
+      },
+      error: (e: any) => this.notify.error(e.error?.message || 'Не удалось утвердить модель'),
+    });
   }
 
   setPreset(p: Preset) {
