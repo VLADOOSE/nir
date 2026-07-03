@@ -405,18 +405,18 @@ export class PrivateRequestCardComponent implements OnChanges {
   requestPrice() {
     if (this.requestId == null || !this.selectedDistributorId || !this.selectedCount()) return;
     this.sending = true;
-    this.api.createPriceRequest({
+    this.api.sendPriceRequests({
       tenderId: this.requestId,
-      distributorId: this.selectedDistributorId,
-      status: 'SENT',
-      sentAt: new Date().toISOString(),
-      items: this.lines.filter(l => l._selected).map(l => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
+      distributorIds: [this.selectedDistributorId],
+      items: this.lines.filter(l => l._selected).map(l => ({
+        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? 1
+      }))
     }).subscribe({
-      next: () => {
+      next: (results) => {
         this.sending = false;
         for (const l of this.lines) l._selected = false;
         this.selectedDistributorId = null;
-        this.notify.success('КП запрошено');
+        this.kpToast(results);
         this.loadPriceRequests(this.requestId as number);
       },
       error: (e) => {
@@ -430,21 +430,29 @@ export class PrivateRequestCardComponent implements OnChanges {
   requestGroup(group: any) {
     if (this.requestId == null || !group?.distributor?.id || !group.lines?.length) return;
     this.sendingGroupId = group.distributor.id;
-    this.api.createPriceRequest({
+    this.api.sendPriceRequests({
       tenderId: this.requestId,
-      distributorId: group.distributor.id,
-      status: 'SENT',
-      sentAt: new Date().toISOString(),
-      items: group.lines.map((l: any) => ({ tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity }))
+      distributorIds: [group.distributor.id],
+      items: group.lines.map((l: any) => ({
+        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? 1
+      }))
     }).subscribe({
-      next: () => {
+      next: (results) => {
         this.sendingGroupId = null;
-        this.notify.success('КП запрошено у «' + group.distributor.name + '»');
+        this.kpToast(results);
         this.loadPriceRequests(this.requestId as number);
         this.api.getPrivateRequestSourcing(this.requestId as number).subscribe({ next: s => { this.sourcing = s; this.cdr.detectChanges(); } });
       },
       error: (e) => { this.sendingGroupId = null; this.notify.error('Ошибка: ' + (e.error?.message || e.message)); this.cdr.detectChanges(); }
     });
+  }
+
+  private kpToast(results: any[]) {
+    const r = (results || [])[0];
+    if (!r) { this.notify.success('КП запрошено'); return; }
+    if (r.emailSent) this.notify.success(`КП отправлено: «${r.distributorName}»`);
+    else if (r.reason === 'NO_EMAIL') this.notify.error(`КП создано, но у «${r.distributorName}» нет email — письмо не ушло`);
+    else this.notify.error(`КП создано, но письмо «${r.distributorName}» не отправлено (ошибка SMTP)`);
   }
 
   saveResponses(pr: any) {

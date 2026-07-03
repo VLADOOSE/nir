@@ -367,20 +367,19 @@ export class BulkPriceModalComponent implements OnChanges {
       return;
     }
 
-    const body = {
-      tenderId: this.tenderId,
-      distributorId: distId,
-      items
-    };
-
     this.sendingGroupIds.add(distId);
     this.cdr.detectChanges();
 
-    this.api.bulkPriceSend(body).subscribe({
-      next: () => {
+    this.api.sendPriceRequests({ tenderId: this.tenderId, distributorIds: [distId], items }).subscribe({
+      next: (results: any[]) => {
         this.sendingGroupIds.delete(distId);
         this.sentGroupIds.add(distId);
-        this.notify.success(`КП отправлено: ${group?.distributor?.name || 'дистрибьютор'} (${items.length} поз.)`);
+        const r = (results || [])[0];
+        if (r && !r.emailSent) {
+          this.notify.error(`КП создано (${items.length} поз.), но письмо «${group?.distributor?.name || ''}» не ушло${r.reason === 'NO_EMAIL' ? ' — нет email' : ' (ошибка SMTP)'}`);
+        } else {
+          this.notify.success(`КП отправлено: ${group?.distributor?.name || 'дистрибьютор'} (${items.length} поз.)`);
+        }
         this.cdr.detectChanges();
       },
       error: (err: any) => {
