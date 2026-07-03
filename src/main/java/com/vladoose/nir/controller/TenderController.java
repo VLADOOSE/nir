@@ -6,8 +6,10 @@ import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.dto.response.LotSourcingResponse;
 import com.vladoose.nir.integration.goszakup.GoszakupImportScheduler;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.service.LotSourcingService;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.mapper.TenderMapper;
@@ -34,6 +36,7 @@ public class TenderController {
     private final TenderLotMapper tenderLotMapper;
     private final ActivityApplyMapper activityApplyMapper;
     private final GoszakupImportScheduler goszakupScheduler;
+    private final LotSourcingService lotSourcingService;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -41,7 +44,8 @@ public class TenderController {
                             TenderMapper mapper,
                             TenderLotMapper tenderLotMapper,
                             ActivityApplyMapper activityApplyMapper,
-                            GoszakupImportScheduler goszakupScheduler) {
+                            GoszakupImportScheduler goszakupScheduler,
+                            LotSourcingService lotSourcingService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -49,6 +53,13 @@ public class TenderController {
         this.tenderLotMapper = tenderLotMapper;
         this.activityApplyMapper = activityApplyMapper;
         this.goszakupScheduler = goszakupScheduler;
+        this.lotSourcingService = lotSourcingService;
+    }
+
+    /** Подсказки поставщиков для запроса КП по выбранным лотам. */
+    @GetMapping("/{id}/lot-sourcing")
+    public LotSourcingResponse lotSourcing(@PathVariable Long id, @RequestParam List<Long> lotIds) {
+        return lotSourcingService.build(id, lotIds);
     }
 
     @GetMapping

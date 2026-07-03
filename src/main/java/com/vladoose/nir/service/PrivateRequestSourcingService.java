@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.response.SourcingGroupResponse;
 import com.vladoose.nir.dto.response.SourcingPreviewResponse;
 import com.vladoose.nir.entity.Distributor;
 import com.vladoose.nir.mapper.DistributorMapper;
+import com.vladoose.nir.util.BrandMatch;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -38,7 +39,7 @@ public class PrivateRequestSourcingService {
         for (PrivateRequestLineResponse line : lines) {
             List<Distributor> matching = new ArrayList<>();
             for (Distributor d : distributors) {
-                if (carriesBrand(d, line.getManufact())) {
+                if (BrandMatch.firstCarried(d.getBrands(), line.getManufact()) != null) {
                     matching.add(d);
                 }
             }
@@ -61,19 +62,5 @@ public class PrivateRequestSourcingService {
         preview.setGroups(new ArrayList<>(byDistributor.values()));
         preview.setUnmatchedLines(unmatched);
         return preview;
-    }
-
-    /** Поставщик «закрывает» строку, если её бренд (manufact) содержит любой бренд поставщика (case-insensitive). */
-    private boolean carriesBrand(Distributor d, String manufact) {
-        if (manufact == null || manufact.isBlank() || d.getBrands() == null) {
-            return false;
-        }
-        String m = manufact.toLowerCase();
-        for (String b : d.getBrands()) {
-            if (b != null && !b.isBlank() && m.contains(b.trim().toLowerCase())) {
-                return true;
-            }
-        }
-        return false;
     }
 }
