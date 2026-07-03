@@ -19,4 +19,5 @@ public class TenderLotResponse {
     private Integer maxHeightMm;
     private BigDecimal maxWeightKg;
     private String requiredSpec;
+    private ProposedEquipmentResponse proposedEquipment;
 }

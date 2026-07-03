@@ -1,14 +1,20 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
 import com.vladoose.nir.dto.response.TenderLotResponse;
+import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.TenderLotMapper;
+import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,15 +25,41 @@ public class TenderLotController {
     private final TenderService tenderService;
     private final TenderLotMapper mapper;
     private final com.vladoose.nir.service.RegistryMatchService registryMatchService;
+    private final MedEquipmentService medEquipmentService;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
                                TenderLotMapper mapper,
-                               com.vladoose.nir.service.RegistryMatchService registryMatchService) {
+                               com.vladoose.nir.service.RegistryMatchService registryMatchService,
+                               MedEquipmentService medEquipmentService) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
         this.registryMatchService = registryMatchService;
+        this.medEquipmentService = medEquipmentService;
+    }
+
+    /** Утвердить модель каталога как «предложенное оборудование» лота. */
+    @PostMapping("/{id}/proposed-equipment")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TenderLotResponse setProposedEquipment(@PathVariable Long id,
+                                                  @Valid @RequestBody ProposedEquipmentRequest request) {
+        TenderLot lot = service.findById(id);
+        MedEquipment eq = medEquipmentService.findById(request.getEquipmentId());
+        // em.find обходит hibernate-фильтр рынка — явный гард от чужого рынка
+        if (eq.getMarket() != null && eq.getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Оборудование не найдено: id=" + request.getEquipmentId());
+        }
+        lot.setProposedEquipment(eq);
+        return mapper.toResponse(service.save(lot));
+    }
+
+    @DeleteMapping("/{id}/proposed-equipment")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TenderLotResponse clearProposedEquipment(@PathVariable Long id) {
+        TenderLot lot = service.findById(id);
+        lot.setProposedEquipment(null);
+        return mapper.toResponse(service.save(lot));
     }
 
     @GetMapping("/{id}")

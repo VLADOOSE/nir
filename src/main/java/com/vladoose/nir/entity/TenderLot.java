@@ -54,4 +54,9 @@ public class TenderLot {
 
     @Column(name = "required_spec", columnDefinition = "TEXT")
     private String requiredSpec;
+
+    /** Предложенная (одобренная) модель каталога; подставляется в запрос КП по лоту. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "proposed_equipment_id")
+    private MedEquipment proposedEquipment;
 }
