@@ -6,9 +6,11 @@ import com.vladoose.nir.mapper.DistributorMapper;
 import com.vladoose.nir.mapper.MedEquipmentMapper;
 import com.vladoose.nir.mapper.TenderMapper;
 import com.vladoose.nir.service.BulkPriceRequestService;
+import com.vladoose.nir.service.PriceRequestSendService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
@@ -19,15 +21,18 @@ public class BulkPriceController {
     private final DistributorMapper distributorMapper;
     private final MedEquipmentMapper medEquipmentMapper;
     private final TenderMapper tenderMapper;
+    private final PriceRequestSendService sendService;
 
     public BulkPriceController(BulkPriceRequestService service,
                                DistributorMapper distributorMapper,
                                MedEquipmentMapper medEquipmentMapper,
-                               TenderMapper tenderMapper) {
+                               TenderMapper tenderMapper,
+                               PriceRequestSendService sendService) {
         this.service = service;
         this.distributorMapper = distributorMapper;
         this.medEquipmentMapper = medEquipmentMapper;
         this.tenderMapper = tenderMapper;
+        this.sendService = sendService;
     }
 
     @GetMapping("/preview/{tenderId}")
@@ -50,12 +55,13 @@ public class BulkPriceController {
         return r;
     }
 
+    /** Тонкий делегат к единому каналу отправки (кандидат на удаление — фронт зовёт /api/price-requests/send). */
     @PostMapping("/send")
     public Long send(@Valid @RequestBody BulkPriceSendRequest req) {
         var items = req.getItems().stream()
-                .map(i -> new BulkPriceRequestService.SendItem(i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
+                .map(i -> new PriceRequestSendService.SendItem(i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
                 .toList();
-        var pr = service.sendGroup(req.getTenderId(), req.getDistributorId(), items);
-        return pr.getId();
+        var results = sendService.send(req.getTenderId(), List.of(req.getDistributorId()), items);
+        return results.get(0).priceRequestId();
     }
 }

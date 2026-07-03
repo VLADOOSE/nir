@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.PriceRequestRequest;
+import com.vladoose.nir.dto.request.PriceRequestSendRequest;
 import com.vladoose.nir.dto.response.PriceRequestResponse;
 import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
@@ -9,10 +10,12 @@ import com.vladoose.nir.mapper.PriceRequestMapper;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.DistributorService;
 import com.vladoose.nir.service.MedEquipmentService;
+import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PriceRequestService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +34,7 @@ public class PriceRequestController {
     private final DistributorService distributorService;
     private final PriceRequestItemRepository itemRepository;
     private final PriceRequestMapper mapper;
+    private final PriceRequestSendService sendService;
 
     public PriceRequestController(PriceRequestService service,
                                   TenderService tenderService,
@@ -38,7 +42,8 @@ public class PriceRequestController {
                                   MedEquipmentService medEquipmentService,
                                   DistributorService distributorService,
                                   PriceRequestItemRepository itemRepository,
-                                  PriceRequestMapper mapper) {
+                                  PriceRequestMapper mapper,
+                                  PriceRequestSendService sendService) {
         this.service = service;
         this.tenderService = tenderService;
         this.tenderLotService = tenderLotService;
@@ -46,6 +51,18 @@ public class PriceRequestController {
         this.distributorService = distributorService;
         this.itemRepository = itemRepository;
         this.mapper = mapper;
+        this.sendService = sendService;
+    }
+
+    /** Единый канал: создать КП на каждого поставщика и отправить письмо с токеном [КП-id]. */
+    @PostMapping("/send")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<PriceRequestSendService.SendResult> send(@Valid @RequestBody PriceRequestSendRequest req) {
+        var items = req.getItems().stream()
+                .map(i -> new PriceRequestSendService.SendItem(
+                        i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
+                .toList();
+        return sendService.send(req.getTenderId(), req.getDistributorIds(), items);
     }
 
     @GetMapping
