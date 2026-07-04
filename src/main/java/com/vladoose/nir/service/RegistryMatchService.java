@@ -79,16 +79,17 @@ public class RegistryMatchService {
     /** Общий матч по лоту: бренд задан → бренд-путь; иначе значимые токены имени (+ токены из
      *  характеристик разобранного ТЗ, вес ×0.5) → пословный триграммный матч. Флаг distinctive —
      *  есть ли чем различать записи (≥2 токена или задан бренд); при 1 токене процент врёт. */
-    private record LotMatch(List<RegistryCandidateResponse> candidates, boolean distinctive) {}
+    private record LotMatch(List<RegistryCandidateResponse> candidates, boolean distinctive, boolean techSpecParsed) {}
 
     private LotMatch computeLotMatch(TenderLot lot, int limit) {
+        String chars = TechSpecExtractor.characteristics(lot.getRequiredSpec()); // один раз (может быть большой текст)
+        boolean techSpecParsed = chars != null;
         if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
-            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), true);
+            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), true, techSpecParsed);
         }
-        List<WeightedToken> tokens = LotQueryTokenizer.tokenize(
-                lot.getEquipName(), TechSpecExtractor.characteristics(lot.getRequiredSpec()));
+        List<WeightedToken> tokens = LotQueryTokenizer.tokenize(lot.getEquipName(), chars);
         if (tokens.isEmpty()) {
-            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), false);
+            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), false, techSpecParsed);
         }
         String toks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
         String wgts = tokens.stream()
@@ -98,7 +99,7 @@ public class RegistryMatchService {
                 .map(this::toCandidate)
                 .toList();
         // ≥2 значимых токена → есть чем различать записи; 1 токен → совпадение только по названию
-        return new LotMatch(candidates, tokens.size() >= 2);
+        return new LotMatch(candidates, tokens.size() >= 2, techSpecParsed);
     }
 
     /** Кандидаты реестра по лоту (для LotSourcingService) — прежний контракт. */
@@ -116,7 +117,7 @@ public class RegistryMatchService {
         LotRegistryMatchResponse r = new LotRegistryMatchResponse();
         r.setCandidates(m.candidates());
         r.setDistinctive(m.distinctive());
-        r.setTechSpecParsed(TechSpecExtractor.characteristics(lot.getRequiredSpec()) != null);
+        r.setTechSpecParsed(m.techSpecParsed());
         return r;
     }
 
