@@ -7,8 +7,6 @@ import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
-import com.vladoose.nir.context.MarketContext;
-import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.entity.TenderLot;
