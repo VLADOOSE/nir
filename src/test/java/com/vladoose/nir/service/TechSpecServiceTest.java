@@ -138,6 +138,17 @@ class TechSpecServiceTest {
     }
 
     @Test
+    void downloadReturns404_lotUntouched() {
+        // ref есть, но файл на площадке недоступен (downloadFile → null)
+        fake.techSpecByKey.put("ZZTS-874-1|Пульсоксиметр", new LotTechSpecRef("http://f/gone", "x.pdf", false));
+        assertThatThrownBy(() -> service.parse(lot.getId()))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("недоступен для скачивания");
+        assertThat(tenderLotRepository.findById(lot.getId()).orElseThrow().getRequiredSpec())
+                .isEqualTo("медицинский");
+    }
+
+    @Test
     void unreadablePdf_lotUntouched() {
         fake.techSpecByKey.put("ZZTS-874-1|Пульсоксиметр", new LotTechSpecRef("http://f/2", "x.pdf", false));
         fake.filesByUrl.put("http://f/2", "не pdf".getBytes(StandardCharsets.UTF_8));

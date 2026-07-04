@@ -66,9 +66,7 @@ public class FakeGoszakupClient implements GoszakupClient {
         return techSpecByKey.get(numberAnno + "|" + lotNameRu);
     }
     @Override public byte[] downloadFile(String url) {
-        byte[] b = filesByUrl.get(url);
-        if (b == null) throw new IllegalStateException("fake: нет файла " + url);
-        return b;
+        return filesByUrl.get(url); // как живой клиент: 404 → null (файл недоступен)
     }
 
     // --- builders для тестов ---
