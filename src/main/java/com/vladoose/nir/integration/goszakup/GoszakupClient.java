@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
+import com.vladoose.nir.integration.goszakup.dto.LotTechSpecRef;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyV3PageDto;
@@ -17,6 +18,10 @@ public interface GoszakupClient {
     List<LotDto> fetchLots(String numberAnno);
     /** null, если организация не найдена. */
     SubjectDto fetchSubject(String bin);
+    /** Файл «Техническая спецификация» лота (матч по name_ru); null — лот/файл не найден. */
+    LotTechSpecRef fetchLotTechSpec(String numberAnno, String lotNameRu);
+    /** Скачать файл по прямому URL площадки (Bearer-токен); null — файл не найден (404). */
+    byte[] downloadFile(String url);
     /** true, если задан токен (иначе импорт выключен). */
     boolean isConfigured();
 }

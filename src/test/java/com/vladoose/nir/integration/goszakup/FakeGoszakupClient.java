@@ -3,6 +3,7 @@ package com.vladoose.nir.integration.goszakup;
 import com.vladoose.nir.integration.goszakup.dto.KatoRefDto;
 import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
+import com.vladoose.nir.integration.goszakup.dto.LotTechSpecRef;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
@@ -54,6 +55,20 @@ public class FakeGoszakupClient implements GoszakupClient {
     @Override public SubjectDto fetchSubject(String bin) {
         if (failingSubjectBins.contains(bin)) throw new RuntimeException("fake subject failure: " + bin);
         return subjectsByBin.get(bin);
+    }
+
+    /** ключ: numberAnno + "|" + lotNameRu → ссылка на техспеку (отсутствие ключа = null). */
+    public final Map<String, LotTechSpecRef> techSpecByKey = new HashMap<>();
+    /** filePath → байты файла. */
+    public final Map<String, byte[]> filesByUrl = new HashMap<>();
+
+    @Override public LotTechSpecRef fetchLotTechSpec(String numberAnno, String lotNameRu) {
+        return techSpecByKey.get(numberAnno + "|" + lotNameRu);
+    }
+    @Override public byte[] downloadFile(String url) {
+        byte[] b = filesByUrl.get(url);
+        if (b == null) throw new IllegalStateException("fake: нет файла " + url);
+        return b;
     }
 
     // --- builders для тестов ---

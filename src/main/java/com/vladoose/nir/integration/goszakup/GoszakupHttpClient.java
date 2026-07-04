@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
+import com.vladoose.nir.integration.goszakup.dto.LotTechSpecRef;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
@@ -119,6 +120,69 @@ public class GoszakupHttpClient implements GoszakupClient {
             return null; // организации нет в реестре — регион просто не определится
         } catch (java.io.IOException e) {
             throw new IllegalStateException("goszakup: разбор JSON: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public LotTechSpecRef fetchLotTechSpec(String numberAnno, String lotNameRu) {
+        // живой формат подтверждён 2026-07-04: Files лежат на уровне лота, техспека — nameRu="Техническая спецификация"
+        String query = "query($anno:String,$l:Int){ Lots(filter:{trdBuyNumberAnno:$anno}, limit:$l){ "
+                + "lotNumber nameRu Files{ nameRu originalName filePath } } }";
+        try {
+            ObjectNode vars = objectMapper.createObjectNode();
+            vars.put("anno", numberAnno);
+            vars.put("l", 100); // многолотовые тендеры — до ~50 лотов
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("query", query);
+            body.set("variables", vars);
+            JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
+            if (root.path("errors").size() > 0) {
+                throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+            }
+            return parseLotTechSpec(root, lotNameRu);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
+        }
+    }
+
+    /** Чистая функция: из ответа v3 Lots достать файл техспеки лота по name_ru (trim, case-insensitive). */
+    static LotTechSpecRef parseLotTechSpec(JsonNode root, String lotNameRu) {
+        String wanted = lotNameRu == null ? "" : lotNameRu.trim();
+        LotTechSpecRef first = null;
+        int matched = 0;
+        for (JsonNode lot : root.path("data").path("Lots")) {
+            if (!wanted.equalsIgnoreCase(lot.path("nameRu").asText("").trim())) continue;
+            for (JsonNode f : lot.path("Files")) {
+                if (!"Техническая спецификация".equalsIgnoreCase(f.path("nameRu").asText("").trim())) continue;
+                matched++;
+                if (first == null) {
+                    first = new LotTechSpecRef(f.path("filePath").asText(null),
+                            f.path("originalName").asText(null), false);
+                }
+                break; // один файл техспеки на лот
+            }
+        }
+        if (first == null) return null;
+        return matched > 1 ? new LotTechSpecRef(first.filePath(), first.originalName(), true) : first;
+    }
+
+    @Override
+    public byte[] downloadFile(String url) {
+        // без Accept: application/json — отдаётся бинарник (octet-stream)
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .GET()
+                    .header("Authorization", "Bearer " + token)
+                    .timeout(Duration.ofSeconds(60)).build();
+            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() == 404) return null; // файл удалили/протух hash — вызывающий решает (404 к лоту)
+            if (resp.statusCode() / 100 != 2) {
+                throw new IllegalStateException("goszakup download " + resp.statusCode() + " на " + url);
+            }
+            return resp.body();
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new IllegalStateException("goszakup download недоступен: " + e.getMessage(), e);
         }
     }
 
