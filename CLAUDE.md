@@ -115,11 +115,12 @@
 - **Редактирование частной заявки:** `PUT /api/private-requests/{id}` (`PrivateRequestUpdate`) — правка/добавление/удаление строк (через коллекцию orphanRemoval; строки с уже запрошенным КП не удаляются — FK). UI: «✎ Редактировать» в карточке → инлайн-грид (наименование/бренд/кол-во).
 - **Импорт из письма + «➕ Новый клиент»:** письмо клиники из «Входящих» → тот же грид D1 из сохранённого вложения; нет клиента — завести нового прямо в диалоге (имя из отправителя). Превью текста письма (свернуть/развернуть), колонка «Получено» (дата + день недели, `Intl` ru-RU).
 - **Реестр-сверка** (`/registry-reconciliation`), отчёты, дашборд, глобальный поиск, типы оборудования, учреждения, дистрибьюторы — есть.
+- **Лотовый запрос КП + предложенная модель (оба рынка):** единый канал отправки `POST /api/price-requests/send` (`PriceRequestSendService` + `KpEmailComposer` — брендинг по `pr.getMarket()`, токен `[КП-id]`, № РУ, обрезка спеки 1200, ссылка на объявление: KZ goszakup по числовому id из `sourceExtId` до дефиса / RF zakupki по номеру; результат per-поставщик `{emailSent, reason NO_EMAIL|SEND_FAILED}` — запись КП живёт даже без письма). На него переведены ВСЕ флоу: лотовый (чекбоксы лотов + «выбрать все» + кнопка «КП» в строке → панель поставщиков с подсказками `GET /api/tenders/{id}/lot-sourcing` — бренд предложенной модели или производители реестр-кандидатов НЦЭЛС ≥0.35, `BrandMatch`), smart-match, bulk-модалка, частные заявки (дыра «SENT без письма» закрыта). «Предложенная модель» — `tender_lot.proposed_equipment_id` (V4, ON DELETE SET NULL), апрув из smart-match (`POST/DELETE /api/lots/{id}/proposed-equipment`, гард чужого рынка: `em.find` обходит hibernate-фильтр), подставляется в КП-items. `SpecConstraintExtractor` — «не более A×B×C мм/см/м» + вес кг/г из текста спеки («не менее» игнорируется), питает `scoreLot`, когда все структурные поля лота пусты; `specDerived` в ответе матча показывается в smart-match. Письмостроение из `BulkPriceRequestService` выпилено (остался `buildPreview`); `POST /api/bulk-price/send` — тонкий делегат к `sendService`.
 
 ## 9. Почта — детально (блок D2)
 
 Модель: **info@ = входящие запросы клиентов (читаем и парсим), zakup@ = отправка дистрибьюторам (+ их ответы)**.
-- **Отправка КП:** живой путь — `BulkPriceRequestService.sendGroup` → `EmailService.sendEmail(...)`. Тема несёт токен `[КП-<id>]` (хелпер `KpToken.subjectToken/parse`, regex `\[КП-(\d+)\]`). Отдельного `/api/email/send` НЕТ (устаревшее упоминание из старого CLAUDE.md).
+- **Отправка КП:** единый живой путь — `PriceRequestSendService.send` → `KpEmailComposer.compose` → `EmailService.sendEmail(...)` (см. §8, «Лотовый запрос КП»). Тема несёт токен `[КП-<id>]` (хелпер `KpToken.subjectToken/parse`, regex `\[КП-(\d+)\]`). Отдельного `/api/email/send` НЕТ (устаревшее упоминание из старого CLAUDE.md).
 - **Приём (IMAP):** `MailReceiveService.poll()` (сырой `jakarta.mail`, поиск непрочитанных `FlagTerm`). По умолчанию ВЫКЛ (`mail.imap.enabled=false`). Классификация: токен в теме → `SUPPLIER_RESPONSE` (матч к `PriceRequest` по id; статус CREATED/SENT → RESPONDED, ACCEPTED/REJECTED/CLOSED не трогаем); есть .xlsx/.xls вложение → `CLIENT_REQUEST` (в «Входящие», вложение в BYTEA); иначе → `UNMATCHED`. Помечает SEEN (идемпотентно). **Гард `mail.imap.since-minutes` (дефолт 60)** — обрабатывает только письма за последние N минут (не трогает старый бэклог реального ящика). Рынок ящика — `mail.imap.market` (KZ).
 - **Парсинг письма (важно для реальных писем):** **рекурсивный обход multipart** (вложение часто во вложенном `multipart/alternative`); **декод MIME-имени файла** (`MimeUtility.decodeText` — кириллица в `=?UTF-8?B?...?=`); распознавание Excel и по Content-Type. `received_at` берётся из письма (`getReceivedDate`/`getSentDate`), не из времени опроса.
 - **`InboundController`** (`/api/inbound`): GET список, POST `/poll`, POST `/{id}/preview` (грид D1 по сохранённому вложению), POST `/{id}/processed`.
@@ -168,7 +169,7 @@ Standalone-компоненты, инлайн-шаблоны + `styles: []`. `Ap
 
 ## 15. API (основное)
 
-`/api/auth/login`; `/api/facilities`, `/api/distributors`, `/api/equipment` (+ `/match/{lotId}`), `/api/equipment-types`, `/api/users`; `/api/tenders` (+ `/search`, `/{id}/lots`, `/{id}/applies`), `/api/lots`; `/api/applies`, `/api/apply-items`; `/api/private-requests` (GET/POST/**PUT {id}**, `/{id}/sourcing`, `/import/preview` multipart, `/import/commit`); `/api/price-requests` (+ `/{id}/responses`, accept/close), `/api/bulk-price/*`; `/api/inbound` (GET, `/poll`, `/{id}/preview`, `/{id}/processed`); `/api/registry-*` (сверка), `/api/reports/*`. Записи — `@PreAuthorize ADMIN`.
+`/api/auth/login`; `/api/facilities`, `/api/distributors`, `/api/equipment` (+ `/match/{lotId}`), `/api/equipment-types`, `/api/users`; `/api/tenders` (+ `/search`, `/{id}/lots`, `/{id}/applies`), `/api/lots`; `/api/applies`, `/api/apply-items`; `/api/private-requests` (GET/POST/**PUT {id}**, `/{id}/sourcing`, `/import/preview` multipart, `/import/commit`); `/api/price-requests` (+ `/{id}/responses`, accept/close, **`/send`** — единый канал КП), `/api/tenders/{id}/lot-sourcing`, `/api/lots/{id}/proposed-equipment` (POST/DELETE), `/api/bulk-price/*` (preview + `/send`-делегат); `/api/inbound` (GET, `/poll`, `/{id}/preview`, `/{id}/processed`); `/api/registry-*` (сверка), `/api/reports/*`. Записи — `@PreAuthorize ADMIN`.
 
 ## 16. Roadmap / бэклог
 
@@ -177,7 +178,9 @@ Standalone-компоненты, инлайн-шаблоны + `styles: []`. `Ap
 - Авто-резолв клиента по адресу отправителя (match `facility.email`).
 - Структурный разбор ответа поставщика (цена → `PriceRequestItem.responsePrice`).
 - LLM-парсер вложений (опт-ин по Anthropic API-ключу — отдельная оплата по токенам; дёшево на Haiku) как фолбэк к правилам; CSV/PDF.
-- Нечёткий матч брендов (pg_trgm/синонимы/транслит: «Mindray»↔«Майндрей»↔«Shenzhen Mindray»).
+- Нечёткий матч брендов (pg_trgm/синонимы/транслит: «Mindray»↔«Майндрей»↔«Shenzhen Mindray»). Сейчас `BrandMatch` — case-insensitive substring.
+- Пооосевые ограничения из спеки («длина не более X мм» отдельными фразами, диапазоны) — `SpecConstraintExtractor` пока берёт только триплет A×B×C + вес.
+- Удалить тонкий делегат `/api/bulk-price/send` (фронт уже полностью на `/api/price-requests/send`).
 - Парсер казахстанских смет: пропуск служебных строк (нумерация, ИТОГО), сид типовых заголовков.
 - RF-реестр (Росздравнадзор) для рынка РФ.
 - КП-генератор клиенту (НДС/происхождение).
