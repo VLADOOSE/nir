@@ -61,6 +61,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error);
     }
 
+    @ExceptionHandler(UnprocessableException.class)
+    public ResponseEntity<ApiError> handleUnprocessable(UnprocessableException ex) {
+        ApiError error = ApiError.builder()
+                .status(HttpStatus.UNPROCESSABLE_ENTITY.value())
+                .message(ex.getMessage())
+                .errors(null)
+                .build();
+        return ResponseEntity.unprocessableEntity().body(error);
+    }
+
+    @ExceptionHandler(UpstreamException.class)
+    public ResponseEntity<ApiError> handleUpstream(UpstreamException ex) {
+        ApiError error = ApiError.builder()
+                .status(HttpStatus.BAD_GATEWAY.value())
+                .message(ex.getMessage())
+                .errors(null)
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(error);
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleNotReadable(HttpMessageNotReadableException ex) {
         String message = "Неверный формат данных в запросе";

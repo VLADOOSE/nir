@@ -3,6 +3,7 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
+import com.vladoose.nir.dto.response.ParseTechSpecResponse;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.Tender;
@@ -11,6 +12,7 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.service.MedEquipmentService;
+import com.vladoose.nir.service.TechSpecService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import jakarta.validation.Valid;
@@ -26,17 +28,35 @@ public class TenderLotController {
     private final TenderLotMapper mapper;
     private final com.vladoose.nir.service.RegistryMatchService registryMatchService;
     private final MedEquipmentService medEquipmentService;
+    private final TechSpecService techSpecService;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
                                TenderLotMapper mapper,
                                com.vladoose.nir.service.RegistryMatchService registryMatchService,
-                               MedEquipmentService medEquipmentService) {
+                               MedEquipmentService medEquipmentService,
+                               TechSpecService techSpecService) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
         this.registryMatchService = registryMatchService;
         this.medEquipmentService = medEquipmentService;
+        this.techSpecService = techSpecService;
+    }
+
+    /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup в поля лота. */
+    @PostMapping("/{id}/parse-techspec")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ParseTechSpecResponse parseTechSpec(@PathVariable Long id) {
+        TechSpecService.ParseResult r = techSpecService.parse(id);
+        ParseTechSpecResponse resp = new ParseTechSpecResponse();
+        resp.setLot(mapper.toResponse(r.lot()));
+        resp.setSpecFound(true);
+        resp.setDimsFound(r.dimsFound());
+        resp.setWeightFound(r.weightFound());
+        resp.setAmbiguous(r.ambiguous());
+        resp.setSource(r.source());
+        return resp;
     }
 
     /** Утвердить модель каталога как «предложенное оборудование» лота. */
