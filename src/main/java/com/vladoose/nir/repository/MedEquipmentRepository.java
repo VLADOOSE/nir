@@ -7,10 +7,14 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long> {
 
     List<MedEquipment> findByEquipmentTypeId(Long equipmentTypeId);
+
+    /** Позиция каталога, уже привязанная к РУ (дедуп при «Взять из реестра»); рыночный фильтр — аспектом. */
+    Optional<MedEquipment> findFirstByRegistrationRegNumber(String regNumber);
 
     @Query("SELECT e FROM MedEquipment e WHERE " +
            "(:equipTypeId IS NULL OR e.equipmentType.id = :equipTypeId) AND " +

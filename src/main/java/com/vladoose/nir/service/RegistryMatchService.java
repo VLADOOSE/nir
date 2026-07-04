@@ -1,11 +1,14 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.RegistrationAction;
 import com.vladoose.nir.dto.response.ReconciliationRowResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
+import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.entity.TenderLot;
@@ -94,6 +97,42 @@ public class RegistryMatchService {
         return registryRepository.searchByTokens(toks, wgts, limit).stream()
                 .map(this::toCandidate)
                 .toList();
+    }
+
+    /**
+     * «Взять из реестра в работу»: РУ → позиция каталога (create/reuse) → предложенная модель лота.
+     * Каталог KZ наполняется по ходу работы с тендерами; оператор подтверждает кандидата вручную.
+     */
+    @Transactional
+    public TenderLot adoptForLot(Long lotId, String regNumber) {
+        TenderLot lot = tenderLotRepository.findById(lotId)
+                .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
+        // findById = em.find обходит фильтр рынка → явный гард (паттерн proposed-equipment)
+        if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + lotId);
+        }
+        MedRegistry reg = registryRepository.findByRegNumber(regNumber)
+                .orElseThrow(() -> new NotFoundException("РУ не найдено в реестре: " + regNumber));
+
+        MedEquipment eq = equipmentRepository.findFirstByRegistrationRegNumber(regNumber)
+                .orElseGet(() -> {
+                    MedEquipment e = new MedEquipment();
+                    e.setName(trim255(reg.getName()));
+                    e.setManufact(reg.getProducer() != null && !reg.getProducer().isBlank()
+                            ? trim255(reg.getProducer()) : "не указан");
+                    e.setRegistrationStatus(RegistrationStatus.REGISTERED);
+                    e.setRegistration(reg);
+                    e.setRegistrationCheckedAt(OffsetDateTime.now());
+                    e.setMarket(MarketContext.get()); // пред-штамп (defense-in-depth к листенеру)
+                    return equipmentRepository.save(e);
+                });
+
+        lot.setProposedEquipment(eq);
+        return tenderLotRepository.save(lot);
+    }
+
+    private static String trim255(String s) {
+        return s != null && s.length() > 255 ? s.substring(0, 255) : s;
     }
 
     @Transactional

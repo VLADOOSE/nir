@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.AdoptRegistryRequest;
 import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
 import com.vladoose.nir.dto.response.ParseTechSpecResponse;
@@ -42,6 +43,14 @@ public class TenderLotController {
         this.registryMatchService = registryMatchService;
         this.medEquipmentService = medEquipmentService;
         this.techSpecService = techSpecService;
+    }
+
+    /** «Взять из реестра в работу»: РУ → позиция каталога → предложенная модель лота. */
+    @PostMapping("/{id}/adopt-registry")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TenderLotResponse adoptRegistry(@PathVariable Long id,
+                                           @Valid @RequestBody AdoptRegistryRequest request) {
+        return mapper.toResponse(registryMatchService.adoptForLot(id, request.getRegNumber()));
     }
 
     /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup в поля лота. */
