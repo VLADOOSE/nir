@@ -200,6 +200,11 @@ export class ApiService {
     return this.http.delete<any>(`${this.base}/lots/${lotId}/proposed-equipment`);
   }
 
+  /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup. */
+  parseLotTechSpec(lotId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/parse-techspec`, {});
+  }
+
   // === Equipment stats ===
 
   getEquipmentStats(id: number): Observable<any> {

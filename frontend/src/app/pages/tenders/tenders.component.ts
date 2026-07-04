@@ -268,6 +268,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
             <td class="spec-cell" [class.spec-open]="l._specOpen" (click)="toggleSpec(l)"
                 [title]="l._specOpen ? 'Свернуть' : 'Развернуть спецификацию'">{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
+              <button class="btn btn-tz" *ngIf="isImportedTender()" [disabled]="tzBusy.has(l.id)"
+                      (click)="parseTechSpec(l)" title="Скачать и разобрать техспецификацию с goszakup">
+                {{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}
+              </button>
               <button class="btn btn-kp" (click)="openKpPanelFor(l)">КП</button>
               <button class="btn btn-registry" (click)="onLotRegistry(l)">Реестр</button>
               <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
@@ -466,6 +470,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .btn-add-bulk { background: #8b5cf6; color: #fff; margin-left: 8px; }
     .w-36 { width: 36px; text-align: center; }
     .btn-kp { background: #0e9f6e; color: #fff; margin-right: 4px; }
+    .btn-tz { background: #6366f1; color: #fff; margin-right: 4px; }
+    .btn-tz:disabled { opacity: 0.6; cursor: wait; }
     .btn-kp-selected { background: #0e9f6e; color: #fff; margin-left: 8px; }
     .btn-kp-selected:disabled { opacity: 0.5; cursor: not-allowed; }
     .proposed-line { margin-top: 4px; font-size: 12px; color: #374151; }
@@ -593,6 +599,8 @@ export class TendersComponent {
   // Лотовый запрос КП
   lotSel = new Set<number>();
   kpPanel: { loading: boolean; sending: boolean; entries: any[] } | null = null;
+  // Разбор техспеки (кнопка «ТЗ»)
+  tzBusy = new Set<number>();
 
   showTenderForm = false;
   editingTenderId: number | null = null;
@@ -1134,6 +1142,31 @@ export class TendersComponent {
   toggleAllLots(checked: boolean) {
     this.lotSel.clear();
     if (checked) for (const l of this.lots) this.lotSel.add(l.id);
+  }
+
+  isImportedTender(): boolean {
+    return this.isKz() && /^\d+-\d+$/.test(this.selectedTender?.tenderNumber || '');
+  }
+
+  parseTechSpec(l: any) {
+    this.tzBusy.add(l.id);
+    this.cdr.detectChanges();
+    this.api.parseLotTechSpec(l.id).subscribe({
+      next: (r) => {
+        this.tzBusy.delete(l.id);
+        const dims = r.dimsFound ? 'габариты ✓' : 'габариты —';
+        const weight = r.weightFound ? 'вес ✓' : 'вес —';
+        const amb = r.ambiguous ? ' (неоднозначный матч лота — проверьте вручную)' : '';
+        const specLen = (r.lot?.requiredSpec || '').length;
+        this.notify.success(`ТЗ разобрано: спека ${specLen} симв., ${dims}, ${weight}${amb}`);
+        this.loadLots();
+      },
+      error: (e) => {
+        this.tzBusy.delete(l.id);
+        this.notify.error(e.error?.message || e.message || 'Не удалось разобрать ТЗ');
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   openKpPanelFor(l: any) {
