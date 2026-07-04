@@ -49,4 +49,28 @@ class TechSpecExtractorTest {
         assertThat(TechSpecExtractor.russianSection(null)).isNull();
         assertThat(TechSpecExtractor.russianSection("   ")).isNull();
     }
+
+    @Test
+    void characteristicsReturnsTextAfterAnchor() {
+        String spec = """
+                Приложение 2
+                Наименование лота: Электрод
+                Описание и требуемые функциональные, технические, качественные и эксплуатационные
+                характеристики
+                закупаемых товаров:
+                Резиновые пластинки для аппарата электрофореза "Элэскулап",
+                размеры 55*80 мм
+                """;
+        String c = TechSpecExtractor.characteristics(spec);
+        assertThat(c)
+                .startsWith("Резиновые пластинки")
+                .contains("55*80 мм")
+                .doesNotContain("Наименование лота");
+    }
+
+    @Test
+    void characteristicsNullWhenNoAnchor() {
+        assertThat(TechSpecExtractor.characteristics("просто текст без якоря")).isNull();
+        assertThat(TechSpecExtractor.characteristics(null)).isNull();
+    }
 }

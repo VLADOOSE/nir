@@ -15,7 +15,9 @@ public final class LotQueryTokenizer {
 
     public record WeightedToken(String token, double weight) {}
 
-    private static final double[] WEIGHTS = {1.0, 0.7, 0.5, 0.4, 0.3};
+    // круто затухающие: головное существительное должно доминировать, иначе хвостовые
+    // слова («портативный») перевешивают и топ забивают смежные изделия
+    private static final double[] WEIGHTS = {1.0, 0.5, 0.35, 0.25, 0.2};
     private static final double SPEC_FACTOR = 0.5;
     private static final int MAX_PER_SOURCE = 5;
 

@@ -12,12 +12,17 @@ import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
+import com.vladoose.nir.util.LotQueryTokenizer;
+import com.vladoose.nir.util.LotQueryTokenizer.WeightedToken;
+import com.vladoose.nir.util.TechSpecExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 public class RegistryMatchService {
@@ -46,19 +51,21 @@ public class RegistryMatchService {
         if (n.length() > 80) n = n.substring(0, 80);
         if (m.length() > 80) m = m.substring(0, 80);
         return registryRepository.findCandidates(n, m, limit).stream()
-                .map(row -> {
-                    RegistryCandidateResponse c = new RegistryCandidateResponse();
-                    c.setRegNumber(row.getRegNumber());
-                    c.setName(row.getName());
-                    c.setProducer(row.getProducer());
-                    c.setCountry(row.getCountry());
-                    c.setRegDate(row.getRegDate());
-                    c.setExpirationDate(row.getExpirationDate());
-                    c.setUnlimited(row.getUnlimited());
-                    c.setScore(row.getScore());
-                    return c;
-                })
+                .map(this::toCandidate)
                 .toList();
+    }
+
+    private RegistryCandidateResponse toCandidate(com.vladoose.nir.dto.response.RegistryCandidateRow row) {
+        RegistryCandidateResponse c = new RegistryCandidateResponse();
+        c.setRegNumber(row.getRegNumber());
+        c.setName(row.getName());
+        c.setProducer(row.getProducer());
+        c.setCountry(row.getCountry());
+        c.setRegDate(row.getRegDate());
+        c.setExpirationDate(row.getExpirationDate());
+        c.setUnlimited(row.getUnlimited());
+        c.setScore(row.getScore());
+        return c;
     }
 
     public List<RegistryCandidateResponse> candidatesForEquipment(Long equipmentId, int limit) {
@@ -67,11 +74,26 @@ public class RegistryMatchService {
         return findCandidates(e.getName(), e.getManufact(), limit);
     }
 
-    /** Кандидаты реестра по лоту тендера — «что это за изделие» (у KZ-импорта manufact обычно пуст). */
+    /** Кандидаты реестра по лоту: бренд задан → бренд-путь; иначе значимые токены имени
+     *  (+ токены из характеристик разобранного ТЗ, вес ×0.5) → пословный триграммный матч. */
     public List<RegistryCandidateResponse> candidatesForLot(Long lotId, int limit) {
         TenderLot lot = tenderLotRepository.findById(lotId)
                 .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
-        return findCandidates(lot.getEquipName(), lot.getManufact(), limit);
+        if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
+            return findCandidates(lot.getEquipName(), lot.getManufact(), limit);
+        }
+        List<WeightedToken> tokens = LotQueryTokenizer.tokenize(
+                lot.getEquipName(), TechSpecExtractor.characteristics(lot.getRequiredSpec()));
+        if (tokens.isEmpty()) {
+            return findCandidates(lot.getEquipName(), lot.getManufact(), limit); // фолбэк как раньше
+        }
+        String toks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
+        String wgts = tokens.stream()
+                .map(t -> String.format(Locale.ROOT, "%.2f", t.weight()))
+                .collect(Collectors.joining("|"));
+        return registryRepository.searchByTokens(toks, wgts, limit).stream()
+                .map(this::toCandidate)
+                .toList();
     }
 
     @Transactional

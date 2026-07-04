@@ -15,8 +15,8 @@ class LotQueryTokenizerTest {
         assertThat(t).extracting(WeightedToken::token)
                 .containsExactly("оцифровки", "рентген", "снимков");
         assertThat(t.get(0).weight()).isEqualTo(1.0);
-        assertThat(t.get(1).weight()).isEqualTo(0.7);
-        assertThat(t.get(2).weight()).isEqualTo(0.5);
+        assertThat(t.get(1).weight()).isEqualTo(0.5);
+        assertThat(t.get(2).weight()).isEqualTo(0.35);
     }
 
     @Test
@@ -51,6 +51,6 @@ class LotQueryTokenizerTest {
         List<WeightedToken> t = LotQueryTokenizer.tokenize(
                 "Оцифровщик рентгеновских снимков панорамный цифровой беспроводной переносной", null);
         assertThat(t).hasSize(5);
-        assertThat(t.get(4).weight()).isEqualTo(0.3);
+        assertThat(t.get(4).weight()).isEqualTo(0.2);
     }
 }

@@ -58,4 +58,76 @@ class RegistryLotMatchTest {
                         () -> registryMatchService.candidatesForLot(999999L, 5))
                 .isInstanceOf(com.vladoose.nir.exception.NotFoundException.class);
     }
+
+    // ===== золотой набор: реальные канцелярские имена лотов против живого реестра (~14k) =====
+
+    private TenderLot savedLot(String equipName, String manufact, String requiredSpec) {
+        Tender t = new Tender();
+        t.setTenderNumber("ZZ-GOLD-" + System.nanoTime());
+        t.setStatus("ACTIVE");
+        t.setSource(Source.PUBLIC_TENDER);
+        TenderLot lot = new TenderLot();
+        lot.setTender(t);
+        lot.setEquipName(equipName);
+        lot.setManufact(manufact);
+        lot.setRequiredSpec(requiredSpec);
+        t.getLots().add(lot);
+        tenderRepository.save(t);
+        return t.getLots().get(0);
+    }
+
+    @Test
+    void golden_xrayDigitizer_findsRegistryModels() {
+        TenderLot lot = savedLot("Устройство оцифровки рентген снимков", null, null);
+        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 5);
+        assertThat(top).isNotEmpty();
+        assertThat(top).anyMatch(c -> {
+            String n = c.getName().toLowerCase();
+            return n.contains("оцифровщик") || (n.contains("рентген") && n.contains("снимк"));
+        });
+    }
+
+    @Test
+    void golden_defibrillatorMonitor_topContainsDefibrillator() {
+        TenderLot lot = savedLot("Дефибриллятор-монитор бифазный портативный", null, null);
+        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 3);
+        assertThat(top).isNotEmpty();
+        assertThat(top.get(0).getName().toLowerCase()).contains("дефибриллятор");
+    }
+
+    @Test
+    void golden_shortName_pulseOximeter_stillWorks() {
+        TenderLot lot = savedLot("Пульсоксиметр", null, null);
+        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 3);
+        assertThat(top).isNotEmpty();
+        assertThat(top.get(0).getName().toLowerCase()).contains("пульсоксиметр");
+    }
+
+    @Test
+    void golden_electrode_enrichedFromParsedTechSpec() {
+        TenderLot lot = savedLot("Электрод", null, """
+                Приложение 2
+                Описание и требуемые функциональные, технические, качественные и эксплуатационные
+                характеристики
+                закупаемых товаров:
+                Резиновые пластинки для аппарата электрофореза "Элэскулап", размеры 55*80 мм
+                """);
+        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 5);
+        assertThat(top).isNotEmpty();
+        // сигнал из ТЗ: «пластин(ки)» / электрофорез / элэскулап — без обогащения имя «Электрод»
+        // дало бы только ЭКГ/хирургические электроды
+        assertThat(top).anyMatch(c -> {
+            String n = c.getName().toLowerCase();
+            return n.contains("электрофорез") || n.contains("элэскулап") || n.contains("пластин");
+        });
+    }
+
+    @Test
+    void golden_manufactSet_usesOldBrandPath() {
+        TenderLot lot = savedLot("Монитор пациента", "Mindray", null);
+        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 5);
+        assertThat(top).isNotEmpty();
+        // бренд-путь: производитель в топе содержит Mindray
+        assertThat(top.get(0).getProducer().toLowerCase()).contains("mindray");
+    }
 }
