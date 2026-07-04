@@ -47,6 +47,10 @@ public final class SpecConstraintExtractor {
     private static final Pattern LOWER_BOUND = Pattern.compile(
             "не\\s+менее|не\\s+ниже|минимум|\\bот\\b", FLAGS);
 
+    /** Контекст детали, а не изделия: «ширина ленты 50 мм», «размер поля 10*10 см» — НЕ габарит устройства. */
+    private static final Pattern PART_CONTEXT = Pattern.compile(
+            "экран|дисплe|дисплей|пол[еяю]\\b|лент|бумаг|датчик|матриц|пиксел|кабел|игл|троак", FLAGS);
+
     private SpecConstraintExtractor() {}
 
     public static SpecConstraints extract(String spec) {
@@ -69,6 +73,7 @@ public final class SpecConstraintExtractor {
                 Matcher a = AXIS.matcher(spec);
                 while (a.find()) {
                     if (LOWER_BOUND.matcher(a.group(2)).find()) continue;
+                    if (PART_CONTEXT.matcher(a.group(2)).find()) continue; // размер детали, не изделия
                     double k = unitToMm(a.group(4));
                     Integer v = toMm(a.group(3), k);
                     String axis = a.group(1).toLowerCase();
@@ -84,6 +89,7 @@ public final class SpecConstraintExtractor {
                 Matcher d2 = TWO_D.matcher(spec);
                 while (d2.find()) {
                     if (LOWER_BOUND.matcher(d2.group(1)).find()) continue;
+                    if (PART_CONTEXT.matcher(d2.group(1)).find()) continue; // размер детали, не изделия
                     double k = unitToMm(d2.group(4));
                     len = toMm(d2.group(2), k);
                     wid = toMm(d2.group(3), k);

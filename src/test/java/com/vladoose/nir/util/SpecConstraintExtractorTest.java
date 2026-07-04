@@ -111,6 +111,14 @@ class SpecConstraintExtractorTest {
     }
 
     @Test
+    void partDimensionsIgnored_axisAndTwoD() {
+        // размер детали (лента, поле, экран) — не габарит изделия, в лот не пишем
+        assertThat(SpecConstraintExtractor.extract("Ширина ленты записи 50 мм").isEmpty()).isTrue();
+        assertThat(SpecConstraintExtractor.extract("Размер поля облучения 10*10 см").isEmpty()).isTrue();
+        assertThat(SpecConstraintExtractor.extract("Размер экрана по диагонали 15*20 см").isEmpty()).isTrue();
+    }
+
+    @Test
     void tripleTakesPriorityOverAxesAndTwoD() {
         SpecConstraints c = SpecConstraintExtractor.extract(
                 "Габариты не более 1000х600х400 мм. Длина не более 9999 мм. Размер 55*80 мм.");

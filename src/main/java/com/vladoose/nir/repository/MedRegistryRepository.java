@@ -35,8 +35,10 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
                                               @Param("limit") int limit);
 
     /**
-     * Пословный триграммный матч значимых токенов лота: фильтр по «токен <% name» (GIN-индекс,
-     * глобальный порог 0.6 не трогаем), ранг — взвешенное покрытие ВСЕХ токенов
+     * Пословный триграммный матч значимых токенов лота: кандидаты — через IN(join «tok <% name»)
+     * + OFFSET 0 (фенс от расплющивания планировщиком) → Bitmap Index Scan по idx_reg_name_trgm
+     * (~64мс против ~650мс seq scan у наивного EXISTS: score-сабплан считался на все 14k строк).
+     * Глобальный порог 0.6 не трогаем. Ранг — взвешенное покрытие ВСЕХ токенов
      * (Σ wᵢ·word_similarity(tᵢ,name)/Σ wᵢ), отсечка мусора score >= 0.2.
      * Токены/веса — строками через '|' (string_to_array), чтобы не возиться с массивами в Hibernate.
      */
@@ -50,7 +52,9 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "          JOIN unnest(string_to_array(:weights,'|')) WITH ORDINALITY AS w(wgt, j) ON t.i = w.j " +
             "         ) AS score " +
             "  FROM med_registry m " +
-            "  WHERE EXISTS (SELECT 1 FROM unnest(string_to_array(:tokens,'|')) tk(tok) WHERE tk.tok <% m.name) " +
+            "  WHERE m.id IN (SELECT m2.id FROM unnest(string_to_array(:tokens,'|')) tk(tok) " +
+            "                 JOIN med_registry m2 ON tk.tok <% m2.name) " +
+            "  OFFSET 0 " +
             ") s WHERE s.score >= 0.2 " +
             "ORDER BY s.score DESC " +
             "LIMIT :limit")
