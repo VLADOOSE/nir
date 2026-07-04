@@ -306,13 +306,20 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <span><b>Реестр НЦЭЛС РК:</b> {{ registryPanel.lot.equipName }}</span>
           <button class="btn btn-cancel" (click)="closeRegistryPanel()">✕ Закрыть</button>
         </div>
+        <div class="registry-note">Реестр НЦЭЛС — допуск (№ РУ); габариты/вес здесь не хранятся, соответствие — по совпадению наименования.</div>
+        <div *ngIf="!registryPanel.loading && !registryPanel.distinctive && !registryPanel.techSpecParsed && isImportedTender()" class="registry-hint">
+          ⚠ Совпадение только по названию — модели в реестре неразличимы. Нажмите «ТЗ», чтобы разбор техспецификации уточнил подбор.
+        </div>
         <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
         <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
         <table *ngIf="!registryPanel.loading && registryPanel.items.length" class="registry-table">
-          <thead><tr><th>Похожесть</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
+          <thead><tr><th>Соответствие</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
           <tbody>
             <tr *ngFor="let c of registryPanel.items">
-              <td><span class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span></td>
+              <td>
+                <span *ngIf="registryPanel.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
+                <span *ngIf="!registryPanel.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
+              </td>
               <td>{{ c.regNumber }}</td>
               <td>{{ c.name }}</td>
               <td>{{ c.producer || '—' }}</td>
@@ -532,6 +539,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .score-badge { background: #e5e7eb; color: #374151; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
     .btn-adopt { background: #0e9f6e; color: #fff; }
     .score-badge.score-good { background: #d1fae5; color: #065f46; }
+    .score-badge.score-name { background: #eef2ff; color: #3730a3; }
+    .registry-note { font-size: 12px; color: #6b7280; margin: 4px 0 8px; }
+    .registry-hint { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: #92400e; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -957,13 +967,21 @@ export class TendersComponent {
     if (this.importPollTimer) { clearInterval(this.importPollTimer); this.importPollTimer = null; }
   }
 
-  registryPanel: { lot: any; loading: boolean; items: any[] } | null = null;
+  registryPanel: { lot: any; loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean } | null = null;
 
   onLotRegistry(l: any) {
-    this.registryPanel = { lot: l, loading: true, items: [] };
+    this.registryPanel = { lot: l, loading: true, items: [], distinctive: true, techSpecParsed: true };
     this.cdr.detectChanges();
     this.api.getLotRegistryCandidates(l.id).subscribe({
-      next: items => { this.registryPanel = { lot: l, loading: false, items: items || [] }; this.cdr.detectChanges(); },
+      next: (r: any) => {
+        this.registryPanel = {
+          lot: l, loading: false,
+          items: r?.candidates || [],
+          distinctive: !!r?.distinctive,
+          techSpecParsed: !!r?.techSpecParsed,
+        };
+        this.cdr.detectChanges();
+      },
       error: err => {
         this.registryPanel = null;
         this.notify.error('Реестр: ' + (err.error?.message || err.message));

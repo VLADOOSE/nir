@@ -85,8 +85,8 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/tenders/import-kz/status`);
   }
 
-  getLotRegistryCandidates(lotId: number, limit = 5): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/lots/${lotId}/registry-candidates`, { params: { limit } });
+  getLotRegistryCandidates(lotId: number, limit = 5): Observable<any> {
+    return this.http.get<any>(`${this.base}/lots/${lotId}/registry-candidates`, { params: { limit } });
   }
 
   // === Applies ===
