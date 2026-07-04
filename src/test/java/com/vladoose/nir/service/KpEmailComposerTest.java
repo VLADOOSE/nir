@@ -18,7 +18,7 @@ class KpEmailComposerTest {
         t.setTenderNumber("17276387-1");
         t.setSource(Source.PUBLIC_TENDER);
         t.setDeadline(LocalDate.of(2026, 7, 15));
-        t.setSourceExtId("17276387");
+        t.setSourceExtId("17276387-1"); // импорт кладёт полный номер с суффиксом лота
 
         Distributor d = new Distributor();
         d.setName("ZZ Дистр");
@@ -69,9 +69,10 @@ class KpEmailComposerTest {
                 .contains("Лот 3: Аппарат ИВЛ — 1 шт.")
                 .contains("Требования (из ТЗ): Требуемая спека ИВЛ")
                 .contains("Приём заявок до 15.07.2026")
-                .contains("https://goszakup.gov.kz/ru/announce/index/17276387")
+                .contains("https://goszakup.gov.kz/ru/announce/index/17276387\n")
                 .contains("НЦЭЛС РК")
-                .doesNotContain("Росздравнадзор");
+                .doesNotContain("Росздравнадзор")
+                .doesNotContain("index/17276387-1"); // суффикс лота обрезается в ссылке на объявление
     }
 
     @Test

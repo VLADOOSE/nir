@@ -80,9 +80,11 @@ public class KpEmailComposer {
 
     private String announceLink(Tender t, Market market) {
         if (market == Market.KZ) {
-            return t.getSourceExtId() != null
-                    ? "https://goszakup.gov.kz/ru/announce/index/" + t.getSourceExtId()
-                    : null;
+            if (t.getSourceExtId() == null) return null;
+            // sourceExtId несёт полный номер объявления с суффиксом лота (17274756-1);
+            // страница объявления адресуется числовым id до дефиса.
+            String announceId = t.getSourceExtId().replaceFirst("-.*$", "");
+            return "https://goszakup.gov.kz/ru/announce/index/" + announceId;
         }
         if (t.getSource() == Source.PRIVATE_REQUEST) return null;
         return "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString="
