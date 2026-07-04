@@ -102,11 +102,11 @@ public class TenderLotController {
         return mapper.toResponse(service.findById(id));
     }
 
-    /** Кандидаты реестра НЦЭЛС по лоту: «что это за изделие» (топ по похожести названия). */
+    /** Кандидаты реестра НЦЭЛС по лоту + достоверность матча (для честного показа «соответствия»). */
     @GetMapping("/{id}/registry-candidates")
-    public java.util.List<com.vladoose.nir.dto.response.RegistryCandidateResponse> registryCandidates(
+    public com.vladoose.nir.dto.response.LotRegistryMatchResponse registryCandidates(
             @PathVariable Long id, @RequestParam(defaultValue = "5") int limit) {
-        return registryMatchService.candidatesForLot(id, Math.min(limit, 20));
+        return registryMatchService.matchForLotUi(id, Math.min(limit, 20));
     }
 
     @PostMapping

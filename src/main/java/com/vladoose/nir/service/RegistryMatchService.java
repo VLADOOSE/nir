@@ -3,6 +3,7 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.RegistrationAction;
 import com.vladoose.nir.dto.response.ReconciliationRowResponse;
+import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
@@ -75,26 +76,48 @@ public class RegistryMatchService {
         return findCandidates(e.getName(), e.getManufact(), limit);
     }
 
-    /** Кандидаты реестра по лоту: бренд задан → бренд-путь; иначе значимые токены имени
-     *  (+ токены из характеристик разобранного ТЗ, вес ×0.5) → пословный триграммный матч. */
-    public List<RegistryCandidateResponse> candidatesForLot(Long lotId, int limit) {
-        TenderLot lot = tenderLotRepository.findById(lotId)
-                .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
+    /** Общий матч по лоту: бренд задан → бренд-путь; иначе значимые токены имени (+ токены из
+     *  характеристик разобранного ТЗ, вес ×0.5) → пословный триграммный матч. Флаг distinctive —
+     *  есть ли чем различать записи (≥2 токена или задан бренд); при 1 токене процент врёт. */
+    private record LotMatch(List<RegistryCandidateResponse> candidates, boolean distinctive) {}
+
+    private LotMatch computeLotMatch(TenderLot lot, int limit) {
         if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
-            return findCandidates(lot.getEquipName(), lot.getManufact(), limit);
+            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), true);
         }
         List<WeightedToken> tokens = LotQueryTokenizer.tokenize(
                 lot.getEquipName(), TechSpecExtractor.characteristics(lot.getRequiredSpec()));
         if (tokens.isEmpty()) {
-            return findCandidates(lot.getEquipName(), lot.getManufact(), limit); // фолбэк как раньше
+            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), false);
         }
         String toks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
         String wgts = tokens.stream()
                 .map(t -> String.format(Locale.ROOT, "%.2f", t.weight()))
                 .collect(Collectors.joining("|"));
-        return registryRepository.searchByTokens(toks, wgts, limit).stream()
+        List<RegistryCandidateResponse> candidates = registryRepository.searchByTokens(toks, wgts, limit).stream()
                 .map(this::toCandidate)
                 .toList();
+        // ≥2 значимых токена → есть чем различать записи; 1 токен → совпадение только по названию
+        return new LotMatch(candidates, tokens.size() >= 2);
+    }
+
+    /** Кандидаты реестра по лоту (для LotSourcingService) — прежний контракт. */
+    public List<RegistryCandidateResponse> candidatesForLot(Long lotId, int limit) {
+        TenderLot lot = tenderLotRepository.findById(lotId)
+                .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
+        return computeLotMatch(lot, limit).candidates();
+    }
+
+    /** Для панели «Реестр»: кандидаты + метаданные достоверности матча (distinctive/techSpecParsed). */
+    public LotRegistryMatchResponse matchForLotUi(Long lotId, int limit) {
+        TenderLot lot = tenderLotRepository.findById(lotId)
+                .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
+        LotMatch m = computeLotMatch(lot, limit);
+        LotRegistryMatchResponse r = new LotRegistryMatchResponse();
+        r.setCandidates(m.candidates());
+        r.setDistinctive(m.distinctive());
+        r.setTechSpecParsed(TechSpecExtractor.characteristics(lot.getRequiredSpec()) != null);
+        return r;
     }
 
     /**
