@@ -27,6 +27,14 @@ class LotTechSpecParseTest {
           {"nameRu":"Другое","Files":[]}
         ]}}""";
 
+    /** Живой формат: имя файла — «Приложение 13 (Техническая спецификация…)» + посторонний файл квалификации. */
+    private static final String PRILOZHENIE = """
+        {"data":{"Lots":[
+          {"nameRu":"Устройство оцифровки рентген снимков","Files":[
+            {"nameRu":"Приложение 5 (Квалификационные требования к поставщику)","filePath":"qual","originalName":"appendix_4.pdf"},
+            {"nameRu":"Приложение 13 (Техническая спецификация закупаемых товаров)","filePath":"spec","originalName":"techspec_87268167.pdf"}]}
+        ]}}""";
+
     @Test
     void findsTechSpecByLotName() throws Exception {
         JsonNode root = om.readTree(LIVE);
@@ -50,6 +58,15 @@ class LotTechSpecParseTest {
         assertThat(ref).isNotNull();
         assertThat(ref.filePath()).isEqualTo("u1");
         assertThat(ref.ambiguous()).isTrue();
+    }
+
+    @Test
+    void matchesFileNamedPrilozhenieTechSpec_ignoresQualificationFile() throws Exception {
+        JsonNode root = om.readTree(PRILOZHENIE);
+        LotTechSpecRef ref = GoszakupHttpClient.parseLotTechSpec(root, "Устройство оцифровки рентген снимков");
+        assertThat(ref).isNotNull();
+        assertThat(ref.filePath()).isEqualTo("spec"); // взят файл техспеки, не квалификации
+        assertThat(ref.originalName()).isEqualTo("techspec_87268167.pdf");
     }
 
     @Test

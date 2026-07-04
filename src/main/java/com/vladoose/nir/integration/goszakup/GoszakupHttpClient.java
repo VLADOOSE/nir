@@ -156,7 +156,9 @@ public class GoszakupHttpClient implements GoszakupClient {
         for (JsonNode lot : root.path("data").path("Lots")) {
             if (!wanted.equalsIgnoreCase(lot.path("nameRu").asText("").trim())) continue;
             for (JsonNode f : lot.path("Files")) {
-                if (!"Техническая спецификация".equalsIgnoreCase(f.path("nameRu").asText("").trim())) continue;
+                // имя файла варьируется: «Техническая спецификация» или «Приложение 13 (Техническая
+                // спецификация закупаемых товаров)» → матч по вхождению, не точному равенству
+                if (!f.path("nameRu").asText("").toLowerCase().contains("техническая спецификация")) continue;
                 matched++;
                 if (first == null) {
                     first = new LotTechSpecRef(f.path("filePath").asText(null),
