@@ -13,18 +13,18 @@
 
 ## 2. Стандартные инструкции пользователя (соблюдать всегда)
 
-- **Все делегируемые агенты (Agent/subagent) — на Opus 4.8** (`model: 'opus'`). Это явное требование пользователя.
+- **Все делегируемые агенты (Agent/subagent) — на Fable 5** (наследуют модель сессии, `model` не переопределять). Решение пользователя 2026-07-04 (ранее было «все субагенты — Opus 4.8»).
 - **Строй как реальный продукт, не как диплом** — диплом сдан, дипломные ограничения не нужны.
 - **После каждого блока** — давать «куда смотреть» (click-by-click тур) и **проверять фичу вживую в браузере (Playwright)** перед заявлением «готово».
 - Пользователь технический, любит скорость; даёт рекомендации делать «как лучше».
 
 ## 3. Рабочий процесс (superpowers)
 
-Каждый блок: **brainstorming → spec → writing-plans → subagent-driven-development (SDD) → whole-branch review (Opus) → мерж в main**.
+Каждый блок: **brainstorming → spec → writing-plans → subagent-driven-development (SDD) → whole-branch review → мерж в main**.
 - Спеки: `docs/superpowers/specs/YYYY-MM-DD-<тема>-design.md`. Планы: `docs/superpowers/plans/YYYY-MM-DD-<тема>.md`.
-- SDD: per-task реализатор + ревьюер (оба Opus) + fix-loop + финальный whole-branch ревью; ledger в `.superpowers/sdd/progress.md`.
+- SDD: per-task реализатор + ревьюер + fix-loop + финальный whole-branch ревью; ledger в `.superpowers/sdd/progress.md`.
 - Мелкие правки/фиксы — инлайн на короткой ветке + мерж (не на main напрямую: `git checkout -b ...` → commit → `merge --ff-only` → удалить ветку).
-- Каждый commit заканчивать: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- Каждый commit заканчивать: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Иногда вылезают **транзиентные срывы субагентов** (0 tool_uses) — переотправить или сделать инлайн.
 
 ## 4. Стек
