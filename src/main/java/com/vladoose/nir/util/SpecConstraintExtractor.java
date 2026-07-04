@@ -36,6 +36,14 @@ public final class SpecConstraintExtractor {
     private static final Pattern WEIGHT = Pattern.compile(
             "(?:вес|масса)([^\\n\\d]{0,40}?)" + NUM + "\\s*(кг|г)\\b", FLAGS);
 
+    /** «длина/глубина/ширина/высота … 450 мм»: g1 — ось, g2 — зазор («не менее» → игнор), g3 — число, g4 — единица. */
+    private static final Pattern AXIS = Pattern.compile(
+            "(длин\\w*|глубин\\w*|ширин\\w*|высот\\w*)([^\\n\\d]{0,40}?)" + NUM + "\\s*(мм|см|м)\\b", FLAGS);
+
+    /** «размер/габарит … 55*80 мм»: двумерный (пластины, электроды). g1 — зазор, g2,g3 — числа, g4 — единица. */
+    private static final Pattern TWO_D = Pattern.compile(
+            "(?:размер\\w*|габарит\\w*)([^\\n]{0,40}?)" + NUM + X + NUM + "\\s*(мм|см|м)\\b", FLAGS);
+
     private static final Pattern LOWER_BOUND = Pattern.compile(
             "не\\s+менее|не\\s+ниже|минимум|\\bот\\b", FLAGS);
 
@@ -55,6 +63,33 @@ public final class SpecConstraintExtractor {
                 hei = toMm(t.group(4), k);
                 snippets.add(spec.substring(t.start(), t.end()).trim());
                 break; // первый валидный триплет
+            }
+            if (len == null && wid == null && hei == null) {
+                // поосевые: каждая ось независимо; «не менее/от/минимум» — игнор
+                Matcher a = AXIS.matcher(spec);
+                while (a.find()) {
+                    if (LOWER_BOUND.matcher(a.group(2)).find()) continue;
+                    double k = unitToMm(a.group(4));
+                    Integer v = toMm(a.group(3), k);
+                    String axis = a.group(1).toLowerCase();
+                    if ((axis.startsWith("длин") || axis.startsWith("глубин")) && len == null) len = v;
+                    else if (axis.startsWith("ширин") && wid == null) wid = v;
+                    else if (axis.startsWith("высот") && hei == null) hei = v;
+                    else continue;
+                    snippets.add(spec.substring(a.start(), a.end()).trim());
+                }
+            }
+            if (len == null && wid == null && hei == null) {
+                // двумерный «размеры 55*80 мм» (пластины/электроды): length+width
+                Matcher d2 = TWO_D.matcher(spec);
+                while (d2.find()) {
+                    if (LOWER_BOUND.matcher(d2.group(1)).find()) continue;
+                    double k = unitToMm(d2.group(4));
+                    len = toMm(d2.group(2), k);
+                    wid = toMm(d2.group(3), k);
+                    snippets.add(spec.substring(d2.start(), d2.end()).trim());
+                    break;
+                }
             }
             Matcher w = WEIGHT.matcher(spec);
             while (w.find()) {

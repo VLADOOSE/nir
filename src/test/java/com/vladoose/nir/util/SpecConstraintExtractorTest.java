@@ -79,6 +79,47 @@ class SpecConstraintExtractorTest {
     }
 
     @Test
+    void perAxisConstraints() {
+        SpecConstraints c = SpecConstraintExtractor.extract(
+                "Длина не более 1200 мм. Ширина до 80 см. Высота не более 1,5 м. Глубина не менее 100 мм.");
+        assertThat(c.maxLengthMm()).isEqualTo(1200);
+        assertThat(c.maxWidthMm()).isEqualTo(800);
+        assertThat(c.maxHeightMm()).isEqualTo(1500);
+        // «глубина не менее» — нижняя граница, игнор (и не перетирает length)
+    }
+
+    @Test
+    void depthMapsToLength_whenNoLength() {
+        SpecConstraints c = SpecConstraintExtractor.extract("Глубина не более 450 мм, высота до 900 мм");
+        assertThat(c.maxLengthMm()).isEqualTo(450);
+        assertThat(c.maxHeightMm()).isEqualTo(900);
+        assertThat(c.maxWidthMm()).isNull();
+    }
+
+    @Test
+    void twoDimensionalWithKeyword() {
+        SpecConstraints c = SpecConstraintExtractor.extract("электроды силиконовые, размеры 55*80 мм");
+        assertThat(c.maxLengthMm()).isEqualTo(55);
+        assertThat(c.maxWidthMm()).isEqualTo(80);
+        assertThat(c.maxHeightMm()).isNull();
+    }
+
+    @Test
+    void twoDimensionalWithoutKeywordIgnored() {
+        SpecConstraints c = SpecConstraintExtractor.extract("кабель сечением 2*4 мм");
+        assertThat(c.isEmpty()).isTrue();
+    }
+
+    @Test
+    void tripleTakesPriorityOverAxesAndTwoD() {
+        SpecConstraints c = SpecConstraintExtractor.extract(
+                "Габариты не более 1000х600х400 мм. Длина не более 9999 мм. Размер 55*80 мм.");
+        assertThat(c.maxLengthMm()).isEqualTo(1000);
+        assertThat(c.maxWidthMm()).isEqualTo(600);
+        assertThat(c.maxHeightMm()).isEqualTo(400);
+    }
+
+    @Test
     void snippetsCaptured() {
         SpecConstraints c = SpecConstraintExtractor.extract(
                 "Габариты не более 1200х800х1300 мм. Вес не более 45 кг.");
