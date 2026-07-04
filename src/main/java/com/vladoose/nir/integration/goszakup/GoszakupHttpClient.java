@@ -128,21 +128,24 @@ public class GoszakupHttpClient implements GoszakupClient {
         // живой формат подтверждён 2026-07-04: Files лежат на уровне лота, техспека — nameRu="Техническая спецификация"
         String query = "query($anno:String,$l:Int){ Lots(filter:{trdBuyNumberAnno:$anno}, limit:$l){ "
                 + "lotNumber nameRu Files{ nameRu originalName filePath } } }";
-        try {
-            ObjectNode vars = objectMapper.createObjectNode();
-            vars.put("anno", numberAnno);
-            vars.put("l", 100); // многолотовые тендеры — до ~50 лотов
-            ObjectNode body = objectMapper.createObjectNode();
-            body.put("query", query);
-            body.set("variables", vars);
-            JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
-            if (root.path("errors").size() > 0) {
-                throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+        // площадка периодически моргает timeout — ретраим транзиентные сбои (ручная кнопка «ТЗ», оператор ждёт)
+        return GoszakupRetry.withRetries(3, 400, () -> {
+            try {
+                ObjectNode vars = objectMapper.createObjectNode();
+                vars.put("anno", numberAnno);
+                vars.put("l", 100); // многолотовые тендеры — до ~50 лотов
+                ObjectNode body = objectMapper.createObjectNode();
+                body.put("query", query);
+                body.set("variables", vars);
+                JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
+                if (root.path("errors").size() > 0) {
+                    throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+                }
+                return parseLotTechSpec(root, lotNameRu);
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
             }
-            return parseLotTechSpec(root, lotNameRu);
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
-        }
+        });
     }
 
     /** Чистая функция: из ответа v3 Lots достать файл техспеки лота по name_ru (trim, case-insensitive). */
@@ -168,22 +171,24 @@ public class GoszakupHttpClient implements GoszakupClient {
 
     @Override
     public byte[] downloadFile(String url) {
-        // без Accept: application/json — отдаётся бинарник (octet-stream)
-        try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                    .GET()
-                    .header("Authorization", "Bearer " + token)
-                    .timeout(Duration.ofSeconds(60)).build();
-            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 404) return null; // файл удалили/протух hash — вызывающий решает (404 к лоту)
-            if (resp.statusCode() / 100 != 2) {
-                throw new IllegalStateException("goszakup download " + resp.statusCode() + " на " + url);
+        // без Accept: application/json — отдаётся бинарник (octet-stream); ретрай на транзиентный timeout
+        return GoszakupRetry.withRetries(3, 400, () -> {
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                        .GET()
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(60)).build();
+                HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+                if (resp.statusCode() == 404) return null; // файл удалили/протух hash — вызывающий решает (404 к лоту)
+                if (resp.statusCode() / 100 != 2) {
+                    throw new IllegalStateException("goszakup download " + resp.statusCode() + " на " + url);
+                }
+                return resp.body();
+            } catch (java.io.IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                throw new IllegalStateException("goszakup download недоступен: " + e.getMessage(), e);
             }
-            return resp.body();
-        } catch (java.io.IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IllegalStateException("goszakup download недоступен: " + e.getMessage(), e);
-        }
+        });
     }
 
     // --- helpers ---
