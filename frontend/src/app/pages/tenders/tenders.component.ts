@@ -249,7 +249,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <tr><th class="w-36"><input type="checkbox" [checked]="allLotsSelected()" (change)="toggleAllLots($any($event.target).checked)" title="Выбрать все лоты" /></th><th>&#8470;</th><th>Название</th><th *ngIf="hasAnyType()">Тип</th><th>Кол-во</th><th>Макс. цена</th><th *ngIf="hasAnyDims()">Габариты (макс.)</th><th *ngIf="hasAnyWeight()">Макс. вес</th><th>Спецификация</th><th>Действия</th></tr>
         </thead>
         <tbody>
-          <tr *ngFor="let l of lots">
+          <ng-container *ngFor="let l of lots">
+          <tr>
             <td class="w-36"><input type="checkbox" [checked]="lotSel.has(l.id)" (change)="toggleLotSel(l)" /></td>
             <td>{{ l.lotNumber }}</td>
             <td>
@@ -265,8 +266,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </td>
             <td *ngIf="hasAnyType()">{{ l.equipmentType?.name || '—' }}</td><td>{{ l.quantity }}</td>
             <td>{{ l.maxCost | money }}</td><td *ngIf="hasAnyDims()">{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td *ngIf="hasAnyWeight()">{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td>
-            <td class="spec-cell" [class.spec-open]="l._specOpen" (click)="toggleSpec(l)"
-                [title]="l._specOpen ? 'Свернуть' : 'Развернуть спецификацию'">{{ l.requiredSpec || '—' }}</td>
+            <td class="spec-cell">
+              <button *ngIf="l.requiredSpec" class="spec-toggle" [class.open]="l._specOpen" (click)="toggleSpec(l)"
+                      [title]="l._specOpen ? 'Свернуть спецификацию' : 'Читать спецификацию'">
+                <span class="spec-preview">{{ specPreview(l.requiredSpec) }}</span>
+                <span class="spec-chevron">{{ l._specOpen ? '▴' : '▾' }}</span>
+              </button>
+              <span *ngIf="!l.requiredSpec" class="spec-empty">—</span>
+            </td>
             <td class="actions">
               <button class="btn btn-tz" *ngIf="isImportedTender()" [disabled]="tzBusy.has(l.id)"
                       (click)="parseTechSpec(l)" title="Скачать и разобрать техспецификацию с goszakup">
@@ -279,6 +286,18 @@ import { LucideDynamicIcon } from '@lucide/angular';
               <button class="btn btn-delete" (click)="onDeleteLot(l.id)">Удалить</button>
             </td>
           </tr>
+          <tr *ngIf="l._specOpen" class="spec-row">
+            <td [attr.colspan]="10">
+              <div class="spec-full">
+                <div class="spec-full-head">
+                  <b>Техническая спецификация{{ l.lotNumber ? ' — лот №' + l.lotNumber : '' }}</b>
+                  <button class="btn btn-cancel" (click)="toggleSpec(l)">✕ Свернуть</button>
+                </div>
+                <div class="spec-full-body">{{ l.requiredSpec }}</div>
+              </div>
+            </td>
+          </tr>
+          </ng-container>
         </tbody>
       </table>
 
@@ -517,8 +536,18 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lot-mini-more { background: #e5e7eb; color: #6b7280; }
-    .spec-cell { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-    .spec-cell.spec-open { white-space: pre-wrap; max-width: none; overflow: visible; }
+    .spec-cell { max-width: 260px; }
+    .spec-toggle { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; background: none; border: none; padding: 0; cursor: pointer; color: #1a56db; font-size: 13px; text-align: left; }
+    .spec-toggle .spec-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .spec-toggle .spec-chevron { flex-shrink: 0; font-size: 11px; color: #6b7280; }
+    .spec-toggle:hover .spec-preview { text-decoration: underline; }
+    .spec-toggle.open { color: #111827; font-weight: 600; }
+    .spec-empty { color: #9ca3af; }
+    .spec-row td { padding: 0 !important; background: #f9fafb; }
+    .spec-full { border-left: 3px solid #1a56db; margin: 4px 8px 12px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .spec-full-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #f3f4f6; }
+    .spec-full-head b { font-size: 13px; color: #374151; }
+    .spec-full-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; color: #1f2937; padding: 14px 16px; max-height: 340px; overflow-y: auto; }
     .badge-pr-CREATED { background: #e5e7eb; color: #374151; }
     .badge-pr-SENT { background: #dbeafe; color: #1a56db; }
     .badge-pr-RESPONDED { background: #fef3c7; color: #92400e; }
@@ -867,6 +896,13 @@ export class TendersComponent {
   toggleSpec(l: any) {
     l._specOpen = !l._specOpen;
     this.cdr.detectChanges();
+  }
+
+  /** Короткое превью спеки для ячейки-триггера (полный текст — в раскрытом аккордеоне). */
+  specPreview(s: string): string {
+    if (!s) return '';
+    const flat = s.replace(/\s+/g, ' ').trim();
+    return flat.length > 55 ? flat.slice(0, 55) + '…' : flat;
   }
 
   importStatus: any = null;
