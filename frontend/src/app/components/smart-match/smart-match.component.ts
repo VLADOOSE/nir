@@ -20,7 +20,7 @@ const LS_KEY = 'smartMatch.v1';
   template: `
     <div class="sm-panel">
       <div class="sm-header">
-        <strong>Подбор оборудования для лота №{{ lotNumber }}</strong>
+        <strong>Подбор оборудования{{ lotNumber ? ' для лота №' + lotNumber : '' }}</strong>
         <button class="sm-close" (click)="close.emit()" title="Закрыть">✕</button>
       </div>
 
@@ -39,7 +39,12 @@ const LS_KEY = 'smartMatch.v1';
         <span class="sm-sum">Σ = {{ weights.price + weights.margin + weights.track + weights.dim }}</span>
       </div>
 
-      <div class="sm-coldstart" *ngIf="result && !result.hasHistory">
+      <div class="sm-nocriteria" *ngIf="result?.noCriteria">
+        🚫 Недостаточно данных для подбора: у лота нет типа оборудования и габаритов/веса, а в спецификации их распознать не удалось.
+        Настоящее ТЗ обычно в приложенной «Технической спецификации» тендера — задайте тип/габариты вручную (кнопка «Редактировать» у лота) или дождитесь разбора документа.
+      </div>
+
+      <div class="sm-coldstart" *ngIf="result && !result.hasHistory && !result.noCriteria">
         ⚠ Истории сделок пока нет — рекомендации основаны только на габаритах. После первых выигранных тендеров система будет учитывать маржу, цену и опыт.
       </div>
 
@@ -99,7 +104,7 @@ const LS_KEY = 'smartMatch.v1';
         </tbody>
       </table>
 
-      <div *ngIf="result && !result.candidates?.length && !loading" class="sm-empty">Нет кандидатов под габариты лота.</div>
+      <div *ngIf="result && !result.candidates?.length && !loading && !result.noCriteria" class="sm-empty">Нет кандидатов под габариты лота.</div>
     </div>
   `,
   styles: [`
@@ -146,6 +151,7 @@ const LS_KEY = 'smartMatch.v1';
     .sm-toggle { background: #f3f4f6; border: 1px solid #d1d5db; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: #374151; }
     .sm-toggle:hover { background: #e5e7eb; }
     .sm-empty { text-align: center; color: #6b7280; padding: 24px; font-size: 13px; }
+    .sm-nocriteria { background: #fef2f2; border-left: 3px solid #ef4444; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #991b1b; }
   `]
 })
 export class SmartMatchComponent implements OnChanges {

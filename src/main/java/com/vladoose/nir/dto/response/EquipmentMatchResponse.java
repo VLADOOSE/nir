@@ -19,6 +19,7 @@ public class EquipmentMatchResponse {
     private WeightsUsed weightsUsed;
     private List<Candidate> candidates;
     private SpecDerived specDerived; // ограничения, извлечённые из текста спеки (null — не применялись)
+    private boolean noCriteria;      // у лота нет ни типа, ни габаритов/веса, ни распарсенной спеки → подбор недостоверен
 
     @Getter @Setter @NoArgsConstructor
     public static class SpecDerived {

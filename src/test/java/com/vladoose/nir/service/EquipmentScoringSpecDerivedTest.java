@@ -94,13 +94,22 @@ class EquipmentScoringSpecDerivedTest {
     }
 
     @Test
-    void unparsableSpec_specDerivedNull_noFiltering() {
+    void unparsableSpec_specDerivedNull_noFiltering_butNoCriteria() {
+        // ни типа, ни структурных габаритов, спека не парсится → нет критериев отбора:
+        // подбор НЕ вываливает весь каталог, а сигналит noCriteria
         TenderLot lot = saveLot(null, "Класс безопасности IIa, питание 220 В");
         EquipmentMatchResponse r = scoringService.scoreLot(lot.getId(), W, "BALANCED");
 
-        List<String> names = r.getCandidates().stream()
-                .map(EquipmentMatchResponse.Candidate::getName).toList();
-        assertThat(names).contains("ZZ Компакт", "ZZ Гигант");
+        assertThat(r.isNoCriteria()).isTrue();
+        assertThat(r.getCandidates()).isEmpty();
         assertThat(r.getSpecDerived()).isNull();
+    }
+
+    @Test
+    void withSpecDimensions_hasCriteria() {
+        TenderLot lot = saveLot(null, "Габариты не более 1200х800х1300 мм");
+        EquipmentMatchResponse r = scoringService.scoreLot(lot.getId(), W, "BALANCED");
+        assertThat(r.isNoCriteria()).isFalse();
+        assertThat(r.getCandidates()).isNotEmpty();
     }
 }

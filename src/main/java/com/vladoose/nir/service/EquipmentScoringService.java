@@ -60,6 +60,23 @@ public class EquipmentScoringService {
             }
         }
 
+        // Нет ни одного критерия отбора (ни типа, ни габаритов/веса — структурных или из спеки):
+        // матчинг иначе вернул бы ВЕСЬ каталог с одинаковым score → подбор недостоверен. Сигналим noCriteria.
+        boolean hasDims = effLen != null || effWid != null || effHei != null || effWeight != null;
+        if (equipTypeId == null && !hasDims) {
+            EquipmentMatchResponse empty = new EquipmentMatchResponse();
+            empty.setLotId(lotId);
+            empty.setLotMaxCost(lot.getMaxCost());
+            empty.setHasHistory(statsService.hasAnyWon());
+            empty.setPreset(presetName);
+            WeightsUsed w0 = new WeightsUsed();
+            w0.setPrice(weights[0]); w0.setMargin(weights[1]); w0.setTrack(weights[2]); w0.setDim(weights[3]);
+            empty.setWeightsUsed(w0);
+            empty.setCandidates(new ArrayList<>());
+            empty.setNoCriteria(true);
+            return empty;
+        }
+
         List<MedEquipment> shortlist = equipRepo.findMatchingEquipment(
                 equipTypeId, effLen, effWid, effHei, effWeight);
 
