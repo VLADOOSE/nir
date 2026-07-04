@@ -186,14 +186,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || selectedTender.customerName || '—' }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedTender.status">{{ getStatusLabel(selectedTender.status) }}</span></div>
-          <div class="info-item"><span class="info-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(selectedTender.purchaseType) }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.purchaseType"><span class="info-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(selectedTender.purchaseType) }}</span></div>
           <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ selectedTender.totalCost | money }}</span></div>
-          <div class="info-item"><span class="info-label">Дата публикации</span><span>{{ formatDate(selectedTender.publishDate) }}</span></div>
-          <div class="info-item"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender.deadline)">{{ formatDate(selectedTender.deadline) }}</span></div>
-          <div class="info-item"><span class="info-label">Адрес поставки</span><span>{{ selectedTender.deliveryAddress || '—' }}</span></div>
-          <div class="info-item"><span class="info-label">Контактное лицо</span><span>{{ formatContact(selectedTender) }}</span></div>
-          <div class="info-item"><span class="info-label">Телефон</span><span>{{ selectedTender.contactPhone || '—' }}</span></div>
-          <div class="info-item"><span class="info-label">Эл. почта</span><span>{{ selectedTender.contactEmail || '—' }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.publishDate"><span class="info-label">Дата публикации</span><span>{{ formatDate(selectedTender.publishDate) }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.deadline"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender.deadline)">{{ formatDate(selectedTender.deadline) }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.deliveryAddress"><span class="info-label">Адрес поставки</span><span>{{ selectedTender.deliveryAddress }}</span></div>
+          <div class="info-item" *ngIf="hasContactPerson()"><span class="info-label">Контактное лицо</span><span>{{ formatContact(selectedTender) }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.contactPhone"><span class="info-label">Телефон</span><span>{{ selectedTender.contactPhone }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.contactEmail"><span class="info-label">Эл. почта</span><span>{{ selectedTender.contactEmail }}</span></div>
         </div>
         <p *ngIf="selectedTender.description" class="info-desc"><strong>Описание:</strong> {{ selectedTender.description }}</p>
       </div>
@@ -202,7 +202,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showLotForm" (click)="onAddLot()">Добавить лот</button>
-        <button class="btn btn-add-bulk" *ngIf="lots.length > 0" (click)="bulkPriceTenderId = selectedTender.id">
+        <button class="btn btn-add-bulk" *ngIf="lots.length > 0 && !isImportedTender()" (click)="bulkPriceTenderId = selectedTender.id">
           Запросить КП по всему тендеру
         </button>
         <button class="btn btn-kp-selected" *ngIf="lots.length > 0" [disabled]="lotSel.size === 0"
@@ -246,7 +246,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <table *ngIf="lots.length > 0">
         <thead>
-          <tr><th class="w-36"><input type="checkbox" [checked]="allLotsSelected()" (change)="toggleAllLots($any($event.target).checked)" title="Выбрать все лоты" /></th><th>&#8470;</th><th>Название</th><th>Тип</th><th>Кол-во</th><th>Макс. цена</th><th>Габариты (макс.)</th><th>Макс. вес</th><th>Спецификация</th><th>Действия</th></tr>
+          <tr><th class="w-36"><input type="checkbox" [checked]="allLotsSelected()" (change)="toggleAllLots($any($event.target).checked)" title="Выбрать все лоты" /></th><th>&#8470;</th><th>Название</th><th *ngIf="hasAnyType()">Тип</th><th>Кол-во</th><th>Макс. цена</th><th *ngIf="hasAnyDims()">Габариты (макс.)</th><th *ngIf="hasAnyWeight()">Макс. вес</th><th>Спецификация</th><th>Действия</th></tr>
         </thead>
         <tbody>
           <tr *ngFor="let l of lots">
@@ -263,8 +263,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
               </div>
               <div class="kp-line" *ngIf="kpDistributorsFor(l.id).length">КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
             </td>
-            <td>{{ l.equipType }}</td><td>{{ l.quantity }}</td>
-            <td>{{ l.maxCost | money }}</td><td>{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td>{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td>
+            <td *ngIf="hasAnyType()">{{ l.equipmentType?.name || '—' }}</td><td>{{ l.quantity }}</td>
+            <td>{{ l.maxCost | money }}</td><td *ngIf="hasAnyDims()">{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td *ngIf="hasAnyWeight()">{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td>
             <td class="spec-cell" [class.spec-open]="l._specOpen" (click)="toggleSpec(l)"
                 [title]="l._specOpen ? 'Свернуть' : 'Развернуть спецификацию'">{{ l.requiredSpec || '—' }}</td>
             <td class="actions">
@@ -273,8 +273,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 {{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}
               </button>
               <button class="btn btn-kp" (click)="openKpPanelFor(l)">КП</button>
-              <button class="btn btn-registry" (click)="onLotRegistry(l)">Реестр</button>
-              <button class="btn btn-match" (click)="onMatch(l)">Подобрать</button>
+              <button class="btn btn-registry" *ngIf="isKz()" (click)="onLotRegistry(l)">Реестр</button>
+              <button class="btn btn-match" *ngIf="lotHasCriteria(l)" (click)="onMatch(l)">Подобрать</button>
               <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteLot(l.id)">Удалить</button>
             </td>
@@ -290,7 +290,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
         <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
         <table *ngIf="!registryPanel.loading && registryPanel.items.length" class="registry-table">
-          <thead><tr><th>Похожесть</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th></tr></thead>
+          <thead><tr><th>Похожесть</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
           <tbody>
             <tr *ngFor="let c of registryPanel.items">
               <td><span class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span></td>
@@ -299,6 +299,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
               <td>{{ c.producer || '—' }}</td>
               <td>{{ c.country || '—' }}</td>
               <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
+              <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptFromRegistry(c)" title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button></td>
             </tr>
           </tbody>
         </table>
@@ -510,6 +511,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .registry-table { width: 100%; }
     .registry-table th { text-align: left; font-size: 12px; color: #6b7280; }
     .score-badge { background: #e5e7eb; color: #374151; border-radius: 8px; padding: 2px 8px; font-size: 12px; }
+    .btn-adopt { background: #0e9f6e; color: #fff; }
     .score-badge.score-good { background: #d1fae5; color: #065f46; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
@@ -601,6 +603,8 @@ export class TendersComponent {
   kpPanel: { loading: boolean; sending: boolean; entries: any[] } | null = null;
   // Разбор техспеки (кнопка «ТЗ»)
   tzBusy = new Set<number>();
+  // «Взять из реестра в работу»
+  adoptBusy = false;
 
   showTenderForm = false;
   editingTenderId: number | null = null;
@@ -1146,6 +1150,35 @@ export class TendersComponent {
 
   isImportedTender(): boolean {
     return this.isKz() && /^\d+-\d+$/.test(this.selectedTender?.tenderNumber || '');
+  }
+
+  // ===== чистка UI: показывать только заполненное =====
+  hasContactPerson(): boolean { return this.formatContact(this.selectedTender) !== '—'; }
+  hasAnyType(): boolean { return (this.lots || []).some((l: any) => l.equipmentType?.name); }
+  hasAnyDims(): boolean { return (this.lots || []).some((l: any) => l.maxLengthMm || l.maxWidthMm || l.maxHeightMm); }
+  hasAnyWeight(): boolean { return (this.lots || []).some((l: any) => l.maxWeightKg); }
+  lotHasCriteria(l: any): boolean {
+    return !!(l.equipmentType || l.maxLengthMm || l.maxWidthMm || l.maxHeightMm || l.maxWeightKg);
+  }
+
+  adoptFromRegistry(c: any) {
+    const lot = this.registryPanel?.lot;
+    if (!lot || !c?.regNumber) return;
+    this.adoptBusy = true;
+    this.api.adoptRegistryForLot(lot.id, c.regNumber).subscribe({
+      next: () => {
+        this.adoptBusy = false;
+        this.notify.success(`Модель из реестра предложена для лота: ${c.name}`);
+        this.closeRegistryPanel();
+        this.loadLots();
+        this.openKpPanelFor(lot); // сразу к запросу КП (предотметка по бренду производителя)
+      },
+      error: (e) => {
+        this.adoptBusy = false;
+        this.notify.error(e.error?.message || 'Не удалось взять РУ в работу');
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   parseTechSpec(l: any) {

@@ -205,6 +205,11 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/lots/${lotId}/parse-techspec`, {});
   }
 
+  /** «Взять из реестра в работу»: РУ → позиция каталога → предложенная модель лота. */
+  adoptRegistryForLot(lotId: number, regNumber: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/adopt-registry`, { regNumber });
+  }
+
   // === Equipment stats ===
 
   getEquipmentStats(id: number): Observable<any> {
