@@ -6,6 +6,7 @@ import com.icegreen.greenmail.util.ServerSetupTest;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.PriceRequestSendService.SendItem;
 import com.vladoose.nir.service.PriceRequestSendService.SendResult;
@@ -155,5 +156,28 @@ class PriceRequestSendServiceTest {
     void emptyItemsRejected() {
         assertThatThrownBy(() -> sendService.send(tender.getId(), List.of(withEmail.getId()), List.of()))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void tenderFromAnotherMarketRejected() {
+        // тендер+лот другого рынка (RF); текущий рынок — KZ → send не должен видеть чужой тендер
+        MarketContext.set(Market.RF);
+        Tender rf = new Tender();
+        rf.setTenderNumber("ZZ-SEND-RF");
+        rf.setStatus("ACTIVE");
+        tenderRepository.save(rf);
+        TenderLot rfLot = new TenderLot();
+        rfLot.setTender(rf);
+        rfLot.setLotNumber(1);
+        rfLot.setEquipName("ZZ RF лот");
+        rfLot.setQuantity(1);
+        tenderLotRepository.save(rfLot);
+
+        MarketContext.set(Market.KZ);
+        assertThatThrownBy(() -> sendService.send(
+                rf.getId(),
+                List.of(withEmail.getId()),
+                List.of(new SendItem(rfLot.getId(), null, 1))))
+                .isInstanceOf(NotFoundException.class);
     }
 }

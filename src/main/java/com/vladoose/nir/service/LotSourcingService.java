@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.LotSourcingResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.Distributor;
@@ -44,9 +45,12 @@ public class LotSourcingService {
         record BrandSource(Long lotId, String text, String via) {}
         List<BrandSource> sources = new ArrayList<>();
         for (Long lotId : lotIds) {
-            TenderLot lot = tenderLotService.findById(lotId);
+            TenderLot lot = tenderLotService.findById(lotId); // em.find обходит фильтр рынка
             if (!lot.getTender().getId().equals(tenderId)) {
                 throw new BadRequestException("Лот " + lotId + " не принадлежит тендеру " + tenderId);
+            }
+            if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
+                throw new BadRequestException("Лот " + lotId + " не найден");
             }
             if (lot.getProposedEquipment() != null) {
                 sources.add(new BrandSource(lotId, lot.getProposedEquipment().getManufact(), "PROPOSED_MODEL"));

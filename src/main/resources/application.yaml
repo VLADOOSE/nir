@@ -16,6 +16,10 @@ spring:
         smtp:
           auth: false
           starttls.enable: false
+          # таймауты, чтобы зависший реальный SMTP (smtp.mail.ru) не держал поток отправки КП бесконечно
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
   # Схема и данные — через Flyway-миграции (src/main/resources/db/migration), НЕ пересоздаются при старте.
   # Раньше schema.sql+data.sql с mode:always дропали все таблицы каждый запуск (данные слетали).

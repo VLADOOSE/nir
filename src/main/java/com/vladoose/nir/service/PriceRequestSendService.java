@@ -1,21 +1,22 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
-import com.vladoose.nir.repository.PriceRequestItemRepository;
+import com.vladoose.nir.exception.NotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
  * Единый канал отправки запросов КП: на каждого поставщика создаётся PriceRequest (SENT)
  * с позициями (лот + опционально модель) и уходит письмо (KpEmailComposer + EmailService).
- * Ошибка/отсутствие email НЕ валит запись — отражается флагом в SendResult.
+ * Запись КП — в отдельном @Transactional-бине ({@link PriceRequestWriter}); письмо шлётся ПОСЛЕ коммита
+ * (сеть вне транзакции, §6). Ошибка/отсутствие email НЕ валит запись — отражается флагом в SendResult.
  */
 @Service
 public class PriceRequestSendService {
@@ -33,8 +34,7 @@ public class PriceRequestSendService {
     private final TenderLotService tenderLotService;
     private final MedEquipmentService medEquipmentService;
     private final DistributorService distributorService;
-    private final PriceRequestService priceRequestService;
-    private final PriceRequestItemRepository itemRepository;
+    private final PriceRequestWriter writer;
     private final KpEmailComposer composer;
     private final EmailService emailService;
 
@@ -42,30 +42,28 @@ public class PriceRequestSendService {
                                    TenderLotService tenderLotService,
                                    MedEquipmentService medEquipmentService,
                                    DistributorService distributorService,
-                                   PriceRequestService priceRequestService,
-                                   PriceRequestItemRepository itemRepository,
+                                   PriceRequestWriter writer,
                                    KpEmailComposer composer,
                                    EmailService emailService) {
         this.tenderService = tenderService;
         this.tenderLotService = tenderLotService;
         this.medEquipmentService = medEquipmentService;
         this.distributorService = distributorService;
-        this.priceRequestService = priceRequestService;
-        this.itemRepository = itemRepository;
+        this.writer = writer;
         this.composer = composer;
         this.emailService = emailService;
     }
 
-    @Transactional
     public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items) {
         if (tenderId == null) throw new BadRequestException("Не указан тендер");
         if (distributorIds == null || distributorIds.isEmpty()) throw new BadRequestException("Не выбраны поставщики");
         if (items == null || items.isEmpty()) throw new BadRequestException("Не выбраны позиции");
 
+        // findById == em.find обходит hibernate-фильтр рынка → явные гарды от чужого рынка (как в setProposedEquipment)
         Tender tender = tenderService.findById(tenderId);
+        requireCurrentMarket(tender.getMarket(), "Тендер не найден: " + tenderId);
 
-        record Line(TenderLot lot, MedEquipment equipment, int qty) {}
-        List<Line> lines = new ArrayList<>();
+        List<PriceRequestWriter.Line> lines = new ArrayList<>();
         for (SendItem si : items) {
             if (si.tenderLotId() == null) throw new BadRequestException("Не указан лот в позиции");
             if (si.requestedQuantity() == null || si.requestedQuantity() < 1) {
@@ -75,33 +73,28 @@ public class PriceRequestSendService {
             if (!lot.getTender().getId().equals(tenderId)) {
                 throw new BadRequestException("Лот " + si.tenderLotId() + " не принадлежит тендеру " + tenderId);
             }
-            MedEquipment eq = si.medEquipmentId() != null ? medEquipmentService.findById(si.medEquipmentId()) : null;
-            lines.add(new Line(lot, eq, si.requestedQuantity()));
+            MedEquipment eq = null;
+            if (si.medEquipmentId() != null) {
+                eq = medEquipmentService.findById(si.medEquipmentId());
+                requireCurrentMarket(eq.getMarket(), "Оборудование не найдено: " + si.medEquipmentId());
+            }
+            lines.add(new PriceRequestWriter.Line(lot, eq, si.requestedQuantity()));
         }
 
         List<SendResult> results = new ArrayList<>();
-        for (Long distId : distributorIds) {
+        for (Long distId : new LinkedHashSet<>(distributorIds)) { // дедуп: один поставщик — одно КП/письмо
             Distributor dist = distributorService.findById(distId);
-            PriceRequest pr = PriceRequest.builder()
-                    .tender(tender)
-                    .distributor(dist)
-                    .status("SENT")
-                    .sentAt(OffsetDateTime.now())
-                    .createdAt(OffsetDateTime.now())
-                    .build();
-            pr = priceRequestService.save(pr); // штампует market
-            for (Line line : lines) {
-                PriceRequestItem item = PriceRequestItem.builder()
-                        .priceRequest(pr)
-                        .tenderLot(line.lot())
-                        .medEquipment(line.equipment())
-                        .requestedQuantity(line.qty())
-                        .build();
-                pr.getItems().add(itemRepository.save(item));
-            }
-            results.add(dispatch(pr, dist));
+            requireCurrentMarket(dist.getMarket(), "Поставщик не найден: " + distId);
+            PriceRequest pr = writer.persist(tender, dist, lines); // коммит записи
+            results.add(dispatch(pr, dist));                        // письмо ПОСЛЕ коммита
         }
         return results;
+    }
+
+    private void requireCurrentMarket(Market market, String notFoundMessage) {
+        if (market != null && market != MarketContext.get()) {
+            throw new NotFoundException(notFoundMessage);
+        }
     }
 
     private SendResult dispatch(PriceRequest pr, Distributor dist) {

@@ -113,9 +113,6 @@ export class ApiService {
     return this.getAll('price-requests');
   }
 
-  getPriceRequestsByLot(lotId: number): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/price-requests/by-lot/${lotId}`);
-  }
 
   createPriceRequest(body: any): Observable<any> {
     return this.create('price-requests', body);
@@ -177,10 +174,6 @@ export class ApiService {
 
   bulkPricePreview(tenderId: number): Observable<any> {
     return this.http.get<any>(`${this.base}/bulk-price/preview/${tenderId}`);
-  }
-
-  bulkPriceSend(body: any): Observable<number> {
-    return this.http.post<number>(`${this.base}/bulk-price/send`, body);
   }
 
   /** Единый канал отправки КП: письма поставщикам + записи PriceRequest. */

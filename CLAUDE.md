@@ -180,7 +180,9 @@ Standalone-компоненты, инлайн-шаблоны + `styles: []`. `Ap
 - LLM-парсер вложений (опт-ин по Anthropic API-ключу — отдельная оплата по токенам; дёшево на Haiku) как фолбэк к правилам; CSV/PDF.
 - Нечёткий матч брендов (pg_trgm/синонимы/транслит: «Mindray»↔«Майндрей»↔«Shenzhen Mindray»). Сейчас `BrandMatch` — case-insensitive substring.
 - Пооосевые ограничения из спеки («длина не более X мм» отдельными фразами, диапазоны) — `SpecConstraintExtractor` пока берёт только триплет A×B×C + вес.
-- Удалить тонкий делегат `/api/bulk-price/send` (фронт уже полностью на `/api/price-requests/send`).
+- Удалить тонкий делегат `/api/bulk-price/send` (фронт уже полностью на `/api/price-requests/send`; FE-метод `bulkPriceSend` уже удалён).
+- `TenderLotMapper.proposedEquipmentToResponse` читает LAZY `registration` — потенциальный N+1 в `GET /tenders/{id}/lots` (работает под OSIV; при росте — JOIN FETCH).
+- `SpecConstraintExtractor`: вес без явного «не более» трактуется как верхняя граница (by design) — «масса образца до 5 г» даст абсурдный потолок; при жалобах — требовать квалификатор.
 - Парсер казахстанских смет: пропуск служебных строк (нумерация, ИТОГО), сид типовых заголовков.
 - RF-реестр (Росздравнадзор) для рынка РФ.
 - КП-генератор клиенту (НДС/происхождение).

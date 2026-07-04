@@ -66,7 +66,7 @@ class MarketStampingTest {
                 .tenderNumber("ZZLST-KZ").status("NEW")
                 .deadline(java.time.LocalDate.of(2026, 12, 1)).build());
         Distributor d = distributorRepository.save(Distributor.builder().name("ZZLST-KZ дистр").build());
-        // PriceRequest напрямую через репозиторий (как в BulkPriceRequestService.sendGroup) — НЕ через сервис
+        // PriceRequest напрямую через репозиторий (минуя сервис) — проверяем штамп рынка листенером
         PriceRequest pr = priceRequestRepository.save(
                 PriceRequest.builder()
                     .tender(t).distributor(d).status("CREATED").build());

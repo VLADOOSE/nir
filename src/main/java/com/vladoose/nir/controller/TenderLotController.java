@@ -45,8 +45,11 @@ public class TenderLotController {
     public TenderLotResponse setProposedEquipment(@PathVariable Long id,
                                                   @Valid @RequestBody ProposedEquipmentRequest request) {
         TenderLot lot = service.findById(id);
+        // em.find обходит hibernate-фильтр рынка — явные гарды от чужого рынка и для лота (через тендер), и для оборудования
+        if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + id);
+        }
         MedEquipment eq = medEquipmentService.findById(request.getEquipmentId());
-        // em.find обходит hibernate-фильтр рынка — явный гард от чужого рынка
         if (eq.getMarket() != null && eq.getMarket() != MarketContext.get()) {
             throw new NotFoundException("Оборудование не найдено: id=" + request.getEquipmentId());
         }
@@ -58,6 +61,9 @@ public class TenderLotController {
     @PreAuthorize("hasRole('ADMIN')")
     public TenderLotResponse clearProposedEquipment(@PathVariable Long id) {
         TenderLot lot = service.findById(id);
+        if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + id);
+        }
         lot.setProposedEquipment(null);
         return mapper.toResponse(service.save(lot));
     }
