@@ -157,6 +157,8 @@ Standalone-компоненты, инлайн-шаблоны + `styles: []`. `Ap
 
 Грид импорта D1 (per-column `<select>` NAME/MANUFACT/QUANTITY/IGNORE) переиспользуется в `private-requests` (импорт файла) и `inbound` (импорт письма).
 
+Карточка тендера (`tenders.component.ts`, большой — 5 инлайн-панелей: registry/kp/smart-match/bulk/spec): правило «пусто — не рисуем» (инфо-поля и колонки лотов Тип/Габариты/Вес по `*ngIf` наличия данных); каталожные кнопки по критериям (`isKz()`/`isImportedTender()`/`lotHasCriteria`). Спецификация лота раскрывается **полноширинной строкой-аккордеоном** под строкой лота (`<tr>` c colspan, `pre-wrap`+scroll), не в узкой колонке. `anyComponentStyle` budget в `angular.json` поднят 12→16 кБ.
+
 ## 13. Тестирование
 
 - `./gradlew test` (sandbox off). **Ожидаемо 2 падения — `ApplyAutoFillServiceTest` (2)**, пред-существующие (расхождение assertion по наценке ×1.25, в бэклоге). Гейт «зелёного»: «только эти 2». Остальные (рынки, частные заявки, сорсинг, импорт, почта-GreenMail, реестр, update) — зелёные.
@@ -173,6 +175,9 @@ Standalone-компоненты, инлайн-шаблоны + `styles: []`. `Ap
 - **Mail.ru**: только пароль приложения; реальные письма — вложенный multipart + MIME-имена; обязательны рекурсивный обход + декод.
 - **pg_trgm + кириллица**: nirdb обязан быть UTF-8 локалью; `random_page_cost=1.1` чтобы юзался индекс.
 - Ручной клик-тест ловит то, что юнит-тесты (минуя `@Valid`) пропускают — проверять фичи в браузере.
+- **Bash cwd персистит между вызовами**: `cd frontend && npm run build` оставляет cwd во `frontend` → следующий `./gradlew`/`git` падает («No such file»). git/gradlew — из корня (компаунд `cd /Users/vlad/IdeaProjects/AIS && …`).
+- **Edit больших файлов** (`RegistryMatchService`, `tenders.component.ts`): фоновый автоформат иногда дублирует вставленный метод или съедает соседнюю сигнатуру (ловили дубль `adoptForLot` + съеденный `applyAction`). После крупной правки — `grep -c "имяМетода"` на дубли + `./gradlew compileJava`; Edit может упасть «File has not been read yet» после фоновой модификации — перечитать и повторить.
+- **pg_trgm `word_similarity` / `<%`**: чувствителен к длине запроса (порог 0.6 отсекает длинные фразы целиком) → лот-матч по значимым токенам, не по всей строке (§8 `LotQueryTokenizer`). Индекс живёт только если фильтр `EXISTS(IN(join tok <% name)) OFFSET 0`, а не голый `EXISTS` (иначе seq scan 650мс, см. §8 `searchByTokens`).
 
 ## 15. API (основное)
 
