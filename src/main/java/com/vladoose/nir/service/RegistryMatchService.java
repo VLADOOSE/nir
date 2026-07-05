@@ -142,6 +142,9 @@ public class RegistryMatchService {
                     e.setName(trim255(reg.getName()));
                     e.setManufact(reg.getProducer() != null && !reg.getProducer().isBlank()
                             ? trim255(reg.getProducer()) : "не указан");
+                    if (reg.getTechChars() != null && !reg.getTechChars().isBlank()) {
+                        e.setSpec(reg.getTechChars()); // из кеша карточки НЦЭЛС; внешку при adopt не зовём
+                    }
                     e.setRegistrationStatus(RegistrationStatus.REGISTERED);
                     e.setRegistration(reg);
                     e.setRegistrationCheckedAt(OffsetDateTime.now());

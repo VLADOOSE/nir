@@ -104,4 +104,23 @@ class RegistryAdoptTest {
         assertThatThrownBy(() -> service.adoptForLot(lot.getId(), "ZZ-РУ-ADOPT-1"))
                 .isInstanceOf(NotFoundException.class);
     }
+
+    @Test
+    void adoptCopiesCachedTechCharsIntoNewEquipmentSpec() {
+        reg.setTechChars("Вязкость 40 000 мПа·с; осмоляльность 325 мОсм/кг");
+        medRegistryRepository.saveAndFlush(reg);
+
+        service.adoptForLot(lot.getId(), reg.getRegNumber());
+
+        MedEquipment eq = medEquipmentRepository.findFirstByRegistrationRegNumber(reg.getRegNumber()).orElseThrow();
+        assertThat(eq.getSpec()).contains("40 000 мПа·с");
+    }
+
+    @Test
+    void adoptWithoutCachedDetail_leavesSpecNull() {
+        service.adoptForLot(lot.getId(), reg.getRegNumber());
+
+        MedEquipment eq = medEquipmentRepository.findFirstByRegistrationRegNumber(reg.getRegNumber()).orElseThrow();
+        assertThat(eq.getSpec()).isNull();
+    }
 }
