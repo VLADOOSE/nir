@@ -41,4 +41,30 @@ public class MedRegistry {
 
     @Column(name = "imported_at")
     private OffsetDateTime importedAt;
+
+    // --- Кеш карточки НЦЭЛС (on-demand, см. RegistryDetailService) ---
+
+    @Column(name = "ndda_id")
+    private Long nddaId;
+
+    @Column(name = "risk_class", columnDefinition = "TEXT")
+    private String riskClass;
+
+    @Column(columnDefinition = "TEXT")
+    private String purpose;
+
+    @Column(name = "use_area", columnDefinition = "TEXT")
+    private String useArea;
+
+    @Column(name = "tech_chars", columnDefinition = "TEXT")
+    private String techChars;
+
+    @Column(name = "mi_kind", columnDefinition = "TEXT")
+    private String miKind;
+
+    @Column(name = "mi_kind_def", columnDefinition = "TEXT")
+    private String miKindDef;
+
+    @Column(name = "detail_fetched_at")
+    private OffsetDateTime detailFetchedAt;
 }
