@@ -89,6 +89,10 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/lots/${lotId}/registry-candidates`, { params: { limit } });
   }
 
+  getRegistryDetail(regNumber: string): Observable<any> {
+    return this.http.get<any>(`${this.base}/registry/detail`, { params: { regNumber } });
+  }
+
   // === Applies ===
 
   getApplies(): Observable<any[]> {

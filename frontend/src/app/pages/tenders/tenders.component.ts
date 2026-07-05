@@ -315,18 +315,50 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <table *ngIf="!registryPanel.loading && registryPanel.items.length" class="registry-table">
           <thead><tr><th>Соответствие</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
           <tbody>
-            <tr *ngFor="let c of registryPanel.items">
-              <td>
-                <span *ngIf="registryPanel.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
-                <span *ngIf="!registryPanel.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
-              </td>
-              <td>{{ c.regNumber }}</td>
-              <td>{{ c.name }}</td>
-              <td>{{ c.producer || '—' }}</td>
-              <td>{{ c.country || '—' }}</td>
-              <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
-              <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptFromRegistry(c)" title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button></td>
-            </tr>
+            <ng-container *ngFor="let c of registryPanel.items">
+              <tr class="registry-row" (click)="toggleRegistryDetail(c)"
+                  [title]="registryPanel.openReg === c.regNumber ? 'Свернуть описание' : 'Показать описание из карточки НЦЭЛС'">
+                <td>
+                  <span *ngIf="registryPanel.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
+                  <span *ngIf="!registryPanel.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
+                </td>
+                <td>{{ c.regNumber }}</td>
+                <td>{{ c.name }} <span class="registry-desc-chip">{{ registryPanel.openReg === c.regNumber ? '▴ свернуть' : '▾ описание' }}</span></td>
+                <td>{{ c.producer || '—' }}</td>
+                <td>{{ c.country || '—' }}</td>
+                <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
+                <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="$event.stopPropagation(); adoptFromRegistry(c)" title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button></td>
+              </tr>
+              <tr *ngIf="registryPanel.openReg === c.regNumber" class="registry-detail-row">
+                <td colspan="7">
+                  <div *ngIf="registryPanel.detailLoading" class="registry-loading">Загружаем карточку НЦЭЛС…</div>
+                  <div *ngIf="registryPanel.detailError && !registryPanel.detailLoading" class="registry-detail-error">
+                    {{ registryPanel.detailError }} — сверните и разверните строку, чтобы повторить.
+                  </div>
+                  <div *ngIf="registryPanel.detail && !registryPanel.detailLoading" class="registry-detail-cols">
+                    <div *ngIf="registryPanel.lot?.requiredSpec" class="registry-detail-col">
+                      <div class="registry-detail-h">ТЗ лота</div>
+                      <pre class="registry-detail-pre">{{ registryPanel.lot.requiredSpec }}</pre>
+                    </div>
+                    <div class="registry-detail-col">
+                      <div class="registry-detail-h">Из реестра НЦЭЛС</div>
+                      <div *ngIf="registryDetailEmpty(registryPanel.detail)" class="empty">В карточке НЦЭЛС описание не заполнено</div>
+                      <div *ngIf="registryPanel.detail.riskClass || registryPanel.detail.miKind" class="registry-detail-meta">
+                        <span *ngIf="registryPanel.detail.riskClass">{{ registryPanel.detail.riskClass }}</span>
+                        <span *ngIf="registryPanel.detail.riskClass && registryPanel.detail.miKind"> · </span>
+                        <span *ngIf="registryPanel.detail.miKind">{{ registryPanel.detail.miKind }}</span>
+                        <div *ngIf="registryPanel.detail.miKindDef" class="registry-detail-def">{{ registryPanel.detail.miKindDef }}</div>
+                      </div>
+                      <div *ngIf="registryPanel.detail.purpose" class="registry-detail-block"><b>Назначение:</b> {{ registryPanel.detail.purpose }}</div>
+                      <div *ngIf="registryPanel.detail.useArea" class="registry-detail-block"><b>Область применения:</b> {{ registryPanel.detail.useArea }}</div>
+                      <div *ngIf="registryPanel.detail.techChars" class="registry-detail-block"><b>Краткие тех. характеристики:</b>
+                        <pre class="registry-detail-pre">{{ registryPanel.detail.techChars }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </ng-container>
           </tbody>
         </table>
       </div>
@@ -542,6 +574,18 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .score-badge.score-name { background: #eef2ff; color: #3730a3; }
     .registry-note { font-size: 12px; color: #6b7280; margin: 4px 0 8px; }
     .registry-hint { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: #92400e; }
+    .registry-row { cursor: pointer; }
+    .registry-row:hover td { background: #f5f3ff; }
+    .registry-desc-chip { font-size: 11px; color: #7c3aed; white-space: nowrap; margin-left: 6px; }
+    .registry-detail-row td { background: #f5f3ff; padding: 10px 14px; }
+    .registry-detail-cols { display: flex; gap: 16px; align-items: flex-start; }
+    .registry-detail-col { flex: 1; min-width: 0; }
+    .registry-detail-h { font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+    .registry-detail-pre { white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; font: inherit; margin: 4px 0 0; }
+    .registry-detail-meta { margin-bottom: 8px; font-weight: 600; }
+    .registry-detail-def { font-size: 12px; color: #6b7280; font-weight: 400; margin-top: 2px; }
+    .registry-detail-block { margin-bottom: 6px; }
+    .registry-detail-error { color: #b91c1c; padding: 4px 0; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -967,7 +1011,8 @@ export class TendersComponent {
     if (this.importPollTimer) { clearInterval(this.importPollTimer); this.importPollTimer = null; }
   }
 
-  registryPanel: { lot: any; loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean } | null = null;
+  registryPanel: { lot: any; loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean;
+                   openReg?: string | null; detail?: any; detailLoading?: boolean; detailError?: string | null } | null = null;
 
   onLotRegistry(l: any) {
     this.registryPanel = { lot: l, loading: true, items: [], distinctive: true, techSpecParsed: true };
@@ -991,6 +1036,39 @@ export class TendersComponent {
   }
 
   closeRegistryPanel() { this.registryPanel = null; this.cdr.detectChanges(); }
+
+  toggleRegistryDetail(c: any) {
+    const p = this.registryPanel;
+    if (!p) return;
+    if (p.openReg === c.regNumber) { p.openReg = null; this.cdr.detectChanges(); return; }
+    p.openReg = c.regNumber;
+    p.detail = c._detail || null;
+    p.detailError = null;
+    p.detailLoading = !p.detail;
+    if (!p.detail) {
+      this.api.getRegistryDetail(c.regNumber).subscribe({
+        next: d => {
+          c._detail = d; // фронтовый кеш на объекте кандидата — повторный разворот без запроса
+          if (p.openReg === c.regNumber) { p.detail = d; p.detailLoading = false; }
+          this.cdr.detectChanges();
+        },
+        error: err => {
+          // ошибка живёт в развороте (панель не закрываем, тост не нужен);
+          // detail остаётся null и в c._detail не кешируется → повторное открытие = retry
+          if (p.openReg === c.regNumber) {
+            p.detailLoading = false;
+            p.detailError = err.error?.message || 'Не удалось получить карточку НЦЭЛС';
+          }
+          this.cdr.detectChanges();
+        }
+      });
+    }
+    this.cdr.detectChanges();
+  }
+
+  registryDetailEmpty(d: any): boolean {
+    return !!d && !d.riskClass && !d.purpose && !d.useArea && !d.techChars && !d.miKind;
+  }
 
   scorePct(c: any): number { return Math.round((c?.score || 0) * 100); }
 
