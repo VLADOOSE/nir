@@ -48,7 +48,10 @@ class NddaHttpClientTest {
     static void stop() { server.stop(0); }
 
     @BeforeEach
-    void resetStatus() { nextStatus = 200; }
+    void resetStatus() {
+        nextStatus = 200;
+        nextBody = "{}";
+    }
 
     @Test
     void resolveId_postsListFilteredByRegNumber_andReturnsId() {
@@ -70,6 +73,14 @@ class NddaHttpClientTest {
     void resolveId_unknownRegNumber_returns200EmptyArray_treatedAsNull() {
         nextBody = "[]"; // живой API на неизвестный № РУ отвечает 200 и [], не 404
         assertThat(client.resolveId("РК МИ (ИМН)-0№999999")).isNull();
+    }
+
+    @Test
+    void resolveId_mismatchedRegNumberInList_returnsNull() {
+        nextBody = """
+            [{"id":999999,"reg_number":"РК МИ (ИМН)-0№000001","name":"Чужое изделие"}]
+            """;
+        assertThat(client.resolveId("РК МИ (ИМН)-0№031074")).isNull();
     }
 
     @Test

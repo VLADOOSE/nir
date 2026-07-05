@@ -54,7 +54,10 @@ public class NddaHttpClient implements NddaClient {
                 .timeout(Duration.ofSeconds(30)).build());
         try {
             List<NddaListItemDto> items = objectMapper.readValue(json, new TypeReference<List<NddaListItemDto>>() {});
-            return items.isEmpty() ? null : items.get(0).getId();
+            return items.stream()
+                    .filter(i -> regNumber.equals(i.getRegNumber()))
+                    .map(NddaListItemDto::getId)
+                    .findFirst().orElse(null);
         } catch (Exception e) {
             throw new UpstreamException("НЦЭЛС: неожиданный ответ list: " + e.getMessage(), e);
         }
