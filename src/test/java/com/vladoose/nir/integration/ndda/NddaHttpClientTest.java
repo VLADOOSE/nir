@@ -62,6 +62,7 @@ class NddaHttpClientTest {
         assertThat(lastPath).isEqualTo("/register-backend/RegisterService/list");
         assertThat(lastRequestBody).contains("\"regNumber\":\"РК МИ (ИМН)-0№031074\"");
         assertThat(lastRequestBody).contains("\"regTypeId\":2");
+        assertThat(lastRequestBody).contains("\"regPeriod\":1");
         assertThat(id).isEqualTo(182621L);
     }
 
