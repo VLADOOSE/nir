@@ -3,6 +3,7 @@ package com.vladoose.nir.integration.ndda;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vladoose.nir.exception.UpstreamException;
+import com.vladoose.nir.integration.ndda.dto.NddaComplectItemDto;
 import com.vladoose.nir.integration.ndda.dto.NddaDetailDto;
 import com.vladoose.nir.integration.ndda.dto.NddaListItemDto;
 import org.springframework.beans.factory.annotation.Value;
@@ -71,6 +72,18 @@ public class NddaHttpClient implements NddaClient {
             return objectMapper.readValue(json, NddaDetailDto.class);
         } catch (Exception e) {
             throw new UpstreamException("НЦЭЛС: неожиданный ответ карточки: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public List<NddaComplectItemDto> fetchComplectList(long nddaId) {
+        String json = send(HttpRequest.newBuilder(
+                URI.create(baseUrl + "/RegisterService/MtComplectList?registerId=" + nddaId))
+                .GET().timeout(Duration.ofSeconds(30)).build());
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<NddaComplectItemDto>>() {});
+        } catch (Exception e) {
+            throw new UpstreamException("НЦЭЛС: неожиданный ответ комплектности: " + e.getMessage(), e);
         }
     }
 

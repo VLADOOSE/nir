@@ -116,4 +116,23 @@ class NddaHttpClientTest {
         nextBody = "oops";
         assertThatThrownBy(() -> client.fetchDetail(1L)).isInstanceOf(UpstreamException.class);
     }
+
+    @Test
+    void fetchComplectList_getsMtComplectList_andParsesComponents() {
+        // живая форма 2026-07-06 (registerId 178624, аппарат ЭЛЭСКУЛАП)
+        nextBody = """
+            [{"registerId":178624,"productName":"1.Электронный блок – 1 шт.;","component":"основной блок",
+              "producerName":"ООО «Мед ТеКо»","countryName":"Россия","partNumber":1},
+             {"registerId":178624,"productName":"4.Электроды силиконовые электропроводящие, мм:\\n- 55 х 80 – 2 шт.;",
+              "component":"комплектующие","producerName":"ООО «Мед ТеКо»","countryName":"Россия","partNumber":4}]
+            """;
+        var items = client.fetchComplectList(178624L);
+        assertThat(lastPath).isEqualTo("/register-backend/RegisterService/MtComplectList");
+        assertThat(lastQuery).isEqualTo("registerId=178624");
+        assertThat(items).hasSize(2);
+        assertThat(items.get(1).getPartNumber()).isEqualTo(4);
+        assertThat(items.get(1).getProductName()).contains("силиконовые");
+        assertThat(items.get(1).getProducerName()).isEqualTo("ООО «Мед ТеКо»");
+        assertThat(items.get(1).getCountryName()).isEqualTo("Россия");
+    }
 }
