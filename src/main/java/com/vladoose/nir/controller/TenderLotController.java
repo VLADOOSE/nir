@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.AdoptComponentRequest;
 import com.vladoose.nir.dto.request.AdoptRegistryRequest;
 import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
@@ -119,6 +120,14 @@ public class TenderLotController {
     public ComplectSearchResponse complectSearch(@PathVariable Long id,
                                                  @RequestParam(required = false) String term) {
         return complectService.search(id, term);
+    }
+
+    /** «Взять в работу» компонент комплектности → предложенная модель лота (РУ аппарата). */
+    @PostMapping("/{id}/adopt-component")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TenderLotResponse adoptComponent(@PathVariable Long id,
+                                            @Valid @RequestBody AdoptComponentRequest request) {
+        return mapper.toResponse(complectService.adoptComponent(id, request.getRegNumber(), request.getPartNumber()));
     }
 
     @PostMapping

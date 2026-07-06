@@ -16,6 +16,9 @@ public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long
     /** Позиция каталога, уже привязанная к РУ (дедуп при «Взять из реестра»); рыночный фильтр — аспектом. */
     Optional<MedEquipment> findFirstByRegistrationRegNumber(String regNumber);
 
+    /** Дедуп позиции по РУ + имени (разные компоненты одного аппарата не сливаются). */
+    Optional<MedEquipment> findFirstByRegistrationRegNumberAndNameIgnoreCase(String regNumber, String name);
+
     @Query("SELECT e FROM MedEquipment e WHERE " +
            "(:equipTypeId IS NULL OR e.equipmentType.id = :equipTypeId) AND " +
            "(:maxLength IS NULL OR e.lengthMm <= :maxLength) AND " +
