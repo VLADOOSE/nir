@@ -361,6 +361,48 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </ng-container>
           </tbody>
         </table>
+        <div class="complect-cta">
+          <button class="btn btn-registry" (click)="openComplect(registryPanel.lot)"
+                  title="Найти лот в комплектности родительского аппарата (для электродов/пластин/принадлежностей)">
+            🔧 Комплектность аппаратов
+          </button>
+          <span class="registry-note">Если лот — принадлежность к аппарату (электрод, пластина), допуск может быть в комплектности аппарата.</span>
+        </div>
+      </div>
+
+      <div class="registry-panel" *ngIf="complectPanel">
+        <div class="registry-panel-head">
+          <span><b>Комплектность аппаратов:</b> {{ complectPanel.lot.equipName }}</span>
+          <button class="btn btn-cancel" (click)="closeComplect()">✕ Закрыть</button>
+        </div>
+        <div class="complect-term">
+          <input type="text" [(ngModel)]="complectPanel.term" placeholder="Название аппарата (напр. Элэскулап)"
+                 (keyup.enter)="runComplect(complectPanel.lot, complectPanel.term)">
+          <button class="btn btn-primary" [disabled]="complectPanel.loading"
+                  (click)="runComplect(complectPanel.lot, complectPanel.term)">Искать</button>
+        </div>
+        <div *ngIf="complectPanel.loading" class="registry-loading">Ищем в комплектности аппаратов…</div>
+        <div *ngIf="!complectPanel.loading && complectPanel.searched && !complectPanel.apparatuses.length" class="empty">
+          Аппарат не найден — уточните его название в поле выше и нажмите «Искать».
+        </div>
+        <div *ngFor="let a of complectPanel.apparatuses" class="complect-apparatus">
+          <div class="complect-app-head">
+            {{ a.name }} · <b>{{ a.country || '—' }}</b> · {{ a.producer || '—' }} · РУ {{ a.regNumber }}
+          </div>
+          <table class="registry-table">
+            <thead><tr><th>Совпадение</th><th>Компонент (состав)</th><th>Тип</th><th>Страна</th><th></th></tr></thead>
+            <tbody>
+              <tr *ngFor="let comp of a.components">
+                <td><span class="score-badge" [class.score-good]="comp.score >= 0.5">{{ scorePct(comp) }}%</span></td>
+                <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
+                <td>{{ comp.component || '—' }}</td>
+                <td>{{ comp.country || '—' }}</td>
+                <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptComponent(a, comp)"
+                            title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="kp-panel" *ngIf="kpPanel">
@@ -586,6 +628,12 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .registry-detail-def { font-size: 12px; color: #6b7280; font-weight: 400; margin-top: 2px; }
     .registry-detail-block { margin-bottom: 6px; }
     .registry-detail-error { color: #b91c1c; padding: 4px 0; }
+    .complect-cta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .complect-term { display: flex; gap: 8px; margin-bottom: 10px; }
+    .complect-term input { flex: 1; max-width: 360px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+    .complect-apparatus { margin: 10px 0; padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 8px; background: #fff; }
+    .complect-app-head { font-size: 13px; margin-bottom: 6px; color: #374151; }
+    .complect-pre { white-space: pre-wrap; margin: 0; font: inherit; max-width: 520px; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1036,6 +1084,56 @@ export class TendersComponent {
   }
 
   closeRegistryPanel() { this.registryPanel = null; this.cdr.detectChanges(); }
+
+  complectPanel: { lot: any; term: string; loading: boolean; searched: boolean; apparatuses: any[] } | null = null;
+
+  openComplect(l: any) {
+    this.complectPanel = { lot: l, term: '', loading: true, searched: false, apparatuses: [] };
+    this.cdr.detectChanges();
+    // первый прогон — без term: бэк сам извлечёт бренд из ТЗ
+    this.runComplect(l, undefined);
+  }
+
+  runComplect(l: any, term?: string) {
+    if (!this.complectPanel) return;
+    this.complectPanel.loading = true;
+    this.cdr.detectChanges();
+    this.api.complectSearch(l.id, term).subscribe({
+      next: (r: any) => {
+        this.complectPanel = {
+          lot: l, term: r?.term || '', loading: false, searched: true,
+          apparatuses: r?.apparatuses || []
+        };
+        this.cdr.detectChanges();
+      },
+      error: err => {
+        if (this.complectPanel) { this.complectPanel.loading = false; this.complectPanel.searched = true; }
+        this.notify.error('Комплектность: ' + (err.error?.message || err.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  closeComplect() { this.complectPanel = null; this.cdr.detectChanges(); }
+
+  adoptComponent(c: any, comp: any) {
+    if (!this.complectPanel) return;
+    this.adoptBusy = true;
+    this.cdr.detectChanges();
+    this.api.adoptComponent(this.complectPanel.lot.id, c.regNumber, comp.partNumber).subscribe({
+      next: () => {
+        this.adoptBusy = false;
+        this.notify.success('Компонент взят в работу — предложенная модель лота обновлена');
+        this.closeComplect();
+        this.loadLots();
+      },
+      error: err => {
+        this.adoptBusy = false;
+        this.notify.error('Не удалось взять компонент: ' + (err.error?.message || err.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
 
   toggleRegistryDetail(c: any) {
     const p = this.registryPanel;

@@ -93,6 +93,15 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/registry/detail`, { params: { regNumber } });
   }
 
+  complectSearch(lotId: number, term?: string): Observable<any> {
+    const params: any = term ? { term } : {};
+    return this.http.post<any>(`${this.base}/lots/${lotId}/complect-search`, {}, { params });
+  }
+
+  adoptComponent(lotId: number, regNumber: string, partNumber: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/adopt-component`, { regNumber, partNumber });
+  }
+
   // === Applies ===
 
   getApplies(): Observable<any[]> {
