@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.AdoptRegistryRequest;
 import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
+import com.vladoose.nir.dto.response.ComplectSearchResponse;
 import com.vladoose.nir.dto.response.ParseTechSpecResponse;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.entity.MedEquipment;
@@ -12,6 +13,7 @@ import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.TenderLotMapper;
+import com.vladoose.nir.service.ComplectService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TechSpecService;
 import com.vladoose.nir.service.TenderLotService;
@@ -30,19 +32,22 @@ public class TenderLotController {
     private final com.vladoose.nir.service.RegistryMatchService registryMatchService;
     private final MedEquipmentService medEquipmentService;
     private final TechSpecService techSpecService;
+    private final ComplectService complectService;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
                                TenderLotMapper mapper,
                                com.vladoose.nir.service.RegistryMatchService registryMatchService,
                                MedEquipmentService medEquipmentService,
-                               TechSpecService techSpecService) {
+                               TechSpecService techSpecService,
+                               ComplectService complectService) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
         this.registryMatchService = registryMatchService;
         this.medEquipmentService = medEquipmentService;
         this.techSpecService = techSpecService;
+        this.complectService = complectService;
     }
 
     /** «Взять из реестра в работу»: РУ → позиция каталога → предложенная модель лота. */
@@ -107,6 +112,13 @@ public class TenderLotController {
     public com.vladoose.nir.dto.response.LotRegistryMatchResponse registryCandidates(
             @PathVariable Long id, @RequestParam(defaultValue = "5") int limit) {
         return registryMatchService.matchForLotUi(id, Math.min(limit, 20));
+    }
+
+    /** Поиск по комплектности аппаратов: бренд из ТЗ → аппарат → компоненты (аксессуарные лоты). */
+    @PostMapping("/{id}/complect-search")
+    public ComplectSearchResponse complectSearch(@PathVariable Long id,
+                                                 @RequestParam(required = false) String term) {
+        return complectService.search(id, term);
     }
 
     @PostMapping
