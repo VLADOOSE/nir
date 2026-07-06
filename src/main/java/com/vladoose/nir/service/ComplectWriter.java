@@ -27,6 +27,7 @@ public class ComplectWriter {
     @Transactional
     public void cache(String regNumber, Long nddaId, List<NddaComplectItemDto> items) {
         componentRepository.deleteByRegNumber(regNumber);
+        componentRepository.flush(); // DELETE до INSERT'ов: иначе ActionQueue флашит INSERT перед DELETE → uq_registry_component
         for (NddaComplectItemDto it : items) {
             componentRepository.save(RegistryComponent.builder()
                     .regNumber(regNumber)
