@@ -1,5 +1,6 @@
 package com.vladoose.nir.repository;
 
+import com.vladoose.nir.dto.response.ApparatusRow;
 import com.vladoose.nir.dto.response.RegistryCandidateRow;
 import com.vladoose.nir.entity.MedRegistry;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -61,4 +62,17 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
     List<RegistryCandidateRow> searchByTokens(@Param("tokens") String tokens,
                                               @Param("weights") String weights,
                                               @Param("limit") int limit);
+
+    /**
+     * Аппараты-кандидаты по бренду из ТЗ: только записи типа «(МТ)» (аппаратура, у них есть комплектность),
+     * индексо-дружелюбный `<%` (word_similarity ≥ глобального порога), ранг по word_similarity термина к имени.
+     */
+    @Query(nativeQuery = true, value =
+            "SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, " +
+            "       m.country AS country, m.ndda_id AS nddaId " +
+            "FROM med_registry m " +
+            "WHERE m.reg_number LIKE '%(МТ)%' AND :term <% m.name " +
+            "ORDER BY word_similarity(:term, m.name) DESC " +
+            "LIMIT :limit")
+    List<ApparatusRow> findApparatusByTerm(@Param("term") String term, @Param("limit") int limit);
 }
