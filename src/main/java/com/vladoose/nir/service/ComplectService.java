@@ -18,6 +18,7 @@ import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.RegistryComponentRepository;
 import com.vladoose.nir.util.ComplectComponentMatcher;
 import com.vladoose.nir.util.ComplectTermExtractor;
+import com.vladoose.nir.util.LotDescriptiveText;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,8 +75,10 @@ public class ComplectService {
         resp.setApparatuses(new ArrayList<>());
         if (term == null || term.isBlank()) return resp;
 
+        // Матчим по описательной части лота (имя + описание/доп.описание/характеристики из ТЗ),
+        // а не по всему ТЗ — иначе закупочный канцелярит раздувает знаменатель и топит % (см. LotDescriptiveText).
         Set<String> lotTokens = ComplectComponentMatcher.tokenize(
-                lot.getEquipName() + " " + (lot.getRequiredSpec() != null ? lot.getRequiredSpec() : ""));
+                LotDescriptiveText.forMatching(lot.getEquipName(), lot.getManufact(), lot.getRequiredSpec()));
 
         for (ApparatusRow row : registryRepository.findApparatusByTerm(term, MAX_APPARATUS)) {
             List<RegistryComponent> cached = componentRepository.findByRegNumberOrderByPartNumber(row.getRegNumber());
