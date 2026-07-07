@@ -3,11 +3,13 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.AdoptComponentRequest;
 import com.vladoose.nir.dto.request.AdoptRegistryRequest;
+import com.vladoose.nir.dto.request.EquipmentTypeAssignRequest;
 import com.vladoose.nir.dto.request.ProposedEquipmentRequest;
 import com.vladoose.nir.dto.request.TenderLotRequest;
 import com.vladoose.nir.dto.response.ComplectSearchResponse;
 import com.vladoose.nir.dto.response.ParseTechSpecResponse;
 import com.vladoose.nir.dto.response.TenderLotResponse;
+import com.vladoose.nir.entity.EquipmentType;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
@@ -15,6 +17,8 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.service.ComplectService;
+import com.vladoose.nir.service.EquipmentTypeService;
+import com.vladoose.nir.service.LotTypeClassifier;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TechSpecService;
 import com.vladoose.nir.service.TenderLotService;
@@ -34,6 +38,8 @@ public class TenderLotController {
     private final MedEquipmentService medEquipmentService;
     private final TechSpecService techSpecService;
     private final ComplectService complectService;
+    private final EquipmentTypeService equipmentTypeService;
+    private final LotTypeClassifier classifier;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
@@ -41,7 +47,9 @@ public class TenderLotController {
                                com.vladoose.nir.service.RegistryMatchService registryMatchService,
                                MedEquipmentService medEquipmentService,
                                TechSpecService techSpecService,
-                               ComplectService complectService) {
+                               ComplectService complectService,
+                               EquipmentTypeService equipmentTypeService,
+                               LotTypeClassifier classifier) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
@@ -49,6 +57,8 @@ public class TenderLotController {
         this.medEquipmentService = medEquipmentService;
         this.techSpecService = techSpecService;
         this.complectService = complectService;
+        this.equipmentTypeService = equipmentTypeService;
+        this.classifier = classifier;
     }
 
     /** «Взять из реестра в работу»: РУ → позиция каталога → предложенная модель лота. */
@@ -101,6 +111,25 @@ public class TenderLotController {
         }
         lot.setProposedEquipment(null);
         return mapper.toResponse(service.save(lot));
+    }
+
+    /** Назначить/снять вид МИ лота (питает подбор поставщиков; чинит несохранение типа). */
+    @PostMapping("/{id}/equipment-type")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TenderLotResponse setEquipmentType(@PathVariable Long id,
+                                              @RequestBody EquipmentTypeAssignRequest request) {
+        TenderLot lot = service.findById(id);
+        if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + id);
+        }
+        EquipmentType type = request.getTypeId() == null ? null
+                : equipmentTypeService.findById(request.getTypeId());
+        lot.setEquipmentType(type);
+        TenderLotResponse resp = mapper.toResponse(service.save(lot));
+        if (type != null) {
+            try { classifier.learn(lot, type); } catch (RuntimeException ignore) { /* best-effort */ }
+        }
+        return resp;
     }
 
     @GetMapping("/{id}")
