@@ -71,7 +71,7 @@ class LotSourcingServiceTest {
         lotB.setEquipName(regName);
         tenderLotRepository.save(lotB);
 
-        LotSourcingResponse r = lotSourcingService.build(tender.getId(), List.of(lotA.getId(), lotB.getId()));
+        LotSourcingResponse r = lotSourcingService.build(tender.getId(), List.of(lotA.getId(), lotB.getId()), null);
 
         LotSourcingResponse.Entry carrierEntry = r.getDistributors().stream()
                 .filter(e -> e.getDistributor().getName().equals("ZZ Возит Mindray"))

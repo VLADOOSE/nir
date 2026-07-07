@@ -58,8 +58,9 @@ public class TenderController {
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
     @GetMapping("/{id}/lot-sourcing")
-    public LotSourcingResponse lotSourcing(@PathVariable Long id, @RequestParam List<Long> lotIds) {
-        return lotSourcingService.build(id, lotIds);
+    public LotSourcingResponse lotSourcing(@PathVariable Long id, @RequestParam List<Long> lotIds,
+                                           @RequestParam(required = false) String term) {
+        return lotSourcingService.build(id, lotIds, term);
     }
 
     @GetMapping
