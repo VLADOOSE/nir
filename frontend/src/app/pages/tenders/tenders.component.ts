@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -280,10 +280,17 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 {{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}
               </button>
               <button class="btn btn-kp" (click)="openKpPanelFor(l)">КП</button>
-              <button class="btn btn-registry" *ngIf="isKz()" (click)="onLotRegistry(l)">Реестр</button>
-              <button class="btn btn-match" *ngIf="lotHasCriteria(l)" (click)="onMatch(l)">Подобрать</button>
-              <button class="btn btn-edit" (click)="onEditLot(l)">Редактировать</button>
-              <button class="btn btn-delete" (click)="onDeleteLot(l.id)">Удалить</button>
+              <button class="btn btn-registry" *ngIf="isKz()" (click)="onLotRegistry(l)"
+                      title="Подбор из реестра НЦЭЛС (кандидаты + комплектность аппаратов)">Подбор</button>
+              <!-- каталог-матч: только РФ (KZ-каталог наполняется из реестра, там подбор — через «Подбор») -->
+              <button class="btn btn-match" *ngIf="lotHasCriteria(l) && !isKz()" (click)="onMatch(l)">Подобрать</button>
+              <span class="lot-menu-wrap">
+                <button class="btn btn-more" (click)="toggleLotMenu(l, $event)" title="Ещё действия">⋯</button>
+                <span class="lot-menu" *ngIf="openMenuLotId === l.id">
+                  <button (click)="onEditLot(l); openMenuLotId = null">✎ Редактировать</button>
+                  <button class="danger" (click)="onDeleteLot(l.id); openMenuLotId = null">🗑 Удалить</button>
+                </span>
+              </span>
             </td>
           </tr>
           <tr *ngIf="l._specOpen" class="spec-row">
@@ -389,17 +396,39 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <div class="complect-app-head">
             {{ a.name }} · <b>{{ a.country || '—' }}</b> · {{ a.producer || '—' }} · РУ {{ a.regNumber }}
           </div>
-          <table class="registry-table">
+          <div *ngIf="!a._relevant.length && !a._zero.length" class="empty">Комплектность у этого аппарата не заполнена.</div>
+          <table class="registry-table" *ngIf="a._relevant.length || a._zero.length">
             <thead><tr><th>Совпадение</th><th>Компонент (состав)</th><th>Тип</th><th>Страна</th><th></th></tr></thead>
             <tbody>
-              <tr *ngFor="let comp of a.components">
-                <td><span class="score-badge" [class.score-good]="comp.score >= 0.5">{{ scorePct(comp) }}%</span></td>
+              <tr *ngFor="let comp of a._relevant; let i = index" [class.recommended]="i === 0">
+                <td>
+                  <span class="score-badge" [class.score-good]="i === 0">{{ scorePct(comp) }}%</span>
+                  <span *ngIf="i === 0" class="reco-chip">★ рекомендуем</span>
+                </td>
                 <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
                 <td>{{ comp.component || '—' }}</td>
                 <td>{{ comp.country || '—' }}</td>
-                <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptComponent(a, comp)"
+                <td><button class="btn" [class.btn-adopt]="i === 0" [class.btn-adopt-muted]="i !== 0" [disabled]="adoptBusy"
+                            (click)="adoptComponent(a, comp)"
                             title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
               </tr>
+              <tr *ngIf="a._zero.length">
+                <td colspan="5">
+                  <button class="complect-zero-toggle" (click)="a._showZero = !a._showZero">
+                    {{ a._showZero ? '▴ скрыть нерелевантные' : '▾ ещё ' + a._zero.length + ' нерелевантных (0%)' }}
+                  </button>
+                </td>
+              </tr>
+              <ng-container *ngIf="a._showZero">
+                <tr *ngFor="let comp of a._zero" class="complect-zero-row">
+                  <td><span class="score-badge">0%</span></td>
+                  <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
+                  <td>{{ comp.component || '—' }}</td>
+                  <td>{{ comp.country || '—' }}</td>
+                  <td><button class="btn btn-adopt-muted" [disabled]="adoptBusy" (click)="adoptComponent(a, comp)"
+                              title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
+                </tr>
+              </ng-container>
             </tbody>
           </table>
         </div>
@@ -634,6 +663,19 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .complect-apparatus { margin: 10px 0; padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 8px; background: #fff; }
     .complect-app-head { font-size: 13px; margin-bottom: 6px; color: #374151; }
     .complect-pre { white-space: pre-wrap; margin: 0; font: inherit; max-width: 520px; }
+    .recommended td { background: #ecfdf5; }
+    .recommended td:first-child { box-shadow: inset 3px 0 0 #10b981; }
+    .reco-chip { display: inline-block; margin-left: 6px; background: #10b981; color: #fff; border-radius: 8px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
+    .complect-zero-toggle { background: none; border: none; color: #6b7280; cursor: pointer; font-size: 12px; padding: 4px 0; }
+    .complect-zero-toggle:hover { color: #374151; text-decoration: underline; }
+    .complect-zero-row td { color: #9ca3af; }
+    .btn-adopt-muted { background: #e5e7eb; color: #4b5563; }
+    .lot-menu-wrap { position: relative; display: inline-block; }
+    .btn-more { background: #f3f4f6; color: #374151; font-weight: 700; padding: 4px 9px; }
+    .lot-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 20; display: flex; flex-direction: column; min-width: 150px; overflow: hidden; }
+    .lot-menu button { background: none; border: none; text-align: left; padding: 8px 12px; cursor: pointer; font-size: 13px; color: #374151; white-space: nowrap; }
+    .lot-menu button:hover { background: #f3f4f6; }
+    .lot-menu button.danger { color: #b91c1c; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: #f3f4f6; color: #374151; border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1100,9 +1142,15 @@ export class TendersComponent {
     this.cdr.detectChanges();
     this.api.complectSearch(l.id, term).subscribe({
       next: (r: any) => {
+        const apparatuses = (r?.apparatuses || []).map((a: any) => ({
+          ...a,
+          // разделяем на релевантные (есть совпадение) и нерелевантные (0%) — 0% прячем под тоглом
+          _relevant: (a.components || []).filter((c: any) => (c.score || 0) > 0),
+          _zero: (a.components || []).filter((c: any) => !((c.score || 0) > 0)),
+          _showZero: false,
+        }));
         this.complectPanel = {
-          lot: l, term: r?.term || '', loading: false, searched: true,
-          apparatuses: r?.apparatuses || []
+          lot: l, term: r?.term || '', loading: false, searched: true, apparatuses
         };
         this.cdr.detectChanges();
       },
@@ -1115,6 +1163,18 @@ export class TendersComponent {
   }
 
   closeComplect() { this.complectPanel = null; this.cdr.detectChanges(); }
+
+  // overflow-меню строки лота (Ред./Удалить) — разгружает строку
+  openMenuLotId: number | null = null;
+  toggleLotMenu(l: any, ev: Event) {
+    ev.stopPropagation(); // иначе document:click тут же закроет
+    this.openMenuLotId = this.openMenuLotId === l.id ? null : l.id;
+    this.cdr.detectChanges();
+  }
+  @HostListener('document:click')
+  closeLotMenu() {
+    if (this.openMenuLotId !== null) { this.openMenuLotId = null; this.cdr.detectChanges(); }
+  }
 
   adoptComponent(c: any, comp: any) {
     if (!this.complectPanel) return;
