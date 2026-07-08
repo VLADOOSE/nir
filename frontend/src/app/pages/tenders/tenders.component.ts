@@ -468,7 +468,11 @@ import { LucideDynamicIcon } from '@lucide/angular';
             <tbody>
               <tr *ngFor="let e of kpPanel._relevant; let i = index" [class.kp-hit]="e.preselect" [class.recommended]="i === 0">
                 <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                <td>{{ e.distributor?.name }}<span *ngIf="!e.distributor?.equipmentTypes?.length" class="tag-all"> · все виды</span></td>
+                <td>
+                  <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
+                  <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
+                  <span *ngIf="!e.distributor?.equipmentTypes?.length" class="tag-all"> · все виды</span>
+                </td>
                 <td>{{ e.distributor?.email || '—' }} <span class="no-email" *ngIf="!e.distributor?.email">письмо не уйдёт</span></td>
                 <td>
                   <span class="reason-chip" *ngFor="let r of e.reasons"
@@ -488,7 +492,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
               <tbody>
                 <tr *ngFor="let e of kpPanel._nonrel">
                   <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                  <td>{{ e.distributor?.name }}</td>
+                  <td>
+                    <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
+                    <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
+                  </td>
                   <td>{{ e.distributor?.email || '—' }}</td>
                   <td></td>
                 </tr>
@@ -658,6 +665,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .reason-type { background: #dcfce7; color: #166534; }
     .reason-brand { background: #eef2ff; color: #3730a3; }
     .tag-all { color: #9ca3af; font-size: 11px; }
+    .supplier-link { color: #4f46e5; text-decoration: none; }
+    .supplier-link:hover { text-decoration: underline; }
     .btn-line { background: #fff; color: #374151; border: 1px solid #d1d5db; }
     .brand-chip { display: inline-block; background: #d1fae5; color: #065f46; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
     .no-email { color: #b91c1c; font-size: 11px; margin-left: 6px; }
