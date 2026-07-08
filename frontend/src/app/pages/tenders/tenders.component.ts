@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { NgFor, NgIf, DecimalPipe } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -15,7 +15,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
+  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -441,23 +441,61 @@ import { LucideDynamicIcon } from '@lucide/angular';
         </div>
         <div *ngIf="kpPanel.loading" class="registry-loading">Подбираем поставщиков…</div>
         <ng-container *ngIf="!kpPanel.loading">
+          <div class="kp-controls" *ngIf="kpPanel.singleLot">
+            <label>Вид МИ:
+              <select [ngModel]="kpPanel.detectedType?.id ?? ''" (ngModelChange)="changeLotType($event)">
+                <option value="">— не задан —</option>
+                <option *ngFor="let t of equipmentTypesList" [value]="t.id">{{ t.name }}</option>
+              </select>
+            </label>
+            <span class="kp-conf" *ngIf="kpPanel.detectedType && kpPanel.detectedType.confidence < 1">
+              авто · {{ (kpPanel.detectedType.confidence * 100) | number:'1.0-0' }}%
+            </span>
+            <label class="kp-term">Поиск поставщика:
+              <input type="text" [(ngModel)]="kpPanel.sourcingTerm" placeholder="бренд/аппарат"
+                     (keyup.enter)="researchSupplier()">
+            </label>
+            <button class="btn btn-line" (click)="researchSupplier()">Найти</button>
+          </div>
+
           <div class="empty" *ngIf="!kpPanel.entries.length">На этом рынке нет поставщиков — добавьте их в справочнике «Дистрибьюторы»</div>
-          <table *ngIf="kpPanel.entries.length" class="kp-suppliers">
-            <thead><tr><th class="w-36"></th><th>Поставщик</th><th>Email</th><th>Подсказка</th></tr></thead>
+          <div class="empty" *ngIf="kpPanel.entries.length && !kpPanel._relevant.length && !kpPanel.detectedType">
+            Нужна техспецификация или вид МИ, чтобы подобрать по специализации.
+          </div>
+
+          <table *ngIf="kpPanel._relevant.length" class="kp-suppliers">
+            <thead><tr><th class="w-36"></th><th>Поставщик</th><th>Email</th><th>Почему</th></tr></thead>
             <tbody>
-              <tr *ngFor="let e of kpPanel.entries" [class.kp-hit]="e.preselect">
+              <tr *ngFor="let e of kpPanel._relevant; let i = index" [class.kp-hit]="e.preselect" [class.recommended]="i === 0">
                 <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                <td>{{ e.distributor?.name }}</td>
+                <td>{{ e.distributor?.name }}<span *ngIf="!e.distributor?.equipmentTypes?.length" class="tag-all"> · все виды</span></td>
                 <td>{{ e.distributor?.email || '—' }} <span class="no-email" *ngIf="!e.distributor?.email">письмо не уйдёт</span></td>
                 <td>
-                  <span class="brand-chip" *ngFor="let h of e.matchedBrands"
-                        [title]="h.via === 'PROPOSED_MODEL' ? 'Бренд предложенной модели лота' : 'Производитель из реестр-кандидатов НЦЭЛС'">
-                    возит: {{ h.brand }}
+                  <span class="reason-chip" *ngFor="let r of e.reasons"
+                        [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'">
+                    {{ r.kind === 'TYPE' ? '✓' : 'возит' }} {{ r.label }}
                   </span>
                 </td>
               </tr>
             </tbody>
           </table>
+
+          <div class="kp-nonrel" *ngIf="kpPanel._nonrel.length">
+            <button class="complect-zero-toggle" (click)="kpPanel._showNonrel = !kpPanel._showNonrel">
+              {{ kpPanel._showNonrel ? '▴ скрыть нерелевантных' : '▾ ещё ' + kpPanel._nonrel.length + ' нерелевантных' }}
+            </button>
+            <table *ngIf="kpPanel._showNonrel" class="kp-suppliers">
+              <tbody>
+                <tr *ngFor="let e of kpPanel._nonrel">
+                  <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
+                  <td>{{ e.distributor?.name }}</td>
+                  <td>{{ e.distributor?.email || '—' }}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <div class="kp-panel-actions" *ngIf="kpPanel.entries.length">
             <button class="btn btn-save" [disabled]="kpPanel.sending || checkedSuppliers().length === 0" (click)="sendKpRequests()">
               {{ kpPanel.sending ? 'Отправка…' : 'Отправить запросы (' + checkedSuppliers().length + ')' }}
@@ -613,6 +651,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .kp-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .kp-suppliers { background: #fff; }
     .kp-suppliers tr.kp-hit td { background: #ecfdf5; }
+    .kp-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    .kp-controls select, .kp-term input { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .kp-conf { font-size: 12px; color: #6b7280; }
+    .reason-chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; margin: 0 3px 3px 0; }
+    .reason-type { background: #dcfce7; color: #166534; }
+    .reason-brand { background: #eef2ff; color: #3730a3; }
+    .tag-all { color: #9ca3af; font-size: 11px; }
+    .btn-line { background: #fff; color: #374151; border: 1px solid #d1d5db; }
     .brand-chip { display: inline-block; background: #d1fae5; color: #065f46; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
     .no-email { color: #b91c1c; font-size: 11px; margin-left: 6px; }
     .kp-panel-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
@@ -773,7 +819,16 @@ export class TendersComponent {
 
   // Лотовый запрос КП
   lotSel = new Set<number>();
-  kpPanel: { loading: boolean; sending: boolean; entries: any[] } | null = null;
+  kpPanel: {
+    loading: boolean; sending: boolean; entries: any[];
+    _relevant: any[]; _nonrel: any[]; _showNonrel: boolean;
+    singleLot: boolean;
+    detectedType: { id: number; name: string; confidence: number } | null;
+    typeAlternatives: { id: number; name: string }[];
+    sourcingTerm: string;
+    lotId: number | null;
+  } | null = null;
+  equipmentTypesList: any[] = [];
   // Разбор техспеки (кнопка «ТЗ»)
   tzBusy = new Set<number>();
   // «Взять из реестра в работу»
@@ -827,6 +882,7 @@ export class TendersComponent {
     this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
     this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
+    this.api.getEquipmentTypes().subscribe(ts => { this.equipmentTypesList = ts || []; this.cdr.detectChanges(); });
     this.api.getAllApplyItems().subscribe({
       next: items => { this.allApplyItems = items || []; },
       error: () => { this.allApplyItems = []; }
@@ -1498,14 +1554,29 @@ export class TendersComponent {
     this.openKpPanel();
   }
 
-  openKpPanel() {
+  openKpPanel(term?: string) {
     if (!this.selectedTender || this.lotSel.size === 0) return;
-    this.kpPanel = { loading: true, sending: false, entries: [] };
+    const single = this.lotSel.size === 1;
+    const lotId = single ? [...this.lotSel][0] : null;
+    this.kpPanel = {
+      loading: true, sending: false, entries: [], _relevant: [], _nonrel: [], _showNonrel: false,
+      singleLot: single, detectedType: null, typeAlternatives: [], sourcingTerm: '', lotId,
+    };
     this.cdr.detectChanges();
-    this.api.getLotSourcing(this.selectedTender.id, [...this.lotSel]).subscribe({
+    this.api.getLotSourcing(this.selectedTender.id, [...this.lotSel], term).subscribe({
       next: (r) => {
         const entries = (r?.distributors || []).map((e: any) => ({ ...e, _checked: !!e.preselect }));
-        this.kpPanel = { loading: false, sending: false, entries };
+        this.kpPanel = {
+          loading: false, sending: false, entries,
+          _relevant: entries.filter((e: any) => e.relevant),
+          _nonrel: entries.filter((e: any) => !e.relevant),
+          _showNonrel: false,
+          singleLot: !!r?.singleLot,
+          detectedType: r?.detectedType || null,
+          typeAlternatives: r?.typeAlternatives || [],
+          sourcingTerm: r?.sourcingTerm || '',
+          lotId,
+        };
         this.cdr.detectChanges();
       },
       error: (e) => {
@@ -1515,6 +1586,20 @@ export class TendersComponent {
       }
     });
   }
+
+  /** Сменить вид МИ лота из панели → сохранить и пересобрать подбор. */
+  changeLotType(typeId: any) {
+    const id = typeId === '' || typeId == null ? null : Number(typeId);
+    if (!this.kpPanel?.lotId) return;
+    const term = this.kpPanel.sourcingTerm || undefined;
+    this.api.setLotEquipmentType(this.kpPanel.lotId, id).subscribe({
+      next: () => { this.loadLots(); this.openKpPanel(term); },
+      error: (e) => this.notify.error(e.error?.message || 'Ошибка сохранения типа'),
+    });
+  }
+
+  /** Точечный поиск поставщика по введённому термину (Tier 2). */
+  researchSupplier() { this.openKpPanel(this.kpPanel?.sourcingTerm || undefined); }
 
   checkedSuppliers(): any[] {
     return (this.kpPanel?.entries || []).filter((e: any) => e._checked);

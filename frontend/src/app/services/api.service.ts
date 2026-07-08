@@ -198,11 +198,16 @@ export class ApiService {
     return this.http.post<any[]>(`${this.base}/price-requests/send`, body);
   }
 
-  /** Подсказки поставщиков для запроса КП по лотам тендера. */
-  getLotSourcing(tenderId: number, lotIds: number[]): Observable<any> {
-    return this.http.get<any>(`${this.base}/tenders/${tenderId}/lot-sourcing`, {
-      params: { lotIds: lotIds.join(',') },
-    });
+  /** Подсказки поставщиков для запроса КП по лотам тендера (опц. точечный термин Tier 2). */
+  getLotSourcing(tenderId: number, lotIds: number[], term?: string): Observable<any> {
+    const params: any = { lotIds: lotIds.join(',') };
+    if (term) params.term = term;
+    return this.http.get<any>(`${this.base}/tenders/${tenderId}/lot-sourcing`, { params });
+  }
+
+  /** Назначить/снять вид МИ лота. */
+  setLotEquipmentType(lotId: number, typeId: number | null): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/equipment-type`, { typeId });
   }
 
   setProposedEquipment(lotId: number, equipmentId: number): Observable<any> {
