@@ -57,13 +57,20 @@ public class LotTypeClassifier {
         return new TypeGuess(top.getKey(), names.get(top.getKey()), top.getValue() / total, alts);
     }
 
-    /** Best-effort обучение: головной токен имени лота → выбранный тип, если термина ещё нет. */
+    /**
+     * Best-effort обучение: головной токен имени лота → выбранный тип (UPSERT, последняя правка
+     * побеждает). Оператор открывает селектор именно чтобы ИСПРАВИТЬ ошибочную авто-классификацию,
+     * поэтому существующий термин ПЕРЕзаписываем на новый тип, а не пропускаем.
+     */
     public void learn(TenderLot lot, EquipmentType type) {
         if (type == null || lot == null) return;
         List<LotQueryTokenizer.WeightedToken> toks = LotQueryTokenizer.tokenize(lot.getEquipName(), null);
         if (toks.isEmpty()) return;
         String head = toks.get(0).token();
-        if (head == null || head.length() < 4 || synonymRepository.existsByTermNorm(head)) return;
-        synonymRepository.save(EquipmentTypeSynonym.builder().termNorm(head).equipmentType(type).build());
+        if (head == null || head.length() < 4) return;
+        EquipmentTypeSynonym syn = synonymRepository.findByTermNorm(head)
+                .orElseGet(() -> EquipmentTypeSynonym.builder().termNorm(head).build());
+        syn.setEquipmentType(type);
+        synonymRepository.save(syn);
     }
 }
