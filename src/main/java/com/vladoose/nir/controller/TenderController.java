@@ -7,9 +7,11 @@ import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.dto.response.LotSourcingResponse;
+import com.vladoose.nir.dto.response.OfferComparisonResponse;
 import com.vladoose.nir.integration.goszakup.GoszakupImportScheduler;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.LotSourcingService;
+import com.vladoose.nir.service.OfferComparisonService;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.mapper.TenderMapper;
@@ -37,6 +39,7 @@ public class TenderController {
     private final ActivityApplyMapper activityApplyMapper;
     private final GoszakupImportScheduler goszakupScheduler;
     private final LotSourcingService lotSourcingService;
+    private final OfferComparisonService offerComparisonService;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -45,7 +48,8 @@ public class TenderController {
                             TenderLotMapper tenderLotMapper,
                             ActivityApplyMapper activityApplyMapper,
                             GoszakupImportScheduler goszakupScheduler,
-                            LotSourcingService lotSourcingService) {
+                            LotSourcingService lotSourcingService,
+                            OfferComparisonService offerComparisonService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -54,6 +58,7 @@ public class TenderController {
         this.activityApplyMapper = activityApplyMapper;
         this.goszakupScheduler = goszakupScheduler;
         this.lotSourcingService = lotSourcingService;
+        this.offerComparisonService = offerComparisonService;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -61,6 +66,12 @@ public class TenderController {
     public LotSourcingResponse lotSourcing(@PathVariable Long id, @RequestParam List<Long> lotIds,
                                            @RequestParam(required = false) String term) {
         return lotSourcingService.build(id, lotIds, term);
+    }
+
+    /** Сводка предложений поставщиков по тендеру (матрица лоты×поставщики, мин. цена по лоту). */
+    @GetMapping("/{id}/offer-comparison")
+    public OfferComparisonResponse offerComparison(@PathVariable Long id) {
+        return offerComparisonService.build(id);
     }
 
     @GetMapping
