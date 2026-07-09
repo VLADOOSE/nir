@@ -2,6 +2,8 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -9,9 +11,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@SpringBootTest
 class KpEmailComposerTest {
 
-    private final KpEmailComposer composer = new KpEmailComposer();
+    @Autowired KpEmailComposer composer;
 
     private PriceRequest kzTenderPr(String spec) {
         Tender t = new Tender();
@@ -61,18 +64,20 @@ class KpEmailComposerTest {
     void kzTender_modelAndBareLot() {
         KpEmailComposer.Composed msg = composer.compose(kzTenderPr("Требуемая спека ИВЛ"));
 
-        assertThat(msg.subject()).contains("[КП-42]").contains("по тендеру № 17276387-1");
+        assertThat(msg.subject()).contains("[КП-42]").contains("Запрос коммерческого предложения");
         assertThat(msg.body())
                 .contains("Уважаемый(ая) Иванов Пётр!")
                 .contains("ТОО «West-Med»")
                 .contains("Лот 1: SonoMax DC-70 (Mindray), РУ № РК-МТ-5№012345 — 2 шт.")
                 .contains("Лот 3: Аппарат ИВЛ — 1 шт.")
                 .contains("Требования (из ТЗ): Требуемая спека ИВЛ")
-                .contains("Приём заявок до 15.07.2026")
-                .contains("https://goszakup.gov.kz/ru/announce/index/17276387\n")
+                .contains("Просим ответить до 15.07.2026")
                 .contains("НЦЭЛС РК")
-                .doesNotContain("Росздравнадзор")
-                .doesNotContain("index/17276387-1"); // суффикс лота обрезается в ссылке на объявление
+                .doesNotContain("Росздравнадзор");
+
+        // анти-лик: письмо не раскрывает конкретный тендер (нет номера/ссылки/слова «тендер»)
+        assertThat(msg.body()).doesNotContain("goszakup").doesNotContain("тендер");
+        assertThat(msg.subject()).doesNotContain("17276387");
     }
 
     @Test
@@ -84,7 +89,7 @@ class KpEmailComposerTest {
     }
 
     @Test
-    void rfBrandingAndZakupkiLink() {
+    void rfBranding() {
         PriceRequest pr = kzTenderPr(null);
         pr.setMarket(Market.RF);
         pr.getTender().setSourceExtId(null);
@@ -92,18 +97,24 @@ class KpEmailComposerTest {
         assertThat(msg.body())
                 .contains("ООО «РЕГИОН-МЕД»")
                 .contains("Росздравнадзора")
-                .contains("https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=");
+                .doesNotContain("НЦЭЛС РК");
+        // анти-лик: без ссылки на площадку закупок и без слова «тендер»
+        assertThat(msg.body()).doesNotContain("zakupki.gov.ru").doesNotContain("тендер");
     }
 
     @Test
-    void privateRequest_subjectAndNoAnnounceLink() {
+    void privateRequest_noAnnounceLinkNoTender() {
         PriceRequest pr = kzTenderPr(null);
         pr.getTender().setSource(Source.PRIVATE_REQUEST);
         pr.getTender().setTenderNumber("ЧЗ-2026-0007");
         pr.getTender().setSourceExtId(null);
         pr.getTender().setDeadline(null);
         KpEmailComposer.Composed msg = composer.compose(pr);
-        assertThat(msg.subject()).contains("по заявке ЧЗ-2026-0007");
-        assertThat(msg.body()).doesNotContain("Объявление:").doesNotContain("Приём заявок");
+        assertThat(msg.subject()).contains("Запрос коммерческого предложения").doesNotContain("ЧЗ-2026-0007");
+        assertThat(msg.body())
+                .doesNotContain("Объявление:")
+                .doesNotContain("Просим ответить до")
+                .doesNotContain("ЧЗ-2026-0007")
+                .doesNotContain("тендер");
     }
 }

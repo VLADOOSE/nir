@@ -1,61 +1,92 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.util.KpToken;
 import org.springframework.stereotype.Component;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 
-/** Единственное место построения темы/тела письма запроса КП. Брендинг — по рынку заявки (pr.getMarket()). */
+/**
+ * Построение темы/тела письма КП из редактируемого шаблона рынка (email_template) с фолбэком на
+ * зашитый дефолт. Плейсхолдеры: {{приветствие}} {{компания}} {{позиции}} {{дедлайн}} {{реестр}}.
+ * Письмо НЕ раскрывает конкретный тендер/заявку (нет номера и ссылки на объявление) — решение
+ * оператора 2026-07-09. Токен [КП-id] в теме — серверный, в шаблон не входит.
+ */
 @Component
 public class KpEmailComposer {
 
     static final int SPEC_LIMIT = 1200;
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
+    public static final String DEFAULT_SUBJECT = "Запрос коммерческого предложения";
+    public static final String DEFAULT_BODY =
+            "{{приветствие}}\n\n" +
+            "{{компания}} просит предоставить коммерческое предложение по следующим позициям:\n\n" +
+            "{{позиции}}\n" +
+            "{{дедлайн}}Просим указать: цену за единицу, № регистрационного удостоверения ({{реестр}}) " +
+            "на предлагаемую модель, сроки поставки, условия оплаты, гарантию.\n\n" +
+            "С уважением,\n{{компания}}\n\n" +
+            "Ответ на этот запрос просим направить ответным письмом (Reply) — он поступит в наш отдел закупок.";
+
+    private final EmailTemplateRepository templateRepository;
+    private final EmailTemplateRenderer renderer;
+
+    public KpEmailComposer(EmailTemplateRepository templateRepository, EmailTemplateRenderer renderer) {
+        this.templateRepository = templateRepository;
+        this.renderer = renderer;
+    }
+
     public record Composed(String subject, String body) {}
 
     public Composed compose(PriceRequest pr) {
-        Ctx c = ctx(pr);
-        String subject = KpToken.subjectToken(pr.getId()) + " " + humanSubject(c.tender, c.isPrivate);
-        return new Composed(subject, buildBody(pr, c.market, c.isPrivate, c.tender));
+        Tmpl t = loadTemplate(pr);
+        Map<String, String> vars = vars(pr);
+        String subject = KpToken.subjectToken(pr.getId()) + " " + renderer.render(t.subject(), vars);
+        return new Composed(subject, renderer.render(t.body(), vars));
     }
 
     /** Черновой предпросмотр (id ещё нет) — тема без токена. */
     public Composed composeForPreview(PriceRequest draft) {
-        Ctx c = ctx(draft);
-        return new Composed(humanSubject(c.tender, c.isPrivate), buildBody(draft, c.market, c.isPrivate, c.tender));
+        Tmpl t = loadTemplate(draft);
+        Map<String, String> vars = vars(draft);
+        return new Composed(renderer.render(t.subject(), vars), renderer.render(t.body(), vars));
     }
 
-    private record Ctx(Tender tender, Market market, boolean isPrivate) {}
-    private Ctx ctx(PriceRequest pr) {
+    private record Tmpl(String subject, String body) {}
+
+    private Tmpl loadTemplate(PriceRequest pr) {
+        Market market = pr.getMarket() != null ? pr.getMarket() : Market.RF;
+        String subj = DEFAULT_SUBJECT, body = DEFAULT_BODY;
+        Optional<EmailTemplate> opt = templateRepository.findByMarket(market);
+        if (opt.isPresent()) {
+            EmailTemplate et = opt.get();
+            if (et.getSubjectTemplate() != null && !et.getSubjectTemplate().isBlank()) subj = et.getSubjectTemplate();
+            if (et.getBodyTemplate() != null && !et.getBodyTemplate().isBlank()) body = et.getBodyTemplate();
+        }
+        return new Tmpl(subj, body);
+    }
+
+    private Map<String, String> vars(PriceRequest pr) {
         Tender tender = pr.getTender();
         Market market = pr.getMarket() != null ? pr.getMarket() : Market.RF;
-        boolean isPrivate = tender.getSource() == Source.PRIVATE_REQUEST;
-        return new Ctx(tender, market, isPrivate);
-    }
-
-    private String humanSubject(Tender tender, boolean isPrivate) {
-        String target = isPrivate ? "заявке " + tender.getTenderNumber() : "тендеру № " + tender.getTenderNumber();
-        return "Запрос КП по " + target;
-    }
-
-    private String buildBody(PriceRequest pr, Market market, boolean isPrivate, Tender tender) {
         Distributor d = pr.getDistributor();
-        StringBuilder sb = new StringBuilder();
+        Map<String, String> v = new HashMap<>();
         String contact = (safe(d.getLastName()) + " " + safe(d.getFirstName())).trim();
-        if (!contact.isBlank()) {
-            sb.append("Уважаемый(ая) ").append(contact).append("!\n\n");
-        } else {
-            sb.append("Здравствуйте!\n\n");
-        }
-        sb.append(market.companyShortName())
-          .append(" просит предоставить коммерческое предложение по позициям ")
-          .append(isPrivate ? "заявки " + tender.getTenderNumber() : "тендера № " + tender.getTenderNumber())
-          .append(":\n\n");
+        v.put("приветствие", contact.isBlank() ? "Здравствуйте!" : "Уважаемый(ая) " + contact + "!");
+        v.put("компания", market.companyShortName());
+        v.put("реестр", market == Market.KZ ? "НЦЭЛС РК" : "Росздравнадзора");
+        v.put("позиции", buildPositions(pr));
+        v.put("дедлайн", tender.getDeadline() != null
+                ? "Просим ответить до " + DATE.format(tender.getDeadline()) + ".\n\n" : "");
+        return v;
+    }
 
+    private String buildPositions(PriceRequest pr) {
+        StringBuilder sb = new StringBuilder();
         for (PriceRequestItem it : pr.getItems()) {
             TenderLot lot = it.getTenderLot();
             String qty = it.getRequestedQuantity() != null ? it.getRequestedQuantity() + " шт." : "кол-во уточняется";
@@ -78,19 +109,6 @@ public class KpEmailComposer {
                 }
             }
         }
-        sb.append("\n");
-        if (tender.getDeadline() != null) {
-            sb.append("Приём заявок до ").append(DATE.format(tender.getDeadline())).append(".\n");
-        }
-        String link = announceLink(tender, market);
-        if (link != null) {
-            sb.append("Объявление: ").append(link).append("\n");
-        }
-        sb.append("\nПросим указать: цену за единицу, № регистрационного удостоверения (")
-          .append(market == Market.KZ ? "НЦЭЛС РК" : "Росздравнадзора")
-          .append(") на предлагаемую модель, сроки поставки, условия оплаты, гарантию.\n\n");
-        sb.append("С уважением,\n").append(market.companyShortName()).append("\n\n");
-        sb.append("Ответ на этот запрос просим направить ответным письмом (Reply) — он поступит в наш отдел закупок.");
         return sb.toString();
     }
 
@@ -98,19 +116,6 @@ public class KpEmailComposer {
         String s = spec.strip();
         if (s.length() <= SPEC_LIMIT) return s;
         return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ — по ссылке на объявление)";
-    }
-
-    private String announceLink(Tender t, Market market) {
-        if (market == Market.KZ) {
-            if (t.getSourceExtId() == null) return null;
-            // sourceExtId несёт полный номер объявления с суффиксом лота (17274756-1);
-            // страница объявления адресуется числовым id до дефиса.
-            String announceId = t.getSourceExtId().replaceFirst("-.*$", "");
-            return "https://goszakup.gov.kz/ru/announce/index/" + announceId;
-        }
-        if (t.getSource() == Source.PRIVATE_REQUEST) return null;
-        return "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString="
-                + URLEncoder.encode(t.getTenderNumber() == null ? "" : t.getTenderNumber(), StandardCharsets.UTF_8);
     }
 
     private String safe(String s) { return s == null ? "" : s; }
