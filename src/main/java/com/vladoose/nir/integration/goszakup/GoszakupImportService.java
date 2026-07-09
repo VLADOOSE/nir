@@ -137,7 +137,7 @@ public class GoszakupImportService {
             LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
             if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
             if (!statusOk(d) || !systemOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-            sum.setMatched(sum.getMatched() + 1);
+            sum.setMatched(sum.getMatched() + 1); // прошёл ступень-1 (имя); ступень-2 по лотам может снять (см. importOne)
             importOne(d, sum, regionOverride);
         }
     }
@@ -152,7 +152,8 @@ public class GoszakupImportService {
                              + (l.getDescriptionRu() == null ? "" : l.getDescriptionRu())).trim())
                     .toList();
             if (!MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts)) {
-                sum.setSkipped(sum.getSkipped() + 1); // ступень 2: лоты — не медтовар
+                sum.setSkipped(sum.getSkipped() + 1);   // ступень 2: лоты — не медтовар
+                sum.setMatched(sum.getMatched() - 1);   // matched считался на ступени-1 (имя) до сети — снять дроп
                 return;
             }
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
