@@ -334,4 +334,15 @@ export class ApiService {
   markInboundProcessed(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/inbound/${id}/processed`, {});
   }
+
+  // === Шаблон письма КП ===
+  getEmailTemplate(): Observable<any> {
+    return this.http.get<any>(`${this.base}/email-template`);
+  }
+  getEmailTemplateDefault(): Observable<any> {
+    return this.http.get<any>(`${this.base}/email-template/default`);
+  }
+  saveEmailTemplate(body: { subject: string; body: string }): Observable<any> {
+    return this.http.put<any>(`${this.base}/email-template`, body);
+  }
 }

@@ -104,6 +104,9 @@ import { MarketService, Market } from '../services/market.service';
             <a *ngIf="auth.isAdmin()" routerLink="/users" routerLinkActive="active">
               <svg lucideIcon="users" [size]="16"></svg> Пользователи
             </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/email-template" routerLinkActive="active">
+              <svg lucideIcon="mail" [size]="16"></svg> Шаблон письма КП
+            </a>
             <a routerLink="/about" routerLinkActive="active">
               <svg lucideIcon="circle-check" [size]="16"></svg> О системе
             </a>
