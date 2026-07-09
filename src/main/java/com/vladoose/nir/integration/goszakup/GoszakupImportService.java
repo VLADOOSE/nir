@@ -147,6 +147,14 @@ public class GoszakupImportService {
         try {
             SubjectDto subj = client.fetchSubject(d.effectiveBin());
             List<LotDto> lots = client.fetchLots(d.getNumberAnno());
+            List<String> lotTexts = lots.stream()
+                    .map(l -> ((l.getNameRu() == null ? "" : l.getNameRu()) + " "
+                             + (l.getDescriptionRu() == null ? "" : l.getDescriptionRu())).trim())
+                    .toList();
+            if (!MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts)) {
+                sum.setSkipped(sum.getSkipped() + 1); // ступень 2: лоты — не медтовар
+                return;
+            }
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
             else sum.setUpdated(sum.getUpdated() + 1);
