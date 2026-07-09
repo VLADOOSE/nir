@@ -19,6 +19,14 @@ class EmailTemplateEndpointTest {
     @Autowired EmailTemplateRepository repository;
     @Autowired com.vladoose.nir.controller.EmailTemplateController controller;
 
+    // Изоляция: убрать закоммиченные строки шаблона (оператор мог сохранить через UI → строка в БД),
+    // иначе save(KZ) падает на UNIQUE, а getReturnsDefaultWhenNoRow видит сохранённую строку вместо дефолта.
+    // deleteAllInBatch — НЕМЕДЛЕННЫЙ bulk DELETE (не через persistence context): иначе Hibernate ставит
+    // INSERT теста перед отложенным DELETE в одном flush → конфликт UNIQUE (тот же гочи, что §ComplectWriter).
+    // Внутри @Transactional-теста удаление откатывается вместе с тестом.
+    @org.junit.jupiter.api.BeforeEach
+    void cleanTemplates() { repository.deleteAllInBatch(); }
+
     @org.junit.jupiter.api.AfterEach
     void clearMarket() { com.vladoose.nir.context.MarketContext.clear(); }
 
