@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.util.KpToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,7 @@ public class PriceRequestSendService {
     private final PriceRequestWriter writer;
     private final KpEmailComposer composer;
     private final EmailService emailService;
+    private final PriceRequestRepository priceRequestRepository;
 
     public PriceRequestSendService(TenderService tenderService,
                                    TenderLotService tenderLotService,
@@ -46,7 +48,8 @@ public class PriceRequestSendService {
                                    DistributorService distributorService,
                                    PriceRequestWriter writer,
                                    KpEmailComposer composer,
-                                   EmailService emailService) {
+                                   EmailService emailService,
+                                   PriceRequestRepository priceRequestRepository) {
         this.tenderService = tenderService;
         this.tenderLotService = tenderLotService;
         this.medEquipmentService = medEquipmentService;
@@ -54,6 +57,7 @@ public class PriceRequestSendService {
         this.writer = writer;
         this.composer = composer;
         this.emailService = emailService;
+        this.priceRequestRepository = priceRequestRepository;
     }
 
     public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items,
@@ -92,6 +96,14 @@ public class PriceRequestSendService {
             results.add(dispatch(pr, dist, subjectOverride, bodyOverride)); // письмо ПОСЛЕ коммита
         }
         return results;
+    }
+
+    /** Переслать письмо существующего КП (после правки email / повторно). Новый PR не создаётся. */
+    public SendResult resend(Long priceRequestId) {
+        PriceRequest pr = priceRequestRepository.findById(priceRequestId)
+                .orElseThrow(() -> new NotFoundException("КП не найден: " + priceRequestId));
+        requireCurrentMarket(pr.getMarket(), "КП не найден: " + priceRequestId);
+        return dispatch(pr, pr.getDistributor(), null, null);
     }
 
     private void requireCurrentMarket(Market market, String notFoundMessage) {

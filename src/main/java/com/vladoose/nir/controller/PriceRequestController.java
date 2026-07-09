@@ -78,6 +78,13 @@ public class PriceRequestController {
         return sendService.preview(req.getTenderId(), req.getDistributorIds(), items);
     }
 
+    /** Переслать письмо существующего КП (повторно / после правки email поставщика). Новый PR не создаётся. */
+    @PostMapping("/{id}/resend")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PriceRequestSendService.SendResult resend(@PathVariable Long id) {
+        return sendService.resend(id);
+    }
+
     @GetMapping
     public List<PriceRequestResponse> findAll() {
         return mapper.toResponseList(service.findAll());
