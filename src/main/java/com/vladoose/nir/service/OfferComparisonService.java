@@ -26,7 +26,7 @@ public class OfferComparisonService {
 
     @Transactional(readOnly = true)
     public OfferComparisonResponse build(Long tenderId) {
-        Tender tender = tenderService.findById(tenderId); // em.find обходит фильтр рынка
+        Tender tender = tenderService.findById(tenderId); // рыночный аспект отсеет чужой рынок (пусто→NotFound); гард ниже — defense-in-depth
         if (tender.getMarket() != null && tender.getMarket() != MarketContext.get()) {
             throw new NotFoundException("Тендер не найден: id=" + tenderId);
         }
