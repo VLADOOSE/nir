@@ -14,8 +14,9 @@ spring:
     properties:
       mail:
         smtp:
-          auth: false
-          starttls.enable: false
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls.enable: ${MAIL_SMTP_STARTTLS:false}
+          ssl.enable: ${MAIL_SMTP_SSL:false}
           # таймауты, чтобы зависший реальный SMTP (smtp.mail.ru) не держал поток отправки КП бесконечно
           connectiontimeout: 10000
           timeout: 10000
@@ -50,6 +51,9 @@ server:
   port: 8080
 
 mail:
+  kp:
+    # ящик, куда поставщики шлют ответы (Reply-To). Пусто → = spring.mail.username.
+    reply-to: ${MAIL_KP_REPLY_TO:}
   imap:
     enabled: ${MAIL_IMAP_ENABLED:false}
     host: ${MAIL_IMAP_HOST:localhost}
