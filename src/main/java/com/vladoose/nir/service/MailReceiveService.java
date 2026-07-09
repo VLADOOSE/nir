@@ -36,6 +36,8 @@ public class MailReceiveService {
     private final String protocol;
     private final Market mailboxMarket;
     private final long sinceMinutes;
+    /** Наш адрес отправки КП (spring.mail.username) — письмо с этим From считаем «своим» эхом. */
+    private final String sendFrom;
 
     public MailReceiveService(PriceRequestRepository priceRequestRepository,
                               InboundEmailRepository inboundEmailRepository,
@@ -46,7 +48,8 @@ public class MailReceiveService {
                               @Value("${mail.imap.password:}") String password,
                               @Value("${mail.imap.protocol:imap}") String protocol,
                               @Value("${mail.imap.market:KZ}") String market,
-                              @Value("${mail.imap.since-minutes:60}") long sinceMinutes) {
+                              @Value("${mail.imap.since-minutes:60}") long sinceMinutes,
+                              @Value("${spring.mail.username:}") String sendFrom) {
         this.priceRequestRepository = priceRequestRepository;
         this.inboundEmailRepository = inboundEmailRepository;
         this.enabled = enabled;
@@ -57,6 +60,7 @@ public class MailReceiveService {
         this.protocol = protocol;
         this.mailboxMarket = Market.fromHeader(market);
         this.sinceMinutes = sinceMinutes;
+        this.sendFrom = sendFrom == null ? "" : sendFrom.trim().toLowerCase();
     }
 
     public Market getMailboxMarket() {
@@ -119,13 +123,14 @@ public class MailReceiveService {
         String attachmentName = ex.attachmentName;
 
         Optional<Long> kp = KpToken.parse(subject);
+        boolean ownEcho = !sendFrom.isBlank() && addressPart(from).equalsIgnoreCase(sendFrom);
         InboundType type;
         Long matchedId = null;
-        if (kp.isPresent()) {
+        if (kp.isPresent() && !ownEcho) {
             type = InboundType.SUPPLIER_RESPONSE;
             matchedId = matchSupplierResponse(kp.get(), text.toString());
             result.setSupplierResponses(result.getSupplierResponses() + 1);
-        } else if (attachment != null) {
+        } else if (attachment != null && !ownEcho) {
             type = InboundType.CLIENT_REQUEST;
             result.setClientRequests(result.getClientRequests() + 1);
         } else {
@@ -180,6 +185,15 @@ public class MailReceiveService {
     private static String trunc(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /** Адресная часть из "Имя <a@b>" или "a@b" — нижним регистром, без угловых скобок. */
+    private static String addressPart(String from) {
+        if (from == null) return "";
+        String s = from.trim();
+        int lt = s.lastIndexOf('<'), gt = s.lastIndexOf('>');
+        if (lt >= 0 && gt > lt) s = s.substring(lt + 1, gt);
+        return s.trim().toLowerCase();
     }
 
     /** Рекурсивно обходит части письма (в т.ч. вложенные multipart): собирает text/plain
