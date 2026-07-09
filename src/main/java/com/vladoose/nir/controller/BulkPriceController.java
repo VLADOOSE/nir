@@ -61,7 +61,7 @@ public class BulkPriceController {
         var items = req.getItems().stream()
                 .map(i -> new PriceRequestSendService.SendItem(i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
                 .toList();
-        var results = sendService.send(req.getTenderId(), List.of(req.getDistributorId()), items);
+        var results = sendService.send(req.getTenderId(), List.of(req.getDistributorId()), items, null, null);
         return results.get(0).priceRequestId();
     }
 }

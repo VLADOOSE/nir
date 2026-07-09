@@ -101,7 +101,8 @@ class PriceRequestSendServiceTest {
                 tender.getId(),
                 List.of(withEmail.getId(), withoutEmail.getId()),
                 List.of(new SendItem(lot1.getId(), eq.getId(), 2),
-                        new SendItem(lot2.getId(), null, 1)));
+                        new SendItem(lot2.getId(), null, 1)),
+                null, null);
 
         assertThat(results).hasSize(2);
         SendResult ok = results.get(0);
@@ -139,7 +140,8 @@ class PriceRequestSendServiceTest {
         assertThatThrownBy(() -> sendService.send(
                 other.getId(),
                 List.of(withEmail.getId()),
-                List.of(new SendItem(lot1.getId(), null, 1))))
+                List.of(new SendItem(lot1.getId(), null, 1)),
+                null, null))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -148,13 +150,14 @@ class PriceRequestSendServiceTest {
         assertThatThrownBy(() -> sendService.send(
                 tender.getId(),
                 List.of(withEmail.getId()),
-                List.of(new SendItem(lot1.getId(), null, 0))))
+                List.of(new SendItem(lot1.getId(), null, 0)),
+                null, null))
                 .isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void emptyItemsRejected() {
-        assertThatThrownBy(() -> sendService.send(tender.getId(), List.of(withEmail.getId()), List.of()))
+        assertThatThrownBy(() -> sendService.send(tender.getId(), List.of(withEmail.getId()), List.of(), null, null))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -177,7 +180,8 @@ class PriceRequestSendServiceTest {
         assertThatThrownBy(() -> sendService.send(
                 rf.getId(),
                 List.of(withEmail.getId()),
-                List.of(new SendItem(rfLot.getId(), null, 1))))
+                List.of(new SendItem(rfLot.getId(), null, 1)),
+                null, null))
                 .isInstanceOf(NotFoundException.class);
     }
 }

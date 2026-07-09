@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.PriceRequestRequest;
 import com.vladoose.nir.dto.request.PriceRequestSendRequest;
+import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.dto.response.PriceRequestResponse;
 import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
@@ -62,7 +63,19 @@ public class PriceRequestController {
                 .map(i -> new PriceRequestSendService.SendItem(
                         i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
                 .toList();
-        return sendService.send(req.getTenderId(), req.getDistributorIds(), items);
+        return sendService.send(req.getTenderId(), req.getDistributorIds(), items,
+                req.getSubjectOverride(), req.getBodyOverride());
+    }
+
+    /** Черновой текст письма КП (образец) — без сохранения PriceRequest и без токена в теме. */
+    @PostMapping("/preview")
+    @PreAuthorize("hasRole('ADMIN')")
+    public KpPreviewResponse preview(@Valid @RequestBody PriceRequestSendRequest req) {
+        var items = req.getItems().stream()
+                .map(i -> new PriceRequestSendService.SendItem(
+                        i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
+                .toList();
+        return sendService.preview(req.getTenderId(), req.getDistributorIds(), items);
     }
 
     @GetMapping

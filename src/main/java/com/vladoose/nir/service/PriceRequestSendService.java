@@ -1,9 +1,11 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.util.KpToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -54,7 +56,8 @@ public class PriceRequestSendService {
         this.emailService = emailService;
     }
 
-    public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items) {
+    public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items,
+                                 String subjectOverride, String bodyOverride) {
         if (tenderId == null) throw new BadRequestException("Не указан тендер");
         if (distributorIds == null || distributorIds.isEmpty()) throw new BadRequestException("Не выбраны поставщики");
         if (items == null || items.isEmpty()) throw new BadRequestException("Не выбраны позиции");
@@ -86,7 +89,7 @@ public class PriceRequestSendService {
             Distributor dist = distributorService.findById(distId);
             requireCurrentMarket(dist.getMarket(), "Поставщик не найден: " + distId);
             PriceRequest pr = writer.persist(tender, dist, lines); // коммит записи
-            results.add(dispatch(pr, dist));                        // письмо ПОСЛЕ коммита
+            results.add(dispatch(pr, dist, subjectOverride, bodyOverride)); // письмо ПОСЛЕ коммита
         }
         return results;
     }
@@ -97,19 +100,50 @@ public class PriceRequestSendService {
         }
     }
 
-    private SendResult dispatch(PriceRequest pr, Distributor dist) {
+    private SendResult dispatch(PriceRequest pr, Distributor dist, String subjectOverride, String bodyOverride) {
         String to = dist.getEmail();
         if (to == null || to.isBlank()) {
             log.warn("КП id={} создан, но у поставщика «{}» нет email — письмо не отправлено", pr.getId(), dist.getName());
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), false, REASON_NO_EMAIL);
         }
-        KpEmailComposer.Composed msg = composer.compose(pr);
+        KpEmailComposer.Composed def = composer.compose(pr);
+        // токен [КП-id] ВСЕГДА серверный: при override человеческой части клеим его отдельно
+        String subject = (subjectOverride != null && !subjectOverride.isBlank())
+                ? KpToken.subjectToken(pr.getId()) + " " + subjectOverride.trim()
+                : def.subject();
+        String body = (bodyOverride != null && !bodyOverride.isBlank()) ? bodyOverride : def.body();
         try {
-            emailService.sendEmail(to, msg.subject(), msg.body());
+            emailService.sendEmail(to, subject, body);
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), true, null);
         } catch (Exception ex) {
             log.warn("Не удалось отправить КП id={} на {}: {}. Запрос сохранён в БД.", pr.getId(), to, ex.getMessage());
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), false, REASON_SEND_FAILED);
         }
+    }
+
+    /** Черновой предпросмотр текста КП (образец по первому поставщику, PriceRequest НЕ сохраняется, темы без токена). */
+    public KpPreviewResponse preview(Long tenderId, List<Long> distributorIds, List<SendItem> items) {
+        if (tenderId == null) throw new BadRequestException("Не указан тендер");
+        if (distributorIds == null || distributorIds.isEmpty()) throw new BadRequestException("Не выбраны поставщики");
+        if (items == null || items.isEmpty()) throw new BadRequestException("Не выбраны позиции");
+        Tender tender = tenderService.findById(tenderId);
+        requireCurrentMarket(tender.getMarket(), "Тендер не найден: " + tenderId);
+        List<PriceRequestItem> prItems = new ArrayList<>();
+        for (SendItem si : items) {
+            if (si.tenderLotId() == null) throw new BadRequestException("Не указан лот в позиции");
+            TenderLot lot = tenderLotService.findById(si.tenderLotId());
+            if (!lot.getTender().getId().equals(tenderId)) {
+                throw new BadRequestException("Лот " + si.tenderLotId() + " не принадлежит тендеру " + tenderId);
+            }
+            MedEquipment eq = si.medEquipmentId() != null ? medEquipmentService.findById(si.medEquipmentId()) : null;
+            prItems.add(PriceRequestItem.builder().tenderLot(lot).medEquipment(eq)
+                    .requestedQuantity(si.requestedQuantity()).build());
+        }
+        Distributor sample = distributorService.findById(distributorIds.get(0));
+        requireCurrentMarket(sample.getMarket(), "Поставщик не найден");
+        PriceRequest draft = PriceRequest.builder().tender(tender).distributor(sample)
+                .market(tender.getMarket()).items(prItems).build();
+        KpEmailComposer.Composed c = composer.composeForPreview(draft);
+        return new KpPreviewResponse(c.subject(), c.body());
     }
 }

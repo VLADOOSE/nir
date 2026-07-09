@@ -21,6 +21,9 @@ public class PriceRequestSendRequest {
     @Valid
     private List<Item> items;
 
+    private String subjectOverride; // человеческая часть темы; токен [КП-id] всегда добавляет сервер
+    private String bodyOverride;    // если задан — уходит вместо скомпонованного тела
+
     @Data
     public static class Item {
         @NotNull(message = "Не указан лот")

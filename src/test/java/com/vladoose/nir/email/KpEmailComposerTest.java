@@ -54,4 +54,15 @@ class KpEmailComposerTest {
         assertThat(msg.subject()).doesNotContain("[КП-");
         assertThat(msg.body()).startsWith("Здравствуйте!");
     }
+
+    @Test
+    void overrideKeepsServerToken() {
+        // человеческая часть темы берётся из override, токен добавляет сервер отдельно —
+        // проверяем контракт KpToken.subjectToken + произвольная человеческая часть
+        String humanOverride = "СРОЧНО: КП по ИВЛ";
+        String subject = com.vladoose.nir.util.KpToken.subjectToken(777L) + " " + humanOverride;
+        assertThat(subject).startsWith("[КП-777]");
+        assertThat(subject).endsWith(humanOverride);
+        assertThat(com.vladoose.nir.util.KpToken.parse(subject)).contains(777L);
+    }
 }
