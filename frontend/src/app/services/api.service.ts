@@ -266,6 +266,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/price-requests/by-tender/${tenderId}`);
   }
 
+  getOfferComparison(tenderId: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/tenders/${tenderId}/offer-comparison`);
+  }
+
   closePriceRequest(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/price-requests/${id}/close`, {});
   }

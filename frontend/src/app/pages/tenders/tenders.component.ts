@@ -9,13 +9,14 @@ import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
+import { OfferComparisonComponent } from './offer-comparison.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 import { LucideDynamicIcon } from '@lucide/angular';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
+  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -173,6 +174,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
     <!-- ========== ДЕТАЛИ ТЕНДЕРА ========== -->
     <ng-container *ngIf="selectedTender">
       <app-bulk-price-modal [tenderId]="bulkPriceTenderId" (close)="bulkPriceTenderId = null; loadPriceRequests()"></app-bulk-price-modal>
+      <app-offer-comparison [tenderId]="compareTenderId" (close)="compareTenderId = null"></app-offer-comparison>
 
       <button class="btn btn-back" (click)="onBack()">&#8592; Назад к списку</button>
 
@@ -543,6 +545,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="pr-section-head">
           <h3>Запросы КП</h3>
           <button class="btn btn-line" (click)="checkKpResponses()">Проверить ответы</button>
+          <button class="btn btn-line" *ngIf="canCompare" (click)="compareTenderId = selectedTender.id">Сравнить предложения</button>
         </div>
         <div *ngFor="let pr of priceRequests" class="pr-card" [class.expanded]="pr._expanded" [class.pr-accepted]="pr.status === 'ACCEPTED'">
           <header class="pr-header" (click)="togglePr(pr)">
@@ -913,6 +916,15 @@ export class TendersComponent {
 
   // Массовый подбор КП по тендеру
   bulkPriceTenderId: number | null = null;
+
+  // Сравнение предложений (модалка offer-comparison)
+  compareTenderId: number | null = null;
+
+  get canCompare(): boolean {
+    const withPrice = (this.priceRequests || []).filter((pr: any) =>
+      (pr.items || []).some((it: any) => it.responsePrice != null));
+    return withPrice.length >= 2;
+  }
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
               private router: Router,
