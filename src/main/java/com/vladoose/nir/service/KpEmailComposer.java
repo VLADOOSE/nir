@@ -115,7 +115,7 @@ public class KpEmailComposer {
     private String trimSpec(String spec) {
         String s = spec.strip();
         if (s.length() <= SPEC_LIMIT) return s;
-        return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ — по ссылке на объявление)";
+        return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ — по запросу)";
     }
 
     private String safe(String s) { return s == null ? "" : s; }

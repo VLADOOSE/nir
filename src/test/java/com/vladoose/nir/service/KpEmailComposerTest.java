@@ -84,7 +84,7 @@ class KpEmailComposerTest {
     void longSpecTrimmedAt1200() {
         String longSpec = "х".repeat(2000);
         KpEmailComposer.Composed msg = composer.compose(kzTenderPr(longSpec));
-        assertThat(msg.body()).contains("(полное ТЗ — по ссылке на объявление)");
+        assertThat(msg.body()).contains("(полное ТЗ — по запросу)");
         assertThat(msg.body()).doesNotContain("х".repeat(1300));
     }
 
