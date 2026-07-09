@@ -194,8 +194,23 @@ export class ApiService {
     tenderId: number;
     distributorIds: number[];
     items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number }[];
+    subjectOverride?: string;
+    bodyOverride?: string;
   }): Observable<any[]> {
     return this.http.post<any[]>(`${this.base}/price-requests/send`, body);
+  }
+
+  /** Черновой текст письма КП (тема без токена — он присвоится при отправке). */
+  previewKp(body: {
+    tenderId: number;
+    distributorIds: number[];
+    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number }[];
+  }): Observable<{ subject: string; body: string }> {
+    return this.http.post<{ subject: string; body: string }>(`${this.base}/price-requests/preview`, body);
+  }
+
+  resendPriceRequest(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/price-requests/${id}/resend`, {});
   }
 
   /** Подсказки поставщиков для запроса КП по лотам тендера (опц. точечный термин Tier 2). */

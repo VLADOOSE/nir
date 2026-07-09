@@ -511,6 +511,23 @@ import { LucideDynamicIcon } from '@lucide/angular';
         </ng-container>
       </div>
 
+      <div class="kp-preview-overlay" *ngIf="kpPreview" (click)="cancelKpPreview()">
+        <div class="kp-preview" (click)="$event.stopPropagation()">
+          <h3>Текст письма — проверьте перед отправкой</h3>
+          <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ kpPreview.distributorIds.length }} поставщик(ам).</p>
+          <label class="kp-preview-lbl">Тема</label>
+          <input class="kp-preview-subject" [(ngModel)]="kpPreview.subject" />
+          <label class="kp-preview-lbl">Текст</label>
+          <textarea class="kp-preview-body" rows="16" [(ngModel)]="kpPreview.body"></textarea>
+          <div class="kp-preview-actions">
+            <button class="btn btn-cancel" (click)="cancelKpPreview()">Отмена</button>
+            <button class="btn btn-save" [disabled]="kpPreview.sending" (click)="confirmSendKp()">
+              {{ kpPreview.sending ? 'Отправка…' : 'Отправить' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <app-smart-match
         *ngIf="matchLotId !== null"
         [lotId]="matchLotId"
@@ -523,7 +540,10 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <!-- ========== ЗАПРОСЫ КП ========== -->
       <section *ngIf="priceRequests.length > 0" class="pr-section">
-        <h3>Запросы КП</h3>
+        <div class="pr-section-head">
+          <h3>Запросы КП</h3>
+          <button class="btn btn-line" (click)="checkKpResponses()">Проверить ответы</button>
+        </div>
         <div *ngFor="let pr of priceRequests" class="pr-card" [class.expanded]="pr._expanded" [class.pr-accepted]="pr.status === 'ACCEPTED'">
           <header class="pr-header" (click)="togglePr(pr)">
             <div class="pr-header-main">
@@ -575,6 +595,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </table>
             <div class="pr-actions">
               <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
+              <button *ngIf="pr.status === 'SENT' || pr.status === 'CREATED'" class="btn btn-line" (click)="resendPr(pr)">↻ Переслать</button>
               <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-accept-pr cta-pulse" (click)="acceptPr(pr)">Принять КП</button>
               <button *ngIf="pr.status === 'ACCEPTED' || pr.status === 'RESPONDED'" class="btn btn-create-apply cta-pulse" (click)="createApplyFromPr(pr)">
                 <svg lucideIcon="clipboard-list" [size]="14"></svg> Сформировать заявку
@@ -671,6 +692,13 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .brand-chip { display: inline-block; background: #d1fae5; color: #065f46; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
     .no-email { color: #b91c1c; font-size: 11px; margin-left: 6px; }
     .kp-panel-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+    .kp-preview-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .kp-preview { background: #fff; border-radius: 10px; padding: 20px; width: min(720px, 92vw); max-height: 88vh; overflow: auto; }
+    .kp-preview-note { color: #6b7280; font-size: 12.5px; margin: 4px 0 12px; }
+    .kp-preview-lbl { display: block; font-size: 12px; color: #374151; margin: 8px 0 3px; }
+    .kp-preview-subject, .kp-preview-body { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+    .kp-preview-body { font: inherit; resize: vertical; }
+    .kp-preview-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
     .btn-save { background: #1a56db; color: #fff; }
     .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
     .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
@@ -690,7 +718,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .import-progress-text { color: #374151; font-size: 12.5px; white-space: nowrap; }
     .btn-registry { background: #ede9fe; color: #5b21b6; }
     .registry-panel { margin: 10px 0 16px; padding: 12px 14px; border: 1px solid #ddd6fe; border-radius: 8px; background: #faf5ff; }
-    .registry-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
+    .registry-panel-head, .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
     .registry-loading { color: #6b7280; padding: 6px 0; }
     .registry-table { width: 100%; }
     .registry-table th { text-align: left; font-size: 12px; color: #6b7280; }
@@ -837,6 +865,8 @@ export class TendersComponent {
     sourcingTerm: string;
     lotId: number | null;
   } | null = null;
+  kpPreview: { subject: string; body: string; sending: boolean;
+               distributorIds: number[]; items: any[] } | null = null;
   equipmentTypesList: any[] = [];
   // Разбор техспеки (кнопка «ТЗ»)
   tzBusy = new Set<number>();
@@ -1649,25 +1679,64 @@ export class TendersComponent {
     const distributorIds = this.checkedSuppliers().map((e: any) => e.distributor.id);
     const items = this.lots
       .filter((l: any) => this.lotSel.has(l.id))
-      .map((l: any) => ({
-        tenderLotId: l.id,
-        medEquipmentId: l.proposedEquipment?.id ?? null,
-        requestedQuantity: l.quantity ?? 1,
-      }));
+      .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? 1 }));
+    if (!distributorIds.length || !items.length) return;
     this.kpPanel.sending = true;
-    this.api.sendPriceRequests({ tenderId: this.selectedTender.id, distributorIds, items }).subscribe({
-      next: (results) => {
-        this.kpToastFromResults(results);
-        this.kpPanel = null;
-        this.lotSel.clear();
-        this.loadPriceRequests();
+    this.api.previewKp({ tenderId: this.selectedTender.id, distributorIds, items }).subscribe({
+      next: (p) => {
+        this.kpPreview = { subject: p.subject, body: p.body, sending: false, distributorIds, items };
+        if (this.kpPanel) this.kpPanel.sending = false;
         this.cdr.detectChanges();
       },
       error: (e) => {
         if (this.kpPanel) this.kpPanel.sending = false;
+        this.notify.error('Ошибка превью: ' + (e.error?.message || e.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  confirmSendKp() {
+    if (!this.selectedTender || !this.kpPreview) return;
+    this.kpPreview.sending = true;
+    this.api.sendPriceRequests({
+      tenderId: this.selectedTender.id,
+      distributorIds: this.kpPreview.distributorIds,
+      items: this.kpPreview.items,
+      subjectOverride: this.subjectHuman(this.kpPreview.subject),
+      bodyOverride: this.kpPreview.body,
+    }).subscribe({
+      next: (results) => {
+        this.kpToastFromResults(results);
+        this.kpPreview = null; this.kpPanel = null; this.lotSel.clear();
+        this.loadPriceRequests(); this.cdr.detectChanges();
+      },
+      error: (e) => {
+        if (this.kpPreview) this.kpPreview.sending = false;
         this.notify.error('Ошибка отправки: ' + (e.error?.message || e.message));
         this.cdr.detectChanges();
       }
+    });
+  }
+
+  /** Убрать токен [КП-…] из отредактированной темы — сервер добавит свой. */
+  private subjectHuman(subject: string): string {
+    return (subject || '').replace(/\[КП-\d+\]\s*/g, '').trim();
+  }
+
+  cancelKpPreview() { this.kpPreview = null; this.cdr.detectChanges(); }
+
+  resendPr(pr: any) {
+    this.api.resendPriceRequest(pr.id).subscribe({
+      next: (r) => { this.kpToastFromResults([r]); this.loadPriceRequests(); },
+      error: (e) => this.notify.error(e.error?.message || 'Ошибка пересылки'),
+    });
+  }
+
+  checkKpResponses() {
+    this.api.pollInbound().subscribe({
+      next: () => { this.notify.success('Почта проверена'); this.loadPriceRequests(); },
+      error: (e) => this.notify.error('Проверка почты: ' + (e.error?.message || e.message)),
     });
   }
 
