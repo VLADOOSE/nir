@@ -270,6 +270,10 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/tenders/${tenderId}/offer-comparison`);
   }
 
+  assignWinner(tenderId: number, body: { lotId: number; priceRequestId: number; markupPercent?: number }): Observable<any> {
+    return this.http.post<any>(`${this.base}/tenders/${tenderId}/assign-winner`, body);
+  }
+
   closePriceRequest(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/price-requests/${id}/close`, {});
   }

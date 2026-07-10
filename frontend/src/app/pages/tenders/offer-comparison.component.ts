@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output, OnChanges, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketService } from '../../services/market.service';
@@ -8,7 +9,7 @@ import { MarketService } from '../../services/market.service';
 @Component({
   selector: 'app-offer-comparison',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, DecimalPipe],
+  imports: [NgIf, NgFor, FormsModule, DecimalPipe, RouterLink],
   template: `
     <div class="oc-overlay" *ngIf="tenderId != null" (click)="onOverlay($event)">
       <div class="oc-window" (click)="$event.stopPropagation()">
@@ -34,10 +35,16 @@ import { MarketService } from '../../services/market.service';
               <tr *ngFor="let lot of data.lots">
                 <td class="oc-lot">№{{ lot.lotNumber || '—' }} {{ lot.lotName }} <small>×{{ lot.quantity }}</small></td>
                 <td *ngFor="let s of data.suppliers"
-                    [class.oc-best]="data.bestByLot[lot.lotId] === s.priceRequestId">
+                    [class.oc-best]="data.bestByLot[lot.lotId] === s.priceRequestId"
+                    [class.oc-winner]="assignedByLot[lot.lotId] === s.priceRequestId">
                   <ng-container *ngIf="price(lot.lotId, s.priceRequestId) as p">
                     {{ p | number:'1.0-0' }} {{ sym }}
                     <small class="oc-marked">→ {{ withMarkup(p) | number:'1.0-0' }}</small>
+                    <div class="oc-actions">
+                      <span *ngIf="assignedByLot[lot.lotId] === s.priceRequestId" class="oc-badge">★ победитель</span>
+                      <button *ngIf="assignedByLot[lot.lotId] !== s.priceRequestId" class="oc-assign"
+                              (click)="assign(lot, s)">✓ Назначить</button>
+                    </div>
                   </ng-container>
                   <span *ngIf="!price(lot.lotId, s.priceRequestId)">—</span>
                 </td>
@@ -50,6 +57,10 @@ import { MarketService } from '../../services/market.service';
               </tr>
             </tbody>
           </table>
+          <div class="oc-apply-link" *ngIf="assignedApplyId">
+            Победители сохранены в заявку.
+            <a [routerLink]="['/applies']" [queryParams]="{ openId: assignedApplyId }">Открыть заявку →</a>
+          </div>
         </div>
       </div>
     </div>
@@ -70,6 +81,13 @@ import { MarketService } from '../../services/market.service';
     .oc-best { background: #ecfdf5; font-weight: 600; }
     .oc-marked { color: #6b7280; }
     .oc-totals td { background: #f3f4f6; font-weight: 600; }
+    .oc-winner { background: #d1fae5; }
+    .oc-actions { margin-top: 4px; }
+    .oc-badge { color: #059669; font-weight: 600; font-size: 11px; }
+    .oc-assign { font-size: 11px; padding: 2px 6px; border: 1px solid #059669; color: #059669; background: #fff; border-radius: 4px; cursor: pointer; }
+    .oc-assign:hover { background: #ecfdf5; }
+    .oc-apply-link { margin-top: 14px; font-size: 13px; }
+    .oc-apply-link a { color: #2563eb; }
   `],
 })
 export class OfferComparisonComponent implements OnChanges {
@@ -80,6 +98,8 @@ export class OfferComparisonComponent implements OnChanges {
   loading = false;
   markup = 25;
   sym = '';
+  assignedByLot: { [lotId: number]: number } = {};
+  assignedApplyId: number | null = null;
 
   constructor(private api: ApiService, private notify: NotificationService,
               private market: MarketService, private cdr: ChangeDetectorRef) {
@@ -102,4 +122,17 @@ export class OfferComparisonComponent implements OnChanges {
     return c ? Number(c.responsePrice) : null;
   }
   withMarkup(p: number): number { return p * (1 + (Number(this.markup) || 0) / 100); }
+
+  assign(lot: any, s: any) {
+    if (this.tenderId == null) return;
+    this.api.assignWinner(this.tenderId, { lotId: lot.lotId, priceRequestId: s.priceRequestId }).subscribe({
+      next: (r) => {
+        this.assignedByLot[lot.lotId] = s.priceRequestId;
+        this.assignedApplyId = r.applyId;
+        this.notify.success(`Назначен ${r.distributorName} по лоту №${lot.lotNumber || '—'}`);
+        this.cdr.detectChanges();
+      },
+      error: (e) => this.notify.error('Не удалось назначить: ' + (e.error?.message || e.message)),
+    });
+  }
 }
