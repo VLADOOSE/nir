@@ -12,6 +12,9 @@ import com.vladoose.nir.integration.goszakup.GoszakupImportScheduler;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.LotSourcingService;
 import com.vladoose.nir.service.OfferComparisonService;
+import com.vladoose.nir.service.WinnerAssignmentService;
+import com.vladoose.nir.dto.request.AssignWinnerRequest;
+import com.vladoose.nir.dto.response.AssignWinnerResponse;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
 import com.vladoose.nir.mapper.TenderLotMapper;
 import com.vladoose.nir.mapper.TenderMapper;
@@ -40,6 +43,7 @@ public class TenderController {
     private final GoszakupImportScheduler goszakupScheduler;
     private final LotSourcingService lotSourcingService;
     private final OfferComparisonService offerComparisonService;
+    private final WinnerAssignmentService winnerAssignmentService;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -49,7 +53,8 @@ public class TenderController {
                             ActivityApplyMapper activityApplyMapper,
                             GoszakupImportScheduler goszakupScheduler,
                             LotSourcingService lotSourcingService,
-                            OfferComparisonService offerComparisonService) {
+                            OfferComparisonService offerComparisonService,
+                            WinnerAssignmentService winnerAssignmentService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -59,6 +64,7 @@ public class TenderController {
         this.goszakupScheduler = goszakupScheduler;
         this.lotSourcingService = lotSourcingService;
         this.offerComparisonService = offerComparisonService;
+        this.winnerAssignmentService = winnerAssignmentService;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -72,6 +78,13 @@ public class TenderController {
     @GetMapping("/{id}/offer-comparison")
     public OfferComparisonResponse offerComparison(@PathVariable Long id) {
         return offerComparisonService.build(id);
+    }
+
+    /** Ручное назначение победителя по лоту (выбранный поставщик из сравнения → позиция заявки). */
+    @PostMapping("/{id}/assign-winner")
+    @PreAuthorize("hasRole('ADMIN')")
+    public AssignWinnerResponse assignWinner(@PathVariable Long id, @Valid @RequestBody AssignWinnerRequest req) {
+        return winnerAssignmentService.assignWinner(id, req.getLotId(), req.getPriceRequestId(), req.getMarkupPercent());
     }
 
     @GetMapping
