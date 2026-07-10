@@ -42,7 +42,7 @@ public class ApplyAutoFillService {
 
     @Transactional
     public AutoFillResponse autoFill(Long applyId) {
-        return autoFill(applyId, 25.0);
+        return autoFill(applyId, 0.0);   // дефолт без наценки: offeredCost = закупка (наценка — в offer-comparison / КП клиенту)
     }
 
     /**
