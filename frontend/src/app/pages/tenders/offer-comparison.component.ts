@@ -107,6 +107,8 @@ export class OfferComparisonComponent implements OnChanges {
   }
 
   ngOnChanges() {
+    this.assignedByLot = {};        // сброс стейта победителей при (пере)открытии — иначе бейджи/ссылка от прошлого тендера
+    this.assignedApplyId = null;
     if (this.tenderId == null) { this.data = null; return; }
     this.loading = true; this.cdr.detectChanges();
     this.api.getOfferComparison(this.tenderId).subscribe({

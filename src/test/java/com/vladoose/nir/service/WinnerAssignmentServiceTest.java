@@ -119,4 +119,16 @@ class WinnerAssignmentServiceTest {
         assertThatThrownBy(() -> service.assignWinner(f[0], f[1], f[2], null))
                 .isInstanceOf(BadRequestException.class);
     }
+
+    /** Гард: подставить priceRequestId/lotId ЧУЖОГО тендера в assign-winner тендера A → отказ
+     *  (закрывает и чужой тендер, и чужой рынок — PriceRequestItem не market-scoped). */
+    @Test
+    void assign_rejectsForeignTenderPriceRequest() {
+        MarketContext.set(Market.KZ);
+        long[] a = fixture(BigDecimal.valueOf(700_000), true);           // тендер A
+        long[] b = fixture(BigDecimal.valueOf(600_000), true);           // тендер B (чужой)
+        // назначить в тендер A предложение (lot+PR) тендера B
+        assertThatThrownBy(() -> service.assignWinner(a[0], b[1], b[2], null))
+                .isInstanceOf(BadRequestException.class);
+    }
 }

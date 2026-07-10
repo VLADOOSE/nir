@@ -40,6 +40,13 @@ public class WinnerAssignmentService {
                 .filter(i -> i.getTenderLot() != null && i.getTenderLot().getId().equals(lotId))
                 .findFirst()
                 .orElseThrow(() -> new BadRequestException("Нет предложения поставщика по лоту"));
+        // Гард принадлежности: PriceRequestItem/TenderLot НЕ market-scoped (нет @Filter) и грузятся
+        // по client-supplied priceRequestId В ОБХОД рыночного аспекта. Тендер из пути уже проверен
+        // на рынок выше → сверка принадлежности тендеру закрывает и чужой тендер, и чужой рынок.
+        if (item.getPriceRequest().getTender() == null
+                || !item.getPriceRequest().getTender().getId().equals(tenderId)) {
+            throw new BadRequestException("Предложение не относится к этому тендеру");
+        }
         if (item.getResponsePrice() == null) {
             throw new BadRequestException("У поставщика нет введённой цены по лоту");
         }
