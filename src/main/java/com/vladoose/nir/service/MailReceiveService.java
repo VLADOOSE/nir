@@ -5,6 +5,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.util.KpToken;
+import com.vladoose.nir.util.SupplierReplyPriceParser;
 import jakarta.mail.*;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.search.FlagTerm;
@@ -118,7 +119,8 @@ public class MailReceiveService {
 
         Extracted ex = new Extracted();
         collect(msg, ex);
-        StringBuilder text = ex.text;
+        // HTML-only письма: text/plain пуст → берём собранный text/html (парсер/эксцерпт снимут теги)
+        String bodyText = ex.text.length() > 0 ? ex.text.toString() : ex.html.toString();
         byte[] attachment = ex.attachment;
         String attachmentName = ex.attachmentName;
 
@@ -128,7 +130,7 @@ public class MailReceiveService {
         Long matchedId = null;
         if (kp.isPresent() && !ownEcho) {
             type = InboundType.SUPPLIER_RESPONSE;
-            matchedId = matchSupplierResponse(kp.get(), text.toString());
+            matchedId = matchSupplierResponse(kp.get(), bodyText);
             result.setSupplierResponses(result.getSupplierResponses() + 1);
         } else if (attachment != null && !ownEcho) {
             type = InboundType.CLIENT_REQUEST;
@@ -146,7 +148,7 @@ public class MailReceiveService {
                 .matchedPriceRequestId(matchedId)
                 .attachmentName(type == InboundType.CLIENT_REQUEST ? attachmentName : null)
                 .attachment(type == InboundType.CLIENT_REQUEST ? attachment : null)
-                .excerpt(trunc(text.toString(), 2000))
+                .excerpt(trunc(bodyText, 2000))
                 .status(InboundStatus.NEW)
                 .build();
         inboundEmailRepository.save(ie);  // @PrePersist стампит market из MarketContext
@@ -177,7 +179,18 @@ public class MailReceiveService {
             pr.setStatus("RESPONDED");
             pr.setResponseDate(LocalDate.now());
             pr.setNote(trunc(body, 4000));
-            priceRequestRepository.save(pr);
+            // ч.3b: авто-парс цены для одно-лотового КП (не затираем ручной ввод)
+            if (pr.getItems().size() == 1) {
+                PriceRequestItem item = pr.getItems().get(0);
+                if (item.getResponsePrice() == null) {
+                    SupplierReplyPriceParser.parse(body, pr.getMarket()).ifPresent(pp -> {
+                        item.setResponsePrice(pp.price());
+                        item.setResponseNote("💡 Цена распознана автоматически, проверьте."
+                                + (pp.term() != null ? " Срок: " + pp.term() + "." : ""));
+                    });
+                }
+            }
+            priceRequestRepository.save(pr);   // cascade ALL сохранит правку item
         }
         return priceRequestId;
     }
@@ -220,6 +233,9 @@ public class MailReceiveService {
         } else if (part.isMimeType("text/plain")) {
             Object c = part.getContent();
             if (c != null) ex.text.append(c);
+        } else if (part.isMimeType("text/html")) {
+            Object c = part.getContent();
+            if (c != null) ex.html.append(c);
         }
     }
 
@@ -235,6 +251,7 @@ public class MailReceiveService {
 
     private static class Extracted {
         final StringBuilder text = new StringBuilder();
+        final StringBuilder html = new StringBuilder();
         byte[] attachment;
         String attachmentName;
     }

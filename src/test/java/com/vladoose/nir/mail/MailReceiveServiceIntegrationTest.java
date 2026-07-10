@@ -93,6 +93,41 @@ class MailReceiveServiceIntegrationTest {
         assertThat(inboundEmailRepository.count()).isEqualTo(count);
     }
 
+    @Test
+    void poll_singleLotKp_autoFillsResponsePrice() throws Exception {
+        MarketContext.set(Market.KZ);
+        Facility fac = facilityRepository.save(Facility.builder().name("ZZPRICE Клиника").build());
+        Distributor dist = distributorRepository.save(
+                Distributor.builder().name("ZZPRICE Дистр").email("p@x.kz").build());
+        Tender tender = Tender.builder()
+                .tenderNumber("ZZPRICE-T1").facility(fac).status("NEW")
+                .source(Source.PRIVATE_REQUEST).build();
+        TenderLot lot = TenderLot.builder().tender(tender).equipName("Аппарат").quantity(1).build();
+        tender.getLots().add(lot);
+        tender = tenderRepository.save(tender);                 // cascade сохраняет лот
+        TenderLot savedLot = tender.getLots().get(0);
+
+        PriceRequest pr = PriceRequest.builder()
+                .tender(tender).distributor(dist).status("SENT").build();
+        pr.getItems().add(PriceRequestItem.builder()
+                .priceRequest(pr).tenderLot(savedLot).requestedQuantity(1).build());
+        pr = priceRequestRepository.save(pr);                   // cascade сохраняет item
+        Long prId = pr.getId();
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(message("supplier@x.kz",
+                "Re: КП " + KpToken.subjectToken(prId), "Цена 3 200 000 ₸, срок 3 недели", null, null));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        PriceRequest reloaded = priceRequestRepository.findById(prId).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo("RESPONDED");
+        PriceRequestItem item = reloaded.getItems().get(0);
+        assertThat(item.getResponsePrice()).isEqualByComparingTo("3200000");
+        assertThat(item.getResponseNote()).containsIgnoringCase("распознан");
+    }
+
     private MimeMessage message(String from, String subject, String body, byte[] attach, String name)
             throws Exception {
         MimeMessage msg = new MimeMessage((Session) null);
