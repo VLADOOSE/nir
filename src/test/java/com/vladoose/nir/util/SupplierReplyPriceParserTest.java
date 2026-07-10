@@ -86,4 +86,29 @@ class SupplierReplyPriceParserTest {
         assertThat(SupplierReplyPriceParser.parse(null, Market.KZ)).isEmpty();
         assertThat(SupplierReplyPriceParser.parse("   ", Market.KZ)).isEmpty();
     }
+
+    @Test
+    void overlyLongNumber_returnsEmpty() {
+        // >13 целых цифр → overflow NUMERIC(15,2); парсер не должен такое отдавать (иначе откат poll)
+        assertThat(SupplierReplyPriceParser.parse("Сумма 99999999999999999 ₸", Market.KZ)).isEmpty();
+    }
+
+    @Test
+    void stripsMailRuAttributionQuote_notJustGmail() {
+        String body = "Цена 5 000 000 ₸\r\n\r\n"
+                + "10 июля 2026 г., 13:42 пользователь West-Med <zakup@westmed.kz> пишет:\r\n"
+                + "старая цена 9 999 999 ₸\r\n";
+        assertThat(price(body, Market.KZ)).isEqualByComparingTo("5000000");
+    }
+
+    @Test
+    void prefersUnitPrice_overGrandTotal() {
+        assertThat(price("Цена за единицу 3 200 000 ₸, итого 6 400 000 ₸", Market.KZ))
+                .isEqualByComparingTo("3200000");
+    }
+
+    @Test
+    void skipsQuantityWithUnit() {
+        assertThat(SupplierReplyPriceParser.parse("Отгрузим 5000 шт, цена договорная", Market.KZ)).isEmpty();
+    }
 }

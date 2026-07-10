@@ -186,7 +186,8 @@ public class MailReceiveService {
                     SupplierReplyPriceParser.parse(body, pr.getMarket()).ifPresent(pp -> {
                         item.setResponsePrice(pp.price());
                         item.setResponseNote("💡 Цена распознана автоматически, проверьте."
-                                + (pp.term() != null ? " Срок: " + pp.term() + "." : ""));
+                                + (pp.term() != null ? " Срок: " + pp.term() + "." : "")
+                                + (pp.matchedSnippet() != null ? " Контекст: «" + pp.matchedSnippet() + "»." : ""));
                     });
                 }
             }

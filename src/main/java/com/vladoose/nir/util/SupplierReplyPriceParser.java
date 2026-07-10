@@ -36,7 +36,15 @@ public final class SupplierReplyPriceParser {
             "\\d{1,3}(?:[ \\u00A0.]\\d{3})+(?:,\\d{1,2})?|\\d{4,}(?:[.,]\\d{1,2})?");
 
     private static final Pattern PRICE_KEYWORD = Pattern.compile(
-            "(?i)(цена|стоимост|сумма|за единиц|итого|составля|прайс|price)");
+            "(?i)(цена|стоимост|сумма|за единиц|составля|прайс|price)");
+
+    /** Строка-атрибуция цитаты («… пишет:» / «On … wrote:») — mail.ru/Apple Mail не ставят "> ". */
+    private static final Pattern ATTRIBUTION = Pattern.compile(
+            "(?im)^.{0,120}?\\b(пишет|wrote|schrieb)\\s*:[ \\t]*$");
+
+    /** Суффикс количества сразу после числа — тогда это НЕ цена (шт/упаковок/ед/…). */
+    private static final Pattern QTY_SUFFIX = Pattern.compile(
+            "(?iu)^\\s{0,3}(шт|упаков|ед\\b|ед\\.|позиц|коробк|компл|набор|уп\\b)");
 
     private static final Pattern TERM = Pattern.compile(
             "(?i)срок[^.\\n\\r]{0,40}?(\\d{1,3})\\s*(рабочих\\s*)?(дн|недел|мес)\\w*");
@@ -57,12 +65,14 @@ public final class SupplierReplyPriceParser {
             String bestRaw = null;
             int bestScore = 0;
             while (m.find()) {
+                // число с суффиксом количества (шт/упак/…) — это не цена
+                String tail = scrubbed.substring(m.end(), Math.min(scrubbed.length(), m.end() + 12));
+                if (QTY_SUFFIX.matcher(tail).find()) continue;
                 BigDecimal val = toBigDecimal(m.group());
                 if (val == null) continue;
                 int score = anchorScore(scrubbed, m.start(), m.end(), currency);
-                boolean better = score > bestScore
-                        || (score == bestScore && bestVal != null && val.compareTo(bestVal) > 0);
-                if (better) { bestScore = score; bestVal = val; bestRaw = m.group(); }
+                // строго больше → при равном якоре побеждает ПЕРВОЕ (обычно цена за ед., не «итого»)
+                if (score > bestScore) { bestScore = score; bestVal = val; bestRaw = m.group(); }
             }
             if (bestScore == 0 || bestVal == null) return Optional.empty(); // нет якоря → не гадаем
             return Optional.of(new ParsedPrice(bestVal, term, snippetAround(text, bestRaw)));
@@ -79,8 +89,15 @@ public final class SupplierReplyPriceParser {
     }
 
     private static String stripQuote(String s) {
-        Matcher m = QUOTE_BOUNDARY.matcher(s);
-        return m.find() ? s.substring(0, m.start()) : s;
+        int cut = firstMatchStart(QUOTE_BOUNDARY, s);
+        int attr = firstMatchStart(ATTRIBUTION, s);
+        if (attr >= 0 && (cut < 0 || attr < cut)) cut = attr;
+        return cut >= 0 ? s.substring(0, cut) : s;
+    }
+
+    private static int firstMatchStart(Pattern p, String s) {
+        Matcher m = p.matcher(s);
+        return m.find() ? m.start() : -1;
     }
 
     private static String[] currencyAnchors(Market market) {
@@ -109,7 +126,12 @@ public final class SupplierReplyPriceParser {
         } else if (s.matches("\\d{1,3}(\\.\\d{3})+")) {
             s = s.replace(".", "");                           // точки — разделители тысяч
         } // иначе одиночная точка = десятичная — оставляем как есть
-        try { return new BigDecimal(s); } catch (NumberFormatException e) { return null; }
+        try {
+            BigDecimal bd = new BigDecimal(s);
+            // NUMERIC(15,2): целая часть ≤ 13 цифр — иначе overflow при flush (откат poll-транзакции)
+            if (bd.precision() - bd.scale() > 13) return null;
+            return bd;
+        } catch (NumberFormatException e) { return null; }
     }
 
     private static String extractTerm(String text) {
