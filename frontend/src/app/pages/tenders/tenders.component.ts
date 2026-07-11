@@ -64,9 +64,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showTenderForm" (click)="onAddTender()">Добавить тендер</button>
-        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportKz()" [disabled]="importing || importStatus?.running"
-                [title]="importRegion() ? 'Импорт с goszakup только по региону: ' + importRegion() : 'Импорт всей ленты goszakup'">
-          {{ (importing || importStatus?.running) ? 'Обновление…' : ('Обновить тендеры' + (importRegion() ? ' — ' + importRegion() : '')) }}
+        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportTenders()" [disabled]="importBusy()"
+                [title]="importButtonTitle()">
+          {{ importButtonLabel() }}
         </button>
         <div class="import-progress" *ngIf="isKz() && importStatus?.running">
           <div class="import-bar"><div class="import-bar-fill" [style.width.%]="importPct()"></div></div>
@@ -81,10 +81,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <span class="import-status" *ngIf="isKz() && importStatus && !importStatus.running && importStatus.lastFinishedAt">
           Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
         </span>
-        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportSk()" [disabled]="skImporting || skImportStatus?.running"
-                title="Импорт медизделий с портала СК-Фармации (fms.ecc.kz)">
-          {{ (skImporting || skImportStatus?.running) ? 'СК-Фармация…' : 'Обновить СК-Фармация' }}
-        </button>
+        <!-- СК-Фармация импортируется той же кнопкой «Обновить тендеры» (см. onImportTenders); своя полоса прогресса ниже -->
         <div class="import-progress" *ngIf="isKz() && skImportStatus?.running">
           <div class="import-bar"><div class="import-bar-fill" [style.width.%]="skImportPct()"></div></div>
           <span class="import-progress-text">
@@ -1128,6 +1125,36 @@ export class TendersComponent {
   /** Регион для импорта: выбранный в фильтре, кроме спец-значения «Регион не указан». */
   importRegion(): string | undefined {
     return this.filterRegion && this.filterRegion !== this.NO_REGION ? this.filterRegion : undefined;
+  }
+
+  /** Единая кнопка «Обновить тендеры»: без фильтра площадки — обе площадки параллельно, иначе только выбранная. */
+  onImportTenders() {
+    if (this.filterPlatform === 'GOSZAKUP') { this.onImportKz(); }
+    else if (this.filterPlatform === 'SK_PHARMACY') { this.onImportSk(); }
+    else { this.onImportKz(); this.onImportSk(); }   // «Все площадки» → обе
+  }
+
+  /** Занята, пока идёт импорт той площадки(-ок), которую кнопка запустит для текущего фильтра. */
+  importBusy(): boolean {
+    const gos = this.importing || !!this.importStatus?.running;
+    const sk = this.skImporting || !!this.skImportStatus?.running;
+    if (this.filterPlatform === 'GOSZAKUP') return gos;
+    if (this.filterPlatform === 'SK_PHARMACY') return sk;
+    return gos || sk;
+  }
+
+  importButtonLabel(): string {
+    if (this.importBusy()) return 'Обновление…';
+    if (this.filterPlatform === 'SK_PHARMACY') return 'Обновить СК-Фармация';
+    const base = this.filterPlatform === 'GOSZAKUP' ? 'Обновить Госзакуп' : 'Обновить тендеры';
+    return base + (this.importRegion() ? ' — ' + this.importRegion() : '');
+  }
+
+  importButtonTitle(): string {
+    const reg = this.importRegion();
+    if (this.filterPlatform === 'SK_PHARMACY') return 'Импорт медизделий с портала СК-Фармации (fms.ecc.kz)';
+    if (this.filterPlatform === 'GOSZAKUP') return reg ? 'Импорт с goszakup только по региону: ' + reg : 'Импорт всей ленты goszakup';
+    return 'Обновить обе площадки: goszakup' + (reg ? ' (регион ' + reg + ')' : '') + ' + СК-Фармация (fms.ecc.kz)';
   }
 
   onImportKz() {
