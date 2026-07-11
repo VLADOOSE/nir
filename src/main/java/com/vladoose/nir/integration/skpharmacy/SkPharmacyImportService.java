@@ -20,12 +20,22 @@ public class SkPharmacyImportService {
     private final SkPharmacyClient client;
     private final SkPharmacyTenderWriter writer;
     private final int maxPages;
+    private final long throttleMs;
 
     public SkPharmacyImportService(SkPharmacyClient client, SkPharmacyTenderWriter writer,
-                                   @Value("${skpharmacy.import.max-pages:30}") int maxPages) {
+                                   @Value("${skpharmacy.import.max-pages:30}") int maxPages,
+                                   @Value("${skpharmacy.import.throttle-ms:300}") long throttleMs) {
         this.client = client;
         this.writer = writer;
         this.maxPages = maxPages;
+        this.throttleMs = throttleMs;
+    }
+
+    /** Пауза между запросами к порталу (троттлинг от бана). Прерывание → сигнал остановить прогон. */
+    private boolean throttle() {
+        if (throttleMs <= 0) return true;
+        try { Thread.sleep(throttleMs); return true; }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
     }
 
     /** Наполняет переданный ImportSummary по ходу (живой прогресс, как goszakup). */
@@ -45,6 +55,7 @@ public class SkPharmacyImportService {
 
             for (SkAnnounce a : anns) {
                 sum.setFetched(sum.getFetched() + 1);
+                if (!throttle()) { sum.setMessage("Импорт прерван"); return; }   // троттлинг + чистая остановка
                 try {
                     if (!SkPharmacyRelevanceFilter.nameCandidate(a.nameRu())) {   // ступень 1 — явные лекарства
                         sum.setSkipped(sum.getSkipped() + 1);

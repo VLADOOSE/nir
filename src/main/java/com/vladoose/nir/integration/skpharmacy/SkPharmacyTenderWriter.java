@@ -57,7 +57,7 @@ public class SkPharmacyTenderWriter {
             lot.setLotNumber(n++);
             lot.setEquipName(trunc(l.name(), 255));
             lot.setQuantity(l.quantity());
-            lot.setMaxCost(l.unitPrice());
+            lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
             t.getLots().add(lot);
         }
     }
@@ -80,5 +80,12 @@ public class SkPharmacyTenderWriter {
     private static String trunc(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /** Цена лота: null/≤0/переполнение NUMERIC(15,2) целой части >13 → null (колонка nullable, CHECK max_cost>0). */
+    private static java.math.BigDecimal priceOrNull(java.math.BigDecimal p) {
+        if (p == null || p.signum() <= 0) return null;
+        if (p.precision() - p.scale() > 13) return null;
+        return p;
     }
 }

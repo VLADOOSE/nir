@@ -24,6 +24,7 @@ import static org.mockito.Mockito.when;
 /** Импорт СК-Ф на моке клиента (реальные HTML-фикстуры) → парс+фильтр+upsert. */
 @SpringBootTest
 @Transactional
+@org.springframework.test.context.TestPropertySource(properties = "skpharmacy.import.throttle-ms=0")
 class SkPharmacyImportServiceTest {
 
     @Autowired SkPharmacyImportService importService;
