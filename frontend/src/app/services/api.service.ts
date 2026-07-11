@@ -68,6 +68,10 @@ export class ApiService {
     return this.getAll('tenders');
   }
 
+  getTenderWorkStages(): Observable<{ [tenderId: number]: string }> {
+    return this.http.get<{ [tenderId: number]: string }>(`${this.base}/tenders/work-stages`);
+  }
+
   getTenderLots(tenderId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/tenders/${tenderId}/lots`);
   }

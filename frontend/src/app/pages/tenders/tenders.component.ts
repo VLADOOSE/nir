@@ -36,6 +36,13 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <option value="published">Сначала новые</option>
           <option value="deadline">Скоро дедлайн</option>
         </select>
+        <select [(ngModel)]="filterStage" (change)="applyTendersFilter()" class="filter-select" title="Стадия работы">
+          <option value="">Все стадии</option>
+          <option value="NOT_STARTED">Не начат</option>
+          <option value="REQUESTED">Запрос отправлен</option>
+          <option value="PRICED">Есть цены</option>
+          <option value="WINNER_SELECTED">Победитель выбран</option>
+        </select>
         <select [(ngModel)]="filterFacilityId" (change)="applyTendersFilter()" class="filter-select">
           <option [ngValue]="null">Все учреждения</option>
           <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
@@ -137,6 +144,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </a>
             <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в реестре закупок">Демо</span>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
+            <span *ngIf="stageByTenderId[t.id]" [style]="stageChipStyle(stageByTenderId[t.id])">{{ stageLabel(stageByTenderId[t.id]) }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
           <div class="tender-price">{{ t.totalCost | money }}</div>
@@ -834,6 +842,8 @@ export class TendersComponent {
   filteredTenders: any[] = [];
   filterQuery = '';
   filterStatus = '';
+  filterStage = '';
+  stageByTenderId: { [id: number]: string } = {};
   filterRegion = '';
   protected readonly NO_REGION = '__none__';
   readonly REGIONS: string[] = [
@@ -1062,6 +1072,25 @@ export class TendersComponent {
       next: data => { this.tenders = data; this.applyTendersFilter(); this.cdr.detectChanges(); },
       error: err => this.notify.error('Ошибка загрузки тендеров: ' + (err.error?.message || err.message))
     });
+    this.api.getTenderWorkStages().subscribe({
+      next: (m) => { this.stageByTenderId = m || {}; this.applyTendersFilter(); this.cdr.detectChanges(); },
+      error: () => { /* стадии не критичны — список работает без них */ }
+    });
+  }
+
+  stageLabel(code: string): string {
+    return ({ REQUESTED: 'Запрос отправлен', PRICED: 'Есть цены', WINNER_SELECTED: 'Победитель' } as any)[code] || '';
+  }
+
+  // Инлайн-стиль (НЕ CSS-класс: style-бюджет tenders.component исчерпан — §12 CLAUDE.md).
+  stageChipStyle(code: string): string {
+    const c: { [k: string]: string } = {
+      REQUESTED: 'background:#fef3c7;color:#92400e',
+      PRICED: 'background:#dbeafe;color:#1e40af',
+      WINNER_SELECTED: 'background:#d1fae5;color:#065f46',
+    };
+    return (c[code] || 'background:#e5e7eb;color:#374151')
+      + ';display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px';
   }
 
   importing = false;
@@ -1108,6 +1137,10 @@ export class TendersComponent {
         if (!num.includes(q) && !desc.includes(q)) return false;
       }
       if (this.filterStatus && t.status !== this.filterStatus) return false;
+      if (this.filterStage) {
+        const stage = this.stageByTenderId[t.id] || 'NOT_STARTED';
+        if (stage !== this.filterStage) return false;
+      }
       if (this.filterFacilityId != null && t.facility?.id !== this.filterFacilityId) return false;
       if (from && t.deadline && new Date(t.deadline) < from) return false;
       if (to && t.deadline && new Date(t.deadline) > to) return false;
@@ -1348,6 +1381,7 @@ export class TendersComponent {
   resetTendersFilter() {
     this.filterQuery = '';
     this.filterStatus = '';
+    this.filterStage = '';
     this.filterRegion = '';
     this.filterFacilityId = null;
     this.filterDeadlineFrom = '';
