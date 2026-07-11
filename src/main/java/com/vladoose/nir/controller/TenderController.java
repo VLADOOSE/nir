@@ -13,6 +13,7 @@ import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.LotSourcingService;
 import com.vladoose.nir.service.OfferComparisonService;
 import com.vladoose.nir.service.WinnerAssignmentService;
+import com.vladoose.nir.service.TenderWorkStageService;
 import com.vladoose.nir.dto.request.AssignWinnerRequest;
 import com.vladoose.nir.dto.response.AssignWinnerResponse;
 import com.vladoose.nir.mapper.ActivityApplyMapper;
@@ -29,6 +30,8 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/tenders")
@@ -44,6 +47,7 @@ public class TenderController {
     private final LotSourcingService lotSourcingService;
     private final OfferComparisonService offerComparisonService;
     private final WinnerAssignmentService winnerAssignmentService;
+    private final TenderWorkStageService workStageService;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -54,7 +58,8 @@ public class TenderController {
                             GoszakupImportScheduler goszakupScheduler,
                             LotSourcingService lotSourcingService,
                             OfferComparisonService offerComparisonService,
-                            WinnerAssignmentService winnerAssignmentService) {
+                            WinnerAssignmentService winnerAssignmentService,
+                            TenderWorkStageService workStageService) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -65,6 +70,7 @@ public class TenderController {
         this.lotSourcingService = lotSourcingService;
         this.offerComparisonService = offerComparisonService;
         this.winnerAssignmentService = winnerAssignmentService;
+        this.workStageService = workStageService;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -78,6 +84,13 @@ public class TenderController {
     @GetMapping("/{id}/offer-comparison")
     public OfferComparisonResponse offerComparison(@PathVariable Long id) {
         return offerComparisonService.build(id);
+    }
+
+    /** Стадия воронки по каждому тендеру рынка (tenderId → стадия). Только затронутые тендеры. */
+    @GetMapping("/work-stages")
+    public Map<Long, String> workStages() {
+        return workStageService.stagesForMarket().entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().name()));
     }
 
     /** Ручное назначение победителя по лоту (выбранный поставщик из сравнения → позиция заявки). */
