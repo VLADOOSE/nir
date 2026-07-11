@@ -109,6 +109,13 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </select>
             <span class="field-error" *ngIf="validationErrors.purchaseType">{{ validationErrors.purchaseType }}</span>
           </label>
+          <label *ngIf="isKz()">Площадка
+            <select formControlName="platform">
+              <option value="">— по рынку (Госзакуп) —</option>
+              <option value="GOSZAKUP">Госзакуп</option>
+              <option value="SK_PHARMACY">СК-Фармация</option>
+            </select>
+          </label>
         </div>
         <div class="dims-row">
           <label>Дата публикации<input type="date" formControlName="publishDate" [class.input-error]="validationErrors.publishDate" /><span class="field-error" *ngIf="validationErrors.publishDate">{{ validationErrors.publishDate }}</span></label>
@@ -139,8 +146,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
-            <a *ngIf="!isDemoTender(t.tenderNumber)" class="eis-link" [href]="eisLink(t.tenderNumber)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" [title]="'Открыть в ' + procurementPortalLabel() + ' ' + procurementPortalHost()">
-              <svg lucideIcon="external-link" [size]="12"></svg> {{ procurementPortalLabel() }}
+            <a *ngIf="!isDemoTender(t.tenderNumber)" class="eis-link" [href]="eisLink(t)" target="_blank" rel="noopener" (click)="$event.stopPropagation()" [title]="'Открыть в ' + procurementPortalLabel(t) + ' ' + procurementPortalHost(t)">
+              <svg lucideIcon="external-link" [size]="12"></svg> {{ procurementPortalLabel(t) }}
             </a>
             <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в реестре закупок">Демо</span>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
@@ -188,8 +195,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div class="tender-info">
         <h2>Тендер &#8470; {{ selectedTender.tenderNumber }}
-          <a *ngIf="!isDemoTender(selectedTender.tenderNumber)" class="eis-link-h2" [href]="eisLink(selectedTender.tenderNumber)" target="_blank" rel="noopener" [title]="'Открыть на ' + procurementPortalHost()">
-            <svg lucideIcon="external-link" [size]="14"></svg> Открыть в {{ procurementPortalLabel() }}
+          <a *ngIf="!isDemoTender(selectedTender.tenderNumber)" class="eis-link-h2" [href]="eisLink(selectedTender)" target="_blank" rel="noopener" [title]="'Открыть на ' + procurementPortalHost(selectedTender)">
+            <svg lucideIcon="external-link" [size]="14"></svg> Открыть в {{ procurementPortalLabel(selectedTender) }}
           </a>
           <span *ngIf="isDemoTender(selectedTender.tenderNumber)" class="demo-badge-h2" title="Контрольный пример, не существует в реестре закупок">Контрольный пример</span>
         </h2>
@@ -901,7 +908,8 @@ export class TendersComponent {
     contactFirstName: new FormControl(''),
     contactMiddleName: new FormControl(''),
     contactPhone: new FormControl(''),
-    contactEmail: new FormControl('')
+    contactEmail: new FormControl(''),
+    platform: new FormControl('')
   });
 
   validationErrors: any = {};
@@ -1014,9 +1022,9 @@ export class TendersComponent {
     });
   }
 
-  eisLink(tenderNumber: string): string { return this.market.portalLink(tenderNumber); }
-  procurementPortalLabel(): string { return this.market.portalLabel(); }
-  procurementPortalHost(): string { return this.market.portalHost(); }
+  eisLink(t: any): string { return this.market.portalLink(t?.tenderNumber, t?.platform); }
+  procurementPortalLabel(t?: any): string { return this.market.portalLabel(t?.platform); }
+  procurementPortalHost(t?: any): string { return this.market.portalHost(t?.platform); }
 
   isDemoTender(tenderNumber: string): boolean {
     return !!tenderNumber && tenderNumber.startsWith('DEMO-');
@@ -1389,7 +1397,7 @@ export class TendersComponent {
     this.applyTendersFilter();
   }
 
-  onAddTender() { this.editingTenderId = null; this.tenderForm.reset({ status: 'DRAFT' }); this.validationErrors = {}; this.showTenderForm = true; }
+  onAddTender() { this.editingTenderId = null; this.tenderForm.reset({ status: 'DRAFT', platform: '' }); this.validationErrors = {}; this.showTenderForm = true; }
 
   onEditTender(t: any) {
     this.editingTenderId = t.id;
@@ -1398,7 +1406,8 @@ export class TendersComponent {
       purchaseType: t.purchaseType, deadline: t.deadline, publishDate: t.publishDate,
       description: t.description, deliveryAddress: t.deliveryAddress,
       contactLastName: t.contactLastName, contactFirstName: t.contactFirstName,
-      contactMiddleName: t.contactMiddleName, contactPhone: t.contactPhone, contactEmail: t.contactEmail
+      contactMiddleName: t.contactMiddleName, contactPhone: t.contactPhone, contactEmail: t.contactEmail,
+      platform: t.platform || ''
     });
     this.showTenderForm = true;
   }
@@ -1411,7 +1420,8 @@ export class TendersComponent {
       description: v.description, deliveryAddress: v.deliveryAddress,
       contactLastName: v.contactLastName, contactFirstName: v.contactFirstName,
       contactMiddleName: v.contactMiddleName, contactPhone: v.contactPhone, contactEmail: v.contactEmail,
-      facilityId: v.facilityId || null
+      facilityId: v.facilityId || null,
+      platform: v.platform || null
     };
     const wasEditing = this.editingTenderId !== null;
     const req = this.editingTenderId ? this.api.update('tenders', this.editingTenderId, body) : this.api.create('tenders', body);

@@ -31,21 +31,35 @@ export class MarketService {
   meta(m: Market): MarketMeta { return MARKETS[m]; }
 
   // Название/хост площадки госзакупок активного рынка (РФ — ЕИС, KZ — Госзакуп РК)
-  portalLabel(): string { return this.current === 'KZ' ? 'Госзакуп' : 'ЕИС'; }
-  portalHost(): string { return this.current === 'KZ' ? 'goszakup.gov.kz' : 'zakupki.gov.ru'; }
+  portalLabel(platform?: string): string {
+    if (platform === 'SK_PHARMACY') return 'СК-Фармация';
+    if (platform === 'GOSZAKUP') return 'Госзакуп';
+    return this.current === 'KZ' ? 'Госзакуп' : 'ЕИС';
+  }
+  portalHost(platform?: string): string {
+    if (platform === 'SK_PHARMACY') return 'fms.ecc.kz';
+    if (platform === 'GOSZAKUP') return 'goszakup.gov.kz';
+    return this.current === 'KZ' ? 'goszakup.gov.kz' : 'zakupki.gov.ru';
+  }
 
-  /** Ссылка на тендер на площадке активного рынка. */
-  portalLink(tenderNumber: string): string {
+  /** Ссылка на тендер на площадке по его каналу; null → фолбэк по рынку. */
+  portalLink(tenderNumber: string, platform?: string): string {
     const q = encodeURIComponent(tenderNumber || '');
+    // id объявления — часть номера до дефиса ("363780-1" → "363780"); та же схема у goszakup и fms.ecc.kz
+    const m = /^(\d+)-\d+$/.exec(tenderNumber || '');
+    if (platform === 'SK_PHARMACY') {
+      return m ? `https://fms.ecc.kz/ru/announce/index/${m[1]}?tab=lots`
+               : `https://fms.ecc.kz/ru/searchanno`;
+    }
+    if (platform === 'GOSZAKUP') {
+      return m ? `https://goszakup.gov.kz/ru/announce/index/${m[1]}`
+               : `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`;
+    }
     if (this.current !== 'KZ') {
       return `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}`;
     }
-    // Импортированный с goszakup номер "17276387-1" → страница объявления по id (часть до дефиса);
-    // ручные номера (KZ-2026-0001) на портале не существуют — оставляем поиск по лотам
-    const m = /^(\d+)-\d+$/.exec(tenderNumber || '');
-    return m
-      ? `https://goszakup.gov.kz/ru/announce/index/${m[1]}`
-      : `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`;
+    return m ? `https://goszakup.gov.kz/ru/announce/index/${m[1]}`
+             : `https://goszakup.gov.kz/ru/search/lots?filter[name]=${q}`;
   }
 
   setMarket(m: Market) {
