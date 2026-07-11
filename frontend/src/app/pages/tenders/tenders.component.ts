@@ -81,6 +81,20 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <span class="import-status" *ngIf="isKz() && importStatus && !importStatus.running && importStatus.lastFinishedAt">
           Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
         </span>
+        <button class="btn btn-add" *ngIf="isKz() && !showTenderForm" (click)="onImportSk()" [disabled]="skImporting || skImportStatus?.running"
+                title="Импорт медизделий с портала СК-Фармации (fms.ecc.kz)">
+          {{ (skImporting || skImportStatus?.running) ? 'СК-Фармация…' : 'Обновить СК-Фармация' }}
+        </button>
+        <div class="import-progress" *ngIf="isKz() && skImportStatus?.running">
+          <div class="import-bar"><div class="import-bar-fill" [style.width.%]="skImportPct()"></div></div>
+          <span class="import-progress-text">
+            СК-Ф стр. {{ skImportStatus.lastSummary?.pagesRead || 0 }}/{{ skImportStatus.lastSummary?.maxPages || '…' }}
+            · получено {{ skImportStatus.lastSummary?.fetched || 0 }}
+            · подходящих {{ skImportStatus.lastSummary?.matched || 0 }}
+            · создано {{ skImportStatus.lastSummary?.created || 0 }}
+            · обновлено {{ skImportStatus.lastSummary?.updated || 0 }}<ng-container *ngIf="skImportStatus.lastSummary?.errors"> · ошибок {{ skImportStatus.lastSummary.errors }}</ng-container>
+          </span>
+        </div>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
       </div>
 
@@ -1136,6 +1150,50 @@ export class TendersComponent {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  // --- Импорт СК-Фармации (fms.ecc.kz) — отдельный поток, зеркалит goszakup-импорт ---
+  skImporting = false;
+  skImportStatus: any = null;
+  private skImportPollTimer: any = null;
+
+  onImportSk() {
+    this.skImporting = true;
+    this.api.importSkTenders().subscribe({
+      next: (st: any) => { this.skImportStatus = st; this.startSkImportPolling(); this.cdr.detectChanges(); },
+      error: err => {
+        this.skImporting = false;
+        this.notify.error('Ошибка импорта СК-Фармации: ' + (err.error?.message || err.message));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private startSkImportPolling() {
+    if (this.skImportPollTimer) return;
+    this.skImportPollTimer = setInterval(() => {
+      this.api.getSkImportStatus().subscribe({
+        next: st => {
+          const wasRunning = this.skImportStatus?.running;
+          this.skImportStatus = st;
+          if (!st.running) {
+            clearInterval(this.skImportPollTimer); this.skImportPollTimer = null; this.skImporting = false;
+            if (wasRunning) {
+              if (st.lastSummary?.message) this.notify.success('СК-Фармация: ' + st.lastSummary.message);
+              this.loadTenders();
+            }
+          }
+          this.cdr.detectChanges();
+        },
+        error: () => { clearInterval(this.skImportPollTimer); this.skImportPollTimer = null; this.skImporting = false; this.cdr.detectChanges(); }
+      });
+    }, 2500);
+  }
+
+  skImportPct(): number {
+    const s = this.skImportStatus?.lastSummary;
+    if (!s?.maxPages) return 5;
+    return Math.max(5, Math.min(100, Math.round(100 * (s.pagesRead || 0) / s.maxPages)));
   }
 
   sortMode: 'published' | 'deadline' = 'published';
