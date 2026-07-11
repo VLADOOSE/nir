@@ -43,6 +43,11 @@ import { LucideDynamicIcon } from '@lucide/angular';
           <option value="PRICED">Есть цены</option>
           <option value="WINNER_SELECTED">Победитель выбран</option>
         </select>
+        <select *ngIf="isKz()" [(ngModel)]="filterPlatform" (change)="applyTendersFilter()" class="filter-select" title="Площадка">
+          <option value="">Все площадки</option>
+          <option value="GOSZAKUP">Госзакуп</option>
+          <option value="SK_PHARMACY">СК-Фармация</option>
+        </select>
         <select [(ngModel)]="filterFacilityId" (change)="applyTendersFilter()" class="filter-select">
           <option [ngValue]="null">Все учреждения</option>
           <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
@@ -850,6 +855,7 @@ export class TendersComponent {
   filterQuery = '';
   filterStatus = '';
   filterStage = '';
+  filterPlatform = '';
   stageByTenderId: { [id: number]: string } = {};
   filterRegion = '';
   protected readonly NO_REGION = '__none__';
@@ -1149,6 +1155,10 @@ export class TendersComponent {
         const stage = this.stageByTenderId[t.id] || 'NOT_STARTED';
         if (stage !== this.filterStage) return false;
       }
+      if (this.filterPlatform) {
+        const p = t.platform || 'GOSZAKUP';   // null → Госзакуп (KZ-дефолт)
+        if (p !== this.filterPlatform) return false;
+      }
       if (this.filterFacilityId != null && t.facility?.id !== this.filterFacilityId) return false;
       if (from && t.deadline && new Date(t.deadline) < from) return false;
       if (to && t.deadline && new Date(t.deadline) > to) return false;
@@ -1390,6 +1400,7 @@ export class TendersComponent {
     this.filterQuery = '';
     this.filterStatus = '';
     this.filterStage = '';
+    this.filterPlatform = '';
     this.filterRegion = '';
     this.filterFacilityId = null;
     this.filterDeadlineFrom = '';
