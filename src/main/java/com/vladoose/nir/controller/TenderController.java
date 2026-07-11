@@ -9,6 +9,7 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.dto.response.LotSourcingResponse;
 import com.vladoose.nir.dto.response.OfferComparisonResponse;
 import com.vladoose.nir.integration.goszakup.GoszakupImportScheduler;
+import com.vladoose.nir.integration.skpharmacy.SkPharmacyImportScheduler;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.LotSourcingService;
 import com.vladoose.nir.service.OfferComparisonService;
@@ -44,6 +45,7 @@ public class TenderController {
     private final TenderLotMapper tenderLotMapper;
     private final ActivityApplyMapper activityApplyMapper;
     private final GoszakupImportScheduler goszakupScheduler;
+    private final SkPharmacyImportScheduler skScheduler;
     private final LotSourcingService lotSourcingService;
     private final OfferComparisonService offerComparisonService;
     private final WinnerAssignmentService winnerAssignmentService;
@@ -59,7 +61,8 @@ public class TenderController {
                             LotSourcingService lotSourcingService,
                             OfferComparisonService offerComparisonService,
                             WinnerAssignmentService winnerAssignmentService,
-                            TenderWorkStageService workStageService) {
+                            TenderWorkStageService workStageService,
+                            SkPharmacyImportScheduler skScheduler) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -71,6 +74,7 @@ public class TenderController {
         this.offerComparisonService = offerComparisonService;
         this.winnerAssignmentService = winnerAssignmentService;
         this.workStageService = workStageService;
+        this.skScheduler = skScheduler;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -168,5 +172,17 @@ public class TenderController {
     @GetMapping("/import-kz/status")
     public GoszakupImportScheduler.ImportStatus importKzStatus() {
         return goszakupScheduler.status();
+    }
+
+    /** Импорт тендеров СК-Фармации (fms.ecc.kz, HTML-скрейп) в фоне; прогресс — GET /import-sk/status. */
+    @PostMapping("/import-sk")
+    @PreAuthorize("hasRole('ADMIN')")
+    public SkPharmacyImportScheduler.ImportStatus importSk() {
+        return skScheduler.startAsync();
+    }
+
+    @GetMapping("/import-sk/status")
+    public SkPharmacyImportScheduler.ImportStatus importSkStatus() {
+        return skScheduler.status();
     }
 }
