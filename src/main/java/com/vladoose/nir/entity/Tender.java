@@ -58,6 +58,10 @@ public class Tender implements MarketScoped {
     @Builder.Default
     private Source source = Source.PUBLIC_TENDER;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private TenderPlatform platform;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 

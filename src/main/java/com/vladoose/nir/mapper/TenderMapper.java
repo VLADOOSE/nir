@@ -7,6 +7,7 @@ import com.vladoose.nir.dto.response.TenderShortResponse;
 import com.vladoose.nir.entity.Facility;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.entity.TenderPlatform;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -18,6 +19,12 @@ import java.util.List;
 
 @Mapper(componentModel = "spring", uses = {FacilityMapper.class, EquipmentTypeMapper.class})
 public interface TenderMapper {
+
+    /** String → площадка: пусто/неизвестное → null (не валит 500, форма и так ограничивает значения). */
+    default TenderPlatform toPlatform(String v) {
+        if (v == null || v.isBlank()) return null;
+        try { return TenderPlatform.valueOf(v.trim()); } catch (IllegalArgumentException e) { return null; }
+    }
 
     @Mapping(target = "facility", source = "facility")
     @Mapping(target = "lots", source = "lots")

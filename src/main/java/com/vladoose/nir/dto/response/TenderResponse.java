@@ -19,6 +19,7 @@ public class TenderResponse {
     private BigDecimal totalCost;
     private String currency;
     private String source;
+    private String platform;
     private String description;
     private String deliveryAddress;
     private String region;

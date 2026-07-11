@@ -4,6 +4,7 @@ import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.entity.TenderPlatform;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
@@ -54,6 +55,7 @@ public class GoszakupTenderWriter {
     private void applyFields(Tender t, TrdBuyDto d) {
         t.setTenderNumber(d.getNumberAnno());
         t.setSource(Source.PUBLIC_TENDER);
+        t.setPlatform(TenderPlatform.GOSZAKUP);
         t.setMarket(Market.KZ);
         t.setCurrency("KZT");
         t.setFacility(null);

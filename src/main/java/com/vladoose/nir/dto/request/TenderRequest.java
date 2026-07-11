@@ -22,6 +22,8 @@ public class TenderRequest {
     @NotBlank(message = "Способ закупки обязателен")
     private String purchaseType;
 
+    private String platform;
+
     @NotNull(message = "Дедлайн обязателен")
     private LocalDate deadline;
 
