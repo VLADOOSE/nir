@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="ci_csrf_token" content="ffae9e11f062d72fdc18ef0a827b72fb">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" href="/images/favicon.ico" type="image/x-icon"/>
+
+    <title>Веб-портал закупок</title>
+    <script src="/js/jquery.js"></script>
+    <script src="/js/bootstrap.min.js"></script>
+    <script src="/js/timers.js"></script>
+    <script src="/js/confirmation.js"></script>
+    <script type='text/javascript' src='https://fms.ecc.kz/js/bootstrap.datepicker.js?0.94653700 1783795049' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.94654200 1783795049' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/moment.js?0.07157100 1783795050' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/bootstrap-datetimepicker.js?0.07157600 1783795050' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/ru.js?0.07157900 1783795050' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/searchanno.js?0.09609300 1783795050' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.09609800 1783795050' charset='utf-8'></script>
+
+    <script src="/js/moment.js"></script>
+    <script src="/js/ru.js"></script>
+
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/style.css?v=4" rel="stylesheet">
+    <link href='https://fms.ecc.kz/css/datepicker.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/layout-styles.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/bootstrap-datetimepicker.min.css' rel='stylesheet'>
+
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+    <script src="//oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+    <script src="//oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <script>
+        var user_id = 0;
+        window.lang_key = "ru";
+        window.current_controller_url = "https://fms.ecc.kz/ru/searchanno";
+            
+        window.current_directory = "";
+        window.current_controller = "searchanno";
+        window.current_method = "index";
+
+        window.url_params = [];
+        ;
+        (function() {
+            function readCookie(name) {
+                const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+                return v ? decodeURIComponent(v.pop()) : null;
+            }
+
+            function getCsrfToken() {
+                const fromCookie = readCookie('ci_csrf_token');
+                if (fromCookie) return fromCookie;
+
+                const m = document.querySelector('meta[name="ci_csrf_token"]');
+                return m ? m.content : '';
+            }
+
+            function ensureTokenField(form) {
+                if (!form) return;
+                if (form.classList.contains('form_upload')) return;
+                const action = form.getAttribute('action') || '';
+
+                let input = form.querySelector('input[name="ci_csrf_token"]');
+                const token = getCsrfToken();
+                if (!input) {
+                    input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'ci_csrf_token';
+                    form.appendChild(input);
+                }
+                input.value = token;
+            }
+
+            document.addEventListener(
+                'submit',
+                function(e) {
+                    const form = e.target;
+                    if (!form || form.tagName.toUpperCase() !== 'FORM') return;
+                    if ((form.method || '').toLowerCase() !== 'post') return;
+                    ensureTokenField(form);
+                },
+                true
+            );
+
+            (function() {
+                const origSubmit = HTMLFormElement.prototype.submit;
+                HTMLFormElement.prototype.submit = function() {
+                    try {
+                        ensureTokenField(this);
+                    } catch (err) {}
+                    return origSubmit.apply(this, arguments);
+                };
+            })();
+
+            (function() {
+                const realFetch = window.fetch;
+                window.fetch = function(resource, init) {
+                    init = init || {};
+                    const method = (init.method || 'GET').toUpperCase();
+
+                    if (method !== 'GET' && method !== 'HEAD') {
+                        const token = getCsrfToken();
+                        if (!init.credentials) init.credentials = 'same-origin';
+
+                        const body = init.body;
+
+                        if (!body) {
+                            init.body = new URLSearchParams({ ci_csrf_token: token });
+                            init.headers = init.headers || {};
+                            init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                        } else if (body instanceof FormData) {
+                            body.set('ci_csrf_token', token);
+                        } else if (body instanceof URLSearchParams) {
+                            body.set('ci_csrf_token', token);
+                        } else if (typeof body === 'string') {
+                            const isJson = (() => {
+                                try {
+                                    JSON.parse(body);
+                                    return true;
+                                } catch (e) {
+                                    return false;
+                                }
+                            })();
+                            if (isJson) {
+                                try {
+                                    const obj = JSON.parse(body);
+                                    obj.ci_csrf_token = token;
+                                    init.body = JSON.stringify(obj);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/json;charset=UTF-8';
+                                } catch (e) {
+                                    init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                                }
+                            } else {
+                                init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                init.headers = init.headers || {};
+                                init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                            }
+                        }
+                    }
+
+                    return realFetch.call(this, resource, init);
+                };
+            })();
+
+            (function() {
+                const OrigXHR = window.XMLHttpRequest;
+                function XHWR() {
+                    const xhr = new OrigXHR();
+                    let method = null;
+                    let url = null;
+
+                    const origOpen = xhr.open;
+                    xhr.open = function(m, u) {
+                        method = (m || '').toUpperCase();
+                        url = u;
+                        return origOpen.apply(xhr, arguments);
+                    };
+
+                    const origSend = xhr.send;
+                    xhr.send = function(body) {
+                        if (method && method !== 'GET' && method !== 'HEAD') {
+                            const token = getCsrfToken();
+
+                            if (!body) {
+                                body = 'ci_csrf_token=' + encodeURIComponent(token);
+                                xhr.setRequestHeader &&
+                                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                            } else if (body instanceof FormData) {
+                                body.append('ci_csrf_token', token);
+                            } else if (typeof body === 'string') {
+                                const isJson = (() => {
+                                    try {
+                                        JSON.parse(body);
+                                        return true;
+                                    } catch (e) {
+                                        return false;
+                                    }
+                                })();
+                                if (isJson) {
+                                    try {
+                                        const obj = JSON.parse(body);
+                                        obj.ci_csrf_token = token;
+                                        body = JSON.stringify(obj);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                                    } catch (e) {
+                                        body =
+                                            body +
+                                            (body.length ? '&' : '') +
+                                            'ci_csrf_token=' +
+                                            encodeURIComponent(token);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                    }
+                                } else {
+                                    body =
+                                        body +
+                                        (body.length ? '&' : '') +
+                                        'ci_csrf_token=' +
+                                        encodeURIComponent(token);
+                                    xhr.setRequestHeader &&
+                                    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                }
+                            }
+                        }
+                        return origSend.call(xhr, body);
+                    };
+
+                    return xhr;
+                }
+                XHWR.prototype = OrigXHR.prototype;
+                window.XMLHttpRequest = XHWR;
+            })();
+
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('form[method="post"]').forEach(ensureTokenField);
+            });
+        })();
+    </script>
+</head>
+<body>
+
+<!-- BEGIN WRAP -->
+<div class="wrap">
+    <!-- BEGIN NAVBAR -->
+    <div class="navbar navbar-default navbar-fixed-top" role="navigation"
+         style="background-color: #4B77BE">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#main-nav">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/ru">Веб-портал закупок</a>
+            </div>
+            <div class="navbar-collapse collapse" id="main-nav">
+                <ul class="nav navbar-nav"><li class="dropdown"><a data-id="404" href="#" class="dropdown-toggle" data-toggle="dropdown">Справка <b class="caret"></b> </a><ul class='dropdown-menu'><li class="dropdown-sub-menu"><a data-id="1101" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп ЛС и МИ</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/delivery_schedule_instruction.pdf">Инструкция по рассмотрению графиков поставки </a></li><li><a href="/uploads/template/culs_debts_instructions_for_suppliers.pdf">Инструкция отправки запроса по налоговой задолженности и участие в закупках при наличии задолженности</a></li><li><a href="/uploads/template/instruction_for_lowering_price_contract.pdf">Инструкция проведения переговоров по уменьшению цены</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_postavshika_konkurs.pdf">Инструкция поставщика по способу "Конкурс"</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_org_konkurs.pdf">Инструкция организатора по способу "Конкурс"</a></li><li><a href="/uploads/template/dossier_instruction_for_ed.pdf">Инструкция ЕД по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/instruction_for_banks.pdf">Инструкция для банков</a></li><li><a href="/uploads/template/dossier_instruction_for_supplier.pdf">Инструкция Поставщика по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/registration_instructions.pdf">Инструкция пользователя по регистрации</a></li><li><a href="/uploads/template/investment_project_instruction_for_ed.pdf">Инструкция ЕД по реализации инвестиционного проекта</a></li><li><a href="/uploads/template/investment_project_instruction_for_supplier.pdf">Инструкция Поставщика по реализации инвестиционного проекта</a></li><li><a href="https://fms.ecc.kz/uploads/template/instrukciya_po_rabote_s_planom_zakupok.pdf">Инструкция по работе с планом закупок</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция организатора ИОИ.pdf">Инструкция организатора по способу "Из одного источника"</a></li><li><a href="/uploads/template/organizer_instruction_tender.pdf">Инструкция организатора по способу "Тендер"</a></li><li><a href="/uploads/template/supplier_instruction_tender.pdf">Инструкция поставщика по способу "Тендер"</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция поставщика _ИОИ_СКФ.pdf">Инструкция поставщика по способу "Из одного источника"</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_customer.pdf">Инструкция Заказчика по работе с договорами</a></li><li><a href="/uploads/template/customer_instruction_for_medicines_and_equipment.pdf">Инструкция организатора по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_supplier.pdf">Инструкция по работе с электронными актами Поставщика</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_customer.pdf">Инструкция по работе с электронными актами Заказчика</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_supplier.pdf">Инструкция Поставщика по работе с договорами</a></li><li><a href="/uploads/template/supplier_instruction_for_medicines_and_equipment.pdf">Инструкция поставщика по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ"</a></li><li><a href="https://fms.ecc.kz/uploads/template/ebg_instruction.pdf">Инструкция Поставщика по работе с ЭБГ и внесению обеспечения</a></li><li><a href="https://fms.ecc.kz/uploads/template/instructions_for_reports_3.pdf">Инструкция по работе и формированию отчетов</a></li><li><a href="/uploads/template/gbd_el_request_instruction.pdf">Инструкция поставщика по запросу разрешений/уведомлений на занятие фармацевтической деятельностью, а также данных по разрешительным документам GDP и GMP.</a></li><li><a href="https://fms.ecc.kz/uploads/template/Instrukciya_oshibki.pdf">Рекомендации по работе с ошибками</a></li><li><a href="/uploads/template/customer_instruction_for_equipment_admission.pdf">Инструкция организатора по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_for_equipment_admission.pdf">Инструкция поставщика по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_gbd_el_fl.pdf">Инструкция проверка на аффилированность и близких родственниках потенциального поставщика</a></li><li><a href="/uploads/template/manual_gbd_rn.pdf">Инструкция по отправке запросов на получение документов «Справка о зарегистрированных правах на недвижимое имущество» и «Технический паспорт на аптечный склад"</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="1346" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.услуг</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instructions_for_working_with_the_database_of_healthcare_subjects.pdf">Инструкция по работе с базой данных субъектов здравоохранения</a></li><li><a href="/uploads/template/registration_instructions_medical_service.pdf">Инструкция по регистрации</a></li><li><a href="/uploads/template/new_supplier_instruction.pdf">Инструкция поставщика</a></li><li><a href="/uploads/template/new_agreement_of_accession.pdf">Договор присоединения</a></li><li><a href="/uploads/template/instrukciy_po_isklycheniy_iz_BD_kz_rus.pdf">Инструкции по исключению заявки из БД</a></li><li><a href="/uploads/template/VTMP_instrukcyia_postavshik kaz_rus.pdf">Инструкция Поставщика ВТМП</a></li><li><a href="/uploads/template/financial_stability_instruction_kaz_rus.pdf">Инструкция модуля Финансовая устойчивость</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2132" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.техники для лизингодателя</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="https://fms.ecc.kz/uploads/template/instruction_banks_lessor.pdf">Инструкция для банков</a></li><li><a href="https://fms.ecc.kz/uploads/template/organizer_instruction_lessor.pdf">Инструкция для Организатора</a></li><li><a href="https://fms.ecc.kz/uploads/template/supplier_instruction_lessor.pdf">Инструкция для Поставщика</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2250" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед. техники</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instruction_Organizer_Tender_МТ.pdf">Инструкция Организатора закупа МТ (Тендер)</a></li><li><a href="/uploads/template/Instruction_MT_customer.pdf">Инструкция для Заказчика (Заявителя)</a></li><li><a href="/uploads/template/contract_instruction_supplier_MT.pdf">Инструкция для Поставщика</a></li></ul></li></ul></li><li class="dropdown"><a data-id="181" href="#" class="dropdown-toggle" data-toggle="dropdown">Реестры <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/register/supplierreg">Реестр участников</a></li><li><a href="https://fms.ecc.kz/ru/fsms/healthcare_subjects">База данных субъектов здравоохранения</a></li><li><a href="https://fms.ecc.kz/ru/fsms/services_registry">Реестр услуг/операций</a></li></ul></li><li class="dropdown"><a data-id="66" href="#" class="dropdown-toggle" data-toggle="dropdown">Закупки <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/subpriceoffer">Поиск лотов</a></li><li><a href="https://fms.ecc.kz/ru/searchanno">Поиск объявлений</a></li></ul></li></ul>
+                <ul class="nav navbar-nav navbar-right">
+                    
+                </ul>
+
+                <ul class="nav navbar-nav navbar-right">
+                    
+            <li><a href="https://fms.ecc.kz/ru/searchanno?">Рус</a></li>
+            <li><a href="https://fms.ecc.kz/kz/searchanno?">Қаз</a></li>
+              <li>
+                       <a href="https://fms.ecc.kz/ru/user/login"> <span class="glyphicon glyphicon-user online" id="online-status"></span>&nbspВойти</a>
+                     </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <!-- END NAVBAR -->
+
+    <!-- BEGIN CONTAINER FULL -->
+    <div class="container-full">
+
+        <div class="alert alert-danger" id="offline-message">
+            <strong>Внимание!</strong> Соединение с приложением прервано. Дождитесь повторного подключения.
+        </div>
+        
+        <!-- BEGIN MAIN CONTENT -->
+        <div class="panel panel-default">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button data-toggle="collapse" class="navbar-toggle" type="button" data-target="#cabinet_nav">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="glyphicon glyphicon-arrow-down"></span>
+                    </button>
+                </div>
+                <div class="collapse navbar-collapse" id="cabinet_nav">
+                    <ul class="nav navbar-nav"></ul>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="alert alert-info"
+             style="display: none;">Подождите, идет загрузка данных</div>
+        
+        <div class="content-block">
+            <style>
+    a:visited {
+        color: #808000;
+    }
+</style>
+<div style="display:inline-block; width:50%;">
+    <h4>Поиск объявлений  </h4>
+</div>
+
+<div class="alert alert-info">
+    <em class="pull-right small text-muted">2025-07-08 10:45:00</em>
+    <p><strong>Уважаемые пользователи Портала!</strong></p>
+    <p>Сообщаем, что для улучшения качества обработки обращений и оперативного решения вопросов, изменены адреса электронной почты для обращения в техническую поддержку.<br>
+Для поставщиков НАО "Фонд социального медицинского страхования" — адрес: fms_support@ecc.kz.<br>
+Для поставщиков ТОО "СК-Фармация" — адрес: skf_support@ecc.kz.<br>
+Пожалуйста, убедитесь, что для вашего запроса используется соответствующий адрес. Это поможет ускорить процесс обработки и улучшить качество обслуживания.</p>
+</div>
+
+<div class="text-right" style="display:inline-block; width:49%;">
+    <form id="record_count_form">
+        &nbsp;Кол-во записей на странице:&nbsp;<select name="count_record">
+<option value="10" selected="selected">10</option>
+<option value="30">30</option>
+<option value="70">70</option>
+<option value="100">100</option>
+</select>        <button type="button" onclick="ajax_set_count_record();
+                return false;" id="btn_apply_count" data-loading-text="Идет применение...">Применить</button>
+    </form>
+</div>
+<div>            
+    <script>
+    $(function () {
+        $('#datetimepicker1, #datetimepicker2').datetimepicker({
+            useMinutes: true, //en/disables the minutes picker
+            useSeconds: true, //en/disables the seconds picker
+            useCurrent: true, //when true, picker will set the value to the current date/time     
+            minuteStepping: 1,
+            language: 'ru'
+        });
+    });
+
+    function set_trd_buy_attrs() {
+        const trd_buy_attrs = JSON.parse('{\"54\":{\"medical_equipment\":\"\\u0417\\u0430\\u043a\\u0443\\u043f \\u043c\\u0435\\u0434\\u0438\\u0446\\u0438\\u043d\\u0441\\u043a\\u043e\\u0439 \\u0442\\u0435\\u0445\\u043d\\u0438\\u043a\\u0438\",\"spec_announce\":\"\\u041e\\u0441\\u043e\\u0431\\u044b\\u0439 \\u0437\\u0430\\u043a\\u0443\\u043f\",\"gen_spp\":\"\\u0424\\u0430\\u043a\\u0442\\u043e\\u0440 \\u0441\\u0432\\u0435\\u0440\\u0442\\u044b\\u0432\\u0430\\u043d\\u0438\\u044f \\u043a\\u0440\\u043e\\u0432\\u0438(\\u0413\\u0435\\u043d \\u0421\\u041f\\u041f)\"},\"53\":{\"5\":\"\\u0425\\u0440\\u0430\\u043d\\u0435\\u043d\\u0438\\u0435\",\"6\":\"\\u0422\\u0440\\u0430\\u043d\\u0441\\u043f\\u043e\\u0440\\u0442\\u0438\\u0440\\u043e\\u0432\\u043a\\u0430\",\"7\":\"\\u0425\\u0440\\u0430\\u043d\\u0435\\u043d\\u0438\\u0435 \\u0438 \\u0442\\u0440\\u0430\\u043d\\u0441\\u043f\\u043e\\u0440\\u0442\\u0438\\u0440\\u043e\\u0432\\u043a\\u0430\"}}');
+        const $trd_buy_select = $('select[name="trd_buy_attrs"]');
+        const selected_method = $('select[name="methodz"]').val();
+        const selectedAttr = '';
+
+        $trd_buy_select.empty();
+        $trd_buy_select.append($('<option>', { value: '', text: '' }));
+        if (selected_method && trd_buy_attrs[selected_method]) {
+            $.each(trd_buy_attrs[selected_method], function(value, text) {
+                const $option = $('<option>', { value: value, text: text });
+                if (value === selectedAttr) {
+                    $option.prop('selected', true);
+                }
+                $trd_buy_select.append($option);
+            });
+        }
+    }
+    setTimeout(set_trd_buy_attrs, 0);
+
+    function set_announce_years() {
+        const announce_years = JSON.parse('{\"2026\":2026,\"2027\":2027}');
+        const $announce_years_select = $('select[name="announce_years"]');
+        const selectedAttr = '';
+        const selected_method = $('select[name="methodz"]').val();
+
+        $announce_years_select.empty();
+        $announce_years_select.append($('<option>', { value: '', text: '' }));
+        if (selected_method == 54) {
+            $.each(announce_years, function(value, text) {
+                const $option = $('<option>', { value: value, text: text });
+                if (value === selectedAttr) {
+                    $option.prop('selected', true);
+                }
+                $announce_years_select.append($option);
+            });
+        }
+    }
+    setTimeout(set_announce_years, 0);
+
+    function set_select_options() {
+        set_trd_buy_attrs();
+        set_announce_years();
+    }
+
+</script>
+
+<div id="basicModal" class="modal fade bs-example-modal-lg in" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel" aria-hidden="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+
+        </div>
+    </div>
+</div>
+<button type="button" name="filter" id="filter" class="btn btn-sm btn-default" onclick="show_filter();"><span class='glyphicon glyphicon-cog'></span> Показать поиск</button>
+<br>&nbsp;
+<div class="row" id="filter_form" style="display:none;">
+    <div class="col-md-12">
+        <form id="formFilter" method="get" action="">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    Поиск объявлений                </div>
+                <div class="panel-body">
+                    <div class="row">
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="numberAnno">
+                                    <b>Номер объявления</b>
+                                </label><br>
+                                <!--<div class="input-group">--><span class="input-group-btn"><!--<a class="btn btn-sm btn-default" onclick="clearInp('#namePlan')"><span class="glyphicon glyphicon-remove"></span></a>--></span><input type='text' name='numberAnno'value=''id='numberAnno'class='form-control input-sm'placeholder='Номер объявления'data-toggle='tooltip'data-placement='top'title='В это поле вы вводите номер объявления' /><!--</div>-->                            </div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="titleAnno">
+                                    <b>Наименование объявления</b>
+                                </label><br>
+                                <!--<div class="input-group">--><span class="input-group-btn"><!--<a class="btn btn-sm btn-default" onclick="clearInp('#descPlan')"><span class="glyphicon glyphicon-remove"></span></a>--></span><input type='text' name='titleAnno'value=''id='titleAnno'class='form-control input-sm'placeholder='Наименование объявления'data-toggle='tooltip'data-placement='top'title='В это поле вы вводите название объявления' /><!--</div>-->                            </div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="plan_amoun_start">
+                                    <b>Сумма от</b>
+                                </label><br>
+                                <!--<div class="input-group">--><span class="input-group-btn"><!--<a class="btn btn-sm btn-default" onclick="clearInp('#plan_amoun_start')"><span class="glyphicon glyphicon-remove"></span></a>--></span><input type='text' name='plan_amoun_start'value=''id='plan_amoun_start'class='form-control input-sm'placeholder='Сумма от'data-toggle='tooltip'data-placement='top'title='В это поле вы вводите запланированную сумму' /><!--</div>-->                            </div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="plan_amoun_end">
+                                    <b>Сумма до</b>
+                                </label><br>
+                                <!--<div class="input-group">--><span class="input-group-btn"><!--<a class="btn btn-sm btn-default" onclick="clearInp('#plan_amoun_end')"><span class="glyphicon glyphicon-remove"></span></a>--></span><input type='text' name='plan_amoun_end'value=''id='plan_amoun_end'class='form-control input-sm'placeholder='Сумма до'data-toggle='tooltip'data-placement='top'title='В это поле вы вводите запланированную сумму' /><!--</div>-->                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+    <label for="s2_methodz">
+        <b>Способ закупки</b>
+    </label><br/>
+        <select data-size="7" id="s2_methodz" name="methodz" class="form-control input-sm" data-toggle="tooltip" data-placement="top" title="В этом поле вы выбираете способ закупки" onchange="set_select_options()">
+        <option></option><option value="130">Тендер. Закуп медицинской техники для лизингодателя</option>
+<option value="7">Двухэтапный тендер</option>
+<option value="127">Закуп медицинской техники с расширенным сроком сервисного обслуживания</option>
+<option value="54">Тендер</option>
+<option value="53">Конкурс</option>
+<option value="123">Конкурс на заключение долгосрочных договоров поставки ЛС и МИ</option>
+<option value="121">Из одного источника</option>
+<option value="122">Из одного источника (Логистика)</option>
+<option value="124">Процедура заключения долгосрочного договора поставки медицинской техники</option>
+<option value="120">Закуп медицинских услуг</option>
+<option value="125">Один источник дополнительный объем</option>
+<option value="126">Допуск по долгосрочному договору поставки ЛС и МИ</option>
+    </select>
+</div>
+                        </div>
+                        <div class="col-xs-6 col-md-3" style="margin-bottom:10px;">
+                            <label for="s2_trd_buy_attrs">Признак закупки</label>
+                            <br>
+                            <select id="s2_trd_buy_attrs" class="form-control input-sm" name="trd_buy_attrs" id="trd_buy_attrs" data-toggle="tooltip" data-placement="top" title="В этом поле вы выбираете признак закупки">
+                                <option value=""></option>
+                            </select>
+                        </div>
+                        <div class="col-xs-6 col-md-3" style="margin-bottom:10px;">
+                            <label for="s2_announce_years">Год закупки</label>
+                            <br>
+                            <select id="s2_announce_years" class="form-control input-sm" name="announce_years" id="announce_years" data-toggle="tooltip" data-placement="top" title="В этом поле вы выбираете признак закупки">
+                                <option value=""></option>
+                            </select>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+    <label for="s2_statuses">
+        <b>Статус объвления</b>
+    </label><br/>
+        <select data-size="7" id="s2_statuses" name="statuses" class="form-control input-sm" data-toggle="tooltip" data-placement="top" title="В этом поле вы выбираете статус заявки">
+        <option></option><option value="210">Опубликовано</option>
+<option value="220">Опубликовано (прием заявок)</option>
+<option value="230">Опубликовано (дополнение заявок)</option>
+<option value="250">Рассмотрение заявок</option>
+<option value="260">Рассмотрение дополнений заявок</option>
+<option value="320">Формирование протокола допуска</option>
+<option value="330">Формирование протокола итогов</option>
+<option value="350">Завершено</option>
+<option value="430">Отменено</option>
+<option value="290">Опубликовано (проведение аукциона)</option>
+<option value="280">Опубликовано (ожидание проведения аукциона)</option>
+<option value="310">Формирование протокола предрассмотрения</option>
+<option value="275">Распределение объемов мед. услуг</option>
+<option value="242">Ожидание рассмотрение заявки МЗ</option>
+<option value="243">Рассмотрение заявок МЗ</option>
+<option value="272">Заполнение баллов</option>
+<option value="273">Подсчет баллов</option>
+<option value="285">Опубликовано (проведение переговоров)</option>
+    </select>
+</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+    <label for="in_bin_name">
+        <b>БИН/Наименование организатора</b>
+    </label>
+        <input type="text" id="in_bin_name" name="bin_name" value=""class="form-control" placeholder="БИН/Наименование организатора">
+</div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="date_start">
+                                    <b>Дата начала пр. заявок</b>
+                                </label><br>
+                                <div class='input-group date' id='datetimepicker1'>
+                                    <input type='text' name="date_start" id="date_start" class="form-control input-sm" data-date-format="YYYY-MM-DD HH:mm:ss" value='' placeholder="Дата начала пр. заявок" readonly />
+                                    <span class="input-group-addon">
+                                        <span class="glyphicon glyphicon-calendar"></span>
+                                    </span>
+                                </div>
+                                <font color="red"></font>
+                            </div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+                                <label for="date_end">
+                                    <b>Дата окончания пр. заявок</b>
+                                </label><br>
+                                <div class='input-group date' id='datetimepicker2'>
+                                    <input type='text' name="date_end" id="date_end" class="form-control input-sm" data-date-format="YYYY-MM-DD HH:mm:ss" value='' placeholder="Дата окончания пр. заявок" readonly />
+                                    <span class="input-group-addon">
+                                        <span class="glyphicon glyphicon-calendar"></span>
+                                    </span>
+                                </div>
+                                <font color="red"></font>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+    <label for="s2_type">
+        <b>Вид / Форма медицинской помощи</b>
+    </label><br/>
+        <select data-size="7" id="s2_type" name="type" class="selectpicker form-control">
+        <option></option><option value="23">Медицинская помощь онкогематологическим больным</option>
+<option value="32">Патологоанатомическая диагностика</option>
+<option value="46">Медицинская помощь больным инфекционными заболеваниями</option>
+<option value="110">Программный диализ</option>
+<option value="112">Высокотехнологичная медицинская помощь</option>
+<option value="114">Медицинская реабилитация</option>
+<option value="116">Паллиативная медицинская помощь</option>
+<option value="144">Специализированная медицинская помощь в стационарных и стационарозамещающих условиях сельскому населению</option>
+<option value="163">Специализированная медицинская помощь в стационарозамещающих условиях</option>
+<option value="164">Специализированная медицинская помощь в стационарных условиях</option>
+<option value="165">Медицинская помощь больным онкологическими заболеваниями</option>
+<option value="107">Оказание медицинской помощи на уровне первичной медико-санитарной помощи</option>
+<option value="128">Консультативно-диагностическая помощь (специализированная медицинская помощь в амбулаторных условиях)</option>
+<option value="104">Скорая медицинская помощь и медицинская помощь, связанная с транспортировкой квалифицированных специалистов и (или) больного санитарным транспортом</option>
+<option value="118">Расходы на производство крови, ее компонентов и препаратов для местных организаций здравоохранения</option>
+<option value="121">Медико-социальная помощь лицам, больным туберкулезом</option>
+<option value="123">Медико-социальная помощь лицам, зараженным ВИЧ-инфекцией</option>
+<option value="140">Медицинская помощь больным в области психического здоровья лицам с психическими, поведенческими расстройствами (заболеваниями)</option>
+    </select>
+</div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <div class="form-group">
+    <label for="s2_kato">
+        <b>Регион, населению которого будут оказываться услуги</b>
+    </label><br/>
+        <select data-size="7" id="s2_kato" name="kato" class="selectpicker form-control">
+        <option></option><option value="000000000">Республика Казахстан</option>
+<option value="100000000">область Абай</option>
+<option value="110000000">Акмолинская область</option>
+<option value="150000000">Актюбинская область</option>
+<option value="190000000">Алматинская область</option>
+<option value="230000000">Атырауская область</option>
+<option value="270000000">Западно-Казахстанская область</option>
+<option value="310000000">Жамбылская область</option>
+<option value="330000000">область Жетісу</option>
+<option value="350000000">Карагандинская область</option>
+<option value="390000000">Костанайская область</option>
+<option value="430000000">Кызылординская область</option>
+<option value="470000000">Мангистауская область</option>
+<option value="550000000">Павлодарская область</option>
+<option value="590000000">Северо-Казахстанская область</option>
+<option value="610000000">Туркестанская область</option>
+<option value="620000000">область Ұлытау</option>
+<option value="630000000">Восточно-Казахстанская область</option>
+<option value="710000000">г.Астана</option>
+<option value="750000000">г.Алматы</option>
+<option value="790000000">г.Шымкент</option>
+    </select>
+</div>
+                        </div>
+                        <div class="col-xs-6 col-md-3">
+                            <label><input type="checkbox" name="med_services" value="1"  /> Закупки мед.услуг</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <button type="submit" class="btn btn-success btn-sm"><span class="glyphicon glyphicon-search"></span> Найти</button> <input type="button" value="Сбросить параметры поиска" onclick="resetfilter()" class="btn btn-info btn-sm">
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<br>
+
+</div>
+<div class="row">
+<div class="col-md-12">    
+            <div class="panel panel-default"> 
+            <div class="panel-heading">
+                <h4>Результаты поиска  </h4>
+            </div>
+            <table class="table table-bordered">
+                <tr> 
+                    <th>№</th>
+                    <th>Организатор</th>
+                    <th>Название объявления</th>
+                    <th>Способ закупки</th>
+                    <th>Вид предмета закупки</th>
+                    <th>Дата начала приема заявок</th>
+                    <th>Дата окончания приема заявок</th>
+                    <th>Кол-во лотов</th>
+                    <th>Сумма объявления</th>
+                    <th>Статус</th>                    
+                </tr>
+
+                                    <tr>
+                        <td>
+                            521464-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521464" target="_blank" rel="noopener noreferrer">
+                                <div>Закуп медицинской техники</div>
+                                <div>Медициналық техниканы сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер</td>
+                        <td>Товар</td>
+                        <td>2026-07-13 09:00:00</td>
+                        <td>2026-07-27 10:00:00</td>
+                        <td>12</td>
+                        <td align="right" nowrap>15 085 999 992.00</td>
+                        <td>Опубликовано</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521364-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521364" target="_blank" rel="noopener noreferrer">
+                                <div>Повторный закуп лекарственного средства на 2026 год</div>
+                                <div>2026 жылға арналған дәрілік затты қайта сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер</td>
+                        <td>Товар</td>
+                        <td>2026-07-10 09:00:00</td>
+                        <td>2026-07-15 10:00:00</td>
+                        <td>1</td>
+                        <td align="right" nowrap>233 450 035.34</td>
+                        <td>Опубликовано (прием заявок)</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521344-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521344" target="_blank" rel="noopener noreferrer">
+                                <div>Закуп лекарственных средств на 2027 год</div>
+                                <div>2027 жылға арналған дәрілік заттарды сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер</td>
+                        <td>Товар</td>
+                        <td>2026-07-07 09:00:00</td>
+                        <td>2026-07-14 10:00:00</td>
+                        <td>8</td>
+                        <td align="right" nowrap>319 335 970.70</td>
+                        <td>Опубликовано (прием заявок)</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521324-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521324" target="_blank" rel="noopener noreferrer">
+                                <div>Повторный закуп лекарственных средств и медицинских изделий на 2026 год</div>
+                                <div>2026 жылға арналған дәрілік заттар мен медициналық бұйымдарды қайта сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер</td>
+                        <td>Товар</td>
+                        <td>2026-07-03 09:00:00</td>
+                        <td>2026-07-09 10:00:00</td>
+                        <td>14</td>
+                        <td align="right" nowrap>173 226 338.75</td>
+                        <td>Рассмотрение заявок</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521304-1                        </td>
+                        <td>
+                            АКЦИОНЕРНОЕ ОБЩЕСТВО "КАЗМЕДТЕХ"                        </td>
+                        <td><a href="/ru/announce/index/521304" target="_blank" rel="noopener noreferrer">
+                                <div>Закуп медицинской техники</div>
+                                <div>Медициналық техниканы сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер. Закуп медицинской техники для лизингодателя</td>
+                        <td>Товар</td>
+                        <td>2026-07-02 09:00:00</td>
+                        <td>2026-07-17 10:00:00</td>
+                        <td>2</td>
+                        <td align="right" nowrap>169 711 916.64</td>
+                        <td>Опубликовано (прием заявок)</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521284-1                        </td>
+                        <td>
+                            ФИЛИАЛ ПО ГОРОДУ АСТАНА НЕКОММЕРЧЕСКОГО АКЦИОНЕРНОГО ОБЩЕСТВА "ФОНД СОЦИАЛЬНОГО МЕДИЦИНСКОГО СТРАХОВАНИЯ"                        </td>
+                        <td><a href="/ru/announce/index/521284" target="_blank" rel="noopener noreferrer">
+                                <div>[2026 год – ГОБМП и ОСМС] Объявление о проведении процедуры размещения объемов медицинской помощи в рамках гарантированного объема бесплатной медицинской помощи и (или) в системе обязательного социального медицинского страхования среди субъектов здравоохранения, включенных в базу данных субъектов здравоохранения</div>
+                                <div>[2026 жыл - ТМККК және МӘМС] Денсаулық сақтау субъектілерінің дерекқорына енгізілген денсаулық сақтау субъектілері арасында тегін медициналық көмектің кепілдік берілген көлемі шеңберінде және (немесе) міндетті әлеуметтік медициналық сақтандыру жүйесінде медициналық көмек көлемін орналастыру рәсімін жүргізу туралы хабарландыру</div>
+                            </a>
+                        </td>
+                        <td>Закуп медицинских услуг</td>
+                        <td>Услуга</td>
+                        <td>2026-06-30 16:10:00</td>
+                        <td>2026-07-03 15:30:00</td>
+                        <td>3</td>
+                        <td align="right" nowrap>15 192 821 991.90</td>
+                        <td>Рассмотрение заявок</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521264-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521264" target="_blank" rel="noopener noreferrer">
+                                <div>Допуск ОТП к закупу МИ на 2027 год в рамках Долгосрочных договоров</div>
+                                <div>Ұзақ мерзімді шарттар шеңберінде 2027 жылға МБ сатып алуға ОТӨ жіберу</div>
+                            </a>
+                        </td>
+                        <td>Допуск по долгосрочному договору поставки ЛС и МИ</td>
+                        <td>Товар</td>
+                        <td>2026-06-29 09:00:00</td>
+                        <td>2026-07-14 10:00:00</td>
+                        <td>2485</td>
+                        <td align="right" nowrap>127 850 356.72</td>
+                        <td>Опубликовано (прием заявок)</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521224-1                        </td>
+                        <td>
+                            ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»                        </td>
+                        <td><a href="/ru/announce/index/521224" target="_blank" rel="noopener noreferrer">
+                                <div>Повторный закуп лекарственных средств на 2026 год</div>
+                                <div>2026 жылға арналған дәрілік заттарды қайта сатып алу</div>
+                            </a>
+                        </td>
+                        <td>Тендер</td>
+                        <td>Товар</td>
+                        <td>2026-06-29 09:00:00</td>
+                        <td>2026-07-02 10:00:00</td>
+                        <td>3</td>
+                        <td align="right" nowrap>134 604 389.00</td>
+                        <td>Завершено</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521204-1                        </td>
+                        <td>
+                            Филиал по Костанайской области некоммерческого акционерного общества «Фонд социального медицинского страхования»                        </td>
+                        <td><a href="/ru/announce/index/521204" target="_blank" rel="noopener noreferrer">
+                                <div>[2026 год – ГОБМП и ОСМС] Объявление о проведении процедуры размещения объемов медицинской помощи в рамках гарантированного объема бесплатной медицинской помощи и (или) в системе обязательного социального медицинского страхования среди субъектов здравоохранения, включенных в базу данных субъектов здравоохранения</div>
+                                <div>[2026 жыл - ТМККК және МӘМС] Денсаулық сақтау субъектілерінің дерекқорына енгізілген денсаулық сақтау субъектілері арасында тегін медициналық көмектің кепілдік берілген көлемі шеңберінде және (немесе) міндетті әлеуметтік медициналық сақтандыру жүйесінде медициналық көмек көлемін орналастыру рәсімін жүргізу туралы хабарландыру</div>
+                            </a>
+                        </td>
+                        <td>Закуп медицинских услуг</td>
+                        <td>Услуга</td>
+                        <td>2026-06-25 18:14:15</td>
+                        <td>2026-06-29 09:11:41</td>
+                        <td>1</td>
+                        <td align="right" nowrap>79 372 279.62</td>
+                        <td>Завершено</td>
+                    </tr>
+                                        <tr>
+                        <td>
+                            521184-1                        </td>
+                        <td>
+                            Филиал по Костанайской области некоммерческого акционерного общества «Фонд социального медицинского страхования»                        </td>
+                        <td><a href="/ru/announce/index/521184" target="_blank" rel="noopener noreferrer">
+                                <div>[2026 год – ГОБМП и ОСМС] Объявление о проведении процедуры размещения объемов медицинской помощи в рамках гарантированного объема бесплатной медицинской помощи и (или) в системе обязательного социального медицинского страхования среди субъектов здравоохранения, включенных в базу данных субъектов здравоохранения</div>
+                                <div>[2026 жыл - ТМККК және МӘМС] Денсаулық сақтау субъектілерінің дерекқорына енгізілген денсаулық сақтау субъектілері арасында тегін медициналық көмектің кепілдік берілген көлемі шеңберінде және (немесе) міндетті әлеуметтік медициналық сақтандыру жүйесінде медициналық көмек көлемін орналастыру рәсімін жүргізу туралы хабарландыру</div>
+                            </a>
+                        </td>
+                        <td>Закуп медицинских услуг</td>
+                        <td>Услуга</td>
+                        <td>2026-06-24 18:22:53</td>
+                        <td>2026-06-29 08:30:22</td>
+                        <td>4</td>
+                        <td align="right" nowrap>384 307 792.19</td>
+                        <td>Завершено</td>
+                    </tr>
+                    
+            </table>  
+        </div>
+        <ul class="pagination">
+            <ul class="pagination"><li class="active"><a>1</li></a><li><a href="https://fms.ecc.kz/ru/searchanno?&amp;page=2">2</a></li><li><a href="https://fms.ecc.kz/ru/searchanno?&amp;page=2">&gt;</a></li></ul>        </ul>
+    </div>
+</div>
+<script>
+    function ajax_set_count_record(select) {
+        var count = $('#record_count_form').serialize();
+        var btn = $('#btn_apply_count').button('loading')
+        $.ajax({
+            type: "POST",
+            async: true,
+            cache: false,
+            url: site_url(),
+            data: count,
+            success: function (data) {
+                location.reload(true);
+            },
+            error: function () {
+                $('#ajax_result').html('<div class="alert alert-danger">Ошибка выполнения запроса, попробуйте позже</div>');
+                btn.button('reset');
+                return;
+            }
+        });
+    }
+</script>
+        </div>
+        <!-- END MAIN CONTENT -->
+
+        <div class="clearfix"></div>
+
+        
+            </div>
+    <!-- END CONTAINER FULL -->
+
+</div>
+<!-- END WRAP -->
+
+<!-- BEGIN FOOTER -->
+<footer class="footer">
+    <div class="container">
+        <p class="pull-left">
+            Веб-портал закупок &copy; 2026        </p>
+        <p class="pull-right">
+            <span class="ecc">
+                <a href="https://www.ecc.kz">АО "Центр электронных финансов"</a>
+            </span>
+        </p>
+    </div>
+    <p class="text-center text-muted">
+        Техническая поддержка пользователей портала 24/7 (без выходных):<br><a href="tel:+77172735515">8 (7172) 73 55 15</a><br><a href="tel:+77059565388">+7 705 956 53 88</a><br><a href="mailto:fms_support@ecc.kz">fms_support@ecc.kz</a><br><a href="mailto:skf_support@ecc.kz">skf_support@ecc.kz</a>    </p>
+</footer>
+<!-- END FOOTER -->
+
+<!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+<!-- Include all compiled plugins (below), or include individual files as needed -->
+
+</body>
+</html>
