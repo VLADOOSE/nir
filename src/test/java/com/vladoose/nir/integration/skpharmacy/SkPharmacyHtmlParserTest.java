@@ -41,6 +41,8 @@ class SkPharmacyHtmlParserTest {
         assertThat(first.name()).isNotBlank();
         assertThat(first.quantity()).isNotNull();
         assertThat(first.unitPrice()).isNotNull();
+        // код лота (td[1]) = реальный № на площадке — ключ связи с файлами ТЗ (modal «Номер лота»)
+        assertThat(first.code()).isEqualTo("1040409-Т1");
     }
 
     @Test

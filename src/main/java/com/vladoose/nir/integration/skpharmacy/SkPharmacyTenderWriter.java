@@ -55,6 +55,7 @@ public class SkPharmacyTenderWriter {
             TenderLot lot = new TenderLot();
             lot.setTender(t);
             lot.setLotNumber(n++);
+            lot.setSourceLotCode(trunc(l.code(), 50));    // «1040409-Т1» — ключ связи с ТЗ-файлами
             lot.setEquipName(trunc(l.name(), 255));
             lot.setQuantity(l.quantity());
             lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))

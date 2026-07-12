@@ -58,6 +58,7 @@ class SkPharmacyImportServiceTest {
         assertThat(t.getMarket()).isEqualTo(Market.KZ);
         assertThat(t.getCurrency()).isEqualTo("KZT");
         assertThat(t.getLots()).isNotEmpty()
-                .anySatisfy(l -> assertThat(l.getEquipName().toLowerCase()).contains("томограф"));
+                .anySatisfy(l -> assertThat(l.getEquipName().toLowerCase()).contains("томограф"))
+                .anySatisfy(l -> assertThat(l.getSourceLotCode()).isEqualTo("1040409-Т1"));  // код лота сохранён (ключ ТЗ)
     }
 }

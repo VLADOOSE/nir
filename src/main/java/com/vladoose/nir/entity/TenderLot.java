@@ -25,6 +25,10 @@ public class TenderLot {
     @Column(name = "lot_number")
     private Integer lotNumber;
 
+    /** Реальный код лота на площадке (СК-Фармация «1040409-Т1») — ключ связи с файлами ТЗ. */
+    @Column(name = "source_lot_code", length = 50)
+    private String sourceLotCode;
+
     @Column(name = "equip_name")
     private String equipName;
 
