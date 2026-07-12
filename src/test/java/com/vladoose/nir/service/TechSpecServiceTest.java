@@ -7,6 +7,7 @@ import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.exception.UnprocessableException;
 import com.vladoose.nir.integration.goszakup.FakeGoszakupClient;
 import com.vladoose.nir.integration.goszakup.dto.LotTechSpecRef;
+import com.vladoose.nir.integration.skpharmacy.SkTechSpecClient;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.util.SpecConstraintExtractor;
@@ -41,7 +42,8 @@ class TechSpecServiceTest {
     void setUp() {
         MarketContext.set(Market.KZ);
         fake = new FakeGoszakupClient();
-        service = new TechSpecService(tenderLotService, fake, writer);
+        // goszakup-путь (platform=null) skClient не трогает — mock достаточно
+        service = new TechSpecService(tenderLotService, fake, org.mockito.Mockito.mock(SkTechSpecClient.class), writer);
 
         tender = new Tender();
         tender.setTenderNumber("ZZTS-874-1");
