@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.exception.UpstreamException;
 import com.vladoose.nir.integration.skpharmacy.SkTechSpecClient;
 import com.vladoose.nir.integration.skpharmacy.SkTechSpecRef;
 import com.vladoose.nir.repository.TenderRepository;
@@ -102,6 +103,25 @@ class TechSpecServiceSkTest {
         Long lotId = persistSkLot("1040409-Т1");
         when(skClient.fetchTechSpecRefs("SKTEST")).thenReturn(List.of());  // на объявлении нет ТЗ
         assertThatThrownBy(() -> techSpecService.parse(lotId)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void parse_skLot_codeMismatch_404() {
+        // ТЗ на объявлении есть, но НИ ОДНА строка не совпала с кодом нашего лота → join не должен взять чужой PDF
+        MarketContext.set(Market.KZ);
+        Long lotId = persistSkLot("1040409-Т1");
+        when(skClient.fetchTechSpecRefs("SKTEST"))
+                .thenReturn(List.of(new SkTechSpecRef("9999999-Т9", URL, "ТЗ чужого лота.pdf")));
+        assertThatThrownBy(() -> techSpecService.parse(lotId)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void parse_skLot_upstreamError_502() {
+        // портал недоступен → UpstreamException пробрасывается как есть (502), лот не трогаем
+        MarketContext.set(Market.KZ);
+        Long lotId = persistSkLot("1040409-Т1");
+        when(skClient.fetchTechSpecRefs("SKTEST")).thenThrow(new UpstreamException("fms.ecc.kz недоступен"));
+        assertThatThrownBy(() -> techSpecService.parse(lotId)).isInstanceOf(UpstreamException.class);
     }
 
     @Test
