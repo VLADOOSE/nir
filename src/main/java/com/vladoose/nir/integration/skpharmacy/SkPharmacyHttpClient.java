@@ -35,6 +35,11 @@ public class SkPharmacyHttpClient implements SkPharmacyClient {
         return get(baseUrl + "/ru/announce/index/" + announceId + "?tab=lots");
     }
 
+    @Override
+    public String generalPage(String announceId) {
+        return get(baseUrl + "/ru/announce/index/" + announceId + "?tab=general");
+    }
+
     private String get(String url) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))

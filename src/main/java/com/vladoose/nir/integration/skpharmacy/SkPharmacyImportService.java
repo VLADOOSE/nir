@@ -31,6 +31,16 @@ public class SkPharmacyImportService {
         this.throttleMs = throttleMs;
     }
 
+    /** Вкладка «Общие сведения» — доп. запрос к порталу; регион/контакт вторичны → сбой не валит тендер (пишем без них). */
+    private SkGeneral fetchGeneral(SkAnnounce a) {
+        try {
+            return SkPharmacyHtmlParser.parseGeneral(client.generalPage(a.announceId()));
+        } catch (Exception e) {
+            log.warn("sk general {}: {}", a.numberAnno(), e.getMessage());
+            return null;
+        }
+    }
+
     /** Пауза между запросами к порталу (троттлинг от бана). Прерывание → сигнал остановить прогон. */
     private boolean throttle() {
         if (throttleMs <= 0) return true;
@@ -68,7 +78,8 @@ public class SkPharmacyImportService {
                         continue;
                     }
                     sum.setMatched(sum.getMatched() + 1);
-                    if (writer.upsert(a, lots) == SkPharmacyTenderWriter.Result.CREATED) {
+                    SkGeneral general = fetchGeneral(a);   // регион/БИН/контакт со вкладки «Общие сведения» — fail-soft
+                    if (writer.upsert(a, lots, general) == SkPharmacyTenderWriter.Result.CREATED) {
                         sum.setCreated(sum.getCreated() + 1);
                     } else {
                         sum.setUpdated(sum.getUpdated() + 1);

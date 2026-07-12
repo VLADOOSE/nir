@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,15 +14,17 @@ import java.util.List;
 public class SkPharmacyTenderWriter {
 
     private final TenderRepository tenderRepository;
+    private final RegionResolver regionResolver;
 
-    public SkPharmacyTenderWriter(TenderRepository tenderRepository) {
+    public SkPharmacyTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver) {
         this.tenderRepository = tenderRepository;
+        this.regionResolver = regionResolver;
     }
 
     public enum Result { CREATED, UPDATED }
 
     @Transactional
-    public Result upsert(SkAnnounce a, List<SkLot> lots) {
+    public Result upsert(SkAnnounce a, List<SkLot> lots, SkGeneral general) {
         Tender t = tenderRepository.findBySourceExtId(a.numberAnno()).orElse(null);
         boolean isNew = t == null;
         if (isNew) { t = new Tender(); t.setSourceExtId(a.numberAnno()); }
@@ -40,10 +43,26 @@ public class SkPharmacyTenderWriter {
         LocalDate deadline = dateOf(a.acceptEnd());
         t.setDeadline(deadline);
         t.setStatus(statusFrom(a.status(), deadline));
+        applyGeneral(t, a, general);
 
         rebuildLots(t, lots);
         tenderRepository.save(t);
         return isNew ? Result.CREATED : Result.UPDATED;
+    }
+
+    /**
+     * Поля вкладки «Общие сведения» (?tab=general). Регион — организатора (единый дистрибьютор СК-Фармации в Астане,
+     * лизингодатель и т.п.), как у goszakup для республиканских заказчиков: заполняем, только когда нашли значение
+     * (не затираем уже сохранённое null'ом при переимпорте без general). Регион считаем по имени+адресу через RegionResolver.
+     */
+    private void applyGeneral(Tender t, SkAnnounce a, SkGeneral g) {
+        if (g == null) return;
+        if (g.customerBin() != null) t.setCustomerBin(trunc(g.customerBin(), 20));
+        if (g.regionKato() != null) t.setRegionKato(trunc(g.regionKato(), 20));
+        if (g.contactEmail() != null) t.setContactEmail(g.contactEmail());
+        if (g.contactName() != null) t.setContactLastName(trunc(g.contactName(), 100));
+        String region = regionResolver.resolve(a.organizer(), g.legalAddress());
+        if (region != null) t.setRegion(region);
     }
 
     /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval), не repository.delete. */

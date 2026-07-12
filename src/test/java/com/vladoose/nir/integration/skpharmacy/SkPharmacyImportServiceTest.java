@@ -45,6 +45,7 @@ class SkPharmacyImportServiceTest {
         when(client.searchPage(anyInt())).thenAnswer(inv ->
                 inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");   // 1 страница, дальше конец
         when(client.lotsPage(anyString())).thenReturn(fixture("lots.html"));             // device-лоты (томограф/МРТ)
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));  // вкладка «Общие сведения» 521464
 
         ImportSummary sum = new ImportSummary();
         importService.fillImport(sum);
@@ -57,6 +58,11 @@ class SkPharmacyImportServiceTest {
         assertThat(t.getPlatform()).isEqualTo(TenderPlatform.SK_PHARMACY);
         assertThat(t.getMarket()).isEqualTo(Market.KZ);
         assertThat(t.getCurrency()).isEqualTo("KZT");
+        // поля вкладки «Общие сведения» (?tab=general): регион организатора + БИН + контакт больше не пусты
+        assertThat(t.getRegion()).isEqualTo("г. Астана");
+        assertThat(t.getRegionKato()).isEqualTo("711210000");
+        assertThat(t.getCustomerBin()).isEqualTo("090340007747");
+        assertThat(t.getContactEmail()).isEqualTo("t.omirbay@sk-pharmacy.kz");
         assertThat(t.getLots()).isNotEmpty()
                 .anySatisfy(l -> assertThat(l.getEquipName().toLowerCase()).contains("томограф"))
                 .anySatisfy(l -> assertThat(l.getSourceLotCode()).isEqualTo("1040409-Т1"));  // код лота сохранён (ключ ТЗ)

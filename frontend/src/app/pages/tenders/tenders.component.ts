@@ -218,6 +218,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         </h2>
         <div class="info-grid">
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || selectedTender.customerName || '—' }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.region"><span class="info-label">Регион</span><span>{{ selectedTender.region }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedTender.status">{{ getStatusLabel(selectedTender.status) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.purchaseType"><span class="info-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(selectedTender.purchaseType) }}</span></div>
           <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ selectedTender.totalCost | money }}</span></div>

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="ci_csrf_token" content="3d8e568cb56665137ba2fa206485440e">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" href="/images/favicon.ico" type="image/x-icon"/>
+
+    <title>Веб-портал закупок</title>
+    <script src="/js/jquery.js"></script>
+    <script src="/js/bootstrap.min.js"></script>
+    <script src="/js/timers.js"></script>
+    <script src="/js/confirmation.js"></script>
+    <script type='text/javascript' src='https://fms.ecc.kz/js/bootstrap.datepicker.js?0.81809200 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.81810100 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/announce.js?0.95683200 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.95683600 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.plugin.js?0.95706700 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.countdown.js?0.95707000 1783841275' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.countdown-ru.js?0.95707100 1783841275' charset='utf-8'></script>
+
+    <script src="/js/moment.js"></script>
+    <script src="/js/ru.js"></script>
+
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/style.css?v=4" rel="stylesheet">
+    <link href='https://fms.ecc.kz/css/datepicker.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/layout-styles.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/countdownplug/jquery.countdown.css' rel='stylesheet'>
+
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+    <script src="//oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+    <script src="//oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <script>
+        var user_id = 0;
+        window.lang_key = "ru";
+        window.current_controller_url = "https://fms.ecc.kz/ru/announce";
+            
+        window.current_directory = "";
+        window.current_controller = "announce";
+        window.current_method = "index";
+
+        window.url_params = ["521464"];
+        ;
+        (function() {
+            function readCookie(name) {
+                const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+                return v ? decodeURIComponent(v.pop()) : null;
+            }
+
+            function getCsrfToken() {
+                const fromCookie = readCookie('ci_csrf_token');
+                if (fromCookie) return fromCookie;
+
+                const m = document.querySelector('meta[name="ci_csrf_token"]');
+                return m ? m.content : '';
+            }
+
+            function ensureTokenField(form) {
+                if (!form) return;
+                if (form.classList.contains('form_upload')) return;
+                const action = form.getAttribute('action') || '';
+
+                let input = form.querySelector('input[name="ci_csrf_token"]');
+                const token = getCsrfToken();
+                if (!input) {
+                    input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'ci_csrf_token';
+                    form.appendChild(input);
+                }
+                input.value = token;
+            }
+
+            document.addEventListener(
+                'submit',
+                function(e) {
+                    const form = e.target;
+                    if (!form || form.tagName.toUpperCase() !== 'FORM') return;
+                    if ((form.method || '').toLowerCase() !== 'post') return;
+                    ensureTokenField(form);
+                },
+                true
+            );
+
+            (function() {
+                const origSubmit = HTMLFormElement.prototype.submit;
+                HTMLFormElement.prototype.submit = function() {
+                    try {
+                        ensureTokenField(this);
+                    } catch (err) {}
+                    return origSubmit.apply(this, arguments);
+                };
+            })();
+
+            (function() {
+                const realFetch = window.fetch;
+                window.fetch = function(resource, init) {
+                    init = init || {};
+                    const method = (init.method || 'GET').toUpperCase();
+
+                    if (method !== 'GET' && method !== 'HEAD') {
+                        const token = getCsrfToken();
+                        if (!init.credentials) init.credentials = 'same-origin';
+
+                        const body = init.body;
+
+                        if (!body) {
+                            init.body = new URLSearchParams({ ci_csrf_token: token });
+                            init.headers = init.headers || {};
+                            init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                        } else if (body instanceof FormData) {
+                            body.set('ci_csrf_token', token);
+                        } else if (body instanceof URLSearchParams) {
+                            body.set('ci_csrf_token', token);
+                        } else if (typeof body === 'string') {
+                            const isJson = (() => {
+                                try {
+                                    JSON.parse(body);
+                                    return true;
+                                } catch (e) {
+                                    return false;
+                                }
+                            })();
+                            if (isJson) {
+                                try {
+                                    const obj = JSON.parse(body);
+                                    obj.ci_csrf_token = token;
+                                    init.body = JSON.stringify(obj);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/json;charset=UTF-8';
+                                } catch (e) {
+                                    init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                                }
+                            } else {
+                                init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                init.headers = init.headers || {};
+                                init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                            }
+                        }
+                    }
+
+                    return realFetch.call(this, resource, init);
+                };
+            })();
+
+            (function() {
+                const OrigXHR = window.XMLHttpRequest;
+                function XHWR() {
+                    const xhr = new OrigXHR();
+                    let method = null;
+                    let url = null;
+
+                    const origOpen = xhr.open;
+                    xhr.open = function(m, u) {
+                        method = (m || '').toUpperCase();
+                        url = u;
+                        return origOpen.apply(xhr, arguments);
+                    };
+
+                    const origSend = xhr.send;
+                    xhr.send = function(body) {
+                        if (method && method !== 'GET' && method !== 'HEAD') {
+                            const token = getCsrfToken();
+
+                            if (!body) {
+                                body = 'ci_csrf_token=' + encodeURIComponent(token);
+                                xhr.setRequestHeader &&
+                                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                            } else if (body instanceof FormData) {
+                                body.append('ci_csrf_token', token);
+                            } else if (typeof body === 'string') {
+                                const isJson = (() => {
+                                    try {
+                                        JSON.parse(body);
+                                        return true;
+                                    } catch (e) {
+                                        return false;
+                                    }
+                                })();
+                                if (isJson) {
+                                    try {
+                                        const obj = JSON.parse(body);
+                                        obj.ci_csrf_token = token;
+                                        body = JSON.stringify(obj);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                                    } catch (e) {
+                                        body =
+                                            body +
+                                            (body.length ? '&' : '') +
+                                            'ci_csrf_token=' +
+                                            encodeURIComponent(token);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                    }
+                                } else {
+                                    body =
+                                        body +
+                                        (body.length ? '&' : '') +
+                                        'ci_csrf_token=' +
+                                        encodeURIComponent(token);
+                                    xhr.setRequestHeader &&
+                                    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                }
+                            }
+                        }
+                        return origSend.call(xhr, body);
+                    };
+
+                    return xhr;
+                }
+                XHWR.prototype = OrigXHR.prototype;
+                window.XMLHttpRequest = XHWR;
+            })();
+
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('form[method="post"]').forEach(ensureTokenField);
+            });
+        })();
+    </script>
+</head>
+<body>
+
+<!-- BEGIN WRAP -->
+<div class="wrap">
+    <!-- BEGIN NAVBAR -->
+    <div class="navbar navbar-default navbar-fixed-top" role="navigation"
+         style="background-color: #4B77BE">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#main-nav">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/ru">Веб-портал закупок</a>
+            </div>
+            <div class="navbar-collapse collapse" id="main-nav">
+                <ul class="nav navbar-nav"><li class="dropdown"><a data-id="404" href="#" class="dropdown-toggle" data-toggle="dropdown">Справка <b class="caret"></b> </a><ul class='dropdown-menu'><li class="dropdown-sub-menu"><a data-id="1101" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп ЛС и МИ</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/delivery_schedule_instruction.pdf">Инструкция по рассмотрению графиков поставки </a></li><li><a href="/uploads/template/culs_debts_instructions_for_suppliers.pdf">Инструкция отправки запроса по налоговой задолженности и участие в закупках при наличии задолженности</a></li><li><a href="/uploads/template/instruction_for_lowering_price_contract.pdf">Инструкция проведения переговоров по уменьшению цены</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_postavshika_konkurs.pdf">Инструкция поставщика по способу "Конкурс"</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_org_konkurs.pdf">Инструкция организатора по способу "Конкурс"</a></li><li><a href="/uploads/template/dossier_instruction_for_ed.pdf">Инструкция ЕД по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/instruction_for_banks.pdf">Инструкция для банков</a></li><li><a href="/uploads/template/dossier_instruction_for_supplier.pdf">Инструкция Поставщика по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/registration_instructions.pdf">Инструкция пользователя по регистрации</a></li><li><a href="/uploads/template/investment_project_instruction_for_ed.pdf">Инструкция ЕД по реализации инвестиционного проекта</a></li><li><a href="/uploads/template/investment_project_instruction_for_supplier.pdf">Инструкция Поставщика по реализации инвестиционного проекта</a></li><li><a href="https://fms.ecc.kz/uploads/template/instrukciya_po_rabote_s_planom_zakupok.pdf">Инструкция по работе с планом закупок</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция организатора ИОИ.pdf">Инструкция организатора по способу "Из одного источника"</a></li><li><a href="/uploads/template/organizer_instruction_tender.pdf">Инструкция организатора по способу "Тендер"</a></li><li><a href="/uploads/template/supplier_instruction_tender.pdf">Инструкция поставщика по способу "Тендер"</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция поставщика _ИОИ_СКФ.pdf">Инструкция поставщика по способу "Из одного источника"</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_customer.pdf">Инструкция Заказчика по работе с договорами</a></li><li><a href="/uploads/template/customer_instruction_for_medicines_and_equipment.pdf">Инструкция организатора по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_supplier.pdf">Инструкция по работе с электронными актами Поставщика</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_customer.pdf">Инструкция по работе с электронными актами Заказчика</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_supplier.pdf">Инструкция Поставщика по работе с договорами</a></li><li><a href="/uploads/template/supplier_instruction_for_medicines_and_equipment.pdf">Инструкция поставщика по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ"</a></li><li><a href="https://fms.ecc.kz/uploads/template/ebg_instruction.pdf">Инструкция Поставщика по работе с ЭБГ и внесению обеспечения</a></li><li><a href="https://fms.ecc.kz/uploads/template/instructions_for_reports_3.pdf">Инструкция по работе и формированию отчетов</a></li><li><a href="/uploads/template/gbd_el_request_instruction.pdf">Инструкция поставщика по запросу разрешений/уведомлений на занятие фармацевтической деятельностью, а также данных по разрешительным документам GDP и GMP.</a></li><li><a href="https://fms.ecc.kz/uploads/template/Instrukciya_oshibki.pdf">Рекомендации по работе с ошибками</a></li><li><a href="/uploads/template/customer_instruction_for_equipment_admission.pdf">Инструкция организатора по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_for_equipment_admission.pdf">Инструкция поставщика по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_gbd_el_fl.pdf">Инструкция проверка на аффилированность и близких родственниках потенциального поставщика</a></li><li><a href="/uploads/template/manual_gbd_rn.pdf">Инструкция по отправке запросов на получение документов «Справка о зарегистрированных правах на недвижимое имущество» и «Технический паспорт на аптечный склад"</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="1346" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.услуг</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instructions_for_working_with_the_database_of_healthcare_subjects.pdf">Инструкция по работе с базой данных субъектов здравоохранения</a></li><li><a href="/uploads/template/registration_instructions_medical_service.pdf">Инструкция по регистрации</a></li><li><a href="/uploads/template/new_supplier_instruction.pdf">Инструкция поставщика</a></li><li><a href="/uploads/template/new_agreement_of_accession.pdf">Договор присоединения</a></li><li><a href="/uploads/template/instrukciy_po_isklycheniy_iz_BD_kz_rus.pdf">Инструкции по исключению заявки из БД</a></li><li><a href="/uploads/template/VTMP_instrukcyia_postavshik kaz_rus.pdf">Инструкция Поставщика ВТМП</a></li><li><a href="/uploads/template/financial_stability_instruction_kaz_rus.pdf">Инструкция модуля Финансовая устойчивость</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2132" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.техники для лизингодателя</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="https://fms.ecc.kz/uploads/template/instruction_banks_lessor.pdf">Инструкция для банков</a></li><li><a href="https://fms.ecc.kz/uploads/template/organizer_instruction_lessor.pdf">Инструкция для Организатора</a></li><li><a href="https://fms.ecc.kz/uploads/template/supplier_instruction_lessor.pdf">Инструкция для Поставщика</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2250" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед. техники</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instruction_Organizer_Tender_МТ.pdf">Инструкция Организатора закупа МТ (Тендер)</a></li><li><a href="/uploads/template/Instruction_MT_customer.pdf">Инструкция для Заказчика (Заявителя)</a></li><li><a href="/uploads/template/contract_instruction_supplier_MT.pdf">Инструкция для Поставщика</a></li></ul></li></ul></li><li class="dropdown"><a data-id="181" href="#" class="dropdown-toggle" data-toggle="dropdown">Реестры <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/register/supplierreg">Реестр участников</a></li><li><a href="https://fms.ecc.kz/ru/fsms/healthcare_subjects">База данных субъектов здравоохранения</a></li><li><a href="https://fms.ecc.kz/ru/fsms/services_registry">Реестр услуг/операций</a></li></ul></li><li class="dropdown"><a data-id="66" href="#" class="dropdown-toggle" data-toggle="dropdown">Закупки <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/subpriceoffer">Поиск лотов</a></li><li><a href="https://fms.ecc.kz/ru/searchanno">Поиск объявлений</a></li></ul></li></ul>
+                <ul class="nav navbar-nav navbar-right">
+                    
+                </ul>
+
+                <ul class="nav navbar-nav navbar-right">
+                    
+            <li><a href="https://fms.ecc.kz/ru/announce/index/521464?tab=general">Рус</a></li>
+            <li><a href="https://fms.ecc.kz/kz/announce/index/521464?tab=general">Қаз</a></li>
+              <li>
+                       <a href="https://fms.ecc.kz/ru/user/login"> <span class="glyphicon glyphicon-user online" id="online-status"></span>&nbspВойти</a>
+                     </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <!-- END NAVBAR -->
+
+    <!-- BEGIN CONTAINER FULL -->
+    <div class="container-full">
+
+        <div class="alert alert-danger" id="offline-message">
+            <strong>Внимание!</strong> Соединение с приложением прервано. Дождитесь повторного подключения.
+        </div>
+        
+        <!-- BEGIN MAIN CONTENT -->
+        <div class="panel panel-default">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button data-toggle="collapse" class="navbar-toggle" type="button" data-target="#cabinet_nav">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="glyphicon glyphicon-arrow-down"></span>
+                    </button>
+                </div>
+                <div class="collapse navbar-collapse" id="cabinet_nav">
+                    <ul class="nav navbar-nav"></ul>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="alert alert-info"
+             style="display: none;">Подождите, идет загрузка данных</div>
+        
+        <div class="content-block">
+            
+<script>
+    $(function () {
+        var newYear = new Date('2026/07/27 10:00:00');
+        $('#asNeeded').countdown({until: newYear, layout: '{dn} {dl}, {hn} {hl}, {mn} {ml}, {sn} {sl}'});
+
+        $('#notice_create_contract').click(function (){
+            $.ajax({
+                type: "post",
+                url: site_url() + 'ajax_notice_create_contract/521464',
+                dataType: "json",
+                success: function (response) {
+                    alert(response.message);
+                    if (response.status === 'ok') {
+                        window.location.reload();
+                    }
+                },
+                error: function (xhr, status, error) {
+                    var errorMessage = xhr.status + ': ' + xhr.statusText;
+                    alert('Произошла ошибка: ' + errorMessage);
+                }
+            });
+        });
+    });
+</script>
+
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <div class="row">
+
+            
+                        <h4 style="text-align: center">Просмотр объявления № 521464-1</h4>
+                    </div>
+    </div>
+    <div class="panel-body">
+        <div class="alert alert-danger" role="alert" id="errors" style="display: none;"></div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Номер объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="521464-1" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Наименование объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="Закуп медицинской техники" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Статус объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="Опубликовано" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Дата публикации объявления</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-07-10 18:44:58" readonly/>
+                    </div>
+                </div>
+                <br />&nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Срок начала приема заявок</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-07-13 09:00:00" readonly />
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Срок окончания приема заявок</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-07-27 10:00:00" readonly />
+                    </div>
+                </div>
+                <br/> &nbsp;
+                                                                            </div>
+                            
+                
+                    </div>
+    </div>
+</div>
+
+<div class="row">
+
+        </div>
+<div class="panel">
+    <div class="panel-body">
+        <div class="row">
+            <div role="tabpanel">
+                <ul class="nav nav-tabs" role="tablist">
+                                        <li role="presentation" class="active">
+                        <a href="?tab=general">Общие сведения</a>
+                    </li>
+                                        <li role="presentation" >
+                        <a href="?tab=lots">Лоты</a>
+                    </li>
+                                        <li role="presentation" >
+                        <a href="?tab=documents">Документация</a>
+                    </li>
+                                        <li role="presentation" >
+                        <a href="?tab=protocols">Протоколы</a>
+                    </li>
+                                    </ul>
+                <br/>
+                <div class="tab-content">
+                    <div role="tabpanel" class="tab-pane fade in active">
+                        <div class="col-md-12 col-lg-12 col-xs-12">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <b>Общие сведения </b>
+        </div>
+        <div class="panel-body">
+            <table class="table table-bordered table-hover table-striped" style="margin-bottom: 0;border-top: 0;">
+                <tr>
+                    <th>Способ проведения закупки</th>
+                    <td>Тендер</td>
+                </tr>
+                                <tr>
+                    <th>Тип закупки</th>
+                    <td>Первая закупка</td>
+                </tr>
+                
+                
+                
+
+                                                                <tr>
+                    <th>Вид предмета закупок</th>
+                    <td>Товар</td>
+                </tr>
+                                                    <tr>
+                        <th>Единый дистрибьютор</th>
+                        <td>090340007747 ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «СК-ФАРМАЦИЯ»</td>
+                    </tr>
+                                <tr>
+                    <th>Юр. адрес единого дистрибьютора</th>
+                    <td>010000, КАЗАХСТАН, 711210000, г.Астана, район Есиль, Достык, 13/3                    </td>
+                </tr>
+                <tr>
+                    <th>Кол-во лотов в объявлении</th>
+                    <td>12</td>
+                </tr>
+                                    <tr>
+                        <th>Сумма закупки</th>
+                        <td>15 085 999 992.00</td>
+                    </tr>
+
+                                        <tr>
+                        <th>Признаки</th>
+                        <td>
+                            Закуп медицинской техники<br />
+                                                    </td>
+                    </tr>
+                                                                </table>
+        </div>
+    </div>
+</div>
+<div class="col-md-12 col-lg-12 col-xs-12">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <b>Информация о едином дистрибьюторе </b>
+        </div>
+        <div class="panel-body">
+            <table class="table table-bordered table-hover table-striped" style="margin-bottom: 0;border-top: 0;">
+                                    <tr>
+                        <th class="col-md-4">ФИО секретаря</th>
+                        <td>Секретарь</td>
+                    </tr>
+                    <tr>
+                        <th>Должность</th>
+                        <td>Секретарь</td>
+                    </tr>
+                                        <tr>
+                        <th>E-Mail</th>
+                        <td>t.omirbay@sk-pharmacy.kz</td>
+                    </tr>
+                                                                <tr>
+                            <th>
+                                Банковские реквизиты для обеспечения заявки                            </th>
+                            <td>Счет: KZ498560000005988376, КБЕ: 17, БАНК: АО "Банк ЦентрКредит", Адрес: г.Алматы</td>
+                        </tr>
+                                                                </table>
+        </div>
+    </div>
+</div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+        </div>
+        <!-- END MAIN CONTENT -->
+
+        <div class="clearfix"></div>
+
+        
+            </div>
+    <!-- END CONTAINER FULL -->
+
+</div>
+<!-- END WRAP -->
+
+<!-- BEGIN FOOTER -->
+<footer class="footer">
+    <div class="container">
+        <p class="pull-left">
+            Веб-портал закупок &copy; 2026        </p>
+        <p class="pull-right">
+            <span class="ecc">
+                <a href="https://www.ecc.kz">АО "Центр электронных финансов"</a>
+            </span>
+        </p>
+    </div>
+    <p class="text-center text-muted">
+        Техническая поддержка пользователей портала 24/7 (без выходных):<br><a href="tel:+77172735515">8 (7172) 73 55 15</a><br><a href="tel:+77059565388">+7 705 956 53 88</a><br><a href="mailto:fms_support@ecc.kz">fms_support@ecc.kz</a><br><a href="mailto:skf_support@ecc.kz">skf_support@ecc.kz</a>    </p>
+</footer>
+<!-- END FOOTER -->
+
+<!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+<!-- Include all compiled plugins (below), or include individual files as needed -->
+
+</body>
+</html>

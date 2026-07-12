@@ -7,4 +7,7 @@ public interface SkPharmacyClient {
 
     /** HTML вкладки лотов объявления по числовому announceId. */
     String lotsPage(String announceId);
+
+    /** HTML вкладки «Общие сведения» (?tab=general) — организатор+БИН, юр. адрес (регион/КАТО), контакт. */
+    String generalPage(String announceId);
 }

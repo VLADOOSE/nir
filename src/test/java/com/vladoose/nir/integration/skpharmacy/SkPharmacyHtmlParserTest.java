@@ -51,4 +51,36 @@ class SkPharmacyHtmlParserTest {
         assertThat(SkPharmacyHtmlParser.parseSearch(null)).isEmpty();
         assertThat(SkPharmacyHtmlParser.parseLots("<html><body>нет таблицы</body></html>")).isEmpty();
     }
+
+    /** general.html — объявление 521304 (АО «КАЗМЕДТЕХ», лизингодатель): реальное ФИО секретаря + метка «Лизингодатель». */
+    @Test
+    void parseGeneral_lessor_binAddressKatoEmailContact() throws IOException {
+        SkGeneral g = SkPharmacyHtmlParser.parseGeneral(fixture("general.html"));
+        assertThat(g).isNotNull();
+        assertThat(g.customerBin()).isEqualTo("101240007453");
+        assertThat(g.legalAddress()).contains("Астана").contains("711510000");
+        assertThat(g.regionKato()).isEqualTo("711510000");        // 9-значный КАТО из адреса, не 6-значный индекс
+        assertThat(g.contactEmail()).isEqualTo("g.stepanenko@kmtlc.kz");
+        assertThat(g.contactName()).isEqualTo("СТЕПАНЕНКО ГЕННАДИЙ");
+    }
+
+    /** general-distributor.html — 521464 (ТОО «СК-Фармация», единый дистрибьютор): метка организатора ДРУГАЯ. */
+    @Test
+    void parseGeneral_singleDistributor_labelVariantStillParsed() throws IOException {
+        SkGeneral g = SkPharmacyHtmlParser.parseGeneral(fixture("general-distributor.html"));
+        assertThat(g).isNotNull();
+        assertThat(g.customerBin()).isEqualTo("090340007747");
+        assertThat(g.regionKato()).isEqualTo("711210000");
+        assertThat(g.contactEmail()).isEqualTo("t.omirbay@sk-pharmacy.kz");
+        assertThat(g.legalAddress()).contains("Астана");
+    }
+
+    @Test
+    void parseGeneral_null_safe() {
+        assertThat(SkPharmacyHtmlParser.parseGeneral(null)).isNull();
+        assertThat(SkPharmacyHtmlParser.parseGeneral("")).isNull();
+        SkGeneral none = SkPharmacyHtmlParser.parseGeneral("<html><body>нет полей</body></html>");
+        assertThat(none.customerBin()).isNull();
+        assertThat(none.legalAddress()).isNull();
+    }
 }
