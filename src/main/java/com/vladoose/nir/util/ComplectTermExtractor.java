@@ -27,6 +27,15 @@ public final class ComplectTermExtractor {
             "медицинский", "медицинская", "изделие", "изделия", "комплект", "набор",
             "для", "к", "и", "или", "с", "со", "по", "на", "мм", "см");
 
+    // метки-разделы казахстанского ТЗ (goszakup/СК): идут вплотную к «…аппарата» и ловятся регексом
+    // AFTER_KW как «бренд» («…ультразвукового аппарата Номер лота»). Никогда не имя аппарата.
+    private static final Set<String> LABELS = Set.of(
+            "номер", "наименование", "описание", "дополнительное", "количество",
+            "единица", "единицы", "место", "места", "срок", "поставка", "поставки",
+            "приложение", "спецификация", "техническая", "технические", "закупки",
+            "закупка", "документации", "конкурсной", "требуемые", "характеристики",
+            "функциональные", "качественные", "эксплуатационные", "лот", "лота");
+
     private ComplectTermExtractor() {}
 
     public static String extract(String equipName, String spec) {
@@ -38,8 +47,9 @@ public final class ComplectTermExtractor {
             String cand = q.group(1).trim();
             if (isDistinctive(cand)) return cand;
         }
+        // перебираем ВСЕ «…аппарата <Слово>» — метку-раздел («Номер лота») пропускаем, берём первый бренд
         Matcher kw = AFTER_KW.matcher(text);
-        if (kw.find()) {
+        while (kw.find()) {
             String cand = kw.group(1).trim();
             if (isDistinctive(cand)) return cand;
         }
@@ -48,7 +58,7 @@ public final class ComplectTermExtractor {
         for (String raw : text.split("[^\\p{L}\\-]+")) {
             String t = raw.replaceAll("^-+|-+$", "");
             if (t.length() < 4) continue;
-            if (GENERIC.contains(t.toLowerCase())) continue;
+            if (isNoise(t)) continue;
             if (best == null || t.length() > best.length()) best = t;
         }
         return best;
@@ -56,8 +66,13 @@ public final class ComplectTermExtractor {
 
     private static boolean isDistinctive(String s) {
         for (String w : s.toLowerCase().split("\\s+")) {
-            if (!GENERIC.contains(w) && w.length() >= 3) return true;
+            if (!isNoise(w) && w.length() >= 3) return true;
         }
         return false;
+    }
+
+    private static boolean isNoise(String w) {
+        String l = w.toLowerCase();
+        return GENERIC.contains(l) || LABELS.contains(l);
     }
 }

@@ -16,6 +16,7 @@ import com.vladoose.nir.integration.ndda.dto.NddaComplectItemDto;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.RegistryComponentRepository;
+import com.vladoose.nir.util.BrandTransliterator;
 import com.vladoose.nir.util.ComplectComponentMatcher;
 import com.vladoose.nir.util.ComplectTermExtractor;
 import com.vladoose.nir.util.LotDescriptiveText;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -80,7 +82,15 @@ public class ComplectService {
         Set<String> lotTokens = ComplectComponentMatcher.tokenize(
                 LotDescriptiveText.forMatching(lot.getEquipName(), lot.getManufact(), lot.getRequiredSpec()));
 
-        for (ApparatusRow row : registryRepository.findApparatusByTerm(term, MAX_APPARATUS)) {
+        // бренд в реестре может быть латиницей ИЛИ кириллицей → пробуем оба скрипта, дедуп аппаратов по РУ
+        LinkedHashMap<String, ApparatusRow> candidates = new LinkedHashMap<>();
+        for (String variant : BrandTransliterator.expand(term)) {
+            for (ApparatusRow row : registryRepository.findApparatusByTerm(variant, MAX_APPARATUS)) {
+                candidates.putIfAbsent(row.getRegNumber(), row);
+            }
+        }
+        for (ApparatusRow row : candidates.values()) {
+            if (resp.getApparatuses().size() >= MAX_APPARATUS) break;      // топ-N аппаратов на выдачу
             List<RegistryComponent> cached = componentRepository.findByRegNumberOrderByPartNumber(row.getRegNumber());
             if (cached.isEmpty()) {
                 Long nddaId = row.getNddaId() != null ? row.getNddaId() : nddaClient.resolveId(row.getRegNumber());

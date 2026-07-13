@@ -79,14 +79,16 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
 
     /**
      * Аппараты-кандидаты по бренду из ТЗ: только записи типа «(МТ)» (аппаратура, у них есть комплектность),
-     * индексо-дружелюбный `<%` (word_similarity ≥ глобального порога), ранг по word_similarity термина к имени.
+     * индексо-дружелюбный `<%` (word_similarity ≥ глобального порога). Бренд в реестре живёт то в name,
+     * то в producer («Система … HS60» + producer «Самсунг Медисон») → матчим ОБА поля (оба под GIN-trgm),
+     * ранг — по большему из двух сходств. Разные скрипты бренда разводит {@code BrandTransliterator} выше.
      */
     @Query(nativeQuery = true, value =
             "SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, " +
             "       m.country AS country, m.ndda_id AS nddaId " +
             "FROM med_registry m " +
-            "WHERE m.reg_number LIKE '%(МТ)%' AND :term <% m.name " +
-            "ORDER BY word_similarity(:term, m.name) DESC " +
+            "WHERE m.reg_number LIKE '%(МТ)%' AND (:term <% m.name OR :term <% m.producer) " +
+            "ORDER BY greatest(word_similarity(:term, m.name), word_similarity(:term, m.producer)) DESC " +
             "LIMIT :limit")
     List<ApparatusRow> findApparatusByTerm(@Param("term") String term, @Param("limit") int limit);
 }
