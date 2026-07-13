@@ -20,6 +20,14 @@ class LotQueryTokenizerTest {
     }
 
     @Test
+    void genericNoun_ustanovka_dropped_leavesDistinctiveWord() {
+        // «установка» — родовое слово (как «система»/«устройство»): без него в реестре цепляется
+        // мусор (установка обеззараживания воздуха/воды), различающее прилагательное остаётся
+        List<WeightedToken> t = LotQueryTokenizer.tokenize("Ангиографическая установка", null);
+        assertThat(t).extracting(WeightedToken::token).containsExactly("ангиографическая");
+    }
+
+    @Test
     void hyphenWordsStayWhole_andServiceWordsDropped() {
         List<WeightedToken> t = LotQueryTokenizer.tokenize("Дефибриллятор-монитор для отделения и палат", null);
         assertThat(t).extracting(WeightedToken::token)
