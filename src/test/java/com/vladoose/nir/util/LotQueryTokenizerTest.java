@@ -10,13 +10,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LotQueryTokenizerTest {
 
     @Test
-    void stripsCancelariteAndKeepsSignificantWithPositionalWeights() {
+    void stripsCancelariteAndKeepsSignificantTokens_nameWeightFlat() {
         List<WeightedToken> t = LotQueryTokenizer.tokenize("Устройство оцифровки рентген снимков", null);
         assertThat(t).extracting(WeightedToken::token)
                 .containsExactly("оцифровки", "рентген", "снимков");
-        assertThat(t.get(0).weight()).isEqualTo(1.0);
-        assertThat(t.get(1).weight()).isEqualTo(0.5);
-        assertThat(t.get(2).weight()).isEqualTo(0.35);
+        // вес токена имени = фактор источника 1.0 (различие даёт IDF в сервисе, не позиция)
+        assertThat(t).allSatisfy(w -> assertThat(w.weight()).isEqualTo(1.0));
     }
 
     @Test
@@ -59,6 +58,6 @@ class LotQueryTokenizerTest {
         List<WeightedToken> t = LotQueryTokenizer.tokenize(
                 "Оцифровщик рентгеновских снимков панорамный цифровой беспроводной переносной", null);
         assertThat(t).hasSize(5);
-        assertThat(t.get(4).weight()).isEqualTo(0.2);
+        assertThat(t.get(4).weight()).isEqualTo(1.0);   // все токены имени — вес 1.0
     }
 }

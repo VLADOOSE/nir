@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.request.RegistrationAction;
 import com.vladoose.nir.dto.response.ReconciliationRowResponse;
 import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
+import com.vladoose.nir.dto.response.TokenDfRow;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
@@ -24,6 +25,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -91,15 +93,38 @@ public class RegistryMatchService {
         if (tokens.isEmpty()) {
             return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), false, techSpecParsed);
         }
-        String toks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
-        String wgts = tokens.stream()
-                .map(t -> String.format(Locale.ROOT, "%.2f", t.weight()))
+        String allToks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
+        Map<String, Long> df = registryRepository.tokenDocFreq(allToks).stream()
+                .collect(Collectors.toMap(TokenDfRow::getTok, TokenDfRow::getDf, (a, b) -> a));
+        // Токен, которого НЕТ в названиях реестра (df=0, спец-слово вроде «бифазный»), совпадений не
+        // даёт и лишь раздувает знаменатель score (Σw), сплющивая разницу различающих/родовых слов → выкидываем.
+        List<WeightedToken> effective = tokens.stream()
+                .filter(t -> df.getOrDefault(t.token(), 0L) > 0).toList();
+        if (effective.isEmpty()) effective = tokens;   // все отсутствуют → матч вернёт пусто, но не падаем
+
+        double n = registryCount();
+        String toks = effective.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
+        // Финальный вес = фактор источника (1.0 имя / 0.5 ТЗ) × IDF ln((N+1)/(df+1)): редкое слово
+        // тяжелее частого — чинит позиционную эвристику, где различал как раз хвост («Компьютерный томограф»).
+        String wgts = effective.stream()
+                .map(t -> {
+                    double idf = Math.log((n + 1.0) / (df.getOrDefault(t.token(), 0L) + 1.0));
+                    return String.format(Locale.ROOT, "%.3f", t.weight() * idf);
+                })
                 .collect(Collectors.joining("|"));
         List<RegistryCandidateResponse> candidates = registryRepository.searchByTokens(toks, wgts, limit).stream()
                 .map(this::toCandidate)
                 .toList();
         // ≥2 значимых токена → есть чем различать записи; 1 токен → совпадение только по названию
         return new LotMatch(candidates, tokens.size() >= 2, techSpecParsed);
+    }
+
+    /** Размер реестра для IDF; стабилен на процесс (JSON-инициализатор наполняет один раз). */
+    private volatile long registryCount = -1;
+    private long registryCount() {
+        long c = registryCount;
+        if (c < 0) { c = registryRepository.count(); registryCount = c; }
+        return c;
     }
 
     /** Кандидаты реестра по лоту (для LotSourcingService) — прежний контракт. */

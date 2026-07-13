@@ -8,17 +8,19 @@ import java.util.Set;
 /**
  * Название лота (+ характеристики из ТЗ) → значимые токены для пословного триграммного
  * реестр-матча. Канцелярит («устройство», «аппарат»…) и служебные слова выбрасываются:
- * они цепляют мусор при пониженном пороге и топят реальные изделия. Веса позиционные —
- * головное существительное в госзакуп-названиях идёт первым.
+ * они цепляют мусор при пониженном пороге и топят реальные изделия.
+ *
+ * <p>{@code weight} здесь — только ФАКТОР ИСТОЧНИКА: 1.0 для токенов имени, 0.5 для токенов
+ * из ТЗ (вторичный сигнал). Различительная значимость слова (позиционная эвристика «первое
+ * слово — главное» ненадёжна: у «Компьютерный томограф» различает как раз хвост) навешивается
+ * не здесь, а в {@code RegistryMatchService} через IDF (редкость токена в реестре).
  */
 public final class LotQueryTokenizer {
 
     public record WeightedToken(String token, double weight) {}
 
-    // круто затухающие: головное существительное должно доминировать, иначе хвостовые
-    // слова («портативный») перевешивают и топ забивают смежные изделия
-    private static final double[] WEIGHTS = {1.0, 0.5, 0.35, 0.25, 0.2};
-    private static final double SPEC_FACTOR = 0.5;
+    private static final double NAME_WEIGHT = 1.0;
+    private static final double SPEC_FACTOR = 0.5;   // токены из ТЗ — вторичный сигнал к имени
     private static final int MAX_PER_SOURCE = 5;
 
     private static final Set<String> STOP = Set.of(
@@ -30,6 +32,12 @@ public final class LotQueryTokenizer {
             "набор", "набора", "товар", "товара", "товаров", "штука", "штук",
             "размер", "размеры", "размера", "размеров",
             "медицинский", "медицинская", "медицинское", "медицинские", "медицинских",
+            // родовые дескрипторы форм-фактора: цепляют «портативный анализатор» на «портативный
+            // дефибриллятор» и т.п. — частота в реестре как у профильных слов, IDF их не различает
+            "портативный", "портативная", "портативное", "портативные",
+            "переносной", "переносная", "переносное", "носимый",
+            "стационарный", "стационарная", "стационарное",
+            "мобильный", "мобильная", "мобильное", "настольный", "настольная",
             // служебные
             "для", "или", "не", "более", "менее", "с", "со", "по", "на", "из", "к", "от", "до", "в", "и");
 
@@ -43,13 +51,13 @@ public final class LotQueryTokenizer {
         List<WeightedToken> out = new ArrayList<>();
         int i = 0;
         for (String t : nameTokens) {
-            if (i >= MAX_PER_SOURCE) break;
-            out.add(new WeightedToken(t, WEIGHTS[i++]));
+            if (i++ >= MAX_PER_SOURCE) break;
+            out.add(new WeightedToken(t, NAME_WEIGHT));
         }
         int j = 0;
         for (String t : specTokens) {
-            if (j >= MAX_PER_SOURCE) break;
-            out.add(new WeightedToken(t, WEIGHTS[j++] * SPEC_FACTOR));
+            if (j++ >= MAX_PER_SOURCE) break;
+            out.add(new WeightedToken(t, SPEC_FACTOR));
         }
         return out;
     }

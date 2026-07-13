@@ -2,6 +2,7 @@ package com.vladoose.nir.repository;
 
 import com.vladoose.nir.dto.response.ApparatusRow;
 import com.vladoose.nir.dto.response.RegistryCandidateRow;
+import com.vladoose.nir.dto.response.TokenDfRow;
 import com.vladoose.nir.entity.MedRegistry;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -62,6 +63,19 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
     List<RegistryCandidateRow> searchByTokens(@Param("tokens") String tokens,
                                               @Param("weights") String weights,
                                               @Param("limit") int limit);
+
+    /**
+     * Частотность (document frequency) каждого токена: сколько записей реестра пословно похожи
+     * на него (индексо-дружелюбный {@code <%} по GIN). Питает IDF-веса матча: редкий токен
+     * («томограф», «ангиографическая») получает больший вес, чем частый («компьютерный»).
+     * Один запрос на все токены (LEFT JOIN → df=0 для несовпавших). Токены — строкой через '|'.
+     */
+    @Query(nativeQuery = true, value =
+            "SELECT t.tok AS tok, count(m.id) AS df " +
+            "FROM unnest(string_to_array(:tokens,'|')) t(tok) " +
+            "LEFT JOIN med_registry m ON t.tok <% m.name " +
+            "GROUP BY t.tok")
+    List<TokenDfRow> tokenDocFreq(@Param("tokens") String tokens);
 
     /**
      * Аппараты-кандидаты по бренду из ТЗ: только записи типа «(МТ)» (аппаратура, у них есть комплектность),
