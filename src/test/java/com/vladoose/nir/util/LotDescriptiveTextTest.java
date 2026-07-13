@@ -36,6 +36,20 @@ class LotDescriptiveTextTest {
     }
 
     @Test
+    void requirementsForEmail_keepsTechDropsBoilerplate_noNameInjected() {
+        String t = LotDescriptiveText.requirementsForEmail(GOSZAKUP_TZ);
+        assertThat(t.toLowerCase()).contains("силиконовые").contains("55").contains("80"); // тех.суть
+        assertThat(t).doesNotContain("17279420").doesNotContain("231010000");              // номер/адрес — вон
+        assertThat(t.toLowerCase()).doesNotContain("поставки");
+    }
+
+    @Test
+    void requirementsForEmail_blankOrNull_returnsEmpty() {
+        assertThat(LotDescriptiveText.requirementsForEmail(null)).isEmpty();
+        assertThat(LotDescriptiveText.requirementsForEmail("   ")).isEmpty();
+    }
+
+    @Test
     void specWithoutLabels_fallsBackToFullText() {
         // ручной/иной формат ТЗ без goszakup-меток → берём как есть (без регресса)
         String t = LotDescriptiveText.forMatching("Электрод", "Bar", "силиконовые электроды 55х80");

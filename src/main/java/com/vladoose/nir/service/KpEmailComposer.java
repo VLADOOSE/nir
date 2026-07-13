@@ -3,6 +3,7 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.util.KpToken;
+import com.vladoose.nir.util.LotDescriptiveText;
 import org.springframework.stereotype.Component;
 
 import java.time.format.DateTimeFormatter;
@@ -105,8 +106,11 @@ public class KpEmailComposer {
                     sb.append(" (").append(lot.getManufact()).append(")");
                 }
                 sb.append(" — ").append(qty).append("\n");
-                if (lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) {
-                    sb.append("  Требования: ").append(trimSpec(lot.getRequiredSpec())).append("\n");
+                // санитизируем ТЗ: только тех.характеристики, без goszakup-шапки (номер закупки/лота,
+                // места/сроки поставки) — иначе письмо раскрывает тендер поставщику (§9 анти-лик)
+                String req = LotDescriptiveText.requirementsForEmail(lot.getRequiredSpec());
+                if (req != null && !req.isBlank()) {
+                    sb.append("  Требования: ").append(trimSpec(req)).append("\n");
                 }
             }
         }

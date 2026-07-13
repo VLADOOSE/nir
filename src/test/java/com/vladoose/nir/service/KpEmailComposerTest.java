@@ -99,6 +99,29 @@ class KpEmailComposerTest {
     }
 
     @Test
+    void goszakupSpec_requirementsSanitized_noTenderNumberNorAddress() {
+        // голый лот с сырым goszakup-ТЗ: «Требования:» должны нести тех.характеристики, но НЕ
+        // раскрывать тендер (номер закупки/лота, место поставки) — иначе поставщик пойдёт участвовать сам.
+        String goszakupTz = "Приложение 2 Номер закупки: № 17295275-1 "
+                + "Наименование закупки: Аппарат ультразвуковой оториноларингологический "
+                + "Номер лота: № 84998390-ЗЦП1 Наименование лота: Аппарат "
+                + "Описание лота: ультразвуковой Дополнительное описание лота: Аппарат ЛОР "
+                + "Количество: 1 Единица измерения: Штука "
+                + "Места поставки: 751710000, г.Алматы, Медеуский район "
+                + "Срок поставки: до 31.12.2026 года "
+                + "характеристики закупаемых товаров: Аппарат низкочастотный 26,5 кГц, блок управления, таймер";
+        KpEmailComposer.Composed msg = composer.compose(kzTenderPr(goszakupTz));
+
+        assertThat(msg.body()).contains("Требования:").contains("26,5 кГц"); // тех.суть сохранена
+        assertThat(msg.body())
+                .doesNotContain("17295275")          // номер закупки
+                .doesNotContain("84998390")          // номер лота
+                .doesNotContain("751710000")         // код места поставки
+                .doesNotContain("Места поставки")
+                .doesNotContain("Срок поставки");
+    }
+
+    @Test
     void longSpecTrimmedAt1200() {
         String longSpec = "х".repeat(2000);
         KpEmailComposer.Composed msg = composer.compose(kzTenderPr(longSpec));

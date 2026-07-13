@@ -35,6 +35,16 @@ public final class LotDescriptiveText {
 
     private LotDescriptiveText() {}
 
+    /**
+     * Санитизированный текст ТЗ для тела письма поставщику: тех. характеристики без goszakup-канцелярита
+     * (номера закупки/лота, наименование закупки, места/сроки поставки, количество) — чтобы КП не
+     * раскрывало конкретный тендер. Та же сегментация, что у {@link #forMatching}, без имени/бренда.
+     * ТЗ без goszakup-меток (ручной/иной формат) возвращается как есть.
+     */
+    public static String requirementsForEmail(String requiredSpec) {
+        return forMatching(null, null, requiredSpec);
+    }
+
     public static String forMatching(String equipName, String manufact, String requiredSpec) {
         StringBuilder base = new StringBuilder();
         if (equipName != null && !equipName.isBlank()) base.append(equipName.trim()).append(' ');
