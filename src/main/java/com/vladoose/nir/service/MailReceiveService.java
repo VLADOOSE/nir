@@ -5,6 +5,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.util.KpToken;
+import com.vladoose.nir.util.SupplierReplyDeclineDetector;
 import com.vladoose.nir.util.SupplierReplyPriceParser;
 import jakarta.mail.*;
 import jakarta.mail.internet.MimeBodyPart;
@@ -176,20 +177,33 @@ public class MailReceiveService {
         // Понижаем до RESPONDED только из открытых статусов — не затираем ACCEPTED/REJECTED/CLOSED/уже-RESPONDED
         String st = pr.getStatus();
         if ("CREATED".equals(st) || "SENT".equals(st)) {
-            pr.setStatus("RESPONDED");
             pr.setResponseDate(LocalDate.now());
             pr.setNote(trunc(body, 4000));
             // ч.3b: авто-парс цены для одно-лотового КП (не затираем ручной ввод)
+            boolean priceFilled = false;
             if (pr.getItems().size() == 1) {
                 PriceRequestItem item = pr.getItems().get(0);
-                if (item.getResponsePrice() == null) {
-                    SupplierReplyPriceParser.parse(body, pr.getMarket()).ifPresent(pp -> {
-                        item.setResponsePrice(pp.price());
+                if (item.getResponsePrice() != null) {
+                    priceFilled = true;                                 // цена уже введена вручную
+                } else {
+                    Optional<SupplierReplyPriceParser.ParsedPrice> pp =
+                            SupplierReplyPriceParser.parse(body, pr.getMarket());
+                    if (pp.isPresent()) {
+                        item.setResponsePrice(pp.get().price());
                         item.setResponseNote("💡 Цена распознана автоматически, проверьте."
-                                + (pp.term() != null ? " Срок: " + pp.term() + "." : "")
-                                + (pp.matchedSnippet() != null ? " Контекст: «" + pp.matchedSnippet() + "»." : ""));
-                    });
+                                + (pp.get().term() != null ? " Срок: " + pp.get().term() + "." : "")
+                                + (pp.get().matchedSnippet() != null ? " Контекст: «" + pp.get().matchedSnippet() + "»." : ""));
+                        priceFilled = true;
+                    }
                 }
+            }
+            // цена есть → RESPONDED; иначе явный отказ поставщика → DECLINED; иначе ответ на ручную проверку
+            if (priceFilled) {
+                pr.setStatus("RESPONDED");
+            } else if (SupplierReplyDeclineDetector.isDecline(body)) {
+                pr.setStatus("DECLINED");
+            } else {
+                pr.setStatus("RESPONDED");
             }
             priceRequestRepository.save(pr);   // cascade ALL сохранит правку item
         }

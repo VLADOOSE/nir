@@ -18,12 +18,6 @@ public final class SupplierReplyPriceParser {
 
     public record ParsedPrice(BigDecimal price, String term, String matchedSnippet) {}
 
-    /** Начало цитаты нашего же письма — всё от маркера и ниже отбрасываем. */
-    private static final Pattern QUOTE_BOUNDARY = Pattern.compile(
-            "(?im)^[ \\t]*(>|On .+wrote:|From:[ \\t]|Sent:[ \\t]|Отправлено:|От кого:|-{3,}[ ]*Original)");
-
-    private static final Pattern HTML_TAG = Pattern.compile("(?s)<[^>]+>");
-
     /** Телефон (KZ/RU) — вырезаем до поиска цены, чтобы его цифры не стали кандидатом. */
     private static final Pattern PHONE = Pattern.compile(
             "(?:\\+7|8)[ \\-]?\\(?\\d{3}\\)?[ \\-]?\\d{3}[ \\-]?\\d{2}[ \\-]?\\d{2}");
@@ -38,10 +32,6 @@ public final class SupplierReplyPriceParser {
     private static final Pattern PRICE_KEYWORD = Pattern.compile(
             "(?i)(цена|стоимост|сумма|за единиц|составля|прайс|price)");
 
-    /** Строка-атрибуция цитаты («… пишет:» / «On … wrote:») — mail.ru/Apple Mail не ставят "> ". */
-    private static final Pattern ATTRIBUTION = Pattern.compile(
-            "(?im)^.{0,120}?\\b(пишет|wrote|schrieb)\\s*:[ \\t]*$");
-
     /** Суффикс количества сразу после числа — тогда это НЕ цена (шт/упаковок/ед/…). */
     private static final Pattern QTY_SUFFIX = Pattern.compile(
             "(?iu)^\\s{0,3}(шт|упаков|ед\\b|ед\\.|позиц|коробк|компл|набор|уп\\b)");
@@ -52,7 +42,7 @@ public final class SupplierReplyPriceParser {
     public static Optional<ParsedPrice> parse(String rawBody, Market market) {
         try {
             if (rawBody == null || rawBody.isBlank()) return Optional.empty();
-            String text = stripQuote(stripHtml(rawBody));
+            String text = EmailReplyText.stripToReply(rawBody);
             if (text.isBlank()) return Optional.empty();
 
             String term = extractTerm(text);
@@ -79,25 +69,6 @@ public final class SupplierReplyPriceParser {
         } catch (Exception e) {
             return Optional.empty();
         }
-    }
-
-    private static String stripHtml(String s) {
-        if (s.indexOf('<') < 0) return s;
-        String noTags = HTML_TAG.matcher(s).replaceAll(" ");
-        return noTags.replace("&nbsp;", " ").replace("&amp;", "&")
-                .replace("&lt;", "<").replace("&gt;", ">").replaceAll("&#\\d+;", " ");
-    }
-
-    private static String stripQuote(String s) {
-        int cut = firstMatchStart(QUOTE_BOUNDARY, s);
-        int attr = firstMatchStart(ATTRIBUTION, s);
-        if (attr >= 0 && (cut < 0 || attr < cut)) cut = attr;
-        return cut >= 0 ? s.substring(0, cut) : s;
-    }
-
-    private static int firstMatchStart(Pattern p, String s) {
-        Matcher m = p.matcher(s);
-        return m.find() ? m.start() : -1;
     }
 
     private static String[] currencyAnchors(Market market) {

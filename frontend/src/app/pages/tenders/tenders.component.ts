@@ -591,6 +591,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
               <span class="chevron">{{ pr._expanded ? '▲' : '▼' }}</span>
             </div>
           </header>
+          <div *ngIf="pr.status === 'DECLINED' && pr.note" class="pr-decline-reason">
+            <strong>Причина отказа:</strong> {{ declineReason(pr.note) }}
+          </div>
           <div *ngIf="pr._expanded" class="pr-body">
             <div class="pr-markup-calc">
               <span class="pmc-label">Калькулятор наценки:</span>
@@ -635,7 +638,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
               <button *ngIf="pr.status === 'ACCEPTED' || pr.status === 'RESPONDED'" class="btn btn-create-apply cta-pulse" (click)="createApplyFromPr(pr)">
                 <svg lucideIcon="clipboard-list" [size]="14"></svg> Сформировать заявку
               </button>
-              <button *ngIf="pr.status === 'RESPONDED' || pr.status === 'ACCEPTED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
+              <button *ngIf="pr.status === 'RESPONDED' || pr.status === 'ACCEPTED' || pr.status === 'DECLINED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
               <button class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
             </div>
           </div>
@@ -814,7 +817,9 @@ import { LucideDynamicIcon } from '@lucide/angular';
     .badge-pr-SENT { background: #dbeafe; color: #1a56db; }
     .badge-pr-RESPONDED { background: #fef3c7; color: #92400e; }
     .badge-pr-ACCEPTED { background: #d1fae5; color: #065f46; font-weight: 700; }
+    .badge-pr-DECLINED { background: #fee2e2; color: #991b1b; font-weight: 700; }
     .badge-pr-CLOSED { background: #f3f4f6; color: #6b7280; }
+    .pr-decline-reason { padding: 7px 14px; background: #fef2f2; color: #991b1b; font-size: 12px; border-top: 1px solid #fecaca; }
     .pr-card.pr-accepted { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
     .pr-markup-calc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 12px; border: 1px dashed #d1d5db; }
     .pmc-label { font-size: 13px; font-weight: 600; color: #374151; margin-right: 4px; }
@@ -998,7 +1003,13 @@ export class TendersComponent {
   }
 
   getPrStatusLabel(s: string): string {
-    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Ответ получен', ACCEPTED: 'Принят', CLOSED: 'Закрыт' } as any)[s] || s;
+    return ({ CREATED: 'Создан', SENT: 'Отправлен', RESPONDED: 'Ответ получен', ACCEPTED: 'Принят', DECLINED: 'Отказ', CLOSED: 'Закрыт' } as any)[s] || s;
+  }
+
+  /** Причина отказа для бейджа DECLINED — начало письма поставщика (сам ответ идёт сверху). */
+  declineReason(note: string | null): string {
+    const t = (note || '').trim();
+    return t.length > 220 ? t.slice(0, 220) + '…' : t;
   }
 
   acceptPr(pr: any) {

@@ -128,6 +128,41 @@ class MailReceiveServiceIntegrationTest {
         assertThat(item.getResponseNote()).containsIgnoringCase("распознан");
     }
 
+    @Test
+    void poll_supplierRefusal_marksDeclined_noInventedPrice() throws Exception {
+        MarketContext.set(Market.KZ);
+        Facility fac = facilityRepository.save(Facility.builder().name("ZZDECL Клиника").build());
+        Distributor dist = distributorRepository.save(
+                Distributor.builder().name("ZZDECL Дистр").email("decl@x.kz").build());
+        Tender tender = Tender.builder()
+                .tenderNumber("ZZDECL-T1").facility(fac).status("NEW")
+                .source(Source.PUBLIC_TENDER).build();
+        TenderLot lot = TenderLot.builder().tender(tender).equipName("Аппарат").quantity(1).build();
+        tender.getLots().add(lot);
+        tender = tenderRepository.save(tender);
+        TenderLot savedLot = tender.getLots().get(0);
+
+        PriceRequest pr = PriceRequest.builder()
+                .tender(tender).distributor(dist).status("SENT").build();
+        pr.getItems().add(PriceRequestItem.builder()
+                .priceRequest(pr).tenderLot(savedLot).requestedQuantity(1).build());
+        pr = priceRequestRepository.save(pr);
+        Long prId = pr.getId();
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(message("supplier@x.kz",
+                "Re: " + KpToken.subjectToken(prId) + " Запрос КП",
+                "Добрый день, данную позицию мы не поставляем, к сожалению.", null, null));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        PriceRequest reloaded = priceRequestRepository.findById(prId).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo("DECLINED");
+        assertThat(reloaded.getResponseDate()).isNotNull();
+        assertThat(reloaded.getItems().get(0).getResponsePrice()).isNull();  // цена не выдумана
+    }
+
     private MimeMessage message(String from, String subject, String body, byte[] attach, String name)
             throws Exception {
         MimeMessage msg = new MimeMessage((Session) null);
