@@ -127,7 +127,8 @@ class PriceRequestSendServiceTest {
         assertThat(messages[0].getAllRecipients()[0].toString()).isEqualTo("d1@x.kz");
         assertThat(messages[0].getSubject()).contains("[КП-" + ok.priceRequestId() + "]");
         String body = messages[0].getContent().toString();
-        assertThat(body).contains("West-Med").contains("ZZ SonoMax (Mindray)").contains("Требования (из ТЗ)");
+        assertThat(body).contains("West-Med").contains("ZZ SonoMax (Mindray)").contains("Требования:");
+        assertThat(body).doesNotContain("Лот ");  // анти-лик: доставленное письмо не выдаёт тендер
     }
 
     @Test

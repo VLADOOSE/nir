@@ -1,20 +1,35 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.repository.EmailTemplateRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-@SpringBootTest
+/**
+ * Композиция письма КП против ВСТРОЕННОГО дефолта (шаблон рынка застаблен пустым → фолбэк на
+ * DEFAULT_*). Детерминированно, без БД — не зависит от сохранённого оператором шаблона
+ * (раньше @SpringBootTest читал реальный email_template и падал при кастомизации оператором).
+ */
 class KpEmailComposerTest {
 
-    @Autowired KpEmailComposer composer;
+    KpEmailComposer composer;
+
+    @BeforeEach
+    void setUp() {
+        EmailTemplateRepository repo = mock(EmailTemplateRepository.class);
+        when(repo.findByMarket(any())).thenReturn(Optional.empty());   // нет сохранённого → дефолт
+        composer = new KpEmailComposer(repo, new EmailTemplateRenderer());
+    }
 
     private PriceRequest kzTenderPr(String spec) {
         Tender t = new Tender();
@@ -68,15 +83,18 @@ class KpEmailComposerTest {
         assertThat(msg.body())
                 .contains("Уважаемый(ая) Иванов Пётр!")
                 .contains("ТОО «West-Med»")
-                .contains("Лот 1: SonoMax DC-70 (Mindray), РУ № РК-МТ-5№012345 — 2 шт.")
-                .contains("Лот 3: Аппарат ИВЛ — 1 шт.")
-                .contains("Требования (из ТЗ): Требуемая спека ИВЛ")
-                .contains("Просим ответить до 15.07.2026")
-                .contains("НЦЭЛС РК")
-                .doesNotContain("Росздравнадзор");
+                .contains("— SonoMax DC-70 (Mindray), РУ № РК-МТ-5№012345 — 2 шт.")
+                .contains("— Аппарат ИВЛ — 1 шт.")
+                .contains("Требования: Требуемая спека ИВЛ")
+                .contains("Просим ответить до 15.07.2026");
 
-        // анти-лик: письмо не раскрывает конкретный тендер (нет номера/ссылки/слова «тендер»)
-        assertThat(msg.body()).doesNotContain("goszakup").doesNotContain("тендер");
+        // анти-лик: письмо не выдаёт, что мы ищем под тендер — ни «Лот N:», ни слова «тендер»,
+        // ни номера объявления, ни названия реестра (оператор убрал строку про реестр).
+        assertThat(msg.body())
+                .doesNotContain("Лот ")
+                .doesNotContain("НЦЭЛС РК")
+                .doesNotContain("goszakup")
+                .doesNotContain("тендер");
         assertThat(msg.subject()).doesNotContain("17276387");
     }
 
@@ -96,8 +114,8 @@ class KpEmailComposerTest {
         KpEmailComposer.Composed msg = composer.compose(pr);
         assertThat(msg.body())
                 .contains("ООО «РЕГИОН-МЕД»")
-                .contains("Росздравнадзора")
-                .doesNotContain("НЦЭЛС РК");
+                .doesNotContain("НЦЭЛС РК")
+                .doesNotContain("Росздравнадзора");   // реестр убран из дефолта (оба рынка)
         // анти-лик: без ссылки на площадку закупок и без слова «тендер»
         assertThat(msg.body()).doesNotContain("zakupki.gov.ru").doesNotContain("тендер");
     }

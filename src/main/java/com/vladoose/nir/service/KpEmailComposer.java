@@ -27,7 +27,7 @@ public class KpEmailComposer {
             "{{приветствие}}\n\n" +
             "{{компания}} просит предоставить коммерческое предложение по следующим позициям:\n\n" +
             "{{позиции}}\n" +
-            "{{дедлайн}}Просим указать: цену за единицу, № регистрационного удостоверения ({{реестр}}) " +
+            "{{дедлайн}}Просим указать: цену за единицу, № регистрационного удостоверения " +
             "на предлагаемую модель, сроки поставки, условия оплаты, гарантию.\n\n" +
             "С уважением,\n{{компания}}\n\n" +
             "Ответ на этот запрос просим направить ответным письмом (Reply) — он поступит в наш отдел закупок.";
@@ -90,7 +90,8 @@ public class KpEmailComposer {
         for (PriceRequestItem it : pr.getItems()) {
             TenderLot lot = it.getTenderLot();
             String qty = it.getRequestedQuantity() != null ? it.getRequestedQuantity() + " шт." : "кол-во уточняется";
-            sb.append("— Лот ").append(lot.getLotNumber() != null ? lot.getLotNumber() : "—").append(": ");
+            // анти-лик: без «Лот N:» и номера лота — поставщик не должен видеть, что позиция под тендер
+            sb.append("— ");
             MedEquipment eq = it.getMedEquipment();
             if (eq != null) {
                 sb.append(eq.getName()).append(" (").append(eq.getManufact()).append(")");
@@ -105,7 +106,7 @@ public class KpEmailComposer {
                 }
                 sb.append(" — ").append(qty).append("\n");
                 if (lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) {
-                    sb.append("  Требования (из ТЗ): ").append(trimSpec(lot.getRequiredSpec())).append("\n");
+                    sb.append("  Требования: ").append(trimSpec(lot.getRequiredSpec())).append("\n");
                 }
             }
         }
