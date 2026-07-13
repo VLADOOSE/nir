@@ -1,0 +1,18 @@
+# backend build context = корень репо; тащим только gradle+src, остальное вон (быстрее upload)
+.git
+.github
+build
+.gradle
+frontend
+docs
+scripts
+.superpowers
+.playwright-mcp
+.claude
+*.md
+*.png
+*.docx
+docker
+docker-compose.yml
+.env
+.env.*

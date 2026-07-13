@@ -56,3 +56,11 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+// Детерминированное имя fat-JAR для Docker-образа (COPY build/libs/app.jar). Плейн-JAR не нужен.
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}
+tasks.named('jar') {
+    enabled = false
+}

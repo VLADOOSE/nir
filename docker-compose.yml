@@ -1,0 +1,56 @@
+# АИС Регион-Мед / West-Med — прод-стек, изолирован от westmed.kz и vital-spb.kz.
+# Образы тянутся из GHCR (собирает GitHub Actions). Наружу торчит ТОЛЬКО фронт на 127.0.0.1:8090,
+# который отдаётся в tailnet через `tailscale serve` — публичных портов ноль.
+name: ais
+
+services:
+  ais-postgres:
+    image: ghcr.io/vladoose/nir-postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nirdb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--locale=en_US.UTF-8"
+    volumes:
+      - ais-pgdata:/var/lib/postgresql/data
+    networks: [ais-net]
+    # НЕ публикуем 5432 на хост — БД доступна только внутри ais-net (как westmed-postgres)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d nirdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  ais-backend:
+    image: ghcr.io/vladoose/nir-backend:latest
+    restart: unless-stopped
+    depends_on:
+      ais-postgres:
+        condition: service_healthy
+    env_file: .env                       # почта/токены goszakup/SK и т.д.
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://ais-postgres:5432/nirdb
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JAVA_OPTS: "-Xmx1g"                # 3.8 ГБ сервер с двумя сайтами → не 2g
+    mem_limit: 1300m                     # потолок: всплеск разбора ТЗ не отберёт RAM у сайтов
+    networks: [ais-net]
+    # НЕ публикуем 8080 на хост — бэкенд доступен только фронту по ais-net
+
+  ais-frontend:
+    image: ghcr.io/vladoose/nir-frontend:latest
+    restart: unless-stopped
+    depends_on: [ais-backend]
+    ports:
+      - "127.0.0.1:8090:80"             # ТОЛЬКО localhost! далее — tailscale serve
+    networks: [ais-net]
+
+networks:
+  ais-net:
+    name: ais-net
+
+volumes:
+  ais-pgdata:
+    name: ais-pgdata

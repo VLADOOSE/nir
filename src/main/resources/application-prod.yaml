@@ -1,0 +1,10 @@
+# Прод-профиль (SPRING_PROFILES_ACTIVE=prod). Секреты — из env (docker-compose/.env).
+# Датасорс, почта, токены наследуются из application.yaml, но переопределяются env-переменными.
+spring:
+  jpa:
+    show-sql: false          # прод: НЕ логируем каждый SQL (в dev было true — засоряет лог)
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+    org.springframework.web: warn
