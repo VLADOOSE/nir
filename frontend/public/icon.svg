@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <!-- full-bleed фон: iOS сам скруглит углы, Android maskable — обрежет -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- белый медицинский крест, в safe-zone (центр 80%) -->
+  <g fill="#ffffff">
+    <rect x="214" y="132" width="84" height="248" rx="26"/>
+    <rect x="132" y="214" width="248" height="84" rx="26"/>
+  </g>
+</svg>
