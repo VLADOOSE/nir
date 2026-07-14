@@ -65,7 +65,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     <div class="dashboard-row">
       <div class="dashboard-panel">
         <h3>Ближайшие дедлайны</h3>
-        <div *ngIf="upcomingDeadlines.length === 0" class="empty">Нет активных тендеров</div>
+        <div *ngIf="upcomingDeadlines.length === 0" class="empty">Нет активных тендеров · <a class="empty-cta" routerLink="/tenders">к тендерам →</a></div>
         <div class="deadline-item" *ngFor="let t of upcomingDeadlines">
           <div class="deadline-info">
             <a class="tender-link" routerLink="/tenders" [queryParams]="{ openId: t.id }">№ {{ t.tenderNumber }}</a>
@@ -94,7 +94,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     <div class="dashboard-row single">
       <div class="dashboard-panel">
         <h3>Последние заявки</h3>
-        <div *ngIf="recentApplies.length === 0" class="empty">Нет заявок</div>
+        <div *ngIf="recentApplies.length === 0" class="empty">Нет заявок · <a class="empty-cta" routerLink="/applies">создать заявку →</a></div>
         <table class="responsive-cards" *ngIf="recentApplies.length > 0">
           <thead>
             <tr><th>ID</th><th>Тендер</th><th>Статус</th><th>Дата</th></tr>
@@ -115,7 +115,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     h2 { margin: 0; font-size: 20px; color: #111827; }
     .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 20px; }
     .empty { color: #9ca3af; font-size: 13px; padding: 16px 0; text-align: center; }
-
+    .empty-cta { color: #1a56db; text-decoration: none; font-weight: 500; }
     .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
     .alerts-row { margin-bottom: 16px; }
     .alert-banner { display: flex; align-items: center; gap: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; color: #92400e; flex-wrap: wrap; }
@@ -172,6 +172,12 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .badge-SUBMITTED { background: #dbeafe; color: #1a56db; }
     .badge-WON { background: #d1fae5; color: #065f46; }
     .badge-REJECTED { background: #fee2e2; color: #991b1b; }
+
+    /* мобилка: @media В КОНЦЕ стилей — иначе при равной специфичности базовые правила ниже перебивают */
+    @media (max-width: 900px) {
+      .stat-cards { grid-template-columns: 1fr 1fr; }   /* 2×2 вместо ленты в 4 */
+      .dashboard-row { grid-template-columns: 1fr; }     /* панели в столбик */
+    }
   `]
 })
 export class DashboardComponent {

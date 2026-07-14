@@ -19,10 +19,11 @@ import { MarketService, Market, APP_NAME } from '../services/market.service';
     <div class="layout">
       <header class="header">
         <div class="header-left">
+          <!-- инлайн-SVG (не lucide): динамическая иконка «menu» приходила ПУСТЫМ svg → кнопка была невидима -->
           <button class="hamburger" (click)="sidebarOpen = !sidebarOpen" aria-label="Меню">
-            <svg lucideIcon="menu" [size]="22"></svg>
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-          <span class="logo"><svg lucideIcon="plus" [size]="20" [strokeWidth]="3"></svg></span>
+          <span class="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
           <span class="header-title">{{ appName }}</span>
           <select class="market-select" [value]="market.value" (change)="onMarketChange($event)">
             <option value="RF">Регион-Мед (РФ) ₽</option>
@@ -49,13 +50,27 @@ import { MarketService, Market, APP_NAME } from '../services/market.service';
             {{ user.role === 'ROLE_ADMIN' ? 'Админ' : 'Оператор' }}
           </span>
           <button class="btn-logout" (click)="onLogout()" title="Выйти">
-            <svg lucideIcon="log-out" [size]="14"></svg> Выйти
+            <svg lucideIcon="log-out" [size]="14"></svg><span class="logout-label"> Выйти</span>
           </button>
         </div>
       </header>
       <div class="body">
         <div class="backdrop" *ngIf="sidebarOpen" (click)="sidebarOpen = false"></div>
         <nav class="sidebar" [class.open]="sidebarOpen" (click)="onNavClick($event)">
+          <!-- поиск на мобиле живёт в drawer (в узкой шапке ему нет места) -->
+          <div class="drawer-search">
+            <input type="text" placeholder="Поиск: тендеры, оборудование…"
+                   [(ngModel)]="searchQuery" (input)="onSearch()" />
+            <div class="drawer-results" *ngIf="showResults && searchResults.length > 0">
+              <div class="search-result" *ngFor="let r of searchResults" (click)="onSelectResult(r)">
+                <span class="result-type" [class]="'type-' + r.type">{{ r.typeLabel }}</span>
+                <div class="result-content">
+                  <div class="result-title">{{ r.title }}</div>
+                  <div class="result-subtitle">{{ r.subtitle }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="nav-group">
             <a routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
               <svg lucideIcon="layout-dashboard" [size]="16"></svg> Главная
@@ -188,16 +203,23 @@ import { MarketService, Market, APP_NAME } from '../services/market.service';
     /* гамбургер и затемнение — только на мобиле */
     .hamburger { display: none; background: transparent; border: none; color: #fff; cursor: pointer; padding: 6px 4px; align-items: center; }
     .backdrop { display: none; }
+    .drawer-search { display: none; }
 
     @media (max-width: 900px) {
       .header { padding: 0 10px; }
       .header-left { gap: 8px; }
       .hamburger { display: flex; }
       .header-title { display: none; }        /* бренд представлен логотипом-крестом */
-      .header-search { display: none; }        /* поиск — десктопная фича (пока) */
+      .header-search { display: none; }        /* поиск переезжает в drawer */
       .header-right { gap: 8px; }
-      .user-name, .role-badge { display: none; }
+      .user-name, .role-badge, .logout-label { display: none; }
+      .btn-logout { padding: 8px 10px; }
       .market-select { margin-left: 0; }
+
+      .drawer-search { display: block; padding: 4px 12px 10px; border-bottom: 1px solid #e5e7eb; margin-bottom: 6px; }
+      .drawer-search input { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; outline: none; background: #fff; }
+      .drawer-search input:focus { border-color: #1a56db; }
+      .drawer-results { margin-top: 6px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; max-height: 45vh; overflow-y: auto; }
 
       .sidebar {
         position: fixed; top: 52px; left: 0; bottom: 0; width: 264px; z-index: 200;
@@ -238,6 +260,7 @@ export class LayoutComponent {
   onSelectResult(r: SearchResult) {
     this.showResults = false;
     this.searchQuery = '';
+    this.sidebarOpen = false;   // выбор из drawer-поиска закрывает drawer
     if (r.type === 'tender') {
       this.router.navigate([r.route], { queryParams: { openId: r.id } });
     } else {
@@ -259,7 +282,7 @@ export class LayoutComponent {
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: Event) {
     const target = event.target as HTMLElement;
-    if (!target.closest('.header-search')) {
+    if (!target.closest('.header-search') && !target.closest('.drawer-search')) {
       this.showResults = false;
     }
   }

@@ -25,8 +25,8 @@ import { ConfirmService } from '../../services/confirm.service';
       <label>ФИО<input formControlName="fullName" [class.input-error]="validationErrors.fullName" /><span class="field-error" *ngIf="validationErrors.fullName">{{ validationErrors.fullName }}</span></label>
       <label>Роль
         <select formControlName="role" [class.input-error]="validationErrors.role">
-          <option value="ROLE_ADMIN">ROLE_ADMIN</option>
-          <option value="ROLE_USER">ROLE_USER</option>
+          <option value="ROLE_ADMIN">Администратор</option>
+          <option value="ROLE_USER">Оператор</option>
         </select>
         <span class="field-error" *ngIf="validationErrors.role">{{ validationErrors.role }}</span>
       </label>
@@ -46,7 +46,7 @@ import { ConfirmService } from '../../services/confirm.service';
       <thead><tr><th>Логин</th><th>ФИО</th><th>Роль</th><th>Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let u of users">
-          <td data-label="Логин">{{ u.username }}</td><td data-label="ФИО">{{ u.fullName }}</td><td data-label="Роль">{{ u.role }}</td>
+          <td data-label="Логин">{{ u.username }}</td><td data-label="ФИО">{{ u.fullName }}</td><td data-label="Роль">{{ u.role === 'ROLE_ADMIN' ? 'Администратор' : 'Оператор' }}</td>
           <td class="actions">
             <button class="btn btn-edit" (click)="onEdit(u)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
             <button class="btn btn-delete" (click)="onDelete(u.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>

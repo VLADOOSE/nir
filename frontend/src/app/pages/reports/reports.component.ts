@@ -185,6 +185,7 @@ import { ChartComponent } from '../../components/chart/chart.component';
     .btn-excel { background: #059669; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-excel:hover { background: #047857; }
     .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
     .chart-cell h4 { font-size: 13px; color: #6b7280; margin: 0 0 8px; text-align: center; }
     .chart-cell { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
