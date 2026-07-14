@@ -3,7 +3,12 @@
 > Durable-статус проекта для возобновления после чистки контекста. Обновлять в конце крупных сессий.
 > Детали архитектуры/механик — в `CLAUDE.md` (project brain). Здесь — «где мы и что дальше».
 
-**Последнее обновление:** 2026-07-13 (конец сессии). Ветка `main`, HEAD `90f8a77`. Всё ниже — **уже в main**.
+**Последнее обновление:** 2026-07-15. Ветка `main`, HEAD `e9e319e`. Всё ниже — **уже в main**.
+
+**Сессия 2026-07-14/15 (деплой в прод + мобилка + ребренд):**
+- **АИС развёрнут в ПРОД на oblako.kz** (Ubuntu 22.04, 3.8 ГБ, рядом с westmed.kz/vital-spb.kz в Docker). Деплой: `git push main` → GitHub Actions собирает 3 образа → GHCR → SSH `docker compose pull/up`. Доступ ТОЛЬКО по Tailscale (`https://srvwfp65vhkse.tailafa774.ts.net`, `tailscale serve 127.0.0.1:8090`), публичных портов 0. Postgres — кастомный образ с локалью en_US.UTF-8 (pg_trgm кириллица). Секрет `DEPLOY_SSH_KEY` = **base64** ключа (иначе «error in libcrypto»). Первый прогон: Flyway V1–V12 + реестр 14072 + Started 17с. Детали — `DEPLOY.md`, память [[ais-prod-deploy-oblako]]. 🔴 TODO хардинг: сменить admin/admin, ротация паролей mail.ru/goszakup, бэкап-cron.
+- **PWA на телефон** — манифест + иконка-медкрест + apple-мета (`frontend/public/`, `index.html`); «на экран Домой» → standalone. Без service worker.
+- **Мобильный адаптив + ребренд «АИС Медзакупки»** (spec `docs/superpowers/specs/2026-07-15-…`, 20 файлов фронта): брейкпоинт 900px, гамбургер-drawer сайдбар, таблицы-списки→карточки (`responsive-cards`+`data-label` в глоб. `styles.scss`), плотные таблицы→`table-scroll`, тач-таргеты 40px; нейтральное имя (рынок — в селекторе), логин без тест-кредов, «О системе» рыночно-зависима + актуализирована (JasperReports, 2026). Проверено Playwright@390 (логин/дашборд/drawer/карточки/тендер) + десктоп без регресса. Детали — CLAUDE.md §12.
 
 **Сессия 2026-07-13 (мелкие фиксы, инлайн-ветки, `--ff-only`; systematic-debugging → фикс, живая Playwright/API-проверка + `./gradlew test`):**
 - **SK-регион с general-вкладки** (`9db99b6`) — импорт СК-Фармации тянул только список+лоты, а регион/БИН/контакт живут на `?tab=general` → `SkPharmacyHtmlParser.parseGeneral` заполняет `region`(организатора=Астана)/`regionKato`/`customerBin`/`contactEmail`; строка «Регион» в детал-карточке. Живо: 521264/521304/521464 → г.Астана + свои КАТО/БИН/e-mail. (CLAUDE.md §8, блок B.)

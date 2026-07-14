@@ -41,14 +41,14 @@ import { AuthService } from '../../services/auth.service';
 
     <div *ngIf="filteredFacilities.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table *ngIf="filteredFacilities.length > 0">
+    <table class="responsive-cards" *ngIf="filteredFacilities.length > 0">
       <thead>
         <tr><th>Название</th><th>ИНН</th><th>Адрес</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let f of filteredFacilities">
-          <td>{{ f.name }}</td><td>{{ f.inn }}</td><td>{{ f.address }}</td>
-          <td>{{ f.lastName }} {{ f.firstName }}</td><td>{{ f.phone }}</td><td>{{ f.email }}</td>
+          <td data-label="Название">{{ f.name }}</td><td data-label="ИНН">{{ f.inn }}</td><td data-label="Адрес">{{ f.address }}</td>
+          <td data-label="Контактное лицо">{{ f.lastName }} {{ f.firstName }}</td><td data-label="Телефон">{{ f.phone }}</td><td data-label="Эл. почта">{{ f.email }}</td>
           <td class="actions" *ngIf="auth.isAdmin()">
             <button class="btn btn-edit" (click)="onEdit(f)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
             <button class="btn btn-delete" (click)="onDelete(f.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>

@@ -163,6 +163,10 @@
 
 ## 12. Frontend (Angular 21)
 
+**Бренд (2026-07-15):** продукт — нейтральное **«АИС Медзакупки»** (`APP_NAME`/`APP_TAGLINE` в `market.service.ts`; логин, `<title>`, шапка, логотип-медкрест). Конкретный рынок/компания — только в селекторе шапки (`companyLabel` = «Регион-Мед»/«West-Med», без префикса «АИС»). «О системе» — рыночно-зависима.
+
+**Мобильный адаптив (2026-07-15, брейкпоинт 900px, десктоп не меняется):** всё кросс-сквозное — в глобальном `src/styles.scss` (не scoped → достаёт DOM inline-компонентов по opt-in классам). (1) Сайдбар ≤900px → выезжающий drawer (`sidebarOpen` + `.hamburger` в `layout.component`, backdrop, закрытие по клику пункта/фона); шапка компактная (поиск/имя-продукта/юзер-имя скрыты). (2) **Таблицы-списки → карточки:** на `<table class="responsive-cards">` + `data-label="<Колонка>"` на каждой `<td>` (колонка действий — без `data-label`); ≤900px строка = карточка «подпись: значение». (3) **Плотные/матричные таблицы** (лоты, «Запросы КП», сравнение, ввод цен, smart-match, модалки) — в `<div class="table-scroll">` (горизонтальный скролл, НЕ карточки). (4) Тач-таргеты `min-height:40px` + инпуты `16px` ≤900px. Верхнеуровневый список тендеров — уже `div.tender-card` (не таблица), адаптивен сам. `anyComponentStyle` бюджет в `angular.json` — 18 kB.
+
 Standalone-компоненты, инлайн-шаблоны + `styles: []`. `ApiService` (база `/api`): generic `getAll/getById/create/update/delete` + доменные методы (напр. `getPrivateRequest`, `getPrivateRequestSourcing`). `marketInterceptor` вешает `X-Market`. `NotificationService.success(string)/error(string)`. Компоненты руками зовут `cdr.detectChanges()` после async. Роуты — дети `LayoutComponent` под `authGuard`; сайдбар инлайн в `layout.component.ts` (группы Тендеры/Каталог/Заявки/Система). Карточки заявок — инлайн-компоненты, открываются по `?openId=`/`@Input requestId`.
 
 Грид импорта D1 (per-column `<select>` NAME/MANUFACT/QUANTITY/IGNORE) переиспользуется в `private-requests` (импорт файла) и `inbound` (импорт письма).

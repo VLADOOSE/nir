@@ -7,7 +7,7 @@ import { SearchService, SearchResult } from '../services/search.service';
 import { AuthService } from '../services/auth.service';
 import { NotificationComponent } from '../components/notification/notification.component';
 import { ConfirmComponent } from '../components/confirm/confirm.component';
-import { MarketService, Market } from '../services/market.service';
+import { MarketService, Market, APP_NAME } from '../services/market.service';
 
 @Component({
   selector: 'app-layout',
@@ -19,8 +19,11 @@ import { MarketService, Market } from '../services/market.service';
     <div class="layout">
       <header class="header">
         <div class="header-left">
-          <span class="logo">{{ market.logo() }}</span>
-          <span class="header-title">{{ market.companyLabel() }}</span>
+          <button class="hamburger" (click)="sidebarOpen = !sidebarOpen" aria-label="Меню">
+            <svg lucideIcon="menu" [size]="22"></svg>
+          </button>
+          <span class="logo"><svg lucideIcon="plus" [size]="20" [strokeWidth]="3"></svg></span>
+          <span class="header-title">{{ appName }}</span>
           <select class="market-select" [value]="market.value" (change)="onMarketChange($event)">
             <option value="RF">Регион-Мед (РФ) ₽</option>
             <option value="KZ">West-Med (KZ) ₸</option>
@@ -51,7 +54,8 @@ import { MarketService, Market } from '../services/market.service';
         </div>
       </header>
       <div class="body">
-        <nav class="sidebar">
+        <div class="backdrop" *ngIf="sidebarOpen" (click)="sidebarOpen = false"></div>
+        <nav class="sidebar" [class.open]="sidebarOpen" (click)="onNavClick($event)">
           <div class="nav-group">
             <a routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
               <svg lucideIcon="layout-dashboard" [size]="16"></svg> Главная
@@ -180,12 +184,46 @@ import { MarketService, Market } from '../services/market.service';
     .icon-user { opacity: 0.9; }
     .btn-logout svg { vertical-align: middle; margin-right: 4px; }
     .content { flex: 1; padding: 24px 32px; overflow-y: auto; background: #fff; }
+
+    /* гамбургер и затемнение — только на мобиле */
+    .hamburger { display: none; background: transparent; border: none; color: #fff; cursor: pointer; padding: 6px 4px; align-items: center; }
+    .backdrop { display: none; }
+
+    @media (max-width: 900px) {
+      .header { padding: 0 10px; }
+      .header-left { gap: 8px; }
+      .hamburger { display: flex; }
+      .header-title { display: none; }        /* бренд представлен логотипом-крестом */
+      .header-search { display: none; }        /* поиск — десктопная фича (пока) */
+      .header-right { gap: 8px; }
+      .user-name, .role-badge { display: none; }
+      .market-select { margin-left: 0; }
+
+      .sidebar {
+        position: fixed; top: 52px; left: 0; bottom: 0; width: 264px; z-index: 200;
+        transform: translateX(-100%); transition: transform 0.22s ease;
+        box-shadow: 2px 0 16px rgba(0,0,0,0.18);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .backdrop {
+        display: block; position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.4); z-index: 150;
+      }
+      .content { padding: 12px 16px; }
+    }
   `]
 })
 export class LayoutComponent {
+  readonly appName = APP_NAME;
+  sidebarOpen = false;            // мобильный drawer; на десктопе игнорируется
   searchQuery = '';
   searchResults: SearchResult[] = [];
   showResults = false;
+
+  /** закрыть drawer при клике по пункту меню */
+  onNavClick(e: Event) {
+    if ((e.target as HTMLElement).closest('a')) this.sidebarOpen = false;
+  }
 
   constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService) {}
 

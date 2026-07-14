@@ -18,23 +18,23 @@ import { NotificationService } from '../../services/notification.service';
       <button class="btn-primary" [disabled]="polling" (click)="poll()">⟳ Проверить почту</button>
     </div>
 
-    <table class="grid" *ngIf="rows.length">
+    <table class="grid responsive-cards" *ngIf="rows.length">
       <thead>
         <tr><th>Отправитель</th><th>Тема</th><th>Получено</th><th>Тип</th><th>Статус</th><th></th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let r of rows">
-          <td>{{ r.fromAddress }}</td>
-          <td>{{ r.subject }}</td>
-          <td class="when">{{ formatReceived(r.receivedAt) }}</td>
-          <td>
+          <td data-label="Отправитель">{{ r.fromAddress }}</td>
+          <td data-label="Тема">{{ r.subject }}</td>
+          <td class="when" data-label="Получено">{{ formatReceived(r.receivedAt) }}</td>
+          <td data-label="Тип">
             <span class="badge" [class.b-sup]="r.type==='SUPPLIER_RESPONSE'"
                   [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'">
               {{ typeLabel(r.type) }}
             </span>
             <span *ngIf="r.type==='SUPPLIER_RESPONSE' && r.matchedPriceRequestId" class="muted"> · КП #{{ r.matchedPriceRequestId }}</span>
           </td>
-          <td>{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
+          <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
           <td>
             <button *ngIf="r.type==='CLIENT_REQUEST' && r.hasAttachment && r.status!=='PROCESSED'"
                     class="btn-line-solid" (click)="openImport(r)">Импортировать</button>

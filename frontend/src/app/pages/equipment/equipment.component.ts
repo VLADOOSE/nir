@@ -60,14 +60,14 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
 
     <div *ngIf="filteredEquipment.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table *ngIf="filteredEquipment.length > 0">
+    <table class="responsive-cards" *ngIf="filteredEquipment.length > 0">
       <thead>
         <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let e of filteredEquipment" class="row-clickable" (click)="detailEquipment = e">
-          <td>{{ e.name }}</td><td>{{ e.manufact }}</td><td>{{ e.equipmentType?.name }}</td>
-          <td>{{ e.lengthMm }}×{{ e.widthMm }}×{{ e.heightMm }}</td><td>{{ e.weightKg }}</td>
+          <td data-label="Название">{{ e.name }}</td><td data-label="Производитель">{{ e.manufact }}</td><td data-label="Тип">{{ e.equipmentType?.name }}</td>
+          <td data-label="Д×Ш×В (мм)">{{ e.lengthMm }}×{{ e.widthMm }}×{{ e.heightMm }}</td><td data-label="Вес (кг)">{{ e.weightKg }}</td>
           <td class="actions" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
             <button class="btn btn-edit" (click)="onEdit(e)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
             <button class="btn btn-delete" (click)="onDelete(e.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>

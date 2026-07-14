@@ -42,11 +42,11 @@ import { ConfirmService } from '../../services/confirm.service';
 
     <div *ngIf="users.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table *ngIf="users.length > 0">
+    <table class="responsive-cards" *ngIf="users.length > 0">
       <thead><tr><th>Логин</th><th>ФИО</th><th>Роль</th><th>Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let u of users">
-          <td>{{ u.username }}</td><td>{{ u.fullName }}</td><td>{{ u.role }}</td>
+          <td data-label="Логин">{{ u.username }}</td><td data-label="ФИО">{{ u.fullName }}</td><td data-label="Роль">{{ u.role }}</td>
           <td class="actions">
             <button class="btn btn-edit" (click)="onEdit(u)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
             <button class="btn btn-delete" (click)="onDelete(u.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>

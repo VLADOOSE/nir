@@ -24,7 +24,8 @@ import { MarketService } from '../../services/market.service';
             <span class="oc-hint">Зелёным — минимальная цена по лоту. «с наценкой» = цена × (1 + наценка/100).</span>
           </div>
           <div class="oc-empty" *ngIf="!data || !data.lots?.length">Нет ответов с ценами для сравнения.</div>
-          <table class="oc-table" *ngIf="data && data.lots?.length">
+          <div class="table-scroll" *ngIf="data && data.lots?.length">
+          <table class="oc-table">
             <thead>
               <tr>
                 <th>Лот</th>
@@ -57,6 +58,7 @@ import { MarketService } from '../../services/market.service';
               </tr>
             </tbody>
           </table>
+          </div>
           <div class="oc-apply-link" *ngIf="assignedApplyId">
             Победители сохранены в заявку.
             <a [routerLink]="['/applies']" [queryParams]="{ openId: assignedApplyId }">Открыть заявку →</a>

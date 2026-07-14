@@ -72,7 +72,8 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <!-- Потенциальные поставщики -->
           <section class="section">
             <h3 class="section-title">Потенциальные поставщики</h3>
-            <table *ngIf="stats?.potentialDistributors?.length; else noDistributors">
+            <div class="table-scroll" *ngIf="stats?.potentialDistributors?.length; else noDistributors">
+            <table>
               <thead>
                 <tr><th>Дистрибьютор</th><th>Email</th><th>Телефон</th></tr>
               </thead>
@@ -84,6 +85,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 </tr>
               </tbody>
             </table>
+            </div>
             <ng-template #noDistributors>
               <div class="empty">Нет дистрибьюторов с подходящей специализацией</div>
             </ng-template>
@@ -114,6 +116,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <!-- Рейтинг -->
           <section class="section" *ngIf="stats?.ranking?.length">
             <h3 class="section-title">Рейтинг дистрибьюторов</h3>
+            <div class="table-scroll">
             <table>
               <thead>
                 <tr><th class="w-30">#</th><th>Дистрибьютор</th><th class="w-90">Ответов</th><th class="w-140">Средняя цена</th></tr>
@@ -130,12 +133,14 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 </tr>
               </tbody>
             </table>
+            </div>
           </section>
 
           <!-- История запросов -->
           <section class="section">
             <h3 class="section-title">История запросов</h3>
-            <table *ngIf="stats?.history?.length; else noHistory">
+            <div class="table-scroll" *ngIf="stats?.history?.length; else noHistory">
+            <table>
               <thead>
                 <tr>
                   <th class="w-100">Дата</th>
@@ -159,6 +164,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 </tr>
               </tbody>
             </table>
+            </div>
             <ng-template #noHistory>
               <div class="empty">Запросов по этому оборудованию ещё не было</div>
             </ng-template>

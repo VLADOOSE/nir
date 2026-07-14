@@ -95,16 +95,16 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       <div class="dashboard-panel">
         <h3>Последние заявки</h3>
         <div *ngIf="recentApplies.length === 0" class="empty">Нет заявок</div>
-        <table *ngIf="recentApplies.length > 0">
+        <table class="responsive-cards" *ngIf="recentApplies.length > 0">
           <thead>
             <tr><th>ID</th><th>Тендер</th><th>Статус</th><th>Дата</th></tr>
           </thead>
           <tbody>
             <tr *ngFor="let a of recentApplies">
-              <td>#{{ a.id }}</td>
-              <td>{{ a.tender?.tenderNumber || '—' }}</td>
-              <td><span class="badge" [class]="'badge-' + a.status">{{ getApplyStatusLabel(a.status) }}</span></td>
-              <td>{{ formatDateTime(a.createdAt) }}</td>
+              <td data-label="ID">#{{ a.id }}</td>
+              <td data-label="Тендер">{{ a.tender?.tenderNumber || '—' }}</td>
+              <td data-label="Статус"><span class="badge" [class]="'badge-' + a.status">{{ getApplyStatusLabel(a.status) }}</span></td>
+              <td data-label="Дата">{{ formatDateTime(a.createdAt) }}</td>
             </tr>
           </tbody>
         </table>

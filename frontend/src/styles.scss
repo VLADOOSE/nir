@@ -9,3 +9,46 @@ body {
   color: #111827;
   background: #fff;
 }
+
+/* ============================================================
+   Адаптив под мобилку (брейкпоинт 900px). Десктоп-вид НЕ меняется —
+   все правила ниже либо безопасны везде, либо под @media (max-width:900px).
+   Стили глобальные (не scoped) → достают DOM inline-компонентов по opt-in классам.
+   ============================================================ */
+
+/* Обёртка для плотных/матричных таблиц (лоты, сравнение КП, ввод цен) —
+   горизонтальный скролл вместо обрезки. Безопасно на любом экране. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 900px) {
+  /* Таблицы-списки → карточки-стопки. На <table class="responsive-cards">,
+     каждой <td> проставить data-label="<Колонка>" (подпись слева, значение справа). */
+  table.responsive-cards { display: block; }
+  table.responsive-cards thead { display: none; }
+  table.responsive-cards tbody { display: block; }
+  table.responsive-cards tr {
+    display: block; background: #fff;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    margin-bottom: 10px; padding: 4px 12px;
+  }
+  table.responsive-cards td {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px 12px;
+    padding: 7px 0; border: none !important; text-align: right;
+    flex-wrap: wrap;   /* широкое значение (чипы, длинный текст) переносится, а не обрезается */
+  }
+  table.responsive-cards td > * { min-width: 0; }
+  /* контейнеры чипов/флексов внутри ячейки — разрешаем перенос */
+  table.responsive-cards td > div { flex-wrap: wrap; justify-content: flex-end; }
+  table.responsive-cards td::before {
+    content: attr(data-label); font-weight: 600; color: #6b7280;
+    font-size: 12px; text-align: left; flex: 0 0 auto;
+  }
+  /* ячейка без подписи (напр. колонка действий) — во всю ширину, без метки */
+  table.responsive-cards td:not([data-label]) { justify-content: flex-end; flex-wrap: wrap; }
+  table.responsive-cards td:not([data-label])::before { content: none; }
+  table.responsive-cards td:empty { display: none; }
+
+  /* Тач-таргеты крупнее + инпуты 16px (iOS не зумит поле при фокусе) */
+  button, .btn, a.btn { min-height: 40px; }
+  input, select, textarea { font-size: 16px; }
+}

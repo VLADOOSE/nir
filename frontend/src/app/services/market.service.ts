@@ -6,9 +6,14 @@ export type Market = 'RF' | 'KZ';
 interface MarketMeta { code: Market; symbol: string; companyLabel: string; logo: string; }
 
 const MARKETS: Record<Market, MarketMeta> = {
-  RF: { code: 'RF', symbol: '₽', companyLabel: 'АИС Регион-Мед', logo: 'РМ' },
-  KZ: { code: 'KZ', symbol: '₸', companyLabel: 'АИС West-Med',  logo: 'WM' },
+  RF: { code: 'RF', symbol: '₽', companyLabel: 'Регион-Мед', logo: 'РМ' },
+  KZ: { code: 'KZ', symbol: '₸', companyLabel: 'West-Med',  logo: 'WM' },
 };
+
+// Нейтральное имя продукта (логин, вкладка браузера, шапка) — не привязано к рынку/компании.
+// Конкретная компания живёт в селекторе рынка + companyLabel (для «О системе»).
+export const APP_NAME = 'АИС Медзакупки';
+export const APP_TAGLINE = 'Тендеры и заявки на медоборудование';
 
 @Injectable({ providedIn: 'root' })
 export class MarketService {

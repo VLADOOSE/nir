@@ -66,13 +66,13 @@ import { AuthService } from '../../services/auth.service';
 
     <div *ngIf="filteredDistributors.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table *ngIf="filteredDistributors.length > 0">
+    <table class="responsive-cards" *ngIf="filteredDistributors.length > 0">
       <thead><tr><th>Название</th><th>ИНН</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Специализация</th><th *ngIf="auth.isAdmin()">Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let d of filteredDistributors">
-          <td>{{ d.name }}</td><td>{{ d.inn }}</td>
-          <td>{{ d.lastName }} {{ d.firstName }}</td><td>{{ d.phone }}</td><td>{{ d.email }}</td>
-          <td>
+          <td data-label="Название">{{ d.name }}</td><td data-label="ИНН">{{ d.inn }}</td>
+          <td data-label="Контактное лицо">{{ d.lastName }} {{ d.firstName }}</td><td data-label="Телефон">{{ d.phone }}</td><td data-label="Эл. почта">{{ d.email }}</td>
+          <td data-label="Специализация">
             <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
             <span *ngFor="let t of d.equipmentTypes" class="tag">{{ t.name }}</span>
           </td>

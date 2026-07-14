@@ -61,7 +61,8 @@ const LS_KEY = 'smartMatch.v1';
         <span *ngIf="recommended.bestDistributor"> · лучший дистрибьютор: {{ recommended.bestDistributor.name }} (ср. маржа {{ recommended.bestDistributor.avgMarginPercent }} %)</span>
       </div>
 
-      <table class="sm-table" *ngIf="result?.candidates?.length">
+      <div class="table-scroll" *ngIf="result?.candidates?.length">
+      <table class="sm-table">
         <thead>
           <tr>
             <th>#</th><th>Наименование</th><th>Score</th><th>Цена</th><th>Маржа</th><th>Опыт</th><th>Габар.</th><th></th>
@@ -103,6 +104,7 @@ const LS_KEY = 'smartMatch.v1';
           </ng-container>
         </tbody>
       </table>
+      </div>
 
       <div *ngIf="result && !result.candidates?.length && !loading && !result.noCriteria" class="sm-empty">Нет кандидатов под габариты лота.</div>
     </div>

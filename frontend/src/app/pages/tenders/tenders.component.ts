@@ -278,7 +278,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
 
       <div *ngIf="lots.length === 0 && !showLotForm" class="empty">Нет лотов</div>
 
-      <table *ngIf="lots.length > 0">
+      <div class="table-scroll" *ngIf="lots.length > 0">
+      <table>
         <thead>
           <tr><th class="w-36"><input type="checkbox" [checked]="allLotsSelected()" (change)="toggleAllLots($any($event.target).checked)" title="Выбрать все лоты" /></th><th>&#8470;</th><th>Название</th><th *ngIf="hasAnyType()">Тип</th><th>Кол-во</th><th>Макс. цена</th><th *ngIf="hasAnyDims()">Габариты (макс.)</th><th *ngIf="hasAnyWeight()">Макс. вес</th><th>Спецификация</th><th>Действия</th></tr>
         </thead>
@@ -341,6 +342,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
           </ng-container>
         </tbody>
       </table>
+      </div>
 
       <div class="registry-panel" *ngIf="registryPanel">
         <div class="registry-panel-head">
@@ -353,7 +355,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
         </div>
         <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
         <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
-        <table *ngIf="!registryPanel.loading && registryPanel.items.length" class="registry-table">
+        <div class="table-scroll" *ngIf="!registryPanel.loading && registryPanel.items.length">
+        <table class="registry-table">
           <thead><tr><th>Соответствие</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
           <tbody>
             <ng-container *ngFor="let c of registryPanel.items">
@@ -402,6 +405,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
             </ng-container>
           </tbody>
         </table>
+        </div>
         <div class="complect-cta">
           <button class="btn btn-registry" (click)="openComplect(registryPanel.lot)"
                   title="Найти лот в комплектности родительского аппарата (для электродов/пластин/принадлежностей)">
@@ -431,7 +435,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
             {{ a.name }} · <b>{{ a.country || '—' }}</b> · {{ a.producer || '—' }} · РУ {{ a.regNumber }}
           </div>
           <div *ngIf="!a._relevant.length && !a._zero.length" class="empty">Комплектность у этого аппарата не заполнена.</div>
-          <table class="registry-table" *ngIf="a._relevant.length || a._zero.length">
+          <div class="table-scroll" *ngIf="a._relevant.length || a._zero.length">
+          <table class="registry-table">
             <thead><tr><th>Совпадение</th><th>Компонент (состав)</th><th>Тип</th><th>Страна</th><th></th></tr></thead>
             <tbody>
               <tr *ngFor="let comp of a._relevant; let i = index" [class.recommended]="i === 0">
@@ -465,6 +470,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
               </ng-container>
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -497,7 +503,8 @@ import { LucideDynamicIcon } from '@lucide/angular';
             Нужна техспецификация или вид МИ, чтобы подобрать по специализации.
           </div>
 
-          <table *ngIf="kpPanel._relevant.length" class="kp-suppliers">
+          <div class="table-scroll" *ngIf="kpPanel._relevant.length">
+          <table class="kp-suppliers">
             <thead><tr><th class="w-36"></th><th>Поставщик</th><th>Email</th><th>Почему</th></tr></thead>
             <tbody>
               <tr *ngFor="let e of kpPanel._relevant; let i = index" [class.kp-hit]="e.preselect" [class.recommended]="i === 0">
@@ -517,12 +524,14 @@ import { LucideDynamicIcon } from '@lucide/angular';
               </tr>
             </tbody>
           </table>
+          </div>
 
           <div class="kp-nonrel" *ngIf="kpPanel._nonrel.length">
             <button class="complect-zero-toggle" (click)="kpPanel._showNonrel = !kpPanel._showNonrel">
               {{ kpPanel._showNonrel ? '▴ скрыть нерелевантных' : '▾ ещё ' + kpPanel._nonrel.length + ' нерелевантных' }}
             </button>
-            <table *ngIf="kpPanel._showNonrel" class="kp-suppliers">
+            <div class="table-scroll" *ngIf="kpPanel._showNonrel">
+            <table class="kp-suppliers">
               <tbody>
                 <tr *ngFor="let e of kpPanel._nonrel">
                   <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
@@ -535,6 +544,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
 
           <div class="kp-panel-actions" *ngIf="kpPanel.entries.length">
@@ -609,6 +619,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 <span>%</span>
               </label>
             </div>
+            <div class="table-scroll">
             <table class="pr-items">
               <thead><tr>
                 <th>Лот</th><th>Модель</th><th>Кол-во</th>
@@ -631,6 +642,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
                 </tr>
               </tbody>
             </table>
+            </div>
             <div class="pr-actions">
               <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
               <button *ngIf="pr.status === 'SENT' || pr.status === 'CREATED'" class="btn btn-line" (click)="resendPr(pr)">↻ Переслать</button>

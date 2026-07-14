@@ -70,23 +70,23 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div *ngIf="filteredApplies.length === 0 && !showApplyForm" class="empty">Нет данных</div>
 
-      <table *ngIf="filteredApplies.length > 0">
+      <table class="responsive-cards" *ngIf="filteredApplies.length > 0">
         <thead><tr><th>ID</th><th>Номер тендера</th><th>Заказчик</th><th>Статус</th><th>Поставка</th><th>Позиций</th><th>Сумма</th><th>Дата создания</th><th>Действия</th></tr></thead>
         <tbody>
           <tr *ngFor="let a of filteredApplies">
-            <td>{{ a.id }}</td>
-            <td>{{ a.tender?.tenderNumber || '—' }}</td>
-            <td>{{ a.tender?.facility?.name || '—' }}</td>
-            <td><span class="badge" [class]="'badge-' + a.status">{{ getStatusLabel(a.status) }}</span></td>
-            <td>
+            <td data-label="ID">{{ a.id }}</td>
+            <td data-label="Номер тендера">{{ a.tender?.tenderNumber || '—' }}</td>
+            <td data-label="Заказчик">{{ a.tender?.facility?.name || '—' }}</td>
+            <td data-label="Статус"><span class="badge" [class]="'badge-' + a.status">{{ getStatusLabel(a.status) }}</span></td>
+            <td data-label="Поставка">
               <span *ngIf="a.status === 'WON' && a.deliveryStatus" class="badge" [class]="'badge-d-' + a.deliveryStatus">
                 {{ deliveryLabel(a.deliveryStatus) }}
               </span>
               <span *ngIf="a.status !== 'WON'" class="muted">—</span>
             </td>
-            <td>{{ a._itemCount || 0 }}</td>
-            <td>{{ a._totalCost | money }}</td>
-            <td>{{ formatDate(a.createdAt) }}</td>
+            <td data-label="Позиций">{{ a._itemCount || 0 }}</td>
+            <td data-label="Сумма">{{ a._totalCost | money }}</td>
+            <td data-label="Дата создания">{{ formatDate(a.createdAt) }}</td>
             <td class="actions">
               <button class="btn btn-open" (click)="onOpen(a)">Открыть</button>
               <button class="btn btn-edit" (click)="onEditApply(a)">Редактировать</button>
@@ -196,7 +196,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div *ngIf="items.length === 0 && !showItemForm" class="empty">Нет позиций</div>
 
-      <table *ngIf="items.length > 0">
+      <table class="responsive-cards" *ngIf="items.length > 0">
         <thead><tr>
           <th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th>
           <th class="num-col">Предл. цена</th>
@@ -208,18 +208,18 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         </tr></thead>
         <tbody>
           <tr *ngFor="let it of items">
-            <td>{{ it.tenderLot?.equipName || '—' }}</td>
-            <td>{{ it.medEquipment?.name || '—' }}</td>
-            <td>{{ it.distributor?.name || '—' }}</td>
-            <td class="num-col">{{ it.offeredCost | money }}</td>
-            <td class="num-col">{{ it.procurementCost != null ? (it.procurementCost | money) : '—' }}</td>
-            <td class="num-col" [class.positive]="it.margin > 0" [class.negative]="it.margin < 0">
+            <td data-label="Лот">{{ it.tenderLot?.equipName || '—' }}</td>
+            <td data-label="Оборудование">{{ it.medEquipment?.name || '—' }}</td>
+            <td data-label="Дистрибьютор">{{ it.distributor?.name || '—' }}</td>
+            <td class="num-col" data-label="Предл. цена">{{ it.offeredCost | money }}</td>
+            <td class="num-col" data-label="Закупка">{{ it.procurementCost != null ? (it.procurementCost | money) : '—' }}</td>
+            <td class="num-col" data-label="Маржа" [class.positive]="it.margin > 0" [class.negative]="it.margin < 0">
               {{ it.margin != null ? (it.margin | money) : '—' }}
             </td>
-            <td class="num-col" [class.positive]="it.marginPercent > 0" [class.negative]="it.marginPercent < 0">
+            <td class="num-col" data-label="%" [class.positive]="it.marginPercent > 0" [class.negative]="it.marginPercent < 0">
               {{ it.marginPercent != null ? it.marginPercent + ' %' : '—' }}
             </td>
-            <td class="num-col">{{ it.quantity }}</td>
+            <td class="num-col" data-label="Кол-во">{{ it.quantity }}</td>
             <td class="actions">
               <button class="btn btn-edit" (click)="onEditItem(it)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteItem(it.id)">Удалить</button>

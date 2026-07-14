@@ -96,18 +96,18 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
       </div>
 
       <div class="loading" *ngIf="loading">Загрузка…</div>
-      <table *ngIf="!loading && rows.length">
+      <table class="responsive-cards" *ngIf="!loading && rows.length">
         <thead><tr><th>Номер</th><th>Клиент</th><th>Позиций</th><th>Реестр</th><th>Статус</th></tr></thead>
         <tbody>
           <tr class="row" *ngFor="let r of rows" (click)="openCard(r)">
-            <td class="num">{{ r.number }}</td>
-            <td>{{ r.client?.name || '—' }}</td>
-            <td>{{ r.lineCount ?? 0 }}</td>
-            <td>
+            <td class="num" data-label="Номер">{{ r.number }}</td>
+            <td data-label="Клиент">{{ r.client?.name || '—' }}</td>
+            <td data-label="Позиций">{{ r.lineCount ?? 0 }}</td>
+            <td data-label="Реестр">
               <span *ngIf="(r.registeredCount ?? -1) >= 0" class="reg-summary" [style.color]="r.registeredCount > 0 ? '#065f46' : '#6b7280'">{{ r.registeredCount }} из {{ r.lineCount ?? 0 }} в реестре</span>
               <span *ngIf="(r.registeredCount ?? -1) < 0" class="reg-summary" style="color:#9ca3af">в карточке</span>
             </td>
-            <td><span class="badge">{{ r.status }}</span></td>
+            <td data-label="Статус"><span class="badge">{{ r.status }}</span></td>
           </tr>
         </tbody>
       </table>

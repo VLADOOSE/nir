@@ -35,7 +35,7 @@ import { NotificationService } from '../../services/notification.service';
 
       <div class="loading" *ngIf="loading">Загрузка…</div>
 
-      <table *ngIf="!loading && rows.length">
+      <table class="responsive-cards" *ngIf="!loading && rows.length">
         <thead>
           <tr><th></th><th>Позиция каталога</th><th>Производитель</th><th>Статус</th><th>Топ-кандидат</th></tr>
         </thead>
@@ -43,14 +43,14 @@ import { NotificationService } from '../../services/notification.service';
           <ng-container *ngFor="let r of rows">
             <tr class="row" [class.focused]="r.equipmentId === focusId" (click)="toggle(r)">
               <td class="chev">{{ expanded[r.equipmentId] ? '▾' : '▸' }}</td>
-              <td class="name">{{ r.equipmentName }}</td>
-              <td>{{ r.manufact }}</td>
-              <td>
+              <td class="name" data-label="Позиция каталога">{{ r.equipmentName }}</td>
+              <td data-label="Производитель">{{ r.manufact }}</td>
+              <td data-label="Статус">
                 <span class="badge" [class]="'b-' + r.status">{{ statusLabel(r.status) }}</span>
                 <span class="vat" *ngIf="r.status === 'REGISTERED'">НДС-льгота</span>
                 <span class="vat vat-no" *ngIf="r.status === 'NOT_REGISTERED' || r.status === 'NOT_MEDICAL'">НДС 12%</span>
               </td>
-              <td class="top">
+              <td class="top" data-label="Топ-кандидат">
                 <span *ngIf="r.candidates?.length">{{ r.candidates[0].producer }} · {{ r.candidates[0].score | number:'1.2-2' }}</span>
                 <span class="muted" *ngIf="!r.candidates?.length">нет кандидатов</span>
               </td>

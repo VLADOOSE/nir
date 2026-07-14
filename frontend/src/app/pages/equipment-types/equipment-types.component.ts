@@ -31,11 +31,11 @@ import { ConfirmService } from '../../services/confirm.service';
 
     <div *ngIf="types.length === 0 && !showForm" class="empty">Нет типов</div>
 
-    <table *ngIf="types.length > 0">
+    <table class="responsive-cards" *ngIf="types.length > 0">
       <thead><tr><th>Название</th><th>Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let t of types">
-          <td>{{ t.name }}</td>
+          <td data-label="Название">{{ t.name }}</td>
           <td class="actions">
             <button class="btn btn-edit" (click)="onEdit(t)">Редактировать</button>
             <button class="btn btn-delete" (click)="onDelete(t.id)">Удалить</button>
