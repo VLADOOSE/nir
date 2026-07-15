@@ -1,9 +1,13 @@
 package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.entity.Facility;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.integration.goszakup.dto.LotDto;
+import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
+import com.vladoose.nir.repository.FacilityRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,7 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,12 +25,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class GoszakupImportServiceTest {
 
+    // Тесты работают в регионе, которого НЕТ в сиде V13 (ЗКО), чтобы сеяные больницы не мешали счётчикам.
+    private static final String REGION = "Карагандинская область";
+
     @Autowired TenderRepository tenderRepository;
+    @Autowired FacilityRepository facilityRepository;
     @Autowired RegionResolver regionResolver;
 
     FakeGoszakupClient fake;
     GoszakupTenderWriter writer;
-    KatoDictionary kato;
     GoszakupImportService service;
 
     @BeforeEach
@@ -33,45 +41,75 @@ class GoszakupImportServiceTest {
         MarketContext.set(Market.KZ);
         fake = new FakeGoszakupClient();
         writer = new GoszakupTenderWriter(tenderRepository, regionResolver);
-        kato = new KatoDictionary(fake);
-        service = new GoszakupImportService(fake, writer, kato, "аппарат,узи", "", 3650, 20);
+        service = svc("", 3650);
     }
 
     @AfterEach
     void tearDown() { MarketContext.clear(); }
 
-    private GoszakupImportService svc(String keywords, String statuses, int sinceDays) {
-        return new GoszakupImportService(fake, writer, kato, keywords, statuses, sinceDays, 20);
+    private GoszakupImportService svc(String statuses, int sinceDays) {
+        return new GoszakupImportService(fake, writer, facilityRepository, statuses, sinceDays, 20);
+    }
+
+    /** Мониторимая KZ-больница в тестовом регионе с заданным БИН. */
+    private Facility hospital(String name, String bin) {
+        Facility f = new Facility();
+        f.setName(name); f.setInn(bin); f.setRegion(REGION);
+        f.setMonitorTenders(true); f.setMarket(Market.KZ);
+        return facilityRepository.save(f);
+    }
+
+    private static LotDto lot(String name, String descr) {
+        LotDto l = new LotDto();
+        l.setLotNumber("1"); l.setNameRu(name); l.setDescriptionRu(descr);
+        l.setAmount(new BigDecimal("6000000")); l.setCount(1);
+        return l;
     }
 
     @Test
-    void filtersByKeyword_andCreatesKzPublicTender() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("100-1", "Аппарат УЗИ экспертного класса", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
-                FakeGoszakupClient.buy("200-1", "Канцелярские товары для офиса", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+    void createsKzPublicTender_fromOrgBinFeed() {
+        hospital("Больница А", "BIN1");
+        fake.orgPage("BIN1", FakeGoszakupClient.buy("100-1", "Приобретение изделий", 230, "BIN1",
+                "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("100-1", List.of(lot("Аппарат УЗИ портативный", null)));
 
-        ImportSummary s = service.importMedicalTenders();
+        ImportSummary s = service.importMedicalTenders(REGION);
 
-        assertThat(s.getFetched()).isEqualTo(2);
-        assertThat(s.getMatched()).isEqualTo(1);
+        assertThat(s.getOrgsTotal()).isEqualTo(1);
+        assertThat(s.getOrgsProcessed()).isEqualTo(1);
+        assertThat(s.getFetched()).isEqualTo(1);
         assertThat(s.getCreated()).isEqualTo(1);
-        assertThat(s.getErrors()).isEqualTo(0);
+        assertThat(s.getMatched()).isEqualTo(1);
+        assertThat(fake.orgBinsQueried).contains("BIN1");
+        Tender t = tenderRepository.findBySourceExtId("100-1").orElseThrow();
+        assertThat(t.getMarket()).isEqualTo(Market.KZ);
+        assertThat(t.getSource()).isEqualTo(Source.PUBLIC_TENDER);
+        assertThat(t.getRegion()).isEqualTo(REGION);            // регион из реестра, не от заказчика
+        assertThat(t.getFacility()).isNull();
+    }
 
-        Optional<Tender> t = tenderRepository.findBySourceExtId("100-1");
-        assertThat(t).isPresent();
-        assertThat(t.get().getMarket()).isEqualTo(Market.KZ);
-        assertThat(t.get().getSource()).isEqualTo(Source.PUBLIC_TENDER);
-        assertThat(t.get().getCurrency()).isEqualTo("KZT");
-        assertThat(t.get().getFacility()).isNull();
-        assertThat(t.get().getDescription()).isEqualTo("Аппарат УЗИ экспертного класса");
-        assertThat(tenderRepository.findBySourceExtId("200-1")).isEmpty();
+    @Test
+    void dropsNonMedicalLots_evenFromMonitoredHospital() {
+        hospital("Больница Б", "BIN2");
+        fake.orgPage("BIN2",
+                FakeGoszakupClient.buy("MED-1", "Государственный закупки медицинских изделий", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("FOOD-1", "Приобретение продуктов питания", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("MED-1", List.of(lot("Облучатель бактерицидный", null)));
+        fake.lotsByAnno.put("FOOD-1", List.of(lot("Помидор", null), lot("Молоко натуральное", null)));
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getCreated()).isEqualTo(1);
+        assertThat(tenderRepository.findBySourceExtId("MED-1")).isPresent();
+        assertThat(tenderRepository.findBySourceExtId("FOOD-1")).isEmpty();
     }
 
     @Test
     void importedTenderNotVisibleOnRf() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("100-1", "Аппарат ИВЛ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        svc("аппарат", "", 3650).importMedicalTenders();
+        hospital("Больница В", "BIN3");
+        fake.orgPage("BIN3", FakeGoszakupClient.buy("100-1", "Закуп", 230, "BIN3", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("100-1", List.of(lot("Аппарат ИВЛ", null)));
+        service.importMedicalTenders(REGION);
 
         MarketContext.set(Market.RF);
         assertThat(tenderRepository.findBySourceExtId("100-1")).isEmpty();
@@ -79,107 +117,65 @@ class GoszakupImportServiceTest {
 
     @Test
     void idempotent_secondRunUpdatesNotDuplicates() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("100-1", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        com.vladoose.nir.integration.goszakup.dto.LotDto lot = new com.vladoose.nir.integration.goszakup.dto.LotDto();
-        lot.setLotNumber("1"); lot.setNameRu("Аппарат УЗИ портативный");
-        lot.setAmount(new java.math.BigDecimal("6000000")); lot.setCount(2);
-        fake.lotsByAnno.put("100-1", java.util.List.of(lot));
+        hospital("Больница Г", "BIN4");
+        fake.orgPage("BIN4", FakeGoszakupClient.buy("100-1", "Закуп", 230, "BIN4", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("100-1", List.of(lot("Аппарат УЗИ портативный", null)));
 
-        GoszakupImportService s1 = svc("аппарат", "", 3650);
-        assertThat(s1.importMedicalTenders().getCreated()).isEqualTo(1);
+        assertThat(service.importMedicalTenders(REGION).getCreated()).isEqualTo(1);
+        fake.orgPages.get("BIN4").getItems().get(0).setTotalSum(new BigDecimal("9999999"));
+        ImportSummary second = svc("", 3650).importMedicalTenders(REGION);
 
-        fake.pages.get(null).getItems().get(0).setTotalSum(new java.math.BigDecimal("9999999"));
-        ImportSummary second = svc("аппарат", "", 3650).importMedicalTenders();
         assertThat(second.getCreated()).isEqualTo(0);
         assertThat(second.getUpdated()).isEqualTo(1);
-
-        var t = tenderRepository.findBySourceExtId("100-1").orElseThrow();
-        assertThat(tenderRepository.findAll().stream()
-                .filter(x -> "100-1".equals(x.getSourceExtId())).count()).isEqualTo(1);
-        assertThat(t.getTotalCost()).isEqualByComparingTo("9999999");
-        assertThat(t.getLots()).hasSize(1);
-        assertThat(t.getLots().get(0).getEquipName()).isEqualTo("Аппарат УЗИ портативный");
-        assertThat(t.getLots().get(0).getQuantity()).isEqualTo(2);
+        assertThat(tenderRepository.findAll().stream().filter(x -> "100-1".equals(x.getSourceExtId())).count()).isEqualTo(1);
+        assertThat(tenderRepository.findBySourceExtId("100-1").orElseThrow().getTotalCost()).isEqualByComparingTo("9999999");
     }
 
     @Test
-    void lenientStatusesParse_skipsNonNumericTokenAndStillFiltersByValidId() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("OK-230", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
-                FakeGoszakupClient.buy("NO-999", "Аппарат УЗИ", 999, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+    void regionFromRegistry_overridesResolvedCustomerRegion() {
+        // республиканский заказчик (юрадрес Астана), но больница в реестре ЗКО-региона теста → регион = реестровый
+        hospital("Больница Д", "BINAST");
+        fake.orgPage("BINAST", FakeGoszakupClient.buy("Z-3", "Закуп", 230, "BINAST", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("Z-3", List.of(lot("Аппарат ИВЛ", null)));
+        SubjectDto subj = new SubjectDto(); subj.setBin("BINAST"); subj.setNameRu("РГКП «Центр» г. Астана");
+        fake.subjectsByBin.put("BINAST", subj);
 
-        ImportSummary s = svc("аппарат", "230,foo", 3650).importMedicalTenders();
+        service.importMedicalTenders(REGION);
 
-        assertThat(s.getMatched()).isEqualTo(1);
-        assertThat(tenderRepository.findBySourceExtId("OK-230")).isPresent();
-        assertThat(tenderRepository.findBySourceExtId("NO-999")).isEmpty();
+        Tender t = tenderRepository.findBySourceExtId("Z-3").orElseThrow();
+        assertThat(t.getRegion()).isEqualTo(REGION);
+        assertThat(t.getCustomerName()).contains("Центр");   // заказчик сохранён
     }
 
     @Test
-    void resolvesRegionFromSubject() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("100-1", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = new com.vladoose.nir.integration.goszakup.dto.SubjectDto();
-        subj.setBin("BIN1"); subj.setNameRu("Городская поликлиника №5 г. Алматы");
-        fake.subjectsByBin.put("BIN1", subj);
+    void skipsOld_bySinceDays() {
+        hospital("Больница Е", "BIN5");
+        String recent = java.time.LocalDate.now().minusDays(5) + "T00:00:00";
+        String old = java.time.LocalDate.now().minusDays(400) + "T00:00:00";
+        fake.orgPage("BIN5",
+                FakeGoszakupClient.buy("NEW-1", "Закуп", 230, "BIN5", recent, recent),
+                FakeGoszakupClient.buy("OLD-1", "Закуп", 230, "BIN5", old, old));
+        fake.lotsByAnno.put("NEW-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("OLD-1", List.of(lot("Аппарат УЗИ", null)));
 
-        svc("аппарат", "", 3650).importMedicalTenders();
+        svc("", 30).importMedicalTenders(REGION);
 
-        var t = tenderRepository.findBySourceExtId("100-1").orElseThrow();
-        assertThat(t.getRegion()).isEqualTo("г. Алматы");
-        assertThat(t.getCustomerName()).isEqualTo("Городская поликлиника №5 г. Алматы");
-    }
-
-    @Test
-    void fallsBackToOrgBin_whenCustomerBinAbsent() {
-        // живой /v2/trd-buy отдаёт только org_bin (customer_bin в ответе нет) —
-        // subject всё равно должен подтянуться, а BIN — сохраниться в тендере
-        var d = FakeGoszakupClient.buy("ORG-1", "Аппарат УЗИ", 230, null, "2026-06-01T00:00:00", "2026-06-20T00:00:00");
-        d.setOrgBin("971240005114");
-        fake.page(null, null, d);
-        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = new com.vladoose.nir.integration.goszakup.dto.SubjectDto();
-        subj.setBin("971240005114"); subj.setNameRu("Городская поликлиника №5 г. Алматы");
-        fake.subjectsByBin.put("971240005114", subj);
-
-        svc("аппарат", "", 3650).importMedicalTenders();
-
-        var t = tenderRepository.findBySourceExtId("ORG-1").orElseThrow();
-        assertThat(t.getCustomerBin()).isEqualTo("971240005114");
-        assertThat(t.getCustomerName()).isEqualTo("Городская поликлиника №5 г. Алматы");
-    }
-
-    @Test
-    void paginatesAcrossPages_andSkipsOldBySinceDays() {
-        String recentIso = java.time.LocalDate.now().minusDays(5) + "T00:00:00";
-        String oldIso = java.time.LocalDate.now().minusDays(400) + "T00:00:00";
-        fake.page(null, "/v2/trd-buy?page=next&search_after=1",
-                FakeGoszakupClient.buy("NEW-1", "Аппарат УЗИ", 230, "BIN1", recentIso, recentIso));
-        fake.page("/v2/trd-buy?page=next&search_after=1", null,
-                FakeGoszakupClient.buy("OLD-1", "Аппарат УЗИ", 230, "BIN2", oldIso, oldIso));
-
-        ImportSummary s = svc("аппарат", "", 30).importMedicalTenders();
-
-        assertThat(s.getFetched()).isEqualTo(2);
         assertThat(tenderRepository.findBySourceExtId("NEW-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("OLD-1")).isEmpty();
-        // прогресс для UI: прочитанные страницы и потолок
-        assertThat(s.getPagesRead()).isEqualTo(2);
-        assertThat(s.getMaxPages()).isEqualTo(20);
     }
 
     @Test
     void itemError_isCountedAndDoesNotAbortRun() {
-        // ERR-1: fetchSubject бросает (имитация 500/таймаута) → объявление уходит в errors,
-        // OK-1 импортируется штатно (раньше один сбой ронял весь @Transactional-прогон).
-        fake.page(null, null,
-                FakeGoszakupClient.buy("OK-1", "Аппарат УЗИ", 230, "BINOK", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
-                FakeGoszakupClient.buy("ERR-1", "Аппарат УЗИ", 230, "BINERR", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        hospital("Больница Ж", "BIN6");
+        fake.orgPage("BIN6",
+                FakeGoszakupClient.buy("OK-1", "Закуп", 230, "BINOK", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("ERR-1", "Закуп", 230, "BINERR", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("OK-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("ERR-1", List.of(lot("Аппарат УЗИ", null)));
         fake.failingSubjectBins.add("BINERR");
 
-        ImportSummary s = svc("аппарат", "", 3650).importMedicalTenders();
+        ImportSummary s = svc("", 3650).importMedicalTenders(REGION);
 
-        assertThat(s.getMatched()).isEqualTo(2);
         assertThat(s.getErrors()).isEqualTo(1);
         assertThat(s.getCreated()).isEqualTo(1);
         assertThat(tenderRepository.findBySourceExtId("OK-1")).isPresent();
@@ -188,110 +184,69 @@ class GoszakupImportServiceTest {
 
     @Test
     void lotDescriptionRu_savedAsRequiredSpec() {
-        fake.page(null, null,
-                FakeGoszakupClient.buy("100-1", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        com.vladoose.nir.integration.goszakup.dto.LotDto lot = new com.vladoose.nir.integration.goszakup.dto.LotDto();
-        lot.setNameRu("Аппарат УЗИ");
-        lot.setDescriptionRu("УЗИ экспертного класса, не менее 3 датчиков, доплер");
-        lot.setAmount(new java.math.BigDecimal("6000000")); lot.setCount(1);
-        fake.lotsByAnno.put("100-1", java.util.List.of(lot));
+        hospital("Больница З", "BIN7");
+        fake.orgPage("BIN7", FakeGoszakupClient.buy("100-1", "Закуп", 230, "BIN7", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("100-1", List.of(lot("Аппарат УЗИ", "УЗИ экспертного класса, не менее 3 датчиков, доплер")));
 
-        svc("аппарат", "", 3650).importMedicalTenders();
+        svc("", 3650).importMedicalTenders(REGION);
 
-        var t = tenderRepository.findBySourceExtId("100-1").orElseThrow();
-        assertThat(t.getLots().get(0).getRequiredSpec())
+        assertThat(tenderRepository.findBySourceExtId("100-1").orElseThrow().getLots().get(0).getRequiredSpec())
                 .isEqualTo("УЗИ экспертного класса, не менее 3 датчиков, доплер");
     }
 
     @Test
-    void stopsPaginating_whenWholePageOlderThanCutoff() {
-        // лента /trd-buy отсортирована по id DESC → страница целиком старше cutoff
-        // означает «дальше только старее», вторую страницу запрашивать не нужно
-        String oldIso = java.time.LocalDate.now().minusDays(400) + "T00:00:00";
-        fake.page(null, "/v2/trd-buy?page=next&search_after=1",
-                FakeGoszakupClient.buy("OLD-1", "Аппарат УЗИ", 230, "BIN1", oldIso, oldIso),
-                FakeGoszakupClient.buy("OLD-2", "Аппарат УЗИ", 230, "BIN2", oldIso, oldIso));
-        String recentIso = java.time.LocalDate.now().minusDays(5) + "T00:00:00";
-        fake.page("/v2/trd-buy?page=next&search_after=1", null,
-                FakeGoszakupClient.buy("LATE-1", "Аппарат УЗИ", 230, "BIN3", recentIso, recentIso));
+    void skipsNonCurrentSystemId() {
+        hospital("Больница И", "BIN8");
+        var legacy = FakeGoszakupClient.buy("LEG-2", "Закуп", 230, "BIN8", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
+        legacy.setSystemId(2);
+        var current = FakeGoszakupClient.buy("CUR-3", "Закуп", 230, "BIN8", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
+        current.setSystemId(3);
+        fake.orgPage("BIN8", legacy, current);
+        fake.lotsByAnno.put("LEG-2", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("CUR-3", List.of(lot("Аппарат УЗИ", null)));
 
-        ImportSummary s = svc("аппарат", "", 30).importMedicalTenders();
+        svc("", 3650).importMedicalTenders(REGION);
 
-        assertThat(s.getFetched()).isEqualTo(2); // вторая страница не читалась
-        assertThat(tenderRepository.findBySourceExtId("LATE-1")).isEmpty();
-    }
-
-    @Test
-    void regionImport_usesKatoFilteredV3Path_withSameKeywordFilter() {
-        fake.katoPage(null, null, FakeGoszakupClient.kato("27", "10", "10", "000"));
-        fake.v3Page(null, 100L,
-                FakeGoszakupClient.buy("ZKO-1", "Аппарат УЗИ для ЗКО", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        fake.v3Page(100L, null,
-                FakeGoszakupClient.buy("ZKO-2", "Канцтовары", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-
-        ImportSummary s = svc("аппарат", "", 3650).importMedicalTenders("Западно-Казахстанская область");
-
-        assertThat(fake.lastKatoFilter).containsExactly("271010000"); // серверный фильтр région
-        assertThat(s.getFetched()).isEqualTo(2);                      // обе v3-страницы прочитаны
-        assertThat(s.getCreated()).isEqualTo(1);                      // ключевые слова работают и тут
-        assertThat(tenderRepository.findBySourceExtId("ZKO-1")).isPresent();
-        assertThat(tenderRepository.findBySourceExtId("ZKO-2")).isEmpty();
-        assertThat(fake.trdBuyFetches).isZero();                      // общая лента v2 не тронута
-    }
-
-    @Test
-    void regionImport_overridesResolvedRegion_withRequestedOne() {
-        // республиканский заказчик (юрадрес Астана) с поставкой в ЗКО: сервер отфильтровал
-        // по КАТО поставки → регион тендера ставим запрошенный, а не регион заказчика
-        fake.katoPage(null, null, FakeGoszakupClient.kato("27", "10", "10", "000"));
-        fake.v3Page(null, null,
-                FakeGoszakupClient.buy("ZKO-3", "Аппарат ИВЛ", 230, "BINAST", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
-        com.vladoose.nir.integration.goszakup.dto.SubjectDto subj = new com.vladoose.nir.integration.goszakup.dto.SubjectDto();
-        subj.setBin("BINAST"); subj.setNameRu("РГКП «Центр судебных экспертиз» г. Астана");
-        fake.subjectsByBin.put("BINAST", subj);
-
-        svc("аппарат", "", 3650).importMedicalTenders("Западно-Казахстанская область");
-
-        var t = tenderRepository.findBySourceExtId("ZKO-3").orElseThrow();
-        assertThat(t.getRegion()).isEqualTo("Западно-Казахстанская область");
-        assertThat(t.getCustomerName()).contains("Центр судебных экспертиз"); // заказчик не потерян
-    }
-
-    @Test
-    void regionImport_unknownRegion_returnsMessageWithoutFetching() {
-        ImportSummary s = service.importMedicalTenders("Марс");
-
-        assertThat(s.isEnabled()).isFalse();
-        assertThat(s.getMessage()).contains("Марс");
-        assertThat(fake.trdBuyFetches).isZero();
+        assertThat(tenderRepository.findBySourceExtId("CUR-3")).isPresent();
+        assertThat(tenderRepository.findBySourceExtId("LEG-2")).isEmpty();
     }
 
     @Test
     void expiredDeadline_overridesPortalActiveStatus() {
-        // площадка может держать 220 «Опубликовано (приём заявок)» после дедлайна —
-        // локально такой тендер сразу COMPLETED (без дребезга до ночного джоба)
+        hospital("Больница К", "BIN9");
         String past = java.time.LocalDate.now().minusDays(2) + "T00:00:00";
-        fake.page(null, null,
-                FakeGoszakupClient.buy("EXP-1", "Аппарат УЗИ", 220, "BIN1", past, past));
+        fake.orgPage("BIN9", FakeGoszakupClient.buy("EXP-1", "Закуп", 220, "BIN9", past, past));
+        fake.lotsByAnno.put("EXP-1", List.of(lot("Аппарат УЗИ", null)));
 
-        svc("аппарат", "", 3650).importMedicalTenders();
+        svc("", 3650).importMedicalTenders(REGION);
 
-        assertThat(tenderRepository.findBySourceExtId("EXP-1").orElseThrow().getStatus())
-                .isEqualTo("COMPLETED");
+        assertThat(tenderRepository.findBySourceExtId("EXP-1").orElseThrow().getStatus()).isEqualTo("COMPLETED");
     }
 
     @Test
-    void skipsNonCurrentSystemId() {
-        // system_id: 1=ценовые предложения, 2=конкурс/аукцион, 3=текущая версия госзакупа.
-        var legacy = FakeGoszakupClient.buy("LEG-2", "Аппарат УЗИ", 230, "BIN1", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
-        legacy.setSystemId(2);
-        var current = FakeGoszakupClient.buy("CUR-3", "Аппарат УЗИ", 230, "BIN2", "2026-06-01T00:00:00", "2026-06-20T00:00:00");
-        current.setSystemId(3);
-        fake.page(null, null, legacy, current);
+    void emptyRegistryForRegion_returnsMessageWithoutFetching() {
+        ImportSummary s = service.importMedicalTenders(REGION); // ни одной больницы не создали
 
-        svc("аппарат", "", 3650).importMedicalTenders();
+        assertThat(s.isEnabled()).isFalse();
+        assertThat(s.getMessage()).contains(REGION);
+        assertThat(s.getOrgsTotal()).isZero();
+        assertThat(fake.orgBinsQueried).isEmpty();
+    }
 
-        assertThat(tenderRepository.findBySourceExtId("CUR-3")).isPresent();
-        assertThat(tenderRepository.findBySourceExtId("LEG-2")).isEmpty(); // system_id=2 отброшен
+    @Test
+    void processesMultipleHospitals_countingOrgs() {
+        hospital("Больница Л", "BIN10");
+        hospital("Больница М", "BIN11");
+        fake.orgPage("BIN10", FakeGoszakupClient.buy("A-1", "Закуп", 230, "BIN10", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.orgPage("BIN11", FakeGoszakupClient.buy("B-1", "Закуп", 230, "BIN11", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("A-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("B-1", List.of(lot("Аппарат ИВЛ", null)));
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getOrgsTotal()).isEqualTo(2);
+        assertThat(s.getOrgsProcessed()).isEqualTo(2);
+        assertThat(s.getCreated()).isEqualTo(2);
+        assertThat(fake.orgBinsQueried).contains("BIN10", "BIN11");
     }
 }
