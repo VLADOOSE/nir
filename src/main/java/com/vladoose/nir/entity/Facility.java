@@ -43,6 +43,13 @@ public class Facility implements MarketScoped {
     @Column(length = 255)
     private String email;
 
+    @Column(length = 100)
+    private String region;
+
+    /** true — тянуть тендеры этой организации по orgBin (goszakup). Только для KZ-больниц. */
+    @Column(name = "monitor_tenders", nullable = false)
+    private boolean monitorTenders;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
     private Market market;
