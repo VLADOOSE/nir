@@ -12,6 +12,7 @@ import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { OfferComparisonComponent } from './offer-comparison.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 import { LucideDynamicIcon } from '@lucide/angular';
+import { KZ_REGIONS } from '../../shared/kz-regions';
 
 @Component({
   selector: 'app-tenders',
@@ -71,7 +72,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
         <div class="import-progress" *ngIf="isKz() && importStatus?.running">
           <div class="import-bar"><div class="import-bar-fill" [style.width.%]="importPct()"></div></div>
           <span class="import-progress-text">
-            стр. {{ importStatus.lastSummary?.pagesRead || 0 }}/{{ importStatus.lastSummary?.maxPages || '…' }}
+            больница {{ importStatus.lastSummary?.orgsProcessed || 0 }}/{{ importStatus.lastSummary?.orgsTotal || '…' }}
             · получено {{ importStatus.lastSummary?.fetched || 0 }}
             · подходящих {{ importStatus.lastSummary?.matched || 0 }}
             · создано {{ importStatus.lastSummary?.created || 0 }}
@@ -888,15 +889,7 @@ export class TendersComponent {
   stageByTenderId: { [id: number]: string } = {};
   filterRegion = '';
   protected readonly NO_REGION = '__none__';
-  readonly REGIONS: string[] = [
-    'г. Астана', 'г. Алматы', 'г. Шымкент',
-    'Абайская область', 'Акмолинская область', 'Актюбинская область', 'Алматинская область',
-    'Атырауская область', 'Восточно-Казахстанская область', 'Жамбылская область',
-    'Жетысуская область', 'Западно-Казахстанская область', 'Карагандинская область',
-    'Костанайская область', 'Кызылординская область', 'Мангистауская область',
-    'Павлодарская область', 'Северо-Казахстанская область', 'Туркестанская область',
-    'Улытауская область'
-  ];
+  readonly REGIONS: string[] = KZ_REGIONS;
   filterFacilityId: number | null = null;
   filterDeadlineFrom = '';
   filterDeadlineTo = '';
@@ -1333,8 +1326,8 @@ export class TendersComponent {
 
   importPct(): number {
     const s = this.importStatus?.lastSummary;
-    if (!s?.maxPages) return 5;
-    return Math.max(5, Math.min(100, Math.round(100 * (s.pagesRead || 0) / s.maxPages)));
+    if (!s?.orgsTotal) return 5;
+    return Math.max(5, Math.min(100, Math.round(100 * (s.orgsProcessed || 0) / s.orgsTotal)));
   }
 
   startImportPolling() {
