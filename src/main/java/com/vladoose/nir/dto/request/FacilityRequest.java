@@ -22,5 +22,6 @@ public class FacilityRequest {
     private String phone;
     private String email;
     private String region;
-    private boolean monitorTenders;
+    /** Boxed so a partial PUT that omits it → null → NullValuePropertyMappingStrategy.IGNORE preserves the existing value. */
+    private Boolean monitorTenders;
 }
