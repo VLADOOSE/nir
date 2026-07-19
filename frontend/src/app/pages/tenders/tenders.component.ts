@@ -635,7 +635,7 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     .counter { color: var(--text-muted); font-size: 13px; }
     .empty { color: var(--text-muted); font-size: 14px; padding: 32px 0; text-align: center; }
 
-    .tender-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s; }
+    .tender-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s; }
     .tender-card:hover { box-shadow: var(--shadow); border-color: var(--border); }
     .tender-card.tender-urgent { border-left: 4px solid var(--warn); }
     .tender-card.tender-overdue { border-left: 4px solid var(--danger); background: var(--surface-2); }
@@ -839,6 +839,13 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     .btn-create-apply:hover { background: var(--accent); }
     @keyframes cta-pulse-anim { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); } 50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } }
     .cta-pulse { animation: cta-pulse-anim 1.8s infinite; }
+
+    @media (max-width: 900px) {
+      .detail-row { grid-template-columns: 1fr; gap: 4px; }
+      .info-grid { grid-template-columns: 1fr; }
+      .tender-card { padding: 14px 16px; }
+      .tender-card-actions { flex-wrap: wrap; }
+    }
   `]
 })
 export class TendersComponent {
