@@ -13,55 +13,23 @@ import { OfferComparisonComponent } from './offer-comparison.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
+import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe],
+  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
       <h2>Тендеры</h2>
       <p class="subtitle">Управление тендерами на закупку медицинского оборудования</p>
 
-      <div class="filters">
-        <input type="text" placeholder="Поиск по номеру или описанию..." [(ngModel)]="filterQuery" (input)="applyTendersFilter()" class="filter-input" />
-        <select [(ngModel)]="filterStatus" (change)="applyTendersFilter()" class="filter-select">
-          <option value="">Все статусы</option>
-          <option value="DRAFT">Подготовка</option>
-          <option value="ACTIVE">Приём заявок</option>
-          <option value="COMPLETED">Завершён</option>
-          <option value="CANCELLED">Отменён</option>
-        </select>
-        <select [(ngModel)]="sortMode" (change)="applyTendersFilter()" class="filter-select" title="Сортировка">
-          <option value="published">Сначала новые</option>
-          <option value="deadline">Скоро дедлайн</option>
-        </select>
-        <select [(ngModel)]="filterStage" (change)="applyTendersFilter()" class="filter-select" title="Стадия работы">
-          <option value="">Все стадии</option>
-          <option value="NOT_STARTED">Не начат</option>
-          <option value="REQUESTED">Запрос отправлен</option>
-          <option value="PRICED">Есть цены</option>
-          <option value="WINNER_SELECTED">Победитель выбран</option>
-        </select>
-        <select *ngIf="isKz()" [(ngModel)]="filterPlatform" (change)="applyTendersFilter()" class="filter-select" title="Площадка">
-          <option value="">Все площадки</option>
-          <option value="GOSZAKUP">Госзакуп</option>
-          <option value="SK_PHARMACY">СК-Фармация</option>
-        </select>
-        <select [(ngModel)]="filterFacilityId" (change)="applyTendersFilter()" class="filter-select">
-          <option [ngValue]="null">Все учреждения</option>
-          <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
-        </select>
-        <input type="date" [(ngModel)]="filterDeadlineFrom" (change)="applyTendersFilter()" class="filter-date" title="Дедлайн от" />
-        <input type="date" [(ngModel)]="filterDeadlineTo" (change)="applyTendersFilter()" class="filter-date" title="Дедлайн до" />
-        <select *ngIf="isKz()" [(ngModel)]="filterRegion" (change)="applyTendersFilter()" class="filter-select" title="Регион">
-          <option value="">Все регионы</option>
-          <option [value]="NO_REGION">Регион не указан</option>
-          <option *ngFor="let r of REGIONS" [value]="r">{{ r }}</option>
-        </select>
-        <button class="btn btn-reset-filter" (click)="resetTendersFilter()">Сбросить</button>
-      </div>
+      <app-tenders-filters
+        [filters]="filtersState" [facilities]="facilities" [regions]="REGIONS"
+        [isKz]="isKz()" [noRegionValue]="NO_REGION"
+        (filtersChange)="onFiltersChange($event)" (reset)="resetTendersFilter()">
+      </app-tenders-filters>
 
       <div class="toolbar">
         <button class="btn btn-add" *ngIf="!showTenderForm" (click)="onAddTender()">Добавить тендер</button>
@@ -667,12 +635,6 @@ import { KZ_REGIONS } from '../../shared/kz-regions';
     .counter { color: var(--text-muted); font-size: 13px; }
     .empty { color: var(--text-muted); font-size: 14px; padding: 32px 0; text-align: center; }
 
-    .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
-    .filter-input { flex: 1; min-width: 200px; max-width: 320px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
-    .filter-input:focus { outline: none; border-color: var(--accent); }
-    .filter-select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface); max-width: 220px; }
-    .filter-date { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface); }
-    .btn-reset-filter { background: var(--surface-2); color: var(--text); padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
     .tender-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s; }
     .tender-card:hover { box-shadow: var(--shadow); border-color: var(--border); }
     .tender-card.tender-urgent { border-left: 4px solid var(--warn); }
@@ -893,6 +855,18 @@ export class TendersComponent {
   filterFacilityId: number | null = null;
   filterDeadlineFrom = '';
   filterDeadlineTo = '';
+
+  get filtersState(): TendersFilters {
+    return { query: this.filterQuery, status: this.filterStatus, sortMode: this.sortMode, stage: this.filterStage,
+      platform: this.filterPlatform, facilityId: this.filterFacilityId, deadlineFrom: this.filterDeadlineFrom,
+      deadlineTo: this.filterDeadlineTo, region: this.filterRegion };
+  }
+  onFiltersChange(f: TendersFilters) {
+    this.filterQuery = f.query; this.filterStatus = f.status; this.sortMode = f.sortMode as any; this.filterStage = f.stage;
+    this.filterPlatform = f.platform; this.filterFacilityId = f.facilityId; this.filterDeadlineFrom = f.deadlineFrom;
+    this.filterDeadlineTo = f.deadlineTo; this.filterRegion = f.region;
+    this.applyTendersFilter();
+  }
   allApplyItems: any[] = [];
   facilities: any[] = [];
   distributors: any[] = [];
