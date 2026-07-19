@@ -8,6 +8,7 @@ import { AuthService } from '../services/auth.service';
 import { NotificationComponent } from '../components/notification/notification.component';
 import { ConfirmComponent } from '../components/confirm/confirm.component';
 import { MarketService, Market, APP_NAME } from '../services/market.service';
+import { ThemeService } from '../services/theme.service';
 
 @Component({
   selector: 'app-layout',
@@ -44,6 +45,10 @@ import { MarketService, Market, APP_NAME } from '../services/market.service';
           </div>
         </div>
         <div class="header-right" *ngIf="auth.user$ | async as user">
+          <button class="theme-toggle" (click)="theme.toggle()" [title]="theme.theme() === 'dark' ? 'Светлая тема' : 'Тёмная тема'" aria-label="Тема">
+            <svg *ngIf="theme.theme() === 'light'" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            <svg *ngIf="theme.theme() === 'dark'" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          </button>
           <svg lucideIcon="user" [size]="16" class="icon-user"></svg>
           <span class="user-name">{{ user.fullName || user.username }}</span>
           <span class="role-badge" [class.role-admin]="user.role === 'ROLE_ADMIN'">
@@ -200,6 +205,9 @@ import { MarketService, Market, APP_NAME } from '../services/market.service';
     .btn-logout svg { vertical-align: middle; margin-right: 4px; }
     .content { flex: 1; padding: 24px 32px; overflow-y: auto; background: #fff; }
 
+    .theme-toggle { background: rgba(255,255,255,0.15); color: var(--header-text); border: none; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .theme-toggle:hover { background: rgba(255,255,255,0.3); }
+
     /* гамбургер и затемнение — только на мобиле */
     .hamburger { display: none; background: transparent; border: none; color: #fff; cursor: pointer; padding: 6px 4px; align-items: center; }
     .backdrop { display: none; }
@@ -247,7 +255,7 @@ export class LayoutComponent {
     if ((e.target as HTMLElement).closest('a')) this.sidebarOpen = false;
   }
 
-  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService) {}
+  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService, public theme: ThemeService) {}
 
   onSearch() {
     this.searchService.search(this.searchQuery).subscribe(results => {
