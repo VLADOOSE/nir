@@ -14,5 +14,9 @@ public class ImportSummary {
     /** Прогресс для UI: страниц ленты прочитано / потолок страниц. */
     private int pagesRead;
     private int maxPages;
+    /** Прогресс orgBin-импорта: больниц обработано / всего в реестре, текущая. */
+    private int orgsTotal;
+    private int orgsProcessed;
+    private String currentOrgName;
     private String message;
 }

@@ -52,24 +52,41 @@ public class GoszakupHttpClient implements GoszakupClient {
         return get(url, TrdBuyPageDto.class);
     }
 
+    private static final String V3_FIELDS =
+            "id number_anno:numberAnno name_ru:nameRu total_sum:totalSum "
+          + "ref_buy_status_id:refBuyStatusId customer_bin:customerBin org_bin:orgBin "
+          + "publish_date:publishDate end_date:endDate system_id:systemId";
+
     @Override
     public TrdBuyV3PageDto fetchTrdBuyPageByKato(List<String> katoCodes, Long after) {
-        // v3 GraphQL: единственный способ серверно сузить ленту до региона (фильтр kato —
-        // массив точных 9-значных кодов). Алиасы приводят поля ответа к snake_case v2,
-        // чтобы парсить тем же TrdBuyDto. Пагинация: after=lastId, сортировка id DESC.
+        // v3 GraphQL: серверно сузить ленту до региона (фильтр kato — массив точных 9-значных кодов).
         String query = "query($k:[String],$l:Int,$a:Int){ TrdBuy(filter:{kato:$k}, limit:$l, after:$a){ "
-                + "id number_anno:numberAnno name_ru:nameRu total_sum:totalSum "
-                + "ref_buy_status_id:refBuyStatusId customer_bin:customerBin org_bin:orgBin "
-                + "publish_date:publishDate end_date:endDate system_id:systemId } }";
+                + V3_FIELDS + " } }";
+        ObjectNode vars = objectMapper.createObjectNode();
+        vars.set("k", objectMapper.valueToTree(katoCodes));
+        vars.put("l", pageSize);
+        if (after != null) vars.put("a", after);
+        return postTrdBuyV3(query, vars);
+    }
+
+    @Override
+    public TrdBuyV3PageDto fetchTrdBuyPageByOrgBin(String orgBin, Long after) {
+        // v3 GraphQL: лента одной организации-заказчика по её БИН (orgBin — валидный фильтр TrdBuy).
+        String query = "query($o:String,$l:Int,$a:Int){ TrdBuy(filter:{orgBin:$o}, limit:$l, after:$a){ "
+                + V3_FIELDS + " } }";
+        ObjectNode vars = objectMapper.createObjectNode();
+        vars.put("o", orgBin);
+        vars.put("l", pageSize);
+        if (after != null) vars.put("a", after);
+        return postTrdBuyV3(query, vars);
+    }
+
+    /** Общий POST v3-запроса TrdBuy: тело, разбор items, вычисление nextAfter из pageInfo. */
+    private TrdBuyV3PageDto postTrdBuyV3(String query, ObjectNode vars) {
         try {
-            ObjectNode vars = objectMapper.createObjectNode();
-            vars.set("k", objectMapper.valueToTree(katoCodes));
-            vars.put("l", pageSize);
-            if (after != null) vars.put("a", after);
             ObjectNode body = objectMapper.createObjectNode();
             body.put("query", query);
             body.set("variables", vars);
-
             JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
             if (root.path("errors").size() > 0) {
                 throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));

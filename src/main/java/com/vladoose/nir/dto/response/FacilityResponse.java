@@ -13,4 +13,6 @@ public class FacilityResponse {
     private String middleName;
     private String phone;
     private String email;
+    private String region;
+    private boolean monitorTenders;
 }

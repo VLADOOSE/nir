@@ -24,6 +24,9 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final java.util.Set<String> failingSubjectBins = new java.util.HashSet<>();
     /** after (null=первая) → v3-страница региона. */
     public final Map<Long, TrdBuyV3PageDto> v3Pages = new HashMap<>();
+    /** orgBin → одностраничная лента организации. */
+    public final Map<String, TrdBuyV3PageDto> orgPages = new HashMap<>();
+    public final List<String> orgBinsQueried = new ArrayList<>();
     /** cursor (null=первая) → страница справочника КАТО. */
     public final Map<String, KatoRefPageDto> katoPages = new HashMap<>();
     public int trdBuyFetches = 0;
@@ -40,6 +43,12 @@ public class FakeGoszakupClient implements GoszakupClient {
     @Override public TrdBuyV3PageDto fetchTrdBuyPageByKato(List<String> katoCodes, Long after) {
         lastKatoFilter = katoCodes;
         TrdBuyV3PageDto p = v3Pages.get(after);
+        if (p != null) return p;
+        TrdBuyV3PageDto empty = new TrdBuyV3PageDto(); empty.setItems(new ArrayList<>()); return empty;
+    }
+    @Override public TrdBuyV3PageDto fetchTrdBuyPageByOrgBin(String orgBin, Long after) {
+        orgBinsQueried.add(orgBin);
+        TrdBuyV3PageDto p = (after == null) ? orgPages.get(orgBin) : null;
         if (p != null) return p;
         TrdBuyV3PageDto empty = new TrdBuyV3PageDto(); empty.setItems(new ArrayList<>()); return empty;
     }
@@ -86,6 +95,11 @@ public class FakeGoszakupClient implements GoszakupClient {
         TrdBuyV3PageDto p = new TrdBuyV3PageDto();
         p.setItems(new ArrayList<>(List.of(items))); p.setNextAfter(nextAfter);
         v3Pages.put(after, p); return p;
+    }
+    public TrdBuyV3PageDto orgPage(String orgBin, TrdBuyDto... items) {
+        TrdBuyV3PageDto p = new TrdBuyV3PageDto();
+        p.setItems(new ArrayList<>(List.of(items))); p.setNextAfter(null);
+        orgPages.put(orgBin, p); return p;
     }
     public KatoRefPageDto katoPage(String cursor, String nextPage, KatoRefDto... items) {
         KatoRefPageDto p = new KatoRefPageDto();

@@ -30,6 +30,24 @@ class MedicalRelevanceFilterTest {
         assertThat(MedicalRelevanceFilter.isMedicalGoods("Изделия медицинского назначения одноразовые")).isTrue();
     }
 
+    @Test
+    void keepsRealZkoDevicesAndDropsMedicinesFoodHousehold() {
+        // KEEP — реальная техника из лент больниц ЗКО (живой goszakup 2026-07-15)
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Облучатель")).isTrue();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Облучателя бактерицидного")).isTrue(); // родит. падеж
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Весы медицинские напольные")).isTrue();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Холодильник медицинский без морозильной камеры")).isTrue();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Концентратор кислорода")).isTrue();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Кровать функциональная механическая")).isTrue();
+        // DROP — лекарства/еда/хозтовары/услуги (тоже реальные лоты этих больниц)
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Йодид калия (йодистый калий)")).isFalse();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Сульфадиазин")).isFalse();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Помидор")).isFalse();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Мыло туалетное")).isFalse();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Стартер для дизельного генератора")).isFalse();
+        assertThat(MedicalRelevanceFilter.isMedicalGoods("Поверка средств измерений медицинского оборудования")).isFalse();
+    }
+
     // --- тендер: ≥1 медтоварный лот → релевантен ---
     @Test
     void tenderRelevantIfAnyLotIsMedicalGoods() {

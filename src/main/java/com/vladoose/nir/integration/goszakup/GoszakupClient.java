@@ -13,6 +13,8 @@ public interface GoszakupClient {
     TrdBuyPageDto fetchTrdBuyPage(String cursor);
     /** v3 GraphQL: лента, серверно суженная до точных КАТО-кодов (регион). after == null → первая страница. */
     TrdBuyV3PageDto fetchTrdBuyPageByKato(List<String> katoCodes, Long after);
+    /** v3 GraphQL: лента одной организации по её БИН (orgBin). after == null → первая страница. */
+    TrdBuyV3PageDto fetchTrdBuyPageByOrgBin(String orgBin, Long after);
     /** Страница справочника /v2/refs/ref_kato (cursor как у fetchTrdBuyPage). */
     KatoRefPageDto fetchKatoPage(String cursor);
     List<LotDto> fetchLots(String numberAnno);

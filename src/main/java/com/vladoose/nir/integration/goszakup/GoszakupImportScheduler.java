@@ -50,7 +50,7 @@ public class GoszakupImportScheduler {
         return run(null);
     }
 
-    /** region — каноническое имя региона для серверного КАТО-фильтра, null = вся лента. */
+    /** region — каноническое имя региона: фильтрует реестр учреждений (мониторимые больницы), НЕ серверный КАТО-фильтр; null = вся лента. */
     public ImportSummary run(String region) {
         if (!running.compareAndSet(false, true)) {
             ImportSummary busy = new ImportSummary();

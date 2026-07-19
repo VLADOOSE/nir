@@ -1,9 +1,11 @@
 package com.vladoose.nir.integration.goszakup;
 
+import com.vladoose.nir.entity.Facility;
+import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
-import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
+import com.vladoose.nir.repository.FacilityRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,14 +15,14 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
- * Оркеструет импорт KZ-тендеров: пагинация + фильтры + получение subject/lots по сети,
- * запись каждого тендера — через GoszakupTenderWriter (per-item @Transactional).
- * Сам НЕ транзакционный: блокирующий сетевой I/O не держит БД-коннект, а ошибка одного
- * объявления идёт в ImportSummary.errors и не валит весь прогон.
+ * Импорт KZ-тендеров goszakup по РЕЕСТРУ больниц: перебирает мониторимые учреждения (facility,
+ * рынок KZ, monitor_tenders=true) выбранного региона, по каждому дёргает v3 TrdBuy(orgBin),
+ * фетчит лоты и апсертит через GoszakupTenderWriter. «Медтовар» решается по ЛОТАМ, не по имени.
+ * Сам НЕ транзакционный: сетевой I/O не держит БД-коннект; ошибка одной больницы/тендера идёт в
+ * ImportSummary.errors и не валит прогон.
  */
 @Service
 public class GoszakupImportService {
@@ -29,23 +31,20 @@ public class GoszakupImportService {
 
     private final GoszakupClient client;
     private final GoszakupTenderWriter writer;
-    private final KatoDictionary katoDictionary;
-    private final List<String> keywords;
+    private final FacilityRepository facilityRepository;
     private final Set<Integer> statuses;
     private final int sinceDays;
     private final int maxPages;
 
     public GoszakupImportService(GoszakupClient client,
                                  GoszakupTenderWriter writer,
-                                 KatoDictionary katoDictionary,
-                                 @Value("${goszakup.import.keywords:}") String keywordsCsv,
+                                 FacilityRepository facilityRepository,
                                  @Value("${goszakup.import.statuses:}") String statusesCsv,
                                  @Value("${goszakup.import.since-days:30}") int sinceDays,
-                                 @Value("${goszakup.import.max-pages:20}") int maxPages) {
+                                 @Value("${goszakup.import.max-pages:60}") int maxPages) {
         this.client = client;
         this.writer = writer;
-        this.katoDictionary = katoDictionary;
-        this.keywords = csv(keywordsCsv).stream().map(s -> s.toLowerCase(Locale.ROOT)).toList();
+        this.facilityRepository = facilityRepository;
         this.statuses = parseStatuses(statusesCsv);
         this.sinceDays = sinceDays;
         this.maxPages = maxPages;
@@ -69,7 +68,7 @@ public class GoszakupImportService {
         return importMedicalTenders(null);
     }
 
-    /** region — каноническое имя области/города (как в фильтре UI) или null: вся лента. */
+    /** region — каноническое имя области/города (как в фильтре UI) или null: все мониторимые больницы KZ. */
     public ImportSummary importMedicalTenders(String region) {
         ImportSummary sum = new ImportSummary();
         fillImport(region, sum);
@@ -83,52 +82,44 @@ public class GoszakupImportService {
             sum.setMessage("Токен goszakup не настроен (GOSZAKUP_TOKEN)");
             return;
         }
-        sum.setMaxPages(maxPages);
-        LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
-        if (region == null || region.isBlank()) {
-            fetchWholeFeed(cutoff, sum);
-        } else if (!fetchRegionFeed(region, cutoff, sum)) {
-            return; // регион не распознан — message уже установлен
-        }
-        sum.setMessage(String.format("Получено %d, релевантных %d, создано %d, обновлено %d, ошибок %d",
-                sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated(), sum.getErrors()));
-    }
-
-    private void fetchWholeFeed(LocalDate cutoff, ImportSummary sum) {
-        String cursor = null;
-        int pagesRead = 0;
-        do {
-            TrdBuyPageDto page = client.fetchTrdBuyPage(cursor);
-            List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
-            processItems(items, cutoff, sum, null);
-            pagesRead++;
-            sum.setPagesRead(pagesRead);
-            // лента отсортирована по id DESC: страница целиком старше cutoff → дальше только старее
-            if (wholePageOlderThan(items, cutoff)) break;
-            cursor = page.getNextPage();
-        } while (cursor != null && !cursor.isBlank() && pagesRead < maxPages);
-    }
-
-    /** false — регион не распознан (КАТО-префикс неизвестен), импорт не выполнялся. */
-    private boolean fetchRegionFeed(String region, LocalDate cutoff, ImportSummary sum) {
-        List<String> katoCodes = katoDictionary.codesForRegion(region);
-        if (katoCodes.isEmpty()) {
+        List<Facility> orgs = (region == null || region.isBlank())
+                ? facilityRepository.findByMarketAndMonitorTendersTrue(Market.KZ)
+                : facilityRepository.findByMarketAndRegionAndMonitorTendersTrue(Market.KZ, region.trim());
+        orgs = orgs.stream().filter(f -> f.getInn() != null && !f.getInn().isBlank()).toList();
+        sum.setOrgsTotal(orgs.size());
+        if (orgs.isEmpty()) {
             sum.setEnabled(false);
-            sum.setMessage("Не удалось определить КАТО-коды региона: " + region);
-            return false;
+            sum.setMessage(region == null || region.isBlank()
+                    ? "В реестре нет учреждений с мониторингом тендеров (KZ)"
+                    : "В реестре нет учреждений с мониторингом тендеров для региона: " + region);
+            return;
         }
+        LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
+        for (Facility org : orgs) {
+            sum.setCurrentOrgName(org.getName());
+            try {
+                fetchOrgFeed(org.getInn(), org.getRegion(), cutoff, sum);
+            } catch (RuntimeException e) {
+                sum.setErrors(sum.getErrors() + 1);
+                log.warn("goszakup: ошибка импорта по БИН {} ({}): {}", org.getInn(), org.getName(), e.toString());
+            }
+            sum.setOrgsProcessed(sum.getOrgsProcessed() + 1);
+        }
+        sum.setMessage(String.format("Больниц %d, получено %d, подходящих %d, создано %d, обновлено %d, ошибок %d",
+                sum.getOrgsProcessed(), sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated(), sum.getErrors()));
+    }
+
+    private void fetchOrgFeed(String orgBin, String region, LocalDate cutoff, ImportSummary sum) {
         Long after = null;
         int pagesRead = 0;
         do {
-            var page = client.fetchTrdBuyPageByKato(katoCodes, after);
+            var page = client.fetchTrdBuyPageByOrgBin(orgBin, after);
             List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
             processItems(items, cutoff, sum, region);
             pagesRead++;
-            sum.setPagesRead(pagesRead);
             if (wholePageOlderThan(items, cutoff)) break;
             after = page.getNextAfter();
         } while (after != null && pagesRead < maxPages);
-        return true;
     }
 
     private void processItems(List<TrdBuyDto> items, LocalDate cutoff, ImportSummary sum, String regionOverride) {
@@ -136,8 +127,7 @@ public class GoszakupImportService {
             sum.setFetched(sum.getFetched() + 1);
             LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
             if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-            if (!statusOk(d) || !systemOk(d) || !keywordOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-            sum.setMatched(sum.getMatched() + 1); // прошёл ступень-1 (имя); ступень-2 по лотам может снять (см. importOne)
+            if (!statusOk(d) || !systemOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
             importOne(d, sum, regionOverride);
         }
     }
@@ -152,14 +142,13 @@ public class GoszakupImportService {
                              + (l.getDescriptionRu() == null ? "" : l.getDescriptionRu())).trim())
                     .toList();
             if (!MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts)) {
-                sum.setSkipped(sum.getSkipped() + 1);   // ступень 2: лоты — не медтовар
-                sum.setMatched(sum.getMatched() - 1);   // matched считался на ступени-1 (имя) до сети — снять дроп
+                sum.setSkipped(sum.getSkipped() + 1); // лоты — не медтовар (лекарства/еда/хозтовары/услуги)
                 return;
             }
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
             else sum.setUpdated(sum.getUpdated() + 1);
-            // non-404 ошибка subject/lots → объявление откладывается до следующего поллинга (учтено в errors, не потеряно)
+            sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
         } catch (RuntimeException e) {
             sum.setErrors(sum.getErrors() + 1);
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
@@ -181,9 +170,5 @@ public class GoszakupImportService {
     /** Только текущий модуль госзакупа (system_id=3); null трактуем как «брать» (поле может отсутствовать). */
     private boolean systemOk(TrdBuyDto d) {
         return d.getSystemId() == null || d.getSystemId() == 3;
-    }
-    private boolean keywordOk(TrdBuyDto d) {
-        String name = d.getNameRu() == null ? "" : d.getNameRu().toLowerCase(Locale.ROOT);
-        return keywords.stream().anyMatch(name::contains);
     }
 }

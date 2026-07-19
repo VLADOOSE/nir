@@ -165,7 +165,7 @@ public class TenderController {
     @PreAuthorize("hasRole('ADMIN')")
     public GoszakupImportScheduler.ImportStatus importKz(@RequestParam(required = false) String region) {
         // импорт идёт в фоне (рынок KZ ставится в фоновом потоке, §6);
-        // region — серверный КАТО-фильтр goszakup; прогресс — GET /import-kz/status
+        // region фильтрует реестр учреждений (мониторимые больницы), НЕ серверный КАТО-фильтр goszakup; прогресс — GET /import-kz/status
         return goszakupScheduler.startAsync(region);
     }
 
