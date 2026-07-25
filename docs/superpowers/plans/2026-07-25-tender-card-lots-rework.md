@@ -383,6 +383,7 @@ EOF
 
 **Files:**
 - Create: `frontend/src/app/pages/tenders/lot-kp-panel.component.ts`
+- Create: `frontend/src/app/shared/kp-toast.ts`
 - Modify: `frontend/src/app/pages/tenders/tenders.component.ts`
 
 **Interfaces:**
@@ -465,7 +466,34 @@ export class LotKpPanelComponent implements OnChanges {
 | `confirmSendKp()` (~1849) | так же | `this.selectedTender.id` → `this.tenderId`; вместо `this.kpPreview = null; this.kpPanel = null; this.lotSel.clear(); this.loadPriceRequests();` → `this.preview = null; this.panel = null; this.sent.emit();` |
 | `subjectHuman(subject)` (~1873, private) | так же | без правок — **обязателен**: снимает `[КП-…]` из отредактированной темы, токен всегда серверный |
 | `cancelKpPreview()` (~1877) | `cancelPreview()` | `this.preview = null` |
-| `kpToastFromResults(results)` (~1816) | так же | **копируется, а не переносится** — в родителе он остаётся, им пользуются `onSmartMatchRequest` и `resendPr`. Дублирование намеренное: тащить ради 10 строк общий сервис — лишняя сущность |
+| `kpToastFromResults(results)` (~1816) | `shared/kp-toast.ts` | **выносится в общий модуль** (Step 2a) — нужен и панели, и родителю (`onSmartMatchRequest`, `resendPr`); дублировать бизнес-логику «что считать успехом отправки» в двух местах нельзя |
+
+- [ ] **Step 2a: Вынести сборку тоста в общий модуль**
+
+Создать `frontend/src/app/shared/kp-toast.ts`:
+
+```ts
+/** Свести результаты POST /api/price-requests/send в текст тоста. Чистая функция: тост шлёт вызывающий. */
+export function kpToastFromResults(results: any[]): { message: string; isError: boolean } {
+  const list = results || [];
+  const sent = list.filter((r: any) => r.emailSent).length;
+  const noEmail = list.filter((r: any) => r.reason === 'NO_EMAIL').map((r: any) => r.distributorName);
+  const failed = list.filter((r: any) => r.reason === 'SEND_FAILED').map((r: any) => r.distributorName);
+  let message = `Создано запросов: ${list.length}, писем отправлено: ${sent}`;
+  if (noEmail.length) message += `; без email: ${noEmail.join(', ')}`;
+  if (failed.length) message += `; ошибка отправки: ${failed.join(', ')}`;
+  return { message, isError: noEmail.length > 0 || failed.length > 0 };
+}
+```
+
+Оба места зовут её одинаково:
+
+```ts
+const t = kpToastFromResults(results);
+if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
+```
+
+В `tenders.component.ts` удалить метод `kpToastFromResults`, добавить `import { kpToastFromResults } from '../../shared/kp-toast';` и заменить три вызова (`onSmartMatchRequest`, `confirmSendKp` — уедет в панель, `resendPr`) на пару строк выше. Тексты сообщений не менять ни на символ — они уже видны оператору.
 
 - [ ] **Step 3: Написать шаблон — поставщики карточками**
 
@@ -631,7 +659,7 @@ export class LotKpPanelComponent implements OnChanges {
 </app-lot-kp-panel>
 ```
 
-3. Заменить поля/методы (удалить `kpPanel`, `kpPreview`, `openKpPanel`, `changeLotType`, `researchSupplier`, `checkedSuppliers`, `sendKpRequests`, `confirmSendKp`, `subjectHuman`, `cancelKpPreview`; **`kpToastFromResults` оставить** — им пользуются `onSmartMatchRequest` и `resendPr`):
+3. Заменить поля/методы (удалить `kpPanel`, `kpPreview`, `openKpPanel`, `changeLotType`, `researchSupplier`, `checkedSuppliers`, `sendKpRequests`, `confirmSendKp`, `subjectHuman`, `cancelKpPreview`, `kpToastFromResults` — последний заменён импортом из `shared/kp-toast`, Step 2a):
 
 ```ts
   kpLots: any[] = [];
