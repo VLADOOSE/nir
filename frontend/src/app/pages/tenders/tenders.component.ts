@@ -14,11 +14,12 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
 import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
+import { LotRegistryPanelComponent } from './lot-registry-panel.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent],
+  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, LotRegistryPanelComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -313,135 +314,11 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
       </table>
       </div>
 
-      <div class="registry-panel" *ngIf="registryPanel">
-        <div class="registry-panel-head">
-          <span><b>Реестр НЦЭЛС РК:</b> {{ registryPanel.lot.equipName }}</span>
-          <button class="btn btn-cancel" (click)="closeRegistryPanel()">✕ Закрыть</button>
-        </div>
-        <div class="registry-note">Реестр НЦЭЛС — допуск (№ РУ); габариты/вес здесь не хранятся, соответствие — по совпадению наименования.</div>
-        <div *ngIf="!registryPanel.loading && !registryPanel.distinctive && !registryPanel.techSpecParsed && isImportedTender()" class="registry-hint">
-          ⚠ Совпадение только по названию — модели в реестре неразличимы. Нажмите «ТЗ», чтобы разбор техспецификации уточнил подбор.
-        </div>
-        <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
-        <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
-        <div class="table-scroll" *ngIf="!registryPanel.loading && registryPanel.items.length">
-        <table class="registry-table">
-          <thead><tr><th>Соответствие</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
-          <tbody>
-            <ng-container *ngFor="let c of registryPanel.items">
-              <tr class="registry-row" (click)="toggleRegistryDetail(c)"
-                  [title]="registryPanel.openReg === c.regNumber ? 'Свернуть описание' : 'Показать описание из карточки НЦЭЛС'">
-                <td>
-                  <span *ngIf="registryPanel.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
-                  <span *ngIf="!registryPanel.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
-                </td>
-                <td>{{ c.regNumber }}</td>
-                <td>{{ c.name }} <span class="registry-desc-chip">{{ registryPanel.openReg === c.regNumber ? '▴ свернуть' : '▾ описание' }}</span></td>
-                <td>{{ c.producer || '—' }}</td>
-                <td>{{ c.country || '—' }}</td>
-                <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
-                <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="$event.stopPropagation(); adoptFromRegistry(c)" title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button></td>
-              </tr>
-              <tr *ngIf="registryPanel.openReg === c.regNumber" class="registry-detail-row">
-                <td colspan="7">
-                  <div *ngIf="registryPanel.detailLoading" class="registry-loading">Загружаем карточку НЦЭЛС…</div>
-                  <div *ngIf="registryPanel.detailError && !registryPanel.detailLoading" class="registry-detail-error">
-                    {{ registryPanel.detailError }} — сверните и разверните строку, чтобы повторить.
-                  </div>
-                  <div *ngIf="registryPanel.detail && !registryPanel.detailLoading" class="registry-detail-cols">
-                    <div *ngIf="registryPanel.lot?.requiredSpec" class="registry-detail-col">
-                      <div class="registry-detail-h">ТЗ лота</div>
-                      <pre class="registry-detail-pre">{{ registryPanel.lot.requiredSpec }}</pre>
-                    </div>
-                    <div class="registry-detail-col">
-                      <div class="registry-detail-h">Из реестра НЦЭЛС</div>
-                      <div *ngIf="registryDetailEmpty(registryPanel.detail)" class="empty">В карточке НЦЭЛС описание не заполнено</div>
-                      <div *ngIf="registryPanel.detail.riskClass || registryPanel.detail.miKind" class="registry-detail-meta">
-                        <span *ngIf="registryPanel.detail.riskClass">{{ registryPanel.detail.riskClass }}</span>
-                        <span *ngIf="registryPanel.detail.riskClass && registryPanel.detail.miKind"> · </span>
-                        <span *ngIf="registryPanel.detail.miKind">{{ registryPanel.detail.miKind }}</span>
-                        <div *ngIf="registryPanel.detail.miKindDef" class="registry-detail-def">{{ registryPanel.detail.miKindDef }}</div>
-                      </div>
-                      <div *ngIf="registryPanel.detail.purpose" class="registry-detail-block"><b>Назначение:</b> {{ registryPanel.detail.purpose }}</div>
-                      <div *ngIf="registryPanel.detail.useArea" class="registry-detail-block"><b>Область применения:</b> {{ registryPanel.detail.useArea }}</div>
-                      <div *ngIf="registryPanel.detail.techChars" class="registry-detail-block"><b>Краткие тех. характеристики:</b>
-                        <pre class="registry-detail-pre">{{ registryPanel.detail.techChars }}</pre>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </ng-container>
-          </tbody>
-        </table>
-        </div>
-        <div class="complect-cta">
-          <button class="btn btn-registry" (click)="openComplect(registryPanel.lot)"
-                  title="Найти лот в комплектности родительского аппарата (для электродов/пластин/принадлежностей)">
-            🔧 Комплектность аппаратов
-          </button>
-          <span class="registry-note">Если лот — принадлежность к аппарату (электрод, пластина), допуск может быть в комплектности аппарата.</span>
-        </div>
-      </div>
-
-      <div class="registry-panel" *ngIf="complectPanel">
-        <div class="registry-panel-head">
-          <span><b>Комплектность аппаратов:</b> {{ complectPanel.lot.equipName }}</span>
-          <button class="btn btn-cancel" (click)="closeComplect()">✕ Закрыть</button>
-        </div>
-        <div class="complect-term">
-          <input type="text" [(ngModel)]="complectPanel.term" placeholder="Название аппарата (напр. Элэскулап)"
-                 (keyup.enter)="runComplect(complectPanel.lot, complectPanel.term)">
-          <button class="btn btn-primary" [disabled]="complectPanel.loading"
-                  (click)="runComplect(complectPanel.lot, complectPanel.term)">Искать</button>
-        </div>
-        <div *ngIf="complectPanel.loading" class="registry-loading">Ищем в комплектности аппаратов…</div>
-        <div *ngIf="!complectPanel.loading && complectPanel.searched && !complectPanel.apparatuses.length" class="empty">
-          Аппарат не найден — уточните его название в поле выше и нажмите «Искать».
-        </div>
-        <div *ngFor="let a of complectPanel.apparatuses" class="complect-apparatus">
-          <div class="complect-app-head">
-            {{ a.name }} · <b>{{ a.country || '—' }}</b> · {{ a.producer || '—' }} · РУ {{ a.regNumber }}
-          </div>
-          <div *ngIf="!a._relevant.length && !a._zero.length" class="empty">Комплектность у этого аппарата не заполнена.</div>
-          <div class="table-scroll" *ngIf="a._relevant.length || a._zero.length">
-          <table class="registry-table">
-            <thead><tr><th>Совпадение</th><th>Компонент (состав)</th><th>Тип</th><th>Страна</th><th></th></tr></thead>
-            <tbody>
-              <tr *ngFor="let comp of a._relevant; let i = index" [class.recommended]="i === 0">
-                <td>
-                  <span class="score-badge" [class.score-good]="i === 0">{{ scorePct(comp) }}%</span>
-                  <span *ngIf="i === 0" class="reco-chip">★ рекомендуем</span>
-                </td>
-                <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
-                <td>{{ comp.component || '—' }}</td>
-                <td>{{ comp.country || '—' }}</td>
-                <td><button class="btn" [class.btn-adopt]="i === 0" [class.btn-adopt-muted]="i !== 0" [disabled]="adoptBusy"
-                            (click)="adoptComponent(a, comp)"
-                            title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
-              </tr>
-              <tr *ngIf="a._zero.length">
-                <td colspan="5">
-                  <button class="complect-zero-toggle" (click)="a._showZero = !a._showZero">
-                    {{ a._showZero ? '▴ скрыть нерелевантные' : '▾ ещё ' + a._zero.length + ' нерелевантных (0%)' }}
-                  </button>
-                </td>
-              </tr>
-              <ng-container *ngIf="a._showZero">
-                <tr *ngFor="let comp of a._zero" class="complect-zero-row">
-                  <td><span class="score-badge">0%</span></td>
-                  <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
-                  <td>{{ comp.component || '—' }}</td>
-                  <td>{{ comp.country || '—' }}</td>
-                  <td><button class="btn btn-adopt-muted" [disabled]="adoptBusy" (click)="adoptComponent(a, comp)"
-                              title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
-                </tr>
-              </ng-container>
-            </tbody>
-          </table>
-          </div>
-        </div>
-      </div>
+      <app-lot-registry-panel
+        [lot]="registryLot" [imported]="isImportedTender()"
+        (adopted)="onRegistryAdopted($event)"
+        (close)="registryLot = null">
+      </app-lot-registry-panel>
 
       <div class="kp-panel" *ngIf="kpPanel">
         <div class="kp-panel-head">
@@ -730,42 +607,12 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     .import-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
     .import-progress-text { color: var(--text); font-size: 12.5px; white-space: nowrap; }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .registry-panel { margin: 10px 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
-    .registry-panel-head, .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
+    .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
     .registry-loading { color: var(--text-muted); padding: 6px 0; }
-    .registry-table { width: 100%; }
-    .registry-table th { text-align: left; font-size: 12px; color: var(--text-muted); }
-    .score-badge { background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 2px 8px; font-size: 12px; }
-    .btn-adopt { background: #0e9f6e; color: var(--accent-contrast); }
-    .score-badge.score-good { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .score-badge.score-name { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .registry-note { font-size: 12px; color: var(--text-muted); margin: 4px 0 8px; }
-    .registry-hint { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn); }
-    .registry-row { cursor: pointer; }
-    .registry-row:hover td { background: var(--surface-2); }
-    .registry-desc-chip { font-size: 11px; color: var(--accent); white-space: nowrap; margin-left: 6px; }
-    .registry-detail-row td { background: var(--surface-2); padding: 10px 14px; }
-    .registry-detail-cols { display: flex; gap: 16px; align-items: flex-start; }
-    .registry-detail-col { flex: 1; min-width: 0; }
-    .registry-detail-h { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
-    .registry-detail-pre { white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font: inherit; margin: 4px 0 0; }
-    .registry-detail-meta { margin-bottom: 8px; font-weight: 600; }
-    .registry-detail-def { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
-    .registry-detail-block { margin-bottom: 6px; }
-    .registry-detail-error { color: var(--danger); padding: 4px 0; }
-    .complect-cta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-    .complect-term { display: flex; gap: 8px; margin-bottom: 10px; }
-    .complect-term input { flex: 1; max-width: 360px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
-    .complect-apparatus { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-    .complect-app-head { font-size: 13px; margin-bottom: 6px; color: var(--text); }
-    .complect-pre { white-space: pre-wrap; margin: 0; font: inherit; max-width: 520px; }
     .recommended td { background: var(--surface-2); }
     .recommended td:first-child { box-shadow: inset 3px 0 0 var(--success); }
-    .reco-chip { display: inline-block; margin-left: 6px; background: var(--success); color: var(--accent-contrast); border-radius: 8px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
     .complect-zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 4px 0; }
     .complect-zero-toggle:hover { color: var(--text); text-decoration: underline; }
-    .complect-zero-row td { color: var(--text-muted); }
-    .btn-adopt-muted { background: var(--surface-2); color: var(--text); }
     .lot-menu-wrap { position: relative; display: inline-block; }
     .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
     .lot-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 20; display: flex; flex-direction: column; min-width: 150px; overflow: hidden; }
@@ -899,8 +746,6 @@ export class TendersComponent {
   equipmentTypesList: any[] = [];
   // Разбор техспеки (кнопка «ТЗ»)
   tzBusy = new Set<number>();
-  // «Взять из реестра в работу»
-  adoptBusy = false;
 
   showTenderForm = false;
   editingTenderId: number | null = null;
@@ -1342,68 +1187,17 @@ export class TendersComponent {
     if (this.importPollTimer) { clearInterval(this.importPollTimer); this.importPollTimer = null; }
   }
 
-  registryPanel: { lot: any; loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean;
-                   openReg?: string | null; detail?: any; detailLoading?: boolean; detailError?: string | null } | null = null;
+  /** Лот, по которому открыта панель «Подбор» (реестр + комплектность) — живёт в app-lot-registry-panel. */
+  registryLot: any = null;
 
-  onLotRegistry(l: any) {
-    this.registryPanel = { lot: l, loading: true, items: [], distinctive: true, techSpecParsed: true };
-    this.cdr.detectChanges();
-    this.api.getLotRegistryCandidates(l.id).subscribe({
-      next: (r: any) => {
-        this.registryPanel = {
-          lot: l, loading: false,
-          items: r?.candidates || [],
-          distinctive: !!r?.distinctive,
-          techSpecParsed: !!r?.techSpecParsed,
-        };
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        this.registryPanel = null;
-        this.notify.error('Реестр: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
+  onLotRegistry(l: any) { this.registryLot = l; this.cdr.detectChanges(); }
+
+  /** «Взять в работу» из реестра/комплектности: обновить лоты и сразу предложить запросить КП. */
+  onRegistryAdopted(lot: any) {
+    this.registryLot = null;
+    this.loadLots();
+    this.openKpPanelFor(lot);   // сохраняем прежнюю сцепку adoptFromRegistry → панель КП
   }
-
-  closeRegistryPanel() { this.registryPanel = null; this.cdr.detectChanges(); }
-
-  complectPanel: { lot: any; term: string; loading: boolean; searched: boolean; apparatuses: any[] } | null = null;
-
-  openComplect(l: any) {
-    this.complectPanel = { lot: l, term: '', loading: true, searched: false, apparatuses: [] };
-    this.cdr.detectChanges();
-    // первый прогон — без term: бэк сам извлечёт бренд из ТЗ
-    this.runComplect(l, undefined);
-  }
-
-  runComplect(l: any, term?: string) {
-    if (!this.complectPanel) return;
-    this.complectPanel.loading = true;
-    this.cdr.detectChanges();
-    this.api.complectSearch(l.id, term).subscribe({
-      next: (r: any) => {
-        const apparatuses = (r?.apparatuses || []).map((a: any) => ({
-          ...a,
-          // разделяем на релевантные (есть совпадение) и нерелевантные (0%) — 0% прячем под тоглом
-          _relevant: (a.components || []).filter((c: any) => (c.score || 0) > 0),
-          _zero: (a.components || []).filter((c: any) => !((c.score || 0) > 0)),
-          _showZero: false,
-        }));
-        this.complectPanel = {
-          lot: l, term: r?.term || '', loading: false, searched: true, apparatuses
-        };
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        if (this.complectPanel) { this.complectPanel.loading = false; this.complectPanel.searched = true; }
-        this.notify.error('Комплектность: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  closeComplect() { this.complectPanel = null; this.cdr.detectChanges(); }
 
   // overflow-меню строки лота (Ред./Удалить) — разгружает строку
   openMenuLotId: number | null = null;
@@ -1416,60 +1210,6 @@ export class TendersComponent {
   closeLotMenu() {
     if (this.openMenuLotId !== null) { this.openMenuLotId = null; this.cdr.detectChanges(); }
   }
-
-  adoptComponent(c: any, comp: any) {
-    if (!this.complectPanel) return;
-    this.adoptBusy = true;
-    this.cdr.detectChanges();
-    this.api.adoptComponent(this.complectPanel.lot.id, c.regNumber, comp.partNumber).subscribe({
-      next: () => {
-        this.adoptBusy = false;
-        this.notify.success('Компонент взят в работу — предложенная модель лота обновлена');
-        this.closeComplect();
-        this.loadLots();
-      },
-      error: err => {
-        this.adoptBusy = false;
-        this.notify.error('Не удалось взять компонент: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  toggleRegistryDetail(c: any) {
-    const p = this.registryPanel;
-    if (!p) return;
-    if (p.openReg === c.regNumber) { p.openReg = null; this.cdr.detectChanges(); return; }
-    p.openReg = c.regNumber;
-    p.detail = c._detail || null;
-    p.detailError = null;
-    p.detailLoading = !p.detail;
-    if (!p.detail) {
-      this.api.getRegistryDetail(c.regNumber).subscribe({
-        next: d => {
-          c._detail = d; // фронтовый кеш на объекте кандидата — повторный разворот без запроса
-          if (p.openReg === c.regNumber) { p.detail = d; p.detailLoading = false; }
-          this.cdr.detectChanges();
-        },
-        error: err => {
-          // ошибка живёт в развороте (панель не закрываем, тост не нужен);
-          // detail остаётся null и в c._detail не кешируется → повторное открытие = retry
-          if (p.openReg === c.regNumber) {
-            p.detailLoading = false;
-            p.detailError = err.error?.message || 'Не удалось получить карточку НЦЭЛС';
-          }
-          this.cdr.detectChanges();
-        }
-      });
-    }
-    this.cdr.detectChanges();
-  }
-
-  registryDetailEmpty(d: any): boolean {
-    return !!d && !d.riskClass && !d.purpose && !d.useArea && !d.techChars && !d.miKind;
-  }
-
-  scorePct(c: any): number { return Math.round((c?.score || 0) * 100); }
 
   formatImportTime(iso: string): string {
     const t = new Date(iso).getTime();
@@ -1694,26 +1434,6 @@ export class TendersComponent {
   hasAnyWeight(): boolean { return (this.lots || []).some((l: any) => l.maxWeightKg); }
   lotHasCriteria(l: any): boolean {
     return !!(l.equipmentType || l.maxLengthMm || l.maxWidthMm || l.maxHeightMm || l.maxWeightKg);
-  }
-
-  adoptFromRegistry(c: any) {
-    const lot = this.registryPanel?.lot;
-    if (!lot || !c?.regNumber) return;
-    this.adoptBusy = true;
-    this.api.adoptRegistryForLot(lot.id, c.regNumber).subscribe({
-      next: () => {
-        this.adoptBusy = false;
-        this.notify.success(`Модель из реестра предложена для лота: ${c.name}`);
-        this.closeRegistryPanel();
-        this.loadLots();
-        this.openKpPanelFor(lot); // сразу к запросу КП (предотметка по бренду производителя)
-      },
-      error: (e) => {
-        this.adoptBusy = false;
-        this.notify.error(e.error?.message || 'Не удалось взять РУ в работу');
-        this.cdr.detectChanges();
-      }
-    });
   }
 
   parseTechSpec(l: any) {
