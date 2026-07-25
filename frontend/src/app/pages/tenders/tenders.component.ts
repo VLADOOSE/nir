@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
-import { NgFor, NgIf, DecimalPipe } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -13,13 +13,15 @@ import { OfferComparisonComponent } from './offer-comparison.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
+import { kpToastFromResults } from '../../shared/kp-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 import { LotRegistryPanelComponent } from './lot-registry-panel.component';
+import { LotKpPanelComponent } from './lot-kp-panel.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, LotRegistryPanelComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, LotRegistryPanelComponent, LotKpPanelComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -320,103 +322,10 @@ import { LotRegistryPanelComponent } from './lot-registry-panel.component';
         (close)="registryLot = null">
       </app-lot-registry-panel>
 
-      <div class="kp-panel" *ngIf="kpPanel">
-        <div class="kp-panel-head">
-          <span><b>Запрос КП</b> · выбрано лотов: {{ lotSel.size }}</span>
-          <button class="btn btn-cancel" (click)="kpPanel = null">✕ Закрыть</button>
-        </div>
-        <div *ngIf="kpPanel.loading" class="registry-loading">Подбираем поставщиков…</div>
-        <ng-container *ngIf="!kpPanel.loading">
-          <div class="kp-controls" *ngIf="kpPanel.singleLot">
-            <label>Вид МИ:
-              <select [ngModel]="kpPanel.detectedType?.id ?? ''" (ngModelChange)="changeLotType($event)">
-                <option value="">— не задан —</option>
-                <option *ngFor="let t of equipmentTypesList" [value]="t.id">{{ t.name }}</option>
-              </select>
-            </label>
-            <span class="kp-conf" *ngIf="kpPanel.detectedType && kpPanel.detectedType.confidence < 1">
-              авто · {{ (kpPanel.detectedType.confidence * 100) | number:'1.0-0' }}%
-            </span>
-            <label class="kp-term">Поиск поставщика:
-              <input type="text" [(ngModel)]="kpPanel.sourcingTerm" placeholder="бренд/аппарат"
-                     (keyup.enter)="researchSupplier()">
-            </label>
-            <button class="btn btn-line" (click)="researchSupplier()">Найти</button>
-          </div>
-
-          <div class="empty" *ngIf="!kpPanel.entries.length">На этом рынке нет поставщиков — добавьте их в справочнике «Дистрибьюторы»</div>
-          <div class="empty" *ngIf="kpPanel.entries.length && !kpPanel._relevant.length && !kpPanel.detectedType">
-            Нужна техспецификация или вид МИ, чтобы подобрать по специализации.
-          </div>
-
-          <div class="table-scroll" *ngIf="kpPanel._relevant.length">
-          <table class="kp-suppliers">
-            <thead><tr><th class="w-36"></th><th>Поставщик</th><th>Email</th><th>Почему</th></tr></thead>
-            <tbody>
-              <tr *ngFor="let e of kpPanel._relevant; let i = index" [class.kp-hit]="e.preselect" [class.recommended]="i === 0">
-                <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                <td>
-                  <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
-                  <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
-                  <span *ngIf="!e.distributor?.equipmentTypes?.length" class="tag-all"> · все виды</span>
-                </td>
-                <td>{{ e.distributor?.email || '—' }} <span class="no-email" *ngIf="!e.distributor?.email">письмо не уйдёт</span></td>
-                <td>
-                  <span class="reason-chip" *ngFor="let r of e.reasons"
-                        [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'">
-                    {{ r.kind === 'TYPE' ? '✓' : 'возит' }} {{ r.label }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-
-          <div class="kp-nonrel" *ngIf="kpPanel._nonrel.length">
-            <button class="complect-zero-toggle" (click)="kpPanel._showNonrel = !kpPanel._showNonrel">
-              {{ kpPanel._showNonrel ? '▴ скрыть нерелевантных' : '▾ ещё ' + kpPanel._nonrel.length + ' нерелевантных' }}
-            </button>
-            <div class="table-scroll" *ngIf="kpPanel._showNonrel">
-            <table class="kp-suppliers">
-              <tbody>
-                <tr *ngFor="let e of kpPanel._nonrel">
-                  <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                  <td>
-                    <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
-                    <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
-                  </td>
-                  <td>{{ e.distributor?.email || '—' }}</td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-            </div>
-          </div>
-
-          <div class="kp-panel-actions" *ngIf="kpPanel.entries.length">
-            <button class="btn btn-save" [disabled]="kpPanel.sending || checkedSuppliers().length === 0" (click)="sendKpRequests()">
-              {{ kpPanel.sending ? 'Отправка…' : 'Отправить запросы (' + checkedSuppliers().length + ')' }}
-            </button>
-          </div>
-        </ng-container>
-      </div>
-
-      <div class="kp-preview-overlay" *ngIf="kpPreview" (click)="cancelKpPreview()">
-        <div class="kp-preview" (click)="$event.stopPropagation()">
-          <h3>Текст письма — проверьте перед отправкой</h3>
-          <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ kpPreview.distributorIds.length }} поставщик(ам).</p>
-          <label class="kp-preview-lbl">Тема</label>
-          <input class="kp-preview-subject" [(ngModel)]="kpPreview.subject" />
-          <label class="kp-preview-lbl">Текст</label>
-          <textarea class="kp-preview-body" rows="16" [(ngModel)]="kpPreview.body"></textarea>
-          <div class="kp-preview-actions">
-            <button class="btn btn-cancel" (click)="cancelKpPreview()">Отмена</button>
-            <button class="btn btn-save" [disabled]="kpPreview.sending" (click)="confirmSendKp()">
-              {{ kpPreview.sending ? 'Отправка…' : 'Отправить' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <app-lot-kp-panel
+        [tenderId]="selectedTender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypesList"
+        (sent)="onKpSent()" (typeChanged)="loadLots()" (close)="kpLots = []">
+      </app-lot-kp-panel>
 
       <app-smart-match
         *ngIf="matchLotId !== null"
@@ -565,30 +474,7 @@ import { LotRegistryPanelComponent } from './lot-registry-panel.component';
     .badge-reg-ok { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 8px; padding: 1px 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
     .x-mini { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 13px; margin-left: 4px; }
     .kp-line { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
-    .kp-panel { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
-    .kp-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .kp-suppliers { background: var(--surface); }
-    .kp-suppliers tr.kp-hit td { background: var(--surface-2); }
-    .kp-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-    .kp-controls select, .kp-term input { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
-    .kp-conf { font-size: 12px; color: var(--text-muted); }
-    .reason-chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; margin: 0 3px 3px 0; }
-    .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .reason-brand { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .tag-all { color: var(--text-muted); font-size: 11px; }
-    .supplier-link { color: var(--accent); text-decoration: none; }
-    .supplier-link:hover { text-decoration: underline; }
     .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-    .brand-chip { display: inline-block; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
-    .no-email { color: var(--danger); font-size: 11px; margin-left: 6px; }
-    .kp-panel-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
-    .kp-preview-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .kp-preview { background: var(--surface); border-radius: 10px; padding: 20px; width: min(720px, 92vw); max-height: 88vh; overflow: auto; }
-    .kp-preview-note { color: var(--text-muted); font-size: 12.5px; margin: 4px 0 12px; }
-    .kp-preview-lbl { display: block; font-size: 12px; color: var(--text); margin: 8px 0 3px; }
-    .kp-preview-subject, .kp-preview-body { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-    .kp-preview-body { font: inherit; resize: vertical; }
-    .kp-preview-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
     .btn-save { background: var(--accent); color: var(--accent-contrast); }
     .btn-cancel { background: var(--surface-2); color: var(--text); margin-left: 8px; }
     .btn-edit { background: var(--warn); color: var(--accent-contrast); margin-right: 4px; }
@@ -608,11 +494,6 @@ import { LotRegistryPanelComponent } from './lot-registry-panel.component';
     .import-progress-text { color: var(--text); font-size: 12.5px; white-space: nowrap; }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
-    .registry-loading { color: var(--text-muted); padding: 6px 0; }
-    .recommended td { background: var(--surface-2); }
-    .recommended td:first-child { box-shadow: inset 3px 0 0 var(--success); }
-    .complect-zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 4px 0; }
-    .complect-zero-toggle:hover { color: var(--text); text-decoration: underline; }
     .lot-menu-wrap { position: relative; display: inline-block; }
     .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
     .lot-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 20; display: flex; flex-direction: column; min-width: 150px; overflow: hidden; }
@@ -730,19 +611,9 @@ export class TendersComponent {
   matchLotId: number | null = null;
   matchLotNumber: number | null = null;
 
-  // Лотовый запрос КП
+  // Лотовый запрос КП (панель живёт в app-lot-kp-panel; здесь — только набор лотов, по которым она открыта)
   lotSel = new Set<number>();
-  kpPanel: {
-    loading: boolean; sending: boolean; entries: any[];
-    _relevant: any[]; _nonrel: any[]; _showNonrel: boolean;
-    singleLot: boolean;
-    detectedType: { id: number; name: string; confidence: number } | null;
-    typeAlternatives: { id: number; name: string }[];
-    sourcingTerm: string;
-    lotId: number | null;
-  } | null = null;
-  kpPreview: { subject: string; body: string; sending: boolean;
-               distributorIds: number[]; items: any[] } | null = null;
+  kpLots: any[] = [];
   equipmentTypesList: any[] = [];
   // Разбор техспеки (кнопка «ТЗ»)
   tzBusy = new Set<number>();
@@ -1195,8 +1066,9 @@ export class TendersComponent {
   /** «Взять в работу» из реестра/комплектности: обновить лоты и сразу предложить запросить КП. */
   onRegistryAdopted(lot: any) {
     this.registryLot = null;
-    this.loadLots();
-    this.openKpPanelFor(lot);   // сохраняем прежнюю сцепку adoptFromRegistry → панель КП
+    // сохраняем прежнюю сцепку adoptFromRegistry → панель КП, но открываем её ПОСЛЕ перезагрузки лотов:
+    // в панель уезжает сам объект лота, и в письмо должна попасть только что предложенная модель (proposedEquipment)
+    this.loadLots(fresh => this.openKpPanelFor(fresh.find((l: any) => l.id === lot.id) || lot));
   }
 
   // overflow-меню строки лота (Ред./Удалить) — разгружает строку
@@ -1292,7 +1164,7 @@ export class TendersComponent {
     this.matchLotId = null;
     this.priceRequests = [];
     this.lotSel.clear();
-    this.kpPanel = null;
+    this.kpLots = [];
     this.loadLots();
   }
 
@@ -1303,16 +1175,18 @@ export class TendersComponent {
     this.matchLotId = null;
     this.priceRequests = [];
     this.lotSel.clear();
-    this.kpPanel = null;
+    this.kpLots = [];
     this.loadTenders();
   }
 
-  loadLots() {
+  /** `after` — продолжение на СВЕЖИХ лотах (нужно там, где следом открывается панель по объекту лота). */
+  loadLots(after?: (lots: any[]) => void) {
     this.api.getTenderLots(this.selectedTender.id).subscribe({
       next: data => {
         this.lots = data;
         this.cdr.detectChanges();
         this.loadPriceRequests();
+        if (after) after(this.lots);
       },
       error: err => this.notify.error('Ошибка загрузки лотов: ' + (err.error?.message || err.message))
     });
@@ -1402,7 +1276,8 @@ export class TendersComponent {
       }]
     }).subscribe({
       next: (results) => {
-        this.kpToastFromResults(results);
+        const t = kpToastFromResults(results);
+        if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
         this.loadPriceRequests();
         this.matchLotId = null;
         this.matchLotNumber = null;
@@ -1457,62 +1332,13 @@ export class TendersComponent {
     });
   }
 
-  openKpPanelFor(l: any) {
-    this.lotSel.clear();
-    this.lotSel.add(l.id);
-    this.openKpPanel();
-  }
+  /** Открыть панель КП по одному лоту. */
+  openKpPanelFor(l: any) { this.lotSel.clear(); this.lotSel.add(l.id); this.kpLots = [l]; this.cdr.detectChanges(); }
 
-  openKpPanel(term?: string) {
-    if (!this.selectedTender || this.lotSel.size === 0) return;
-    const single = this.lotSel.size === 1;
-    const lotId = single ? [...this.lotSel][0] : null;
-    this.kpPanel = {
-      loading: true, sending: false, entries: [], _relevant: [], _nonrel: [], _showNonrel: false,
-      singleLot: single, detectedType: null, typeAlternatives: [], sourcingTerm: '', lotId,
-    };
-    this.cdr.detectChanges();
-    this.api.getLotSourcing(this.selectedTender.id, [...this.lotSel], term).subscribe({
-      next: (r) => {
-        const entries = (r?.distributors || []).map((e: any) => ({ ...e, _checked: !!e.preselect }));
-        this.kpPanel = {
-          loading: false, sending: false, entries,
-          _relevant: entries.filter((e: any) => e.relevant),
-          _nonrel: entries.filter((e: any) => !e.relevant),
-          _showNonrel: false,
-          singleLot: !!r?.singleLot,
-          detectedType: r?.detectedType || null,
-          typeAlternatives: r?.typeAlternatives || [],
-          sourcingTerm: r?.sourcingTerm || '',
-          lotId,
-        };
-        this.cdr.detectChanges();
-      },
-      error: (e) => {
-        this.kpPanel = null;
-        this.notify.error('Ошибка подбора поставщиков: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
+  /** Открыть панель КП по всем отмеченным лотам. */
+  openKpPanel() { this.kpLots = this.lots.filter((l: any) => this.lotSel.has(l.id)); this.cdr.detectChanges(); }
 
-  /** Сменить вид МИ лота из панели → сохранить и пересобрать подбор. */
-  changeLotType(typeId: any) {
-    const id = typeId === '' || typeId == null ? null : Number(typeId);
-    if (!this.kpPanel?.lotId) return;
-    const term = this.kpPanel.sourcingTerm || undefined;
-    this.api.setLotEquipmentType(this.kpPanel.lotId, id).subscribe({
-      next: () => { this.loadLots(); this.openKpPanel(term); },
-      error: (e) => this.notify.error(e.error?.message || 'Ошибка сохранения типа'),
-    });
-  }
-
-  /** Точечный поиск поставщика по введённому термину (Tier 2). */
-  researchSupplier() { this.openKpPanel(this.kpPanel?.sourcingTerm || undefined); }
-
-  checkedSuppliers(): any[] {
-    return (this.kpPanel?.entries || []).filter((e: any) => e._checked);
-  }
+  onKpSent() { this.kpLots = []; this.lotSel.clear(); this.loadPriceRequests(); this.cdr.detectChanges(); }
 
   kpDistributorsFor(lotId: number): string[] {
     const names: string[] = [];
@@ -1532,73 +1358,13 @@ export class TendersComponent {
     });
   }
 
-  /** Единый тост по результатам /send. */
-  kpToastFromResults(results: any[]) {
-    const list = results || [];
-    const sent = list.filter((r: any) => r.emailSent).length;
-    const noEmail = list.filter((r: any) => r.reason === 'NO_EMAIL').map((r: any) => r.distributorName);
-    const failed = list.filter((r: any) => r.reason === 'SEND_FAILED').map((r: any) => r.distributorName);
-    let msg = `Создано запросов: ${list.length}, писем отправлено: ${sent}`;
-    if (noEmail.length) msg += `; без email: ${noEmail.join(', ')}`;
-    if (failed.length) msg += `; ошибка отправки: ${failed.join(', ')}`;
-    if (noEmail.length || failed.length) this.notify.error(msg); else this.notify.success(msg);
-  }
-
-  sendKpRequests() {
-    if (!this.selectedTender || !this.kpPanel) return;
-    const distributorIds = this.checkedSuppliers().map((e: any) => e.distributor.id);
-    const items = this.lots
-      .filter((l: any) => this.lotSel.has(l.id))
-      .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? 1 }));
-    if (!distributorIds.length || !items.length) return;
-    this.kpPanel.sending = true;
-    this.api.previewKp({ tenderId: this.selectedTender.id, distributorIds, items }).subscribe({
-      next: (p) => {
-        this.kpPreview = { subject: p.subject, body: p.body, sending: false, distributorIds, items };
-        if (this.kpPanel) this.kpPanel.sending = false;
-        this.cdr.detectChanges();
-      },
-      error: (e) => {
-        if (this.kpPanel) this.kpPanel.sending = false;
-        this.notify.error('Ошибка превью: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  confirmSendKp() {
-    if (!this.selectedTender || !this.kpPreview) return;
-    this.kpPreview.sending = true;
-    this.api.sendPriceRequests({
-      tenderId: this.selectedTender.id,
-      distributorIds: this.kpPreview.distributorIds,
-      items: this.kpPreview.items,
-      subjectOverride: this.subjectHuman(this.kpPreview.subject),
-      bodyOverride: this.kpPreview.body,
-    }).subscribe({
-      next: (results) => {
-        this.kpToastFromResults(results);
-        this.kpPreview = null; this.kpPanel = null; this.lotSel.clear();
-        this.loadPriceRequests(); this.cdr.detectChanges();
-      },
-      error: (e) => {
-        if (this.kpPreview) this.kpPreview.sending = false;
-        this.notify.error('Ошибка отправки: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** Убрать токен [КП-…] из отредактированной темы — сервер добавит свой. */
-  private subjectHuman(subject: string): string {
-    return (subject || '').replace(/\[КП-\d+\]\s*/g, '').trim();
-  }
-
-  cancelKpPreview() { this.kpPreview = null; this.cdr.detectChanges(); }
-
   resendPr(pr: any) {
     this.api.resendPriceRequest(pr.id).subscribe({
-      next: (r) => { this.kpToastFromResults([r]); this.loadPriceRequests(); },
+      next: (r) => {
+        const t = kpToastFromResults([r]);
+        if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
+        this.loadPriceRequests();
+      },
       error: (e) => this.notify.error(e.error?.message || 'Ошибка пересылки'),
     });
   }
