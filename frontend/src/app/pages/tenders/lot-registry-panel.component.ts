@@ -20,11 +20,14 @@ import { NotificationService } from '../../services/notification.service';
       </div>
       <div class="lrp-note">Реестр НЦЭЛС — допуск (№ РУ); габариты/вес здесь не хранятся, соответствие — по совпадению наименования.</div>
 
-      <div *ngIf="registry && !registry.loading && !registry.distinctive && !registry.techSpecParsed && imported" class="lrp-hint">
+      <div *ngIf="registry && !registry.loading && !registry.error && !registry.distinctive && !registry.techSpecParsed && imported" class="lrp-hint">
         ⚠ Совпадение только по названию — модели в реестре неразличимы. Нажмите «ТЗ», чтобы разбор техспецификации уточнил подбор.
       </div>
       <div *ngIf="registry?.loading" class="lrp-loading">Ищем похожие изделия в реестре…</div>
-      <div *ngIf="registry && !registry.loading && !registry.items.length" class="lrp-empty">
+      <div *ngIf="registry?.error && !registry?.loading" class="lrp-error">
+        Реестр недоступен: {{ registry?.error }} — закройте и откройте панель «Подбор», чтобы повторить.
+      </div>
+      <div *ngIf="registry && !registry.loading && !registry.error && !registry.items.length" class="lrp-empty">
         Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос
       </div>
 
@@ -39,7 +42,7 @@ import { NotificationService } from '../../services/notification.service';
           </div>
           <div class="cand-row2">
             РУ {{ c.regNumber }} · {{ c.producer || '—' }} · {{ c.country || '—' }} ·
-            {{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}
+            {{ c.unlimited ? 'бессрочно' : (c.expirationDate ? 'до ' + formatDate(c.expirationDate) : '—') }}
           </div>
         </div>
         <div class="cand-actions">
@@ -139,6 +142,7 @@ import { NotificationService } from '../../services/notification.service';
     .lrp-empty { color: var(--text-muted); font-size: 14px; padding: 12px 0; }
     .lrp-hint { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn);
                 padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn); }
+    .lrp-error { color: var(--danger); font-size: 14px; padding: 8px 0; }
     .cand { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; padding: 10px 12px; }
     .cand-main { cursor: pointer; }
     .cand-row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -170,7 +174,7 @@ import { NotificationService } from '../../services/notification.service';
     .comp-reco { box-shadow: inset 3px 0 0 var(--success); padding-left: 8px; }
     .comp-row1 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .comp-row2 { font-size: 12px; color: var(--text-muted); margin: 4px 0 6px; }
-    .comp-pre { white-space: pre-wrap; margin: 6px 0 0; font: inherit; color: var(--text); }
+    .comp-pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; font: inherit; color: var(--text); }
     .comp-zero { opacity: .75; }
     .reco-chip { background: var(--success); color: var(--accent-contrast); border-radius: 8px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
@@ -185,7 +189,9 @@ import { NotificationService } from '../../services/notification.service';
 
     @media (max-width: 900px) {
       .cand-detail-cols { flex-direction: column; gap: 10px; }
-      .cand-actions .btn { width: 100%; }
+      .cand-actions .btn,
+      .comp .btn,
+      .complect-term .btn { width: 100%; }
     }
   `],
 })
@@ -195,7 +201,7 @@ export class LotRegistryPanelComponent implements OnChanges {
   @Output() adopted = new EventEmitter<any>();
   @Output() close = new EventEmitter<void>();
 
-  registry: { loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean;
+  registry: { loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean; error?: string | null;
               openReg?: string | null; detail?: any; detailLoading?: boolean; detailError?: string | null } | null = null;
   complect: { term: string; loading: boolean; searched: boolean; apparatuses: any[] } | null = null;
   adoptBusy = false;
@@ -226,8 +232,13 @@ export class LotRegistryPanelComponent implements OnChanges {
         this.cdr.detectChanges();
       },
       error: err => {
-        // панель не закрываем — её жизнью управляет родитель; показываем пустой результат + тост
-        this.registry = { loading: false, items: [] };
+        // панель не закрываем — её жизнью управляет родитель; в панели живёт текст ошибки (тост уходит, текст остаётся),
+        // подсказка «только по названию» и «ничего не найдено» при error не показываются — они были бы ложью
+        this.registry = {
+          loading: false,
+          items: [],
+          error: err.error?.message || err.message || 'Не удалось получить кандидатов',
+        };
         this.notify.error('Реестр: ' + (err.error?.message || err.message));
         this.cdr.detectChanges();
       }
