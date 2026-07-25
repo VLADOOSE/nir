@@ -72,7 +72,7 @@ import { kpToastFromResults } from '../../shared/kp-toast';
               <span class="sup-body">
                 <span class="sup-name">
                   <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener"
-                     class="supplier-link" (click)="$event.stopPropagation()">{{ e.distributor?.name }} ↗</a>
+                     class="supplier-link" title="Открыть сайт поставщика" (click)="$event.stopPropagation()">{{ e.distributor?.name }} ↗</a>
                   <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
                 </span>
                 <span class="sup-mail">{{ e.distributor?.email || '—' }}</span>
@@ -117,7 +117,9 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     .kp-conf { font-size: 12px; color: var(--text-muted); }
     .sup { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
            border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-    .sup-hit { background: var(--surface-2); }
+    /* преотмеченный (сильнейший) поставщик должен ВЫДЕЛЯТЬСЯ: --surface-2 совпадал с фоном панели
+       и топил лучших, пока слабые светились белым — в старой таблице та же пара читалась наоборот */
+    .sup-hit { background: color-mix(in srgb, var(--success) 8%, var(--surface)); border-color: var(--success); }
     .sup-reco { box-shadow: inset 3px 0 0 var(--success); }
     .sup-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
     .sup-name { font-size: 14px; color: var(--text); }
