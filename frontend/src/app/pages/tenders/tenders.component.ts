@@ -391,12 +391,9 @@ import { TenderLotsComponent } from './tender-lots.component';
     .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
-    .form-hint { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .form-actions { margin-top: 16px; }
-    .match-results { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-top: 16px; }
-    .match-results table { margin-top: 8px; }
     .field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
     .input-error { border-color: var(--danger) !important; }
     .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
@@ -458,10 +455,8 @@ export class TendersComponent {
   }
   allApplyItems: any[] = [];
   facilities: any[] = [];
-  distributors: any[] = [];
   selectedTender: any = null;
   lots: any[] = [];
-  matchResults: any[] = [];
   matchLotId: number | null = null;
   matchLotNumber: number | null = null;
 
@@ -511,7 +506,6 @@ export class TendersComponent {
     this.loadTenders();
     this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
-    this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
     this.api.getEquipmentTypes().subscribe(ts => { this.equipmentTypesList = ts || []; this.cdr.detectChanges(); });
     this.api.getAllApplyItems().subscribe({
       next: items => { this.allApplyItems = items || []; },
@@ -618,8 +612,6 @@ export class TendersComponent {
     const proc = Number(it._editPrice ?? it.responsePrice ?? 0);
     return this.calcMarked(it, pr).price - proc;
   }
-
-  formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
 
   private daysLeft(deadline: string): number {
     if (!deadline) return Infinity;
@@ -959,7 +951,6 @@ export class TendersComponent {
 
   onOpen(t: any) {
     this.selectedTender = t;
-    this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
     this.loadLots();
@@ -967,7 +958,6 @@ export class TendersComponent {
 
   onBack() {
     this.selectedTender = null;
-    this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
     this.loadTenders();

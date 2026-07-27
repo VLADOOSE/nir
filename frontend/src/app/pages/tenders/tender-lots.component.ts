@@ -82,7 +82,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <div class="lot-title">
             <span class="lot-num" *ngIf="l.lotNumber">&#8470;{{ l.lotNumber }}</span>
             <span class="lot-name">{{ l.equipName }}</span>
-            <!-- один вызов lotStage на лот: метод обходит priceRequests×items, в шаблоне звался трижды -->
+            <!-- lotStage/kpDistributorsFor — чтение предпосчитанной карты (обход priceRequests×items
+                 живёт в ngOnChanges, не в цикле change detection) -->
             <ng-container *ngIf="lotStage(l) as st">
               <span class="stage-chip" [class]="'stage-' + st.tone">
                 {{ st.filled ? '●' : '○' }} {{ st.label }}
@@ -90,8 +91,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             </ng-container>
             <span class="lot-chev">{{ isExpanded(l) ? '▴' : '▾' }}</span>
           </div>
+          <!-- «пусто — не рисуем»: у большинства импортных лотов ни цены, ни вида МИ нет →
+               лишнего разделителя быть не должно -->
           <div class="lot-metrics">
-            {{ l.quantity }} шт<span *ngIf="l.maxCost"> · до {{ l.maxCost | money }}</span>
+            {{ l.quantity }} шт<span *ngIf="l.maxCost"> · до {{ l.maxCost | money }}</span><span *ngIf="l.equipmentType?.name"> · {{ l.equipmentType.name }}</span>
           </div>
           <div class="lot-proposed" *ngIf="l.proposedEquipment">
             <span class="badge-proposed">Предложено:</span>
@@ -295,19 +298,17 @@ export class TenderLotsComponent implements OnChanges {
               public market: MarketService) {}
 
   /**
-   * Пришли новые лоты (родитель перезагрузил список):
-   * 1) объекты в `kpLots` заменяем НА МЕСТЕ — панель КП строит позиции письма из захваченного входа `lots`,
-   *    и без ресинка в письмо уехал бы устаревший лот (без только что предложенной модели). Ссылка на массив
-   *    сохраняется намеренно: новая ссылка перезапустила бы подбор поставщиков в панели и стёрла отметки оператора;
-   * 2) отложенное открытие панели КП после «Взять в работу» — открываем уже на свежем объекте лота.
+   * Пришли новые входы от родителя:
+   * 1) `lots` — ресинк состояния на свежий список (см. `resyncToLots`);
+   * 2) `lots`/`priceRequests` — пересчёт карты «стадия + получатели КП» (см. `rebuildLotMeta`);
+   * 3) отложенное открытие панели КП после «Взять в работу» — открываем уже на свежем объекте лота.
    */
   ngOnChanges(ch: SimpleChanges) {
-    if (!ch['lots']) return;
-    this.kpLots.forEach((k, i) => {
-      const f = this.lots.find((l: any) => l.id === k.id);
-      if (f) this.kpLots[i] = f;
-    });
-    if (this.pendingKpLotId !== null) {
+    if (ch['lots']) this.resyncToLots();
+    // Карта зависит от ОБОИХ входов: без пересчёта на priceRequests чипы стадий перестали бы
+    // обновляться после отправки КП и ввода цен.
+    if (ch['lots'] || ch['priceRequests']) this.rebuildLotMeta();
+    if (ch['lots'] && this.pendingKpLotId !== null) {
       const fresh = this.lots.find((l: any) => l.id === this.pendingKpLotId);
       this.pendingKpLotId = null;
       // detectChanges тут НЕ звать: мы внутри прохода change detection, шаблон отрисуется сразу после хуков
@@ -315,15 +316,64 @@ export class TenderLotsComponent implements OnChanges {
     }
   }
 
+  /**
+   * Ресинк состояния на свежий список лотов. Принцип: «лот исчез — всё, что на него ссылалось, закрыто».
+   * Иначе состояние прошлого тендера переживало смену тендера (родитель компонент не пересоздаёт:
+   * он под `*ngIf="selectedTender"`, условие остаётся истинным) — оставались отметки и панель КП с
+   * чужими `tenderLotId`, а кнопка «Запросить КП по выбранным (N)» была включена и молча не работала.
+   * Тот же дефект давало удаление лота: его id оставался в `lotSel`.
+   *
+   * Найденные объекты в `kpLots` заменяем НА МЕСТЕ, исчезнувшие — вырезаем `splice`: ссылка на массив
+   * сохраняется намеренно (панель КП строит позиции письма из захваченного входа `lots`, и без ресинка
+   * в письмо уехал бы устаревший лот, а НОВАЯ ссылка перезапустила бы подбор поставщиков и стёрла
+   * отметки оператора). Пустой `kpLots` → панель не рендерится ни над списком, ни внутри лота.
+   */
+  private resyncToLots() {
+    const fresh: any[] = this.lots || [];
+    const alive = new Set<number>(fresh.map((l: any) => l.id));
+    const wasMulti = this.kpLots.length > 1;
+
+    for (let i = this.kpLots.length - 1; i >= 0; i--) {
+      const f = fresh.find((l: any) => l.id === this.kpLots[i].id);
+      if (f) this.kpLots[i] = f; else this.kpLots.splice(i, 1);
+    }
+    // мульти-панель схлопнулась до одного лота: одиночная панель живёт ВНУТРИ лота (как в openKp),
+    // поэтому лот разворачиваем — иначе панель просто исчезла бы при непустом kpLots
+    if (wasMulti && this.kpLots.length === 1) this.expandedLotId = this.kpLots[0].id;
+
+    for (const id of Array.from(this.lotSel)) if (!alive.has(id)) this.lotSel.delete(id);
+    if (this.registryLot && !alive.has(this.registryLot.id)) this.registryLot = null;
+    if (this.expandedLotId !== null && !alive.has(this.expandedLotId)) this.expandedLotId = null;
+    if (this.specOpenLotId !== null && !alive.has(this.specOpenLotId)) this.specOpenLotId = null;
+    if (this.pendingKpLotId !== null && !alive.has(this.pendingKpLotId)) this.pendingKpLotId = null;
+  }
+
   /** Лоты трекаются по id: перезагрузка списка не должна пересоздавать открытые панели (потеря их состояния). */
   trackLot = (_: number, l: any) => l.id;
 
   // ===== разворот =====
   toggleLot(l: any) {
-    this.expandedLotId = this.expandedLotId === l.id ? null : l.id;
+    const wasOpen = this.expandedLotId;
+    this.expandedLotId = wasOpen === l.id ? null : l.id;
+    // свернули этот лот ИЛИ развернули другой (что свернуло прежний) → закрываем панели прежнего
+    if (wasOpen !== null && wasOpen !== this.expandedLotId) this.closePanelsOf(wasOpen);
     this.cdr.detectChanges();
   }
   isExpanded(l: any): boolean { return this.expandedLotId === l.id; }
+
+  /**
+   * Лот свернулся — панели этого лота живут под `*ngIf` по развороту и всё равно будут уничтожены
+   * вместе с их состоянием (отметки поставщиков, результаты «Комплектности» — живые запросы к НЦЭЛС,
+   * введённый термин). Закрываем их ЯВНО, иначе оставалось состояние-зомби: `kpLots`/`registryLot`
+   * заполнены, панели не видно, а повторный разворот показывал ПУСТУЮ панель, притворяющуюся рабочей
+   * (с новым запросом подбора). Теперь повторный разворот показывает лот без панели — «начать заново».
+   * Мульти-лотовую панель КП не трогаем: она относится не к одному лоту и живёт над списком.
+   */
+  private closePanelsOf(lotId: number) {
+    if (this.registryLot?.id === lotId) this.registryLot = null;
+    if (this.kpLots.length === 1 && this.kpLots[0].id === lotId) this.kpLots = [];
+    if (this.specOpenLotId === lotId) this.specOpenLotId = null;
+  }
 
   specOpenLotId: number | null = null;
   toggleSpec(l: any) {
@@ -332,44 +382,63 @@ export class TenderLotsComponent implements OnChanges {
   }
   isSpecOpen(l: any): boolean { return this.specOpenLotId === l.id; }
 
-  // ===== стадия лота =====
-  /** Все позиции запросов КП, относящиеся к лоту. */
-  private itemsForLot(lotId: number): any[] {
-    const out: any[] = [];
+  // ===== стадия лота и получатели КП (предпосчёт) =====
+  /**
+   * Стадия и получатели КП по лоту — считаются ОДИН РАЗ в ngOnChanges, шаблон только читает карту.
+   * Раньше `lotStage` (два прохода по priceRequests×items) и `kpDistributorsFor` (ещё один, звался дважды
+   * на лот) выполнялись на КАЖДОМ цикле change detection, а CD дёргается на каждый введённый символ
+   * в форме лота и в поле термина: на 50 лотах × 20 КП × 50 позиций это сотни тысяч посещений позиций.
+   */
+  private lotMeta = new Map<number, { stage: LotStage; kpNames: string[] }>();
+
+  /** Один проход по всем КП + один по лотам вместо «на каждый лот — проход по всем КП». */
+  private rebuildLotMeta() {
+    const priced = new Map<number, number>();        // лот → сколько позиций с введённой ценой
+    const prStatuses = new Map<number, string[]>();  // лот → статусы КП, в которых он есть
+    const kpNames = new Map<number, string[]>();     // лот → получатели КП (без дублей, в порядке КП)
     for (const pr of this.priceRequests || []) {
-      for (const it of (pr.items || [])) if (it.tenderLot?.id === lotId) out.push(it);
+      const counted = new Set<number>();   // один КП даёт лоту ровно одну запись статуса/получателя
+      for (const it of (pr.items || [])) {
+        const id = it.tenderLot?.id;
+        if (id == null) continue;
+        // считаем по персистентной цене, не по редактируемой it._editPrice
+        if (it.responsePrice != null) priced.set(id, (priced.get(id) || 0) + 1);
+        if (counted.has(id)) continue;
+        counted.add(id);
+        const st = prStatuses.get(id);
+        if (st) st.push(pr.status); else prStatuses.set(id, [pr.status]);
+        const name = pr.distributor?.name;
+        if (name) {
+          const names = kpNames.get(id);
+          if (!names) kpNames.set(id, [name]); else if (!names.includes(name)) names.push(name);
+        }
+      }
     }
-    return out;
-  }
-  /** Запросы КП, в которых есть этот лот. */
-  private prsForLot(lotId: number): any[] {
-    return (this.priceRequests || []).filter((pr: any) => (pr.items || []).some((it: any) => it.tenderLot?.id === lotId));
+    const meta = new Map<number, { stage: LotStage; kpNames: string[] }>();
+    for (const l of this.lots || []) {
+      meta.set(l.id, {
+        stage: this.computeStage(l, priced.get(l.id) || 0, prStatuses.get(l.id) || []),
+        kpNames: kpNames.get(l.id) || [],
+      });
+    }
+    this.lotMeta = meta;
   }
 
-  lotStage(l: any): LotStage {
-    const items = this.itemsForLot(l.id);
-    // считаем по персистентной цене, не по редактируемой it._editPrice
-    const priced = items.filter((it: any) => it.responsePrice != null).length;
+  private computeStage(l: any, priced: number, prStatuses: string[]): LotStage {
     if (priced > 0) return { label: `Есть цены: ${priced}`, tone: 'success', filled: true };
-    const prs = this.prsForLot(l.id);
-    if (prs.length && prs.every((pr: any) => pr.status === 'DECLINED'))
+    if (prStatuses.length && prStatuses.every((s: string) => s === 'DECLINED'))
       return { label: 'Отказы', tone: 'danger', filled: true };
-    if (prs.length) return { label: 'КП отправлено', tone: 'warn', filled: true };
+    if (prStatuses.length) return { label: 'КП отправлено', tone: 'warn', filled: true };
     if (l.proposedEquipment) return { label: 'Модель выбрана', tone: 'accent', filled: true };
     if (l.requiredSpec) return { label: 'Есть ТЗ', tone: 'accent', filled: true };
     return { label: 'Нужно ТЗ', tone: 'muted', filled: false };
   }
 
-  kpDistributorsFor(lotId: number): string[] {
-    const names: string[] = [];
-    for (const pr of this.priceRequests || []) {
-      if ((pr.items || []).some((it: any) => it.tenderLot?.id === lotId)
-          && pr.distributor?.name && !names.includes(pr.distributor.name)) {
-        names.push(pr.distributor.name);
-      }
-    }
-    return names;
-  }
+  /** Для шаблона: стадия из карты (фолбэк — стадия по самому лоту, без обхода КП). */
+  lotStage(l: any): LotStage { return this.lotMeta.get(l.id)?.stage ?? this.computeStage(l, 0, []); }
+
+  /** Для шаблона: получатели КП по лоту из карты. */
+  kpDistributorsFor(lotId: number): string[] { return this.lotMeta.get(lotId)?.kpNames ?? []; }
 
   // ===== деградации (переносятся дословно из tenders.component) =====
   isKz(): boolean { return this.market.value === 'KZ'; }

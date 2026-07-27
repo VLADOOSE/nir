@@ -22,7 +22,7 @@ import { kpToastFromResults } from '../../shared/kp-toast';
       <ng-container *ngIf="!panel.loading">
         <div class="kp-controls" *ngIf="panel.singleLot">
           <label>Вид МИ:
-            <select [ngModel]="panel.detectedType?.id ?? ''" (ngModelChange)="changeLotType($event)">
+            <select [ngModel]="typeSelId" (ngModelChange)="changeLotType($event)">
               <option value="">— не задан —</option>
               <option *ngFor="let t of equipmentTypes" [value]="t.id">{{ t.name }}</option>
             </select>
@@ -177,6 +177,13 @@ export class LotKpPanelComponent implements OnChanges {
 
   preview: { subject: string; body: string; sending: boolean; distributorIds: number[]; items: any[] } | null = null;
 
+  /**
+   * Значение селектора «Вид МИ» — ОТДЕЛЬНОЕ поле, а не выражение по `panel.detectedType`:
+   * одностороннее `[ngModel]` не перезаписывает DOM, если выражение не изменилось, поэтому откат
+   * после неудавшегося сохранения (оператор-неадмин получает 403) до селектора не доезжал.
+   */
+  typeSelId: number | '' = '';
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
 
   /** Смена набора лотов = новый подбор. */
@@ -212,6 +219,7 @@ export class LotKpPanelComponent implements OnChanges {
           sourcingTerm: r?.sourcingTerm || '',
           lotId,
         };
+        this.typeSelId = r?.detectedType?.id ?? '';
         this.cdr.detectChanges();
       },
       error: (e) => {
@@ -227,9 +235,17 @@ export class LotKpPanelComponent implements OnChanges {
     const id = typeId === '' || typeId == null ? null : Number(typeId);
     if (!this.panel?.lotId) return;
     const term = this.panel.sourcingTerm || undefined;
+    const prev = this.typeSelId;
+    this.typeSelId = id ?? '';
     this.api.setLotEquipmentType(this.panel.lotId, id).subscribe({
       next: () => { this.typeChanged.emit(); this.load(term); },
-      error: (e) => this.notify.error(e.error?.message || 'Ошибка сохранения типа'),
+      error: (e) => {
+        // не сохранилось (штатный путь: снятие/смена типа закрыты ADMIN, оператор получает 403) →
+        // возвращаем прежний вид МИ, иначе селектор показывал НЕсохранённое значение
+        this.typeSelId = prev;
+        this.notify.error(e.error?.message || 'Ошибка сохранения типа');
+        this.cdr.detectChanges();
+      },
     });
   }
 
