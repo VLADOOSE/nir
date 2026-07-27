@@ -179,10 +179,6 @@ import { NotificationService } from '../../services/notification.service';
     .reco-chip { background: var(--success); color: var(--accent-contrast); border-radius: 8px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
     .zero-toggle:hover { color: var(--text); text-decoration: underline; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-cancel { background: var(--surface-2); color: var(--text); }
-    .btn-primary { background: var(--accent); color: var(--accent-contrast); }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .btn-adopt { background: #0e9f6e; color: var(--accent-contrast); }
     .btn-adopt-muted { background: var(--surface-2); color: var(--text); }

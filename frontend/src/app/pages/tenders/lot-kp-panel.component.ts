@@ -145,12 +145,6 @@ import { kpToastFromResults } from '../../shared/kp-toast';
                                             border-radius: 6px; background: var(--surface); color: var(--text); }
     .kp-preview-body { font: inherit; resize: vertical; }
     .kp-preview-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-cancel { background: var(--surface-2); color: var(--text); }
-    .btn-save { background: var(--accent); color: var(--accent-contrast); }
-    .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-
     @media (max-width: 900px) {
       .kp-controls { flex-direction: column; align-items: stretch; }
       .kp-actions .btn { width: 100%; }

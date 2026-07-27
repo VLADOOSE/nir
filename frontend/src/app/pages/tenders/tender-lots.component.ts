@@ -157,7 +157,6 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
   styles: [`
     .lots-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
     .select-all { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
-    .counter { color: var(--text-muted); font-size: 13px; }
     .lots-empty { color: var(--text-muted); font-size: 14px; padding: 32px 0; text-align: center; }
 
     .lot { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 10px; overflow: visible; }
@@ -209,15 +208,13 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-menu button:hover { background: var(--surface-2); }
     .lot-menu button.danger { color: var(--danger); }
 
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-add { background: var(--accent); color: var(--accent-contrast); }
     .btn-bulk { background: #8b5cf6; color: var(--accent-contrast); }
     .btn-kp-sel { background: #0e9f6e; color: var(--accent-contrast); }
     .btn-kp { background: #0e9f6e; color: var(--accent-contrast); }
     .btn-tz { background: #6366f1; color: var(--accent-contrast); }
     /* разбор ТЗ — многосекундная операция (сеть + PDF): «идёт работа», а не «запрещено».
-       Правило ПОСЛЕ .btn:disabled — специфичность равная, побеждает позднее */
+       Перебивает kit-овское .btn:disabled по специфичности: локальное скоупится
+       в .btn-tz:disabled[_ngcontent] (0,3,0) против глобального (0,2,0) */
     .btn-tz:disabled { opacity: .6; cursor: wait; }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .btn-match { background: var(--success); color: var(--accent-contrast); }
@@ -231,15 +228,11 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
       background: var(--surface); color: var(--text); }
     .form-row { display: flex; gap: 12px; }
     .form-row label { flex: 1; }
-    .form-actions { margin-top: 16px; display: flex; gap: 8px; }
-    .field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
+    .form-actions { display: flex; gap: 8px; }
     .input-error { border-color: var(--danger) !important; }
-    .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger);
-                    padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
-    .btn-save { background: var(--accent); color: var(--accent-contrast); }
     /* рамка обязательна: .btn убирает border, а заливка --surface-2 совпадает с фоном самой формы →
        без рамки «Отмена» читалась как обычный текст (в обеих темах) */
-    .btn-cancel { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-cancel { border: 1px solid var(--border); }
 
     /* @media — ВСЕГДА последним в блоке styles: при равной специфичности позднее базовое
        правило перебивает мобильную переопределялку (грабли проекта) */

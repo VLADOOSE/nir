@@ -301,12 +301,9 @@ import { TenderLotsComponent } from './tender-lots.component';
     </ng-container>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: var(--text); }
-    h3 { margin: 24px 0 12px; font-size: 17px; color: var(--text); }
-    .subtitle { color: var(--text-muted); font-size: 13px; margin: 4px 0 16px; }
+    h2 { margin: 0; font-size: 20px; }
+    h3 { margin: 24px 0 12px; font-size: 17px; }
     .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-    .counter { color: var(--text-muted); font-size: 13px; }
-    .empty { color: var(--text-muted); font-size: 14px; padding: 32px 0; text-align: center; }
 
     .tender-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s; }
     .tender-card:hover { box-shadow: var(--shadow); border-color: var(--border); }
@@ -344,22 +341,11 @@ import { TenderLotsComponent } from './tender-lots.component';
 
     table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-    th { background: var(--surface-2); color: var(--text-muted); font-weight: 600; }
+    th { font-weight: 600; }
     tr:hover { background: var(--surface-2); }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-add { background: var(--accent); color: var(--accent-contrast); }
-    .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-    .btn-save { background: var(--accent); color: var(--accent-contrast); }
-    .btn-cancel { background: var(--surface-2); color: var(--text); margin-left: 8px; }
-    .btn-edit { background: var(--warn); color: var(--accent-contrast); margin-right: 4px; }
-    .btn-delete { background: var(--danger); color: var(--accent-contrast); }
-    .btn-back { background: var(--text-muted); color: var(--accent-contrast); margin-bottom: 16px; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .badge-DRAFT { background: var(--surface-2); color: var(--text); }
-    .badge-ACTIVE { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .badge-COMPLETED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .badge-CANCELLED { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+    .btn-cancel { margin-left: 8px; }
+    .btn-edit { margin-right: 4px; }
+    .btn-back { margin-bottom: 16px; }
     .import-status { color: var(--text-muted); font-size: 12.5px; margin-left: 10px; }
     .import-progress { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
     .import-bar { width: 150px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
@@ -370,12 +356,6 @@ import { TenderLotsComponent } from './tender-lots.component';
     .lot-mini { background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lot-mini-more { background: var(--surface-2); color: var(--text-muted); }
-    .badge-pr-CREATED { background: var(--surface-2); color: var(--text); }
-    .badge-pr-SENT { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .badge-pr-RESPONDED { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
-    .badge-pr-ACCEPTED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); font-weight: 700; }
-    .badge-pr-DECLINED { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); font-weight: 700; }
-    .badge-pr-CLOSED { background: var(--surface-2); color: var(--text-muted); }
     .pr-decline-reason { padding: 7px 14px; background: var(--surface-2); color: var(--danger); font-size: 12px; border-top: 1px solid var(--border); }
     .pr-card.pr-accepted { border-color: var(--success); box-shadow: 0 0 0 1px var(--success); }
     .pr-markup-calc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface-2); border-radius: 6px; margin-bottom: 12px; border: 1px dashed var(--border); }
@@ -393,10 +373,7 @@ import { TenderLotsComponent } from './tender-lots.component';
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
-    .form-actions { margin-top: 16px; }
-    .field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
     .input-error { border-color: var(--danger) !important; }
-    .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
     .pr-section { margin-top: 24px; }
     .pr-card { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--surface); }
     .pr-card.expanded { border-color: var(--accent); }
