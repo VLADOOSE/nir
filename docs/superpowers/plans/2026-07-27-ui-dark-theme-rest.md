@@ -899,6 +899,16 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 input, select, textarea { background: var(--surface); color: var(--text); border-color: var(--border); }
 ```
 
+**Плюс отдельный рычаг для НАТИВНЫХ контролов** (находка ревью Task 4 — правило выше их не покрывает): чекбоксы, радио и особенно `<input type="range">` рисуются браузером, и в тёмной теме останутся светлыми, пока не задан `color-scheme`. Конкретный известный адрес — ползунки весов `.sm-sliders` в `smart-match` (видны только при пресете «Свой», поэтому обычная живая проверка их не показывает). В тот же элементный слой:
+
+```scss
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+```
+
+Проверить живьём: `smart-match` с пресетом «Свой» (четыре ползунка), чекбоксы видов МИ в карточке дистрибьютора, чекбоксы выбора лотов на карточке тендера.
+
 Затем **обязательно** пройти живой проверкой по экранам с формами в тёмной теме — `/login`, `/equipment`, `/facilities`, `/distributors`, `/users`, `/private-requests`, форма лота на `/tenders` — и убедиться, что поля согласованы со своими карточками, а не наоборот. Если где-то правило снова рассогласовывает, это значит, что тот экран переведён не полностью: чинить экран, а не выкидывать правило.
 
 **Известный заранее адрес такой починки** (найдено re-review'ом Волны 0): в `tenders.component.ts` три группы полей не объявляют собственные `background`/`color` — `.pmc-custom input`, `.edit-form input/select/textarea`, `.pr-items input`. Это преэкзистующий пробел, он уже в проде и к этой работе отношения не имеет, но всплывёт ровно здесь, когда правило вернётся. Дать им `background: var(--surface); color: var(--text);` в самом компоненте.
