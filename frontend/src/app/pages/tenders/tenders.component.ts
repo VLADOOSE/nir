@@ -1,6 +1,6 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -205,45 +205,13 @@ import { TenderLotsComponent } from './tender-lots.component';
 
       <h3>Лоты тендера</h3>
 
-      <form *ngIf="showLotForm" [formGroup]="lotForm" (ngSubmit)="onSaveLot()" class="edit-form">
-        <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
-        <div class="dims-row">
-          <label>&#8470; лота<input type="number" min="1" formControlName="lotNumber" [class.input-error]="validationErrors.lotNumber" /><span class="field-error" *ngIf="validationErrors.lotNumber">{{ validationErrors.lotNumber }}</span></label>
-          <label>Кол-во *<input type="number" min="1" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
-        </div>
-        <label>Название оборудования *<input formControlName="equipName" [class.input-error]="validationErrors.equipName" /><span class="field-error" *ngIf="validationErrors.equipName">{{ validationErrors.equipName }}</span></label>
-        <label>Тип оборудования
-          <select formControlName="equipType">
-            <option value="">— не выбран —</option>
-            <option value="УЗИ">УЗИ</option>
-            <option value="Рентген">Рентген</option>
-            <option value="ИВЛ">ИВЛ</option>
-            <option value="Монитор">Монитор</option>
-          </select>
-        </label>
-        <label>Макс. цена<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
-        <div class="dims-row">
-          <label>Макс. длина<input type="number" min="1" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
-          <label>Макс. ширина<input type="number" min="1" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
-          <label>Макс. высота<input type="number" min="1" formControlName="maxHeightMm" [class.input-error]="validationErrors.maxHeightMm" /><span class="field-error" *ngIf="validationErrors.maxHeightMm">{{ validationErrors.maxHeightMm }}</span></label>
-        </div>
-        <label>Макс. вес (кг)<input type="number" min="0.01" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
-        <label>Требования к спецификации<textarea formControlName="requiredSpec" rows="2"></textarea></label>
-        <div class="form-actions">
-          <button class="btn btn-save" type="submit">Сохранить</button>
-          <button class="btn btn-cancel" type="button" (click)="showLotForm = false">Отмена</button>
-        </div>
-      </form>
-
       <app-tender-lots
         [tender]="selectedTender" [lots]="lots" [priceRequests]="priceRequests" [equipmentTypes]="equipmentTypesList"
+        [applyItems]="allApplyItems"
         (lotsChanged)="loadLots()"
         (priceRequestsChanged)="loadPriceRequests()"
         (bulkPriceRequested)="bulkPriceTenderId = selectedTender.id"
-        (matchRequested)="onMatchRequested($event)"
-        (addLotRequested)="onAddLot()"
-        (editLotRequested)="onEditLot($event)"
-        (deleteLotRequested)="onDeleteLot($event)">
+        (matchRequested)="onMatchRequested($event)">
       </app-tender-lots>
 
       <app-smart-match
@@ -519,22 +487,8 @@ export class TendersComponent {
     platform: new FormControl('')
   });
 
+  // относится к форме ТЕНДЕРА (форма лота живёт в app-tender-lots со своей копией)
   validationErrors: any = {};
-
-  showLotForm = false;
-  editingLotId: number | null = null;
-  lotForm = new FormGroup({
-    lotNumber: new FormControl<number | null>(null, [Validators.min(1)]),
-    equipName: new FormControl(''),
-    equipType: new FormControl(''),
-    quantity: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxCost: new FormControl<number | null>(null, [Validators.min(0.01)]),
-    maxLengthMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxWidthMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxHeightMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxWeightKg: new FormControl<number | null>(null, [Validators.min(0.01)]),
-    requiredSpec: new FormControl('')
-  });
 
   // ===== Запросы КП =====
   priceRequests: any[] = [];
@@ -1013,7 +967,6 @@ export class TendersComponent {
 
   onBack() {
     this.selectedTender = null;
-    this.showLotForm = false;
     this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
@@ -1037,51 +990,6 @@ export class TendersComponent {
       next: data => { this.priceRequests = data; this.cdr.detectChanges(); },
       error: () => this.priceRequests = []
     });
-  }
-
-  onAddLot() { this.editingLotId = null; this.lotForm.reset(); this.validationErrors = {}; this.showLotForm = true; }
-  onEditLot(l: any) { this.editingLotId = l.id; this.lotForm.patchValue(l); this.validationErrors = {}; this.showLotForm = true; }
-
-  onSaveLot() {
-    this.validationErrors = {};
-
-    if (!this.selectedTender || !this.selectedTender.id) {
-      this.validationErrors = { _general: 'Ошибка: не выбран тендер. Перезагрузите страницу.' };
-      return;
-    }
-
-    const body: any = { ...this.lotForm.value, tenderId: this.selectedTender.id };
-    const wasEditing = this.editingLotId !== null;
-    const req = this.editingLotId ? this.api.update('lots', this.editingLotId, body) : this.api.create('lots', body);
-    req.subscribe({
-      next: () => {
-        this.showLotForm = false; this.validationErrors = {};
-        this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
-        this.loadLots();
-      },
-      error: (err: any) => {
-        if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
-        else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
-        else { this.validationErrors = { _general: 'Ошибка сохранения' }; }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  onDeleteLot(id: number) {
-    const usedCount = this.allApplyItems.filter(it => it.tenderLot?.id === id).length;
-    if (usedCount > 0) {
-      this.notify.error(`Невозможно удалить: лот используется в ${usedCount} позици${usedCount === 1 ? 'и' : 'ях'} заявок`);
-      return;
-    }
-    this.confirm.ask('Удалить лот?', 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
-      .subscribe(ok => {
-        if (!ok) return;
-        this.api.delete('lots', id).subscribe({
-          next: () => { this.notify.success('Лот удалён'); this.loadLots(); },
-          error: err => this.notify.error(err.error?.message || 'Ошибка удаления')
-        });
-      });
   }
 
   onMatchRequested(ev: { lotId: number; lotNumber: number }) {

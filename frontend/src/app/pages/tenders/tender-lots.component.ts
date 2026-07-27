@@ -1,7 +1,9 @@
 import { Component, ChangeDetectorRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
+import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
+import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { LotRegistryPanelComponent } from './lot-registry-panel.component';
@@ -14,14 +16,16 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
  * Лоты тендера списком карточек-аккордеонов: свёрнутый лот несёт название, количество, цену,
  * предложенную модель, получателей КП и чип стадии; развёрнутый — детали, действия, спецификацию
  * и панели «Подбор»/«КП» прямо в контексте лота (горизонтального скролла на мобилке нет).
+ * Здесь же живёт форма добавления/редактирования лота и удаление лота.
  */
 @Component({
   selector: 'app-tender-lots',
   standalone: true,
-  imports: [NgFor, NgIf, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent],
   template: `
     <div class="lots-toolbar">
-      <button class="btn btn-add" (click)="addLotRequested.emit()">Добавить лот</button>
+      <!-- пока форма открыта, кнопки нет: клик по ней сбрасывал форму в режим создания и терял правки -->
+      <button class="btn btn-add" *ngIf="!showLotForm" (click)="onAddLot()">Добавить лот</button>
       <button class="btn btn-bulk" *ngIf="lots.length > 0 && !isImportedTender()" (click)="bulkPriceRequested.emit()">
         Запросить КП по всему тендеру
       </button>
@@ -35,13 +39,41 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
       <span class="counter" *ngIf="lots.length">Найдено: {{ lots.length }} лотов</span>
     </div>
 
+    <form *ngIf="showLotForm" [formGroup]="lotForm" (ngSubmit)="onSaveLot()" class="lot-form">
+      <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
+      <div class="form-row">
+        <label>&#8470; лота<input type="number" min="1" formControlName="lotNumber" [class.input-error]="validationErrors.lotNumber" /><span class="field-error" *ngIf="validationErrors.lotNumber">{{ validationErrors.lotNumber }}</span></label>
+        <label>Кол-во *<input type="number" min="1" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
+      </div>
+      <label>Название оборудования *<input formControlName="equipName" [class.input-error]="validationErrors.equipName" /><span class="field-error" *ngIf="validationErrors.equipName">{{ validationErrors.equipName }}</span></label>
+      <label>Тип оборудования
+        <select formControlName="equipTypeId">
+          <option [ngValue]="null">— не выбран —</option>
+          <option *ngFor="let t of equipmentTypes" [ngValue]="t.id">{{ t.name }}</option>
+        </select>
+      </label>
+      <label>Макс. цена<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
+      <div class="form-row">
+        <label>Макс. длина<input type="number" min="1" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
+        <label>Макс. ширина<input type="number" min="1" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
+        <label>Макс. высота<input type="number" min="1" formControlName="maxHeightMm" [class.input-error]="validationErrors.maxHeightMm" /><span class="field-error" *ngIf="validationErrors.maxHeightMm">{{ validationErrors.maxHeightMm }}</span></label>
+      </div>
+      <label>Макс. вес (кг)<input type="number" min="0.01" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
+      <label>Требования к спецификации<textarea formControlName="requiredSpec" rows="2"></textarea></label>
+      <div class="form-actions">
+        <button class="btn btn-save" type="submit">Сохранить</button>
+        <button class="btn btn-cancel" type="button" (click)="showLotForm = false">Отмена</button>
+      </div>
+    </form>
+
     <!-- мульти-лотовая панель КП относится не к одному лоту → живёт над списком -->
     <app-lot-kp-panel *ngIf="kpLots.length > 1"
       [tenderId]="tender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypes"
       (sent)="onKpSent()" (typeChanged)="lotsChanged.emit()" (close)="kpLots = []">
     </app-lot-kp-panel>
 
-    <div class="lots-empty" *ngIf="lots.length === 0">Нет лотов</div>
+    <!-- «Нет лотов» не рисуем над открытой формой первого лота -->
+    <div class="lots-empty" *ngIf="lots.length === 0 && !showLotForm">Нет лотов</div>
 
     <div class="lot" *ngFor="let l of lots; trackBy: trackLot" [class.lot-open]="isExpanded(l)">
       <div class="lot-head" (click)="toggleLot(l)">
@@ -94,8 +126,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <span class="lot-menu-wrap">
             <button class="btn btn-more" (click)="toggleLotMenu(l, $event)" title="Ещё действия">⋯</button>
             <span class="lot-menu" *ngIf="openMenuLotId === l.id">
-              <button (click)="editLotRequested.emit(l); openMenuLotId = null">✎ Редактировать</button>
-              <button class="danger" (click)="deleteLotRequested.emit(l.id); openMenuLotId = null">🗑 Удалить</button>
+              <button (click)="onEditLot(l)">✎ Редактировать</button>
+              <button class="danger" (click)="onDeleteLot(l.id)">🗑 Удалить</button>
             </span>
           </span>
         </div>
@@ -188,10 +220,29 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .btn-match { background: var(--success); color: var(--accent-contrast); }
     .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
 
+    /* ===== форма добавления/редактирования лота ===== */
+    .lot-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 14px; max-width: 700px; }
+    .lot-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
+    .lot-form input, .lot-form select, .lot-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px;
+      border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit;
+      background: var(--surface); color: var(--text); }
+    .form-row { display: flex; gap: 12px; }
+    .form-row label { flex: 1; }
+    .form-actions { margin-top: 16px; display: flex; gap: 8px; }
+    .field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
+    .input-error { border-color: var(--danger) !important; }
+    .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger);
+                    padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    .btn-save { background: var(--accent); color: var(--accent-contrast); }
+    .btn-cancel { background: var(--surface-2); color: var(--text); }
+
+    /* @media — ВСЕГДА последним в блоке styles: при равной специфичности позднее базовое
+       правило перебивает мобильную переопределялку (грабли проекта) */
     @media (max-width: 900px) {
       .lots-toolbar .btn { flex: 1 1 auto; }
       .lot-details { flex-direction: column; gap: 4px; }
       .lot-actions .btn { flex: 1 1 auto; }
+      .form-row { flex-direction: column; gap: 0; }
     }
   `],
 })
@@ -200,13 +251,29 @@ export class TenderLotsComponent implements OnChanges {
   @Input() lots: any[] = [];
   @Input() priceRequests: any[] = [];
   @Input() equipmentTypes: any[] = [];
+  /** Позиции заявок всех тендеров — по ним считается запрет удаления используемого лота. */
+  @Input() applyItems: any[] = [];
   @Output() lotsChanged = new EventEmitter<void>();
   @Output() priceRequestsChanged = new EventEmitter<void>();
   @Output() bulkPriceRequested = new EventEmitter<void>();
   @Output() matchRequested = new EventEmitter<{ lotId: number; lotNumber: number }>();
-  @Output() addLotRequested = new EventEmitter<void>();
-  @Output() editLotRequested = new EventEmitter<any>();
-  @Output() deleteLotRequested = new EventEmitter<number>();
+
+  showLotForm = false;
+  editingLotId: number | null = null;
+  validationErrors: any = {};
+
+  lotForm = new FormGroup({
+    lotNumber: new FormControl<number | null>(null, [Validators.min(1)]),
+    equipName: new FormControl(''),
+    equipTypeId: new FormControl<number | null>(null),   // было equipType: string — API ждёт equipTypeId
+    quantity: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxCost: new FormControl<number | null>(null, [Validators.min(0.01)]),
+    maxLengthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxWidthMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxHeightMm: new FormControl<number | null>(null, [Validators.min(1)]),
+    maxWeightKg: new FormControl<number | null>(null, [Validators.min(0.01)]),
+    requiredSpec: new FormControl('')
+  });
 
   expandedLotId: number | null = null;
   lotSel = new Set<number>();
@@ -219,7 +286,8 @@ export class TenderLotsComponent implements OnChanges {
   private pendingKpLotId: number | null = null;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, public market: MarketService) {}
+              private notify: NotificationService, private confirm: ConfirmService,
+              public market: MarketService) {}
 
   /**
    * Пришли новые лоты (родитель перезагрузил список):
@@ -412,5 +480,62 @@ export class TenderLotsComponent implements OnChanges {
       next: () => { this.notify.success('Предложение модели снято'); this.lotsChanged.emit(); },
       error: (e: any) => this.notify.error(e.error?.message || 'Ошибка'),
     });
+  }
+
+  // ===== форма лота (создание/правка/удаление) =====
+  onAddLot() { this.editingLotId = null; this.lotForm.reset(); this.validationErrors = {}; this.showLotForm = true; this.cdr.detectChanges(); }
+
+  onEditLot(l: any) {
+    this.editingLotId = l.id;
+    this.lotForm.reset();
+    // patchValue не проставит equipTypeId: в ответе лота тип лежит объектом equipmentType
+    this.lotForm.patchValue({ ...l, equipTypeId: l.equipmentType?.id ?? null });
+    this.validationErrors = {};
+    this.showLotForm = true;
+    this.openMenuLotId = null;
+    this.cdr.detectChanges();
+  }
+
+  onSaveLot() {
+    this.validationErrors = {};
+    if (!this.tender?.id) {
+      this.validationErrors = { _general: 'Ошибка: не выбран тендер. Перезагрузите страницу.' };
+      return;
+    }
+    const v: any = this.lotForm.value;
+    const body: any = { ...v, equipTypeId: v.equipTypeId === '' || v.equipTypeId == null ? null : Number(v.equipTypeId), tenderId: this.tender.id };
+    const wasEditing = this.editingLotId !== null;
+    const req = this.editingLotId ? this.api.update('lots', this.editingLotId, body) : this.api.create('lots', body);
+    req.subscribe({
+      next: () => {
+        this.showLotForm = false; this.validationErrors = {};
+        this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
+        this.lotsChanged.emit();
+      },
+      error: (err: any) => {
+        if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
+        else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
+        else { this.validationErrors = { _general: 'Ошибка сохранения' }; }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  onDeleteLot(id: number) {
+    this.openMenuLotId = null;
+    // запрет ДО диалога: лот, используемый в заявках, удалить нельзя (FK)
+    const usedCount = (this.applyItems || []).filter((it: any) => it.tenderLot?.id === id).length;
+    if (usedCount > 0) {
+      this.notify.error(`Невозможно удалить: лот используется в ${usedCount} позици${usedCount === 1 ? 'и' : 'ях'} заявок`);
+      return;
+    }
+    this.confirm.ask('Удалить лот?', 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
+      .subscribe(ok => {
+        if (!ok) return;
+        this.api.delete('lots', id).subscribe({
+          next: () => { this.notify.success('Лот удалён'); this.lotsChanged.emit(); },
+          error: (err: any) => this.notify.error(err.error?.message || 'Ошибка удаления')
+        });
+      });
   }
 }
