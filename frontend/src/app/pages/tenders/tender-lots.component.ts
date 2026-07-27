@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, ChangeDetectorRef, ElementRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -61,8 +61,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
       <label>Макс. вес (кг)<input type="number" min="0.01" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
       <label>Требования к спецификации<textarea formControlName="requiredSpec" rows="2"></textarea></label>
       <div class="form-actions">
-        <button class="btn btn-save" type="submit">Сохранить</button>
-        <button class="btn btn-cancel" type="button" (click)="showLotForm = false">Отмена</button>
+        <button class="btn btn-save" type="submit" [disabled]="savingLot">{{ savingLot ? 'Сохранение…' : 'Сохранить' }}</button>
+        <button class="btn btn-cancel" type="button" (click)="closeLotForm()">Отмена</button>
       </div>
     </form>
 
@@ -234,7 +234,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger);
                     padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
     .btn-save { background: var(--accent); color: var(--accent-contrast); }
-    .btn-cancel { background: var(--surface-2); color: var(--text); }
+    /* рамка обязательна: .btn убирает border, а заливка --surface-2 совпадает с фоном самой формы →
+       без рамки «Отмена» читалась как обычный текст (в обеих темах) */
+    .btn-cancel { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 
     /* @media — ВСЕГДА последним в блоке styles: при равной специфичности позднее базовое
        правило перебивает мобильную переопределялку (грабли проекта) */
@@ -261,6 +263,8 @@ export class TenderLotsComponent implements OnChanges {
   showLotForm = false;
   editingLotId: number | null = null;
   validationErrors: any = {};
+  /** Идёт сохранение лота: гасит кнопку «Сохранить» (путь с очисткой типа — ДВА запроса, окно двойного клика шире). */
+  savingLot = false;
 
   lotForm = new FormGroup({
     lotNumber: new FormControl<number | null>(null, [Validators.min(1)]),
@@ -287,6 +291,7 @@ export class TenderLotsComponent implements OnChanges {
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
+              private host: ElementRef<HTMLElement>,
               public market: MarketService) {}
 
   /**
@@ -494,14 +499,39 @@ export class TenderLotsComponent implements OnChanges {
     this.showLotForm = true;
     this.openMenuLotId = null;
     this.cdr.detectChanges();
+    this.scrollFormIntoView();
+  }
+
+  /** Закрыть форму лота (успех/«Отмена»): гасим и editingLotId — иначе следующая точка входа
+      получила бы форму создания, молча привязанную к прошлому лоту. */
+  closeLotForm() {
+    this.showLotForm = false;
+    this.editingLotId = null;
+    this.validationErrors = {};
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * Форма рендерится НАД списком лотов, а карточки-аккордеоны длинные: правка лота из конца списка
+   * открывала форму вне области видимости — «клик по ✎ ничего не сделал».
+   * В момент вызова формы в DOM ещё нет (появится после отрисовки) → скроллим следующим тиком;
+   * ищем внутри host, а не по документу: на странице есть ещё и форма тендера.
+   */
+  private scrollFormIntoView() {
+    setTimeout(() => {
+      this.host.nativeElement.querySelector('.lot-form')
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
   }
 
   onSaveLot() {
+    if (this.savingLot) return;   // двойной клик по «Сохранить» создавал два лота
     this.validationErrors = {};
     if (!this.tender?.id) {
       this.validationErrors = { _general: 'Ошибка: не выбран тендер. Перезагрузите страницу.' };
       return;
     }
+    this.savingLot = true;
     const v: any = this.lotForm.value;
     const typeId = v.equipTypeId === '' || v.equipTypeId == null ? null : Number(v.equipTypeId);
     const body: any = { ...v, equipTypeId: typeId, tenderId: this.tender.id };
@@ -521,13 +551,14 @@ export class TenderLotsComponent implements OnChanges {
         if (needsTypeClear && editingId) {
           this.api.setLotEquipmentType(editingId, null).subscribe({
             next: () => this.finishSaveLot(wasEditing),
-            error: () => this.finishSaveLot(wasEditing, true)
+            error: (e2: any) => this.finishSaveLot(wasEditing, e2 ?? {})   // {} — чтобы пустая ошибка не выдала «успех»
           });
           return;
         }
         this.finishSaveLot(wasEditing);
       },
       error: (err: any) => {
+        this.savingLot = false;   // иначе кнопка осталась бы навсегда погашенной и повтор невозможен
         if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
         else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
         else { this.validationErrors = { _general: 'Ошибка сохранения' }; }
@@ -537,14 +568,21 @@ export class TenderLotsComponent implements OnChanges {
   }
 
   /**
-   * Общий хвост успешного сохранения лота: закрыть форму, сообщить, перезагрузить список.
-   * `typeClearFailed` — основное сохранение прошло, но снять тип оборудования не удалось:
-   * тогда вместо успеха показываем ошибку, но список всё равно обновляем.
+   * Общий хвост сохранения лота: снять флаг, закрыть форму, сообщить, перезагрузить список.
+   * `typeClearError` — основное сохранение прошло, но снять тип оборудования не удалось: показываем
+   * ошибку вместо успеха, список всё равно обновляем. 403 разводим отдельно: снятие типа закрыто
+   * `hasRole('ADMIN')`, тогда как правка лота доступна оператору — общий текст оставлял его в догадках.
    */
-  private finishSaveLot(wasEditing: boolean, typeClearFailed = false) {
-    this.showLotForm = false; this.validationErrors = {};
-    if (typeClearFailed) this.notify.error('Лот сохранён, но не удалось снять тип оборудования');
-    else this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
+  private finishSaveLot(wasEditing: boolean, typeClearError?: any) {
+    this.savingLot = false;
+    this.closeLotForm();
+    if (typeClearError) {
+      this.notify.error(typeClearError.status === 403
+        ? 'Лот сохранён. Снять тип оборудования может только администратор.'
+        : 'Лот сохранён, но не удалось снять тип оборудования');
+    } else {
+      this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
+    }
     this.lotsChanged.emit();
     this.cdr.detectChanges();
   }
