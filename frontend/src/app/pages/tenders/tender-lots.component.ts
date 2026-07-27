@@ -503,14 +503,29 @@ export class TenderLotsComponent implements OnChanges {
       return;
     }
     const v: any = this.lotForm.value;
-    const body: any = { ...v, equipTypeId: v.equipTypeId === '' || v.equipTypeId == null ? null : Number(v.equipTypeId), tenderId: this.tender.id };
-    const wasEditing = this.editingLotId !== null;
-    const req = this.editingLotId ? this.api.update('lots', this.editingLotId, body) : this.api.create('lots', body);
+    const typeId = v.equipTypeId === '' || v.equipTypeId == null ? null : Number(v.equipTypeId);
+    const body: any = { ...v, equipTypeId: typeId, tenderId: this.tender.id };
+    const editingId = this.editingLotId;
+    const wasEditing = editingId !== null;
+    // «— не выбран —» на правке: PUT /lots молча игнорирует null-поля (маппер updateEntity — IGNORE),
+    // поэтому тип снимаем ОТДЕЛЬНЫМ эндпоинтом (тем же, что селектор «Вид МИ» панели КП).
+    // «Тип был задан» смотрим по входным лотам: значение формы к этому моменту уже новое (пустое).
+    const hadType = wasEditing
+      && (this.lots || []).find((l: any) => l.id === editingId)?.equipmentType?.id != null;
+    const needsTypeClear = wasEditing && typeId === null && hadType;
+    const req = editingId ? this.api.update('lots', editingId, body) : this.api.create('lots', body);
     req.subscribe({
       next: () => {
-        this.showLotForm = false; this.validationErrors = {};
-        this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
-        this.lotsChanged.emit();
+        // порядок важен: сначала снять тип, потом эмитить lotsChanged — иначе список перезагрузится
+        // раньше снятия и оператор увидит старый тип
+        if (needsTypeClear && editingId) {
+          this.api.setLotEquipmentType(editingId, null).subscribe({
+            next: () => this.finishSaveLot(wasEditing),
+            error: () => this.finishSaveLot(wasEditing, true)
+          });
+          return;
+        }
+        this.finishSaveLot(wasEditing);
       },
       error: (err: any) => {
         if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
@@ -519,6 +534,19 @@ export class TenderLotsComponent implements OnChanges {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * Общий хвост успешного сохранения лота: закрыть форму, сообщить, перезагрузить список.
+   * `typeClearFailed` — основное сохранение прошло, но снять тип оборудования не удалось:
+   * тогда вместо успеха показываем ошибку, но список всё равно обновляем.
+   */
+  private finishSaveLot(wasEditing: boolean, typeClearFailed = false) {
+    this.showLotForm = false; this.validationErrors = {};
+    if (typeClearFailed) this.notify.error('Лот сохранён, но не удалось снять тип оборудования');
+    else this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
+    this.lotsChanged.emit();
+    this.cdr.detectChanges();
   }
 
   onDeleteLot(id: number) {
