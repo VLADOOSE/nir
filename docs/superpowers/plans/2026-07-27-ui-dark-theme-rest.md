@@ -436,11 +436,28 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `frontend/src/app/pages/tenders/bulk-price-modal.component.ts`
 - Modify: `frontend/src/app/pages/tenders/offer-comparison.component.ts`
 
-- [ ] **Step 1: `bulk-price-modal.component.ts`**
+- [ ] **Step 1: Завести токен `--shadow-lg` (находка ревью Task 3)**
 
-Зачистка по процедуре. Удалить `.btn`, `.btn-cancel`, `.btn-close`, `.empty`. Остальное — по таблице.
+В kit есть единственный токен высоты `--shadow`, и он «карточный» (`0 2px 8px`). Крупные тени модалок живут захардкоженными в трёх местах: `bulk-price-modal.component.ts` (`0 20px 60px`), `applies.component.ts` (`0 12px 32px`), `confirm` (уже переведён на `--shadow`). Без общего токена каждая следующая модалка решает вопрос заново.
 
-- [ ] **Step 2: `offer-comparison.component.ts`**
+В `frontend/src/styles.scss`, в блоки `:root` и `:root[data-theme="dark"]`, рядом с `--shadow`:
+
+```scss
+/* :root */          --shadow-lg:0 12px 32px rgba(0,0,0,.18);
+/* :root[dark] */    --shadow-lg:0 12px 32px rgba(0,0,0,.55);
+```
+
+Дальше модалки этой и следующих задач используют `var(--shadow-lg)` вместо своих крупных теней. `confirm` не трогать — он лежит на 50% вуали, `var(--shadow)` там признан достаточным.
+
+- [ ] **Step 2: `bulk-price-modal.component.ts`**
+
+Зачистка по процедуре. Удалить `.btn`, `.btn-cancel`, `.empty`.
+
+⚠️ `.btn-close` **не удалять** — его намеренно нет в kit (это прозрачный крестик модалки, kit дал бы ему серую заливку). Токенизировать на месте: `color: var(--text-muted)`, ховер `color: var(--danger)`.
+
+Крупную тень модалки перевести на `var(--shadow-lg)` из Step 1. Остальное — по таблице.
+
+- [ ] **Step 3: `offer-comparison.component.ts`**
 
 **Удалять нечего** — kit-классов не объявляет (проверено при планировании), это чистый перевод 17 хексов. Своих `th, td` тоже нет, цвета шапки пришли из kit в Task 1.
 
@@ -448,22 +465,22 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 `background: color-mix(in srgb, var(--success) 8%, var(--surface));`
 Если оставить `--surface-2`, минимум перестанет читаться как минимум.
 
-- [ ] **Step 3: Собрать**
+- [ ] **Step 4: Собрать**
 
 ```bash
 cd /Users/vlad/IdeaProjects/AIS/frontend && npm run build
 ```
 
-- [ ] **Step 4: Живая проверка**
+- [ ] **Step 5: Живая проверка**
 
 Рынок KZ. `/tenders` → тендер, у которого ≥2 КП с введёнными ценами → кнопка «Сравнить предложения» (модалка сравнения, зелёный минимум, строка «Итого», контрол наценки, кнопка «✓ Назначить победителем»). Bulk-модалка: ручной (не импортный) тендер → «КП по всему тендеру».
 
 4 состояния. Матрица лоты×поставщики широкая — на 390px она в `.table-scroll`; горизонтальный скролл здесь ожидаем, **не чинить**, а сфотографировать в отчёт.
 
-- [ ] **Step 5: Коммит**
+- [ ] **Step 6: Коммит**
 
 ```bash
-cd /Users/vlad/IdeaProjects/AIS && git add frontend/src/app/pages/tenders/bulk-price-modal.component.ts frontend/src/app/pages/tenders/offer-comparison.component.ts && git commit -m "feat(ui): тёмная тема модалок bulk-КП и сравнения предложений
+cd /Users/vlad/IdeaProjects/AIS && git add frontend/src/styles.scss frontend/src/app/pages/tenders/bulk-price-modal.component.ts frontend/src/app/pages/tenders/offer-comparison.component.ts && git commit -m "feat(ui): тёмная тема модалок bulk-КП и сравнения предложений
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -632,6 +649,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - [ ] **Step 2: `reports.component.ts`**
 
 Зачистка по процедуре: `.btn-pdf`, `.subtitle`, `.empty`, `th, td`. `.btn` компонент не объявляет — база уже пришла из kit в Task 1.
+
+⚠️ **Здесь развилка, найденная ревью Task 3.** В компоненте есть `.btn-pdf:hover { background: #b91c1c; }`. Буквальный перевод по таблице (`#b91c1c → var(--danger)`) даст **no-op**: ховер совпадёт с обычным фоном, кнопка потеряет отклик, а в файле останется мёртвое правило, выглядящее осмысленным. При этом в kit ховера для danger-группы нет вовсе.
+
+Правильное действие — **поднять ховер в kit**, а не решать локально, иначе в приложении заведётся два разных затемнения для одной роли (в `confirm` уже лежит `.btn-danger:hover` через `color-mix`). В `frontend/src/styles.scss`, сразу под строкой `.btn-delete, .btn-danger, .btn-pdf { … }`:
+
+```scss
+/* Затемнение к чёрному, а не к --text: у залитой кнопки белая подпись, а --text
+   в тёмной теме почти белый и уронил бы её контраст. Замер: база 2,77:1 → ховер 3,74:1. */
+.btn-delete:hover, .btn-danger:hover, .btn-pdf:hover { background: color-mix(in srgb, black 15%, var(--danger)); }
+```
+
+Затем удалить локальный `.btn-pdf:hover` здесь и локальный `.btn-danger:hover` из `confirm.component.ts` — он станет дублем.
 
 - [ ] **Step 3: `chart.component.ts`**
 
