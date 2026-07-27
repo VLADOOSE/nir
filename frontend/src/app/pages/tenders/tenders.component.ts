@@ -1,6 +1,6 @@
-import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
-import { NgFor, NgIf, DecimalPipe } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
+import { Component, ChangeDetectorRef } from '@angular/core';
+import { NgFor, NgIf } from '@angular/common';
+import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -13,12 +13,14 @@ import { OfferComparisonComponent } from './offer-comparison.component';
 import { SmartMatchComponent } from '../../components/smart-match/smart-match.component';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
+import { kpToastFromResults } from '../../shared/kp-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
+import { TenderLotsComponent } from './tender-lots.component';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, DecimalPipe, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -203,343 +205,14 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
 
       <h3>Лоты тендера</h3>
 
-      <div class="toolbar">
-        <button class="btn btn-add" *ngIf="!showLotForm" (click)="onAddLot()">Добавить лот</button>
-        <button class="btn btn-add-bulk" *ngIf="lots.length > 0 && !isImportedTender()" (click)="bulkPriceTenderId = selectedTender.id">
-          Запросить КП по всему тендеру
-        </button>
-        <button class="btn btn-kp-selected" *ngIf="lots.length > 0" [disabled]="lotSel.size === 0"
-                (click)="openKpPanel()">
-          Запросить КП по выбранным ({{ lotSel.size }})
-        </button>
-        <span class="counter" *ngIf="lots.length">Найдено: {{ lots.length }} лотов</span>
-      </div>
-
-      <form *ngIf="showLotForm" [formGroup]="lotForm" (ngSubmit)="onSaveLot()" class="edit-form">
-        <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
-        <div class="dims-row">
-          <label>&#8470; лота<input type="number" min="1" formControlName="lotNumber" [class.input-error]="validationErrors.lotNumber" /><span class="field-error" *ngIf="validationErrors.lotNumber">{{ validationErrors.lotNumber }}</span></label>
-          <label>Кол-во *<input type="number" min="1" formControlName="quantity" [class.input-error]="validationErrors.quantity" /><span class="field-error" *ngIf="validationErrors.quantity">{{ validationErrors.quantity }}</span></label>
-        </div>
-        <label>Название оборудования *<input formControlName="equipName" [class.input-error]="validationErrors.equipName" /><span class="field-error" *ngIf="validationErrors.equipName">{{ validationErrors.equipName }}</span></label>
-        <label>Тип оборудования
-          <select formControlName="equipType">
-            <option value="">— не выбран —</option>
-            <option value="УЗИ">УЗИ</option>
-            <option value="Рентген">Рентген</option>
-            <option value="ИВЛ">ИВЛ</option>
-            <option value="Монитор">Монитор</option>
-          </select>
-        </label>
-        <label>Макс. цена<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
-        <div class="dims-row">
-          <label>Макс. длина<input type="number" min="1" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
-          <label>Макс. ширина<input type="number" min="1" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
-          <label>Макс. высота<input type="number" min="1" formControlName="maxHeightMm" [class.input-error]="validationErrors.maxHeightMm" /><span class="field-error" *ngIf="validationErrors.maxHeightMm">{{ validationErrors.maxHeightMm }}</span></label>
-        </div>
-        <label>Макс. вес (кг)<input type="number" min="0.01" step="0.01" formControlName="maxWeightKg" [class.input-error]="validationErrors.maxWeightKg" /><span class="field-error" *ngIf="validationErrors.maxWeightKg">{{ validationErrors.maxWeightKg }}</span></label>
-        <label>Требования к спецификации<textarea formControlName="requiredSpec" rows="2"></textarea></label>
-        <div class="form-actions">
-          <button class="btn btn-save" type="submit">Сохранить</button>
-          <button class="btn btn-cancel" type="button" (click)="showLotForm = false">Отмена</button>
-        </div>
-      </form>
-
-      <div *ngIf="lots.length === 0 && !showLotForm" class="empty">Нет лотов</div>
-
-      <div class="table-scroll" *ngIf="lots.length > 0">
-      <table>
-        <thead>
-          <tr><th class="w-36"><input type="checkbox" [checked]="allLotsSelected()" (change)="toggleAllLots($any($event.target).checked)" title="Выбрать все лоты" /></th><th>&#8470;</th><th>Название</th><th *ngIf="hasAnyType()">Тип</th><th>Кол-во</th><th>Макс. цена</th><th *ngIf="hasAnyDims()">Габариты (макс.)</th><th *ngIf="hasAnyWeight()">Макс. вес</th><th>Спецификация</th><th>Действия</th></tr>
-        </thead>
-        <tbody>
-          <ng-container *ngFor="let l of lots">
-          <tr>
-            <td class="w-36"><input type="checkbox" [checked]="lotSel.has(l.id)" (change)="toggleLotSel(l)" /></td>
-            <td>{{ l.lotNumber }}</td>
-            <td>
-              {{ l.equipName }}
-              <div class="proposed-line" *ngIf="l.proposedEquipment">
-                <span class="badge-proposed">Предложено:</span>
-                {{ l.proposedEquipment.name }} ({{ l.proposedEquipment.manufact }})
-                <span class="badge-reg-ok" *ngIf="l.proposedEquipment.registrationStatus === 'REGISTERED'"
-                      [title]="'РУ ' + (l.proposedEquipment.regNumber || '')">РУ ✓</span>
-                <button class="x-mini" (click)="clearProposed(l)" title="Снять предложение">✕</button>
-              </div>
-              <div class="kp-line" *ngIf="kpDistributorsFor(l.id).length">КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
-            </td>
-            <td *ngIf="hasAnyType()">{{ l.equipmentType?.name || '—' }}</td><td>{{ l.quantity }}</td>
-            <td>{{ l.maxCost | money }}</td><td *ngIf="hasAnyDims()">{{ l.maxLengthMm || '—' }}x{{ l.maxWidthMm || '—' }}x{{ l.maxHeightMm || '—' }}</td><td *ngIf="hasAnyWeight()">{{ l.maxWeightKg ? l.maxWeightKg + ' кг' : '—' }}</td>
-            <td class="spec-cell">
-              <button *ngIf="l.requiredSpec" class="spec-toggle" [class.open]="l._specOpen" (click)="toggleSpec(l)"
-                      [title]="l._specOpen ? 'Свернуть спецификацию' : 'Читать спецификацию'">
-                <span class="spec-preview">{{ specPreview(l.requiredSpec) }}</span>
-                <span class="spec-chevron">{{ l._specOpen ? '▴' : '▾' }}</span>
-              </button>
-              <span *ngIf="!l.requiredSpec" class="spec-empty">—</span>
-            </td>
-            <td class="actions">
-              <button class="btn btn-tz" *ngIf="isImportedTender()" [disabled]="tzBusy.has(l.id)"
-                      (click)="parseTechSpec(l)" title="Скачать и разобрать техспецификацию с goszakup">
-                {{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}
-              </button>
-              <button class="btn btn-kp" (click)="openKpPanelFor(l)">КП</button>
-              <button class="btn btn-registry" *ngIf="isKz()" (click)="onLotRegistry(l)"
-                      title="Подбор из реестра НЦЭЛС (кандидаты + комплектность аппаратов)">Подбор</button>
-              <!-- каталог-матч: только РФ (KZ-каталог наполняется из реестра, там подбор — через «Подбор») -->
-              <button class="btn btn-match" *ngIf="lotHasCriteria(l) && !isKz()" (click)="onMatch(l)">Подобрать</button>
-              <span class="lot-menu-wrap">
-                <button class="btn btn-more" (click)="toggleLotMenu(l, $event)" title="Ещё действия">⋯</button>
-                <span class="lot-menu" *ngIf="openMenuLotId === l.id">
-                  <button (click)="onEditLot(l); openMenuLotId = null">✎ Редактировать</button>
-                  <button class="danger" (click)="onDeleteLot(l.id); openMenuLotId = null">🗑 Удалить</button>
-                </span>
-              </span>
-            </td>
-          </tr>
-          <tr *ngIf="l._specOpen" class="spec-row">
-            <td [attr.colspan]="10">
-              <div class="spec-full">
-                <div class="spec-full-head">
-                  <b>Техническая спецификация{{ l.lotNumber ? ' — лот №' + l.lotNumber : '' }}</b>
-                  <button class="btn btn-cancel" (click)="toggleSpec(l)">✕ Свернуть</button>
-                </div>
-                <div class="spec-full-body">{{ l.requiredSpec }}</div>
-              </div>
-            </td>
-          </tr>
-          </ng-container>
-        </tbody>
-      </table>
-      </div>
-
-      <div class="registry-panel" *ngIf="registryPanel">
-        <div class="registry-panel-head">
-          <span><b>Реестр НЦЭЛС РК:</b> {{ registryPanel.lot.equipName }}</span>
-          <button class="btn btn-cancel" (click)="closeRegistryPanel()">✕ Закрыть</button>
-        </div>
-        <div class="registry-note">Реестр НЦЭЛС — допуск (№ РУ); габариты/вес здесь не хранятся, соответствие — по совпадению наименования.</div>
-        <div *ngIf="!registryPanel.loading && !registryPanel.distinctive && !registryPanel.techSpecParsed && isImportedTender()" class="registry-hint">
-          ⚠ Совпадение только по названию — модели в реестре неразличимы. Нажмите «ТЗ», чтобы разбор техспецификации уточнил подбор.
-        </div>
-        <div *ngIf="registryPanel.loading" class="registry-loading">Ищем похожие изделия в реестре…</div>
-        <div *ngIf="!registryPanel.loading && !registryPanel.items.length" class="empty">Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос</div>
-        <div class="table-scroll" *ngIf="!registryPanel.loading && registryPanel.items.length">
-        <table class="registry-table">
-          <thead><tr><th>Соответствие</th><th>РУ &#8470;</th><th>Наименование в реестре</th><th>Производитель</th><th>Страна</th><th>Действует</th><th></th></tr></thead>
-          <tbody>
-            <ng-container *ngFor="let c of registryPanel.items">
-              <tr class="registry-row" (click)="toggleRegistryDetail(c)"
-                  [title]="registryPanel.openReg === c.regNumber ? 'Свернуть описание' : 'Показать описание из карточки НЦЭЛС'">
-                <td>
-                  <span *ngIf="registryPanel.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
-                  <span *ngIf="!registryPanel.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
-                </td>
-                <td>{{ c.regNumber }}</td>
-                <td>{{ c.name }} <span class="registry-desc-chip">{{ registryPanel.openReg === c.regNumber ? '▴ свернуть' : '▾ описание' }}</span></td>
-                <td>{{ c.producer || '—' }}</td>
-                <td>{{ c.country || '—' }}</td>
-                <td>{{ c.unlimited ? 'бессрочно' : (c.expirationDate ? formatDate(c.expirationDate) : '—') }}</td>
-                <td><button class="btn btn-adopt" [disabled]="adoptBusy" (click)="$event.stopPropagation(); adoptFromRegistry(c)" title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button></td>
-              </tr>
-              <tr *ngIf="registryPanel.openReg === c.regNumber" class="registry-detail-row">
-                <td colspan="7">
-                  <div *ngIf="registryPanel.detailLoading" class="registry-loading">Загружаем карточку НЦЭЛС…</div>
-                  <div *ngIf="registryPanel.detailError && !registryPanel.detailLoading" class="registry-detail-error">
-                    {{ registryPanel.detailError }} — сверните и разверните строку, чтобы повторить.
-                  </div>
-                  <div *ngIf="registryPanel.detail && !registryPanel.detailLoading" class="registry-detail-cols">
-                    <div *ngIf="registryPanel.lot?.requiredSpec" class="registry-detail-col">
-                      <div class="registry-detail-h">ТЗ лота</div>
-                      <pre class="registry-detail-pre">{{ registryPanel.lot.requiredSpec }}</pre>
-                    </div>
-                    <div class="registry-detail-col">
-                      <div class="registry-detail-h">Из реестра НЦЭЛС</div>
-                      <div *ngIf="registryDetailEmpty(registryPanel.detail)" class="empty">В карточке НЦЭЛС описание не заполнено</div>
-                      <div *ngIf="registryPanel.detail.riskClass || registryPanel.detail.miKind" class="registry-detail-meta">
-                        <span *ngIf="registryPanel.detail.riskClass">{{ registryPanel.detail.riskClass }}</span>
-                        <span *ngIf="registryPanel.detail.riskClass && registryPanel.detail.miKind"> · </span>
-                        <span *ngIf="registryPanel.detail.miKind">{{ registryPanel.detail.miKind }}</span>
-                        <div *ngIf="registryPanel.detail.miKindDef" class="registry-detail-def">{{ registryPanel.detail.miKindDef }}</div>
-                      </div>
-                      <div *ngIf="registryPanel.detail.purpose" class="registry-detail-block"><b>Назначение:</b> {{ registryPanel.detail.purpose }}</div>
-                      <div *ngIf="registryPanel.detail.useArea" class="registry-detail-block"><b>Область применения:</b> {{ registryPanel.detail.useArea }}</div>
-                      <div *ngIf="registryPanel.detail.techChars" class="registry-detail-block"><b>Краткие тех. характеристики:</b>
-                        <pre class="registry-detail-pre">{{ registryPanel.detail.techChars }}</pre>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </ng-container>
-          </tbody>
-        </table>
-        </div>
-        <div class="complect-cta">
-          <button class="btn btn-registry" (click)="openComplect(registryPanel.lot)"
-                  title="Найти лот в комплектности родительского аппарата (для электродов/пластин/принадлежностей)">
-            🔧 Комплектность аппаратов
-          </button>
-          <span class="registry-note">Если лот — принадлежность к аппарату (электрод, пластина), допуск может быть в комплектности аппарата.</span>
-        </div>
-      </div>
-
-      <div class="registry-panel" *ngIf="complectPanel">
-        <div class="registry-panel-head">
-          <span><b>Комплектность аппаратов:</b> {{ complectPanel.lot.equipName }}</span>
-          <button class="btn btn-cancel" (click)="closeComplect()">✕ Закрыть</button>
-        </div>
-        <div class="complect-term">
-          <input type="text" [(ngModel)]="complectPanel.term" placeholder="Название аппарата (напр. Элэскулап)"
-                 (keyup.enter)="runComplect(complectPanel.lot, complectPanel.term)">
-          <button class="btn btn-primary" [disabled]="complectPanel.loading"
-                  (click)="runComplect(complectPanel.lot, complectPanel.term)">Искать</button>
-        </div>
-        <div *ngIf="complectPanel.loading" class="registry-loading">Ищем в комплектности аппаратов…</div>
-        <div *ngIf="!complectPanel.loading && complectPanel.searched && !complectPanel.apparatuses.length" class="empty">
-          Аппарат не найден — уточните его название в поле выше и нажмите «Искать».
-        </div>
-        <div *ngFor="let a of complectPanel.apparatuses" class="complect-apparatus">
-          <div class="complect-app-head">
-            {{ a.name }} · <b>{{ a.country || '—' }}</b> · {{ a.producer || '—' }} · РУ {{ a.regNumber }}
-          </div>
-          <div *ngIf="!a._relevant.length && !a._zero.length" class="empty">Комплектность у этого аппарата не заполнена.</div>
-          <div class="table-scroll" *ngIf="a._relevant.length || a._zero.length">
-          <table class="registry-table">
-            <thead><tr><th>Совпадение</th><th>Компонент (состав)</th><th>Тип</th><th>Страна</th><th></th></tr></thead>
-            <tbody>
-              <tr *ngFor="let comp of a._relevant; let i = index" [class.recommended]="i === 0">
-                <td>
-                  <span class="score-badge" [class.score-good]="i === 0">{{ scorePct(comp) }}%</span>
-                  <span *ngIf="i === 0" class="reco-chip">★ рекомендуем</span>
-                </td>
-                <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
-                <td>{{ comp.component || '—' }}</td>
-                <td>{{ comp.country || '—' }}</td>
-                <td><button class="btn" [class.btn-adopt]="i === 0" [class.btn-adopt-muted]="i !== 0" [disabled]="adoptBusy"
-                            (click)="adoptComponent(a, comp)"
-                            title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
-              </tr>
-              <tr *ngIf="a._zero.length">
-                <td colspan="5">
-                  <button class="complect-zero-toggle" (click)="a._showZero = !a._showZero">
-                    {{ a._showZero ? '▴ скрыть нерелевантные' : '▾ ещё ' + a._zero.length + ' нерелевантных (0%)' }}
-                  </button>
-                </td>
-              </tr>
-              <ng-container *ngIf="a._showZero">
-                <tr *ngFor="let comp of a._zero" class="complect-zero-row">
-                  <td><span class="score-badge">0%</span></td>
-                  <td><pre class="complect-pre">{{ comp.productName }}</pre></td>
-                  <td>{{ comp.component || '—' }}</td>
-                  <td>{{ comp.country || '—' }}</td>
-                  <td><button class="btn btn-adopt-muted" [disabled]="adoptBusy" (click)="adoptComponent(a, comp)"
-                              title="Создать позицию каталога из компонента (РУ аппарата) и предложить лоту">Взять в работу</button></td>
-                </tr>
-              </ng-container>
-            </tbody>
-          </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="kp-panel" *ngIf="kpPanel">
-        <div class="kp-panel-head">
-          <span><b>Запрос КП</b> · выбрано лотов: {{ lotSel.size }}</span>
-          <button class="btn btn-cancel" (click)="kpPanel = null">✕ Закрыть</button>
-        </div>
-        <div *ngIf="kpPanel.loading" class="registry-loading">Подбираем поставщиков…</div>
-        <ng-container *ngIf="!kpPanel.loading">
-          <div class="kp-controls" *ngIf="kpPanel.singleLot">
-            <label>Вид МИ:
-              <select [ngModel]="kpPanel.detectedType?.id ?? ''" (ngModelChange)="changeLotType($event)">
-                <option value="">— не задан —</option>
-                <option *ngFor="let t of equipmentTypesList" [value]="t.id">{{ t.name }}</option>
-              </select>
-            </label>
-            <span class="kp-conf" *ngIf="kpPanel.detectedType && kpPanel.detectedType.confidence < 1">
-              авто · {{ (kpPanel.detectedType.confidence * 100) | number:'1.0-0' }}%
-            </span>
-            <label class="kp-term">Поиск поставщика:
-              <input type="text" [(ngModel)]="kpPanel.sourcingTerm" placeholder="бренд/аппарат"
-                     (keyup.enter)="researchSupplier()">
-            </label>
-            <button class="btn btn-line" (click)="researchSupplier()">Найти</button>
-          </div>
-
-          <div class="empty" *ngIf="!kpPanel.entries.length">На этом рынке нет поставщиков — добавьте их в справочнике «Дистрибьюторы»</div>
-          <div class="empty" *ngIf="kpPanel.entries.length && !kpPanel._relevant.length && !kpPanel.detectedType">
-            Нужна техспецификация или вид МИ, чтобы подобрать по специализации.
-          </div>
-
-          <div class="table-scroll" *ngIf="kpPanel._relevant.length">
-          <table class="kp-suppliers">
-            <thead><tr><th class="w-36"></th><th>Поставщик</th><th>Email</th><th>Почему</th></tr></thead>
-            <tbody>
-              <tr *ngFor="let e of kpPanel._relevant; let i = index" [class.kp-hit]="e.preselect" [class.recommended]="i === 0">
-                <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                <td>
-                  <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
-                  <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
-                  <span *ngIf="!e.distributor?.equipmentTypes?.length" class="tag-all"> · все виды</span>
-                </td>
-                <td>{{ e.distributor?.email || '—' }} <span class="no-email" *ngIf="!e.distributor?.email">письмо не уйдёт</span></td>
-                <td>
-                  <span class="reason-chip" *ngFor="let r of e.reasons"
-                        [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'">
-                    {{ r.kind === 'TYPE' ? '✓' : 'возит' }} {{ r.label }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-
-          <div class="kp-nonrel" *ngIf="kpPanel._nonrel.length">
-            <button class="complect-zero-toggle" (click)="kpPanel._showNonrel = !kpPanel._showNonrel">
-              {{ kpPanel._showNonrel ? '▴ скрыть нерелевантных' : '▾ ещё ' + kpPanel._nonrel.length + ' нерелевантных' }}
-            </button>
-            <div class="table-scroll" *ngIf="kpPanel._showNonrel">
-            <table class="kp-suppliers">
-              <tbody>
-                <tr *ngFor="let e of kpPanel._nonrel">
-                  <td class="w-36"><input type="checkbox" [(ngModel)]="e._checked" /></td>
-                  <td>
-                    <a *ngIf="e.distributor?.website" [href]="e.distributor.website" target="_blank" rel="noopener" class="supplier-link" title="Открыть сайт поставщика">{{ e.distributor?.name }} ↗</a>
-                    <span *ngIf="!e.distributor?.website">{{ e.distributor?.name }}</span>
-                  </td>
-                  <td>{{ e.distributor?.email || '—' }}</td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-            </div>
-          </div>
-
-          <div class="kp-panel-actions" *ngIf="kpPanel.entries.length">
-            <button class="btn btn-save" [disabled]="kpPanel.sending || checkedSuppliers().length === 0" (click)="sendKpRequests()">
-              {{ kpPanel.sending ? 'Отправка…' : 'Отправить запросы (' + checkedSuppliers().length + ')' }}
-            </button>
-          </div>
-        </ng-container>
-      </div>
-
-      <div class="kp-preview-overlay" *ngIf="kpPreview" (click)="cancelKpPreview()">
-        <div class="kp-preview" (click)="$event.stopPropagation()">
-          <h3>Текст письма — проверьте перед отправкой</h3>
-          <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ kpPreview.distributorIds.length }} поставщик(ам).</p>
-          <label class="kp-preview-lbl">Тема</label>
-          <input class="kp-preview-subject" [(ngModel)]="kpPreview.subject" />
-          <label class="kp-preview-lbl">Текст</label>
-          <textarea class="kp-preview-body" rows="16" [(ngModel)]="kpPreview.body"></textarea>
-          <div class="kp-preview-actions">
-            <button class="btn btn-cancel" (click)="cancelKpPreview()">Отмена</button>
-            <button class="btn btn-save" [disabled]="kpPreview.sending" (click)="confirmSendKp()">
-              {{ kpPreview.sending ? 'Отправка…' : 'Отправить' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <app-tender-lots
+        [tender]="selectedTender" [lots]="lots" [priceRequests]="priceRequests" [equipmentTypes]="equipmentTypesList"
+        [applyItems]="allApplyItems"
+        (lotsChanged)="loadLots()"
+        (priceRequestsChanged)="loadPriceRequests()"
+        (bulkPriceRequested)="bulkPriceTenderId = selectedTender.id"
+        (matchRequested)="onMatchRequested($event)">
+      </app-tender-lots>
 
       <app-smart-match
         *ngIf="matchLotId !== null"
@@ -673,50 +346,13 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
     th { background: var(--surface-2); color: var(--text-muted); font-weight: 600; }
     tr:hover { background: var(--surface-2); }
-    .actions { white-space: nowrap; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-add { background: var(--accent); color: var(--accent-contrast); }
-    .btn-add-bulk { background: #8b5cf6; color: var(--accent-contrast); margin-left: 8px; }
-    .w-36 { width: 36px; text-align: center; }
-    .btn-kp { background: #0e9f6e; color: var(--accent-contrast); margin-right: 4px; }
-    .btn-tz { background: #6366f1; color: var(--accent-contrast); margin-right: 4px; }
-    .btn-tz:disabled { opacity: 0.6; cursor: wait; }
-    .btn-kp-selected { background: #0e9f6e; color: var(--accent-contrast); margin-left: 8px; }
-    .btn-kp-selected:disabled { opacity: 0.5; cursor: not-allowed; }
-    .proposed-line { margin-top: 4px; font-size: 12px; color: var(--text); }
-    .badge-proposed { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border-radius: 8px; padding: 1px 7px; font-size: 11px; font-weight: 600; margin-right: 4px; }
-    .badge-reg-ok { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 8px; padding: 1px 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
-    .x-mini { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 13px; margin-left: 4px; }
-    .kp-line { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
-    .kp-panel { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
-    .kp-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .kp-suppliers { background: var(--surface); }
-    .kp-suppliers tr.kp-hit td { background: var(--surface-2); }
-    .kp-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-    .kp-controls select, .kp-term input { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
-    .kp-conf { font-size: 12px; color: var(--text-muted); }
-    .reason-chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; margin: 0 3px 3px 0; }
-    .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .reason-brand { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .tag-all { color: var(--text-muted); font-size: 11px; }
-    .supplier-link { color: var(--accent); text-decoration: none; }
-    .supplier-link:hover { text-decoration: underline; }
     .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-    .brand-chip { display: inline-block; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
-    .no-email { color: var(--danger); font-size: 11px; margin-left: 6px; }
-    .kp-panel-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
-    .kp-preview-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .kp-preview { background: var(--surface); border-radius: 10px; padding: 20px; width: min(720px, 92vw); max-height: 88vh; overflow: auto; }
-    .kp-preview-note { color: var(--text-muted); font-size: 12.5px; margin: 4px 0 12px; }
-    .kp-preview-lbl { display: block; font-size: 12px; color: var(--text); margin: 8px 0 3px; }
-    .kp-preview-subject, .kp-preview-body { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-    .kp-preview-body { font: inherit; resize: vertical; }
-    .kp-preview-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
     .btn-save { background: var(--accent); color: var(--accent-contrast); }
     .btn-cancel { background: var(--surface-2); color: var(--text); margin-left: 8px; }
     .btn-edit { background: var(--warn); color: var(--accent-contrast); margin-right: 4px; }
     .btn-delete { background: var(--danger); color: var(--accent-contrast); }
-    .btn-match { background: var(--success); color: var(--accent-contrast); margin-right: 4px; }
     .btn-back { background: var(--text-muted); color: var(--accent-contrast); margin-bottom: 16px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
@@ -729,65 +365,11 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     .import-bar { width: 150px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
     .import-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
     .import-progress-text { color: var(--text); font-size: 12.5px; white-space: nowrap; }
-    .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .registry-panel { margin: 10px 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
-    .registry-panel-head, .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
-    .registry-loading { color: var(--text-muted); padding: 6px 0; }
-    .registry-table { width: 100%; }
-    .registry-table th { text-align: left; font-size: 12px; color: var(--text-muted); }
-    .score-badge { background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 2px 8px; font-size: 12px; }
-    .btn-adopt { background: #0e9f6e; color: var(--accent-contrast); }
-    .score-badge.score-good { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .score-badge.score-name { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .registry-note { font-size: 12px; color: var(--text-muted); margin: 4px 0 8px; }
-    .registry-hint { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn); }
-    .registry-row { cursor: pointer; }
-    .registry-row:hover td { background: var(--surface-2); }
-    .registry-desc-chip { font-size: 11px; color: var(--accent); white-space: nowrap; margin-left: 6px; }
-    .registry-detail-row td { background: var(--surface-2); padding: 10px 14px; }
-    .registry-detail-cols { display: flex; gap: 16px; align-items: flex-start; }
-    .registry-detail-col { flex: 1; min-width: 0; }
-    .registry-detail-h { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
-    .registry-detail-pre { white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font: inherit; margin: 4px 0 0; }
-    .registry-detail-meta { margin-bottom: 8px; font-weight: 600; }
-    .registry-detail-def { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
-    .registry-detail-block { margin-bottom: 6px; }
-    .registry-detail-error { color: var(--danger); padding: 4px 0; }
-    .complect-cta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-    .complect-term { display: flex; gap: 8px; margin-bottom: 10px; }
-    .complect-term input { flex: 1; max-width: 360px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
-    .complect-apparatus { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-    .complect-app-head { font-size: 13px; margin-bottom: 6px; color: var(--text); }
-    .complect-pre { white-space: pre-wrap; margin: 0; font: inherit; max-width: 520px; }
-    .recommended td { background: var(--surface-2); }
-    .recommended td:first-child { box-shadow: inset 3px 0 0 var(--success); }
-    .reco-chip { display: inline-block; margin-left: 6px; background: var(--success); color: var(--accent-contrast); border-radius: 8px; padding: 1px 7px; font-size: 11px; white-space: nowrap; }
-    .complect-zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 4px 0; }
-    .complect-zero-toggle:hover { color: var(--text); text-decoration: underline; }
-    .complect-zero-row td { color: var(--text-muted); }
-    .btn-adopt-muted { background: var(--surface-2); color: var(--text); }
-    .lot-menu-wrap { position: relative; display: inline-block; }
-    .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
-    .lot-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 20; display: flex; flex-direction: column; min-width: 150px; overflow: hidden; }
-    .lot-menu button { background: none; border: none; text-align: left; padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text); white-space: nowrap; }
-    .lot-menu button:hover { background: var(--surface-2); }
-    .lot-menu button.danger { color: var(--danger); }
+    .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lot-mini-more { background: var(--surface-2); color: var(--text-muted); }
-    .spec-cell { max-width: 260px; }
-    .spec-toggle { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; background: none; border: none; padding: 0; cursor: pointer; color: var(--accent); font-size: 13px; text-align: left; }
-    .spec-toggle .spec-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .spec-toggle .spec-chevron { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
-    .spec-toggle:hover .spec-preview { text-decoration: underline; }
-    .spec-toggle.open { color: var(--text); font-weight: 600; }
-    .spec-empty { color: var(--text-muted); }
-    .spec-row td { padding: 0 !important; background: var(--surface-2); }
-    .spec-full { border-left: 3px solid var(--accent); margin: 4px 8px 12px; background: var(--surface); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    .spec-full-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
-    .spec-full-head b { font-size: 13px; color: var(--text); }
-    .spec-full-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; color: var(--text); padding: 14px 16px; max-height: 340px; overflow-y: auto; }
     .badge-pr-CREATED { background: var(--surface-2); color: var(--text); }
     .badge-pr-SENT { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .badge-pr-RESPONDED { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
@@ -809,12 +391,9 @@ import { TendersFiltersComponent, TendersFilters } from './tenders-filters.compo
     .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
-    .form-hint { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .form-actions { margin-top: 16px; }
-    .match-results { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-top: 16px; }
-    .match-results table { margin-top: 8px; }
     .field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
     .input-error { border-color: var(--danger) !important; }
     .error-banner { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
@@ -876,31 +455,13 @@ export class TendersComponent {
   }
   allApplyItems: any[] = [];
   facilities: any[] = [];
-  distributors: any[] = [];
   selectedTender: any = null;
   lots: any[] = [];
-  matchResults: any[] = [];
   matchLotId: number | null = null;
   matchLotNumber: number | null = null;
 
-  // Лотовый запрос КП
-  lotSel = new Set<number>();
-  kpPanel: {
-    loading: boolean; sending: boolean; entries: any[];
-    _relevant: any[]; _nonrel: any[]; _showNonrel: boolean;
-    singleLot: boolean;
-    detectedType: { id: number; name: string; confidence: number } | null;
-    typeAlternatives: { id: number; name: string }[];
-    sourcingTerm: string;
-    lotId: number | null;
-  } | null = null;
-  kpPreview: { subject: string; body: string; sending: boolean;
-               distributorIds: number[]; items: any[] } | null = null;
+  // Лоты, выбор лотов и панели «Подбор»/«КП» живут в app-tender-lots
   equipmentTypesList: any[] = [];
-  // Разбор техспеки (кнопка «ТЗ»)
-  tzBusy = new Set<number>();
-  // «Взять из реестра в работу»
-  adoptBusy = false;
 
   showTenderForm = false;
   editingTenderId: number | null = null;
@@ -921,22 +482,8 @@ export class TendersComponent {
     platform: new FormControl('')
   });
 
+  // относится к форме ТЕНДЕРА (форма лота живёт в app-tender-lots со своей копией)
   validationErrors: any = {};
-
-  showLotForm = false;
-  editingLotId: number | null = null;
-  lotForm = new FormGroup({
-    lotNumber: new FormControl<number | null>(null, [Validators.min(1)]),
-    equipName: new FormControl(''),
-    equipType: new FormControl(''),
-    quantity: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxCost: new FormControl<number | null>(null, [Validators.min(0.01)]),
-    maxLengthMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxWidthMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxHeightMm: new FormControl<number | null>(null, [Validators.min(1)]),
-    maxWeightKg: new FormControl<number | null>(null, [Validators.min(0.01)]),
-    requiredSpec: new FormControl('')
-  });
 
   // ===== Запросы КП =====
   priceRequests: any[] = [];
@@ -959,7 +506,6 @@ export class TendersComponent {
     this.loadTenders();
     this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
-    this.api.getDistributors().subscribe({ next: data => { this.distributors = data; this.cdr.detectChanges(); } });
     this.api.getEquipmentTypes().subscribe(ts => { this.equipmentTypesList = ts || []; this.cdr.detectChanges(); });
     this.api.getAllApplyItems().subscribe({
       next: items => { this.allApplyItems = items || []; },
@@ -1066,8 +612,6 @@ export class TendersComponent {
     const proc = Number(it._editPrice ?? it.responsePrice ?? 0);
     return this.calcMarked(it, pr).price - proc;
   }
-
-  formatPrice(n: number): string { return n ? Number(n).toLocaleString('ru-RU') : '0'; }
 
   private daysLeft(deadline: string): number {
     if (!deadline) return Infinity;
@@ -1278,18 +822,6 @@ export class TendersComponent {
     }
   }
 
-  toggleSpec(l: any) {
-    l._specOpen = !l._specOpen;
-    this.cdr.detectChanges();
-  }
-
-  /** Короткое превью спеки для ячейки-триггера (полный текст — в раскрытом аккордеоне). */
-  specPreview(s: string): string {
-    if (!s) return '';
-    const flat = s.replace(/\s+/g, ' ').trim();
-    return flat.length > 55 ? flat.slice(0, 55) + '…' : flat;
-  }
-
   importStatus: any = null;
   private importPollTimer: any = null;
 
@@ -1341,135 +873,6 @@ export class TendersComponent {
   private stopImportPolling() {
     if (this.importPollTimer) { clearInterval(this.importPollTimer); this.importPollTimer = null; }
   }
-
-  registryPanel: { lot: any; loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean;
-                   openReg?: string | null; detail?: any; detailLoading?: boolean; detailError?: string | null } | null = null;
-
-  onLotRegistry(l: any) {
-    this.registryPanel = { lot: l, loading: true, items: [], distinctive: true, techSpecParsed: true };
-    this.cdr.detectChanges();
-    this.api.getLotRegistryCandidates(l.id).subscribe({
-      next: (r: any) => {
-        this.registryPanel = {
-          lot: l, loading: false,
-          items: r?.candidates || [],
-          distinctive: !!r?.distinctive,
-          techSpecParsed: !!r?.techSpecParsed,
-        };
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        this.registryPanel = null;
-        this.notify.error('Реестр: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  closeRegistryPanel() { this.registryPanel = null; this.cdr.detectChanges(); }
-
-  complectPanel: { lot: any; term: string; loading: boolean; searched: boolean; apparatuses: any[] } | null = null;
-
-  openComplect(l: any) {
-    this.complectPanel = { lot: l, term: '', loading: true, searched: false, apparatuses: [] };
-    this.cdr.detectChanges();
-    // первый прогон — без term: бэк сам извлечёт бренд из ТЗ
-    this.runComplect(l, undefined);
-  }
-
-  runComplect(l: any, term?: string) {
-    if (!this.complectPanel) return;
-    this.complectPanel.loading = true;
-    this.cdr.detectChanges();
-    this.api.complectSearch(l.id, term).subscribe({
-      next: (r: any) => {
-        const apparatuses = (r?.apparatuses || []).map((a: any) => ({
-          ...a,
-          // разделяем на релевантные (есть совпадение) и нерелевантные (0%) — 0% прячем под тоглом
-          _relevant: (a.components || []).filter((c: any) => (c.score || 0) > 0),
-          _zero: (a.components || []).filter((c: any) => !((c.score || 0) > 0)),
-          _showZero: false,
-        }));
-        this.complectPanel = {
-          lot: l, term: r?.term || '', loading: false, searched: true, apparatuses
-        };
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        if (this.complectPanel) { this.complectPanel.loading = false; this.complectPanel.searched = true; }
-        this.notify.error('Комплектность: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  closeComplect() { this.complectPanel = null; this.cdr.detectChanges(); }
-
-  // overflow-меню строки лота (Ред./Удалить) — разгружает строку
-  openMenuLotId: number | null = null;
-  toggleLotMenu(l: any, ev: Event) {
-    ev.stopPropagation(); // иначе document:click тут же закроет
-    this.openMenuLotId = this.openMenuLotId === l.id ? null : l.id;
-    this.cdr.detectChanges();
-  }
-  @HostListener('document:click')
-  closeLotMenu() {
-    if (this.openMenuLotId !== null) { this.openMenuLotId = null; this.cdr.detectChanges(); }
-  }
-
-  adoptComponent(c: any, comp: any) {
-    if (!this.complectPanel) return;
-    this.adoptBusy = true;
-    this.cdr.detectChanges();
-    this.api.adoptComponent(this.complectPanel.lot.id, c.regNumber, comp.partNumber).subscribe({
-      next: () => {
-        this.adoptBusy = false;
-        this.notify.success('Компонент взят в работу — предложенная модель лота обновлена');
-        this.closeComplect();
-        this.loadLots();
-      },
-      error: err => {
-        this.adoptBusy = false;
-        this.notify.error('Не удалось взять компонент: ' + (err.error?.message || err.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  toggleRegistryDetail(c: any) {
-    const p = this.registryPanel;
-    if (!p) return;
-    if (p.openReg === c.regNumber) { p.openReg = null; this.cdr.detectChanges(); return; }
-    p.openReg = c.regNumber;
-    p.detail = c._detail || null;
-    p.detailError = null;
-    p.detailLoading = !p.detail;
-    if (!p.detail) {
-      this.api.getRegistryDetail(c.regNumber).subscribe({
-        next: d => {
-          c._detail = d; // фронтовый кеш на объекте кандидата — повторный разворот без запроса
-          if (p.openReg === c.regNumber) { p.detail = d; p.detailLoading = false; }
-          this.cdr.detectChanges();
-        },
-        error: err => {
-          // ошибка живёт в развороте (панель не закрываем, тост не нужен);
-          // detail остаётся null и в c._detail не кешируется → повторное открытие = retry
-          if (p.openReg === c.regNumber) {
-            p.detailLoading = false;
-            p.detailError = err.error?.message || 'Не удалось получить карточку НЦЭЛС';
-          }
-          this.cdr.detectChanges();
-        }
-      });
-    }
-    this.cdr.detectChanges();
-  }
-
-  registryDetailEmpty(d: any): boolean {
-    return !!d && !d.riskClass && !d.purpose && !d.useArea && !d.techChars && !d.miKind;
-  }
-
-  scorePct(c: any): number { return Math.round((c?.score || 0) * 100); }
 
   formatImportTime(iso: string): string {
     const t = new Date(iso).getTime();
@@ -1548,22 +951,15 @@ export class TendersComponent {
 
   onOpen(t: any) {
     this.selectedTender = t;
-    this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
-    this.lotSel.clear();
-    this.kpPanel = null;
     this.loadLots();
   }
 
   onBack() {
     this.selectedTender = null;
-    this.showLotForm = false;
-    this.matchResults = [];
     this.matchLotId = null;
     this.priceRequests = [];
-    this.lotSel.clear();
-    this.kpPanel = null;
     this.loadTenders();
   }
 
@@ -1586,54 +982,10 @@ export class TendersComponent {
     });
   }
 
-  onAddLot() { this.editingLotId = null; this.lotForm.reset(); this.validationErrors = {}; this.showLotForm = true; }
-  onEditLot(l: any) { this.editingLotId = l.id; this.lotForm.patchValue(l); this.validationErrors = {}; this.showLotForm = true; }
-
-  onSaveLot() {
-    this.validationErrors = {};
-
-    if (!this.selectedTender || !this.selectedTender.id) {
-      this.validationErrors = { _general: 'Ошибка: не выбран тендер. Перезагрузите страницу.' };
-      return;
-    }
-
-    const body: any = { ...this.lotForm.value, tenderId: this.selectedTender.id };
-    const wasEditing = this.editingLotId !== null;
-    const req = this.editingLotId ? this.api.update('lots', this.editingLotId, body) : this.api.create('lots', body);
-    req.subscribe({
-      next: () => {
-        this.showLotForm = false; this.validationErrors = {};
-        this.notify.success(wasEditing ? 'Лот обновлён' : 'Лот добавлен');
-        this.loadLots();
-      },
-      error: (err: any) => {
-        if (err.status === 400 && err.error?.errors) { this.validationErrors = err.error.errors; }
-        else if (err.status === 400 && err.error?.message) { this.validationErrors = { _general: err.error.message }; }
-        else { this.validationErrors = { _general: 'Ошибка сохранения' }; }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  onDeleteLot(id: number) {
-    const usedCount = this.allApplyItems.filter(it => it.tenderLot?.id === id).length;
-    if (usedCount > 0) {
-      this.notify.error(`Невозможно удалить: лот используется в ${usedCount} позици${usedCount === 1 ? 'и' : 'ях'} заявок`);
-      return;
-    }
-    this.confirm.ask('Удалить лот?', 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
-      .subscribe(ok => {
-        if (!ok) return;
-        this.api.delete('lots', id).subscribe({
-          next: () => { this.notify.success('Лот удалён'); this.loadLots(); },
-          error: err => this.notify.error(err.error?.message || 'Ошибка удаления')
-        });
-      });
-  }
-
-  onMatch(lot: any) {
-    this.matchLotId = lot.id;
-    this.matchLotNumber = lot.lotNumber;
+  onMatchRequested(ev: { lotId: number; lotNumber: number }) {
+    this.matchLotId = ev.lotId;
+    this.matchLotNumber = ev.lotNumber;
+    this.cdr.detectChanges();
   }
 
   closeMatch() {
@@ -1662,7 +1014,8 @@ export class TendersComponent {
       }]
     }).subscribe({
       next: (results) => {
-        this.kpToastFromResults(results);
+        const t = kpToastFromResults(results);
+        if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
         this.loadPriceRequests();
         this.matchLotId = null;
         this.matchLotNumber = null;
@@ -1671,214 +1024,16 @@ export class TendersComponent {
     });
   }
 
-  // ===== Лотовый запрос КП =====
-  toggleLotSel(l: any) {
-    if (this.lotSel.has(l.id)) this.lotSel.delete(l.id); else this.lotSel.add(l.id);
-  }
-  allLotsSelected(): boolean {
-    return this.lots.length > 0 && this.lots.every((l: any) => this.lotSel.has(l.id));
-  }
-  toggleAllLots(checked: boolean) {
-    this.lotSel.clear();
-    if (checked) for (const l of this.lots) this.lotSel.add(l.id);
-  }
-
-  isImportedTender(): boolean {
-    return this.isKz() && /^\d+-\d+$/.test(this.selectedTender?.tenderNumber || '');
-  }
-
   // ===== чистка UI: показывать только заполненное =====
   hasContactPerson(): boolean { return this.formatContact(this.selectedTender) !== '—'; }
-  hasAnyType(): boolean { return (this.lots || []).some((l: any) => l.equipmentType?.name); }
-  hasAnyDims(): boolean { return (this.lots || []).some((l: any) => l.maxLengthMm || l.maxWidthMm || l.maxHeightMm); }
-  hasAnyWeight(): boolean { return (this.lots || []).some((l: any) => l.maxWeightKg); }
-  lotHasCriteria(l: any): boolean {
-    return !!(l.equipmentType || l.maxLengthMm || l.maxWidthMm || l.maxHeightMm || l.maxWeightKg);
-  }
-
-  adoptFromRegistry(c: any) {
-    const lot = this.registryPanel?.lot;
-    if (!lot || !c?.regNumber) return;
-    this.adoptBusy = true;
-    this.api.adoptRegistryForLot(lot.id, c.regNumber).subscribe({
-      next: () => {
-        this.adoptBusy = false;
-        this.notify.success(`Модель из реестра предложена для лота: ${c.name}`);
-        this.closeRegistryPanel();
-        this.loadLots();
-        this.openKpPanelFor(lot); // сразу к запросу КП (предотметка по бренду производителя)
-      },
-      error: (e) => {
-        this.adoptBusy = false;
-        this.notify.error(e.error?.message || 'Не удалось взять РУ в работу');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  parseTechSpec(l: any) {
-    this.tzBusy.add(l.id);
-    this.cdr.detectChanges();
-    this.api.parseLotTechSpec(l.id).subscribe({
-      next: (r) => {
-        this.tzBusy.delete(l.id);
-        const dims = r.dimsFound ? 'габариты ✓' : 'габариты —';
-        const weight = r.weightFound ? 'вес ✓' : 'вес —';
-        const amb = r.ambiguous ? ' (неоднозначный матч лота — проверьте вручную)' : '';
-        const specLen = (r.lot?.requiredSpec || '').length;
-        this.notify.success(`ТЗ разобрано: спека ${specLen} симв., ${dims}, ${weight}${amb}`);
-        this.loadLots();
-      },
-      error: (e) => {
-        this.tzBusy.delete(l.id);
-        this.notify.error(e.error?.message || e.message || 'Не удалось разобрать ТЗ');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  openKpPanelFor(l: any) {
-    this.lotSel.clear();
-    this.lotSel.add(l.id);
-    this.openKpPanel();
-  }
-
-  openKpPanel(term?: string) {
-    if (!this.selectedTender || this.lotSel.size === 0) return;
-    const single = this.lotSel.size === 1;
-    const lotId = single ? [...this.lotSel][0] : null;
-    this.kpPanel = {
-      loading: true, sending: false, entries: [], _relevant: [], _nonrel: [], _showNonrel: false,
-      singleLot: single, detectedType: null, typeAlternatives: [], sourcingTerm: '', lotId,
-    };
-    this.cdr.detectChanges();
-    this.api.getLotSourcing(this.selectedTender.id, [...this.lotSel], term).subscribe({
-      next: (r) => {
-        const entries = (r?.distributors || []).map((e: any) => ({ ...e, _checked: !!e.preselect }));
-        this.kpPanel = {
-          loading: false, sending: false, entries,
-          _relevant: entries.filter((e: any) => e.relevant),
-          _nonrel: entries.filter((e: any) => !e.relevant),
-          _showNonrel: false,
-          singleLot: !!r?.singleLot,
-          detectedType: r?.detectedType || null,
-          typeAlternatives: r?.typeAlternatives || [],
-          sourcingTerm: r?.sourcingTerm || '',
-          lotId,
-        };
-        this.cdr.detectChanges();
-      },
-      error: (e) => {
-        this.kpPanel = null;
-        this.notify.error('Ошибка подбора поставщиков: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** Сменить вид МИ лота из панели → сохранить и пересобрать подбор. */
-  changeLotType(typeId: any) {
-    const id = typeId === '' || typeId == null ? null : Number(typeId);
-    if (!this.kpPanel?.lotId) return;
-    const term = this.kpPanel.sourcingTerm || undefined;
-    this.api.setLotEquipmentType(this.kpPanel.lotId, id).subscribe({
-      next: () => { this.loadLots(); this.openKpPanel(term); },
-      error: (e) => this.notify.error(e.error?.message || 'Ошибка сохранения типа'),
-    });
-  }
-
-  /** Точечный поиск поставщика по введённому термину (Tier 2). */
-  researchSupplier() { this.openKpPanel(this.kpPanel?.sourcingTerm || undefined); }
-
-  checkedSuppliers(): any[] {
-    return (this.kpPanel?.entries || []).filter((e: any) => e._checked);
-  }
-
-  kpDistributorsFor(lotId: number): string[] {
-    const names: string[] = [];
-    for (const pr of this.priceRequests) {
-      if ((pr.items || []).some((it: any) => it.tenderLot?.id === lotId)
-          && pr.distributor?.name && !names.includes(pr.distributor.name)) {
-        names.push(pr.distributor.name);
-      }
-    }
-    return names;
-  }
-
-  clearProposed(l: any) {
-    this.api.clearProposedEquipment(l.id).subscribe({
-      next: () => { this.notify.success('Предложение модели снято'); this.loadLots(); },
-      error: (e) => this.notify.error(e.error?.message || 'Ошибка'),
-    });
-  }
-
-  /** Единый тост по результатам /send. */
-  kpToastFromResults(results: any[]) {
-    const list = results || [];
-    const sent = list.filter((r: any) => r.emailSent).length;
-    const noEmail = list.filter((r: any) => r.reason === 'NO_EMAIL').map((r: any) => r.distributorName);
-    const failed = list.filter((r: any) => r.reason === 'SEND_FAILED').map((r: any) => r.distributorName);
-    let msg = `Создано запросов: ${list.length}, писем отправлено: ${sent}`;
-    if (noEmail.length) msg += `; без email: ${noEmail.join(', ')}`;
-    if (failed.length) msg += `; ошибка отправки: ${failed.join(', ')}`;
-    if (noEmail.length || failed.length) this.notify.error(msg); else this.notify.success(msg);
-  }
-
-  sendKpRequests() {
-    if (!this.selectedTender || !this.kpPanel) return;
-    const distributorIds = this.checkedSuppliers().map((e: any) => e.distributor.id);
-    const items = this.lots
-      .filter((l: any) => this.lotSel.has(l.id))
-      .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? 1 }));
-    if (!distributorIds.length || !items.length) return;
-    this.kpPanel.sending = true;
-    this.api.previewKp({ tenderId: this.selectedTender.id, distributorIds, items }).subscribe({
-      next: (p) => {
-        this.kpPreview = { subject: p.subject, body: p.body, sending: false, distributorIds, items };
-        if (this.kpPanel) this.kpPanel.sending = false;
-        this.cdr.detectChanges();
-      },
-      error: (e) => {
-        if (this.kpPanel) this.kpPanel.sending = false;
-        this.notify.error('Ошибка превью: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  confirmSendKp() {
-    if (!this.selectedTender || !this.kpPreview) return;
-    this.kpPreview.sending = true;
-    this.api.sendPriceRequests({
-      tenderId: this.selectedTender.id,
-      distributorIds: this.kpPreview.distributorIds,
-      items: this.kpPreview.items,
-      subjectOverride: this.subjectHuman(this.kpPreview.subject),
-      bodyOverride: this.kpPreview.body,
-    }).subscribe({
-      next: (results) => {
-        this.kpToastFromResults(results);
-        this.kpPreview = null; this.kpPanel = null; this.lotSel.clear();
-        this.loadPriceRequests(); this.cdr.detectChanges();
-      },
-      error: (e) => {
-        if (this.kpPreview) this.kpPreview.sending = false;
-        this.notify.error('Ошибка отправки: ' + (e.error?.message || e.message));
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** Убрать токен [КП-…] из отредактированной темы — сервер добавит свой. */
-  private subjectHuman(subject: string): string {
-    return (subject || '').replace(/\[КП-\d+\]\s*/g, '').trim();
-  }
-
-  cancelKpPreview() { this.kpPreview = null; this.cdr.detectChanges(); }
 
   resendPr(pr: any) {
     this.api.resendPriceRequest(pr.id).subscribe({
-      next: (r) => { this.kpToastFromResults([r]); this.loadPriceRequests(); },
+      next: (r) => {
+        const t = kpToastFromResults([r]);
+        if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
+        this.loadPriceRequests();
+      },
       error: (e) => this.notify.error(e.error?.message || 'Ошибка пересылки'),
     });
   }
