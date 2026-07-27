@@ -18,7 +18,13 @@ import { NotificationService, Notification } from '../../services/notification.s
   `,
   styles: [`
     .toast-container { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: 400px; }
-    .toast { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 8px; color: #fff; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; }
+    .toast { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 8px; color: var(--accent-contrast); font-size: 14px; cursor: pointer; box-shadow: var(--shadow); animation: slideIn 0.3s ease; }
+    /* ⚠️ Заливки тостов СОЗНАТЕЛЬНО остаются хексами — это не забытый перевод.
+       Тост лежит поверх произвольного фона в обеих темах и держит белый текст на
+       насыщенной заливке. Если перевести на var(--success)/var(--danger)/var(--accent),
+       в тёмной теме эти токены осветлены (#34d399 / #f87171 / #6b93ff) и белый текст
+       на них даёт контраст ниже 3:1 — тост станет нечитаемым.
+       Та же категория, что уже одобренные фикс-цветные кнопки «КП» и «ТЗ». Не «чинить». */
     .toast-success { background: #059669; }
     .toast-error { background: #dc2626; }
     .toast-info { background: #1a56db; }

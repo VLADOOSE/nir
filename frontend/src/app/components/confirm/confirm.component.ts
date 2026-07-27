@@ -21,6 +21,8 @@ import { ConfirmService, ConfirmEvent } from '../../services/confirm.service';
     </div>
   `,
   styles: [`
+    /* Бэкдроп остаётся затемняющей вуалью, а не поверхностью: rgba(17,24,39,.5)
+       уместен в обеих темах — он гасит страницу под модалкой, а не красит её. */
     .confirm-overlay {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       background: rgba(17, 24, 39, 0.5);
@@ -30,21 +32,23 @@ import { ConfirmService, ConfirmEvent } from '../../services/confirm.service';
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     .confirm-modal {
-      background: #fff; border-radius: 8px; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+      background: var(--surface); border-radius: 8px; box-shadow: var(--shadow);
       padding: 24px; min-width: 360px; max-width: 480px;
       animation: slideIn 0.15s ease-out;
     }
     @keyframes slideIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    .confirm-message { font-size: 16px; font-weight: 600; color: #111827; margin-bottom: 8px; }
-    .confirm-details { font-size: 14px; color: #6b7280; margin-bottom: 20px; line-height: 1.5; }
+    .confirm-message { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .confirm-details { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5; }
     .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
-    .btn-cancel { background: #e5e7eb; color: #374151; }
-    .btn-cancel:hover { background: #d1d5db; }
-    .btn-primary { background: #1a56db; color: #fff; }
-    .btn-primary:hover { background: #1e40af; }
-    .btn-danger { background: #dc2626; color: #fff; }
-    .btn-danger:hover { background: #b91c1c; }
+    /* Цвет кнопок (.btn-cancel / .btn-primary / .btn-danger + их :hover, кроме danger)
+       приходит из UI-kit в styles.scss. Локально осталась ТОЛЬКО геометрия: в модалке
+       подтверждения кнопка крупнее kit-дефолта (6px 14px / 13px), это осознанно. */
+    .btn { padding: 8px 16px; font-size: 14px; font-weight: 500; }
+    /* :hover для danger kit НЕ даёт (там у .btn-danger только заливка), поэтому правило
+       живёт здесь. Затемняем к чёрному, а не к --text (как .btn-cancel:hover в kit):
+       у залитой кнопки белая подпись, и в тёмной теме подмешивание светлого --text
+       уронило бы её контраст вместо того, чтобы поднять. */
+    .btn-danger:hover { background: color-mix(in srgb, black 15%, var(--danger)); }
   `]
 })
 export class ConfirmComponent {
