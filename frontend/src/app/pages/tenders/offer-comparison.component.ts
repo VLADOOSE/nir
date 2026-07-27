@@ -69,27 +69,28 @@ import { MarketService } from '../../services/market.service';
   `,
   styles: [`
     .oc-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .oc-window { background: #fff; border-radius: 10px; padding: 20px; width: min(960px, 94vw); max-height: 88vh; overflow: auto; }
+    .oc-window { background: var(--surface); border-radius: 10px; padding: 20px; width: min(960px, 94vw); max-height: 88vh; overflow: auto; }
     .oc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-    .oc-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; }
-    .oc-loading, .oc-empty { color: #6b7280; padding: 20px 0; }
+    .oc-close { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted); }
+    .oc-loading, .oc-empty { color: var(--text-muted); padding: 20px 0; }
     .oc-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
-    .oc-markup { width: 64px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; }
-    .oc-hint { color: #6b7280; font-size: 12px; }
+    .oc-markup { width: 64px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .oc-hint { color: var(--text-muted); font-size: 12px; }
     .oc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .oc-table th, .oc-table td { border: 1px solid #e5e7eb; padding: 7px 10px; text-align: left; }
-    .oc-table thead th { background: #f9fafb; }
+    .oc-table th, .oc-table td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+    .oc-table thead th { background: var(--surface-2); }
     .oc-lot { max-width: 320px; }
-    .oc-best { background: #ecfdf5; font-weight: 600; }
-    .oc-marked { color: #6b7280; }
-    .oc-totals td { background: #f3f4f6; font-weight: 600; }
-    .oc-winner { background: #d1fae5; }
+    /* Подсветка ОБЛАСТИ (ячейка), не чип: минимум по лоту — слабее, назначенный победитель — сильнее. */
+    .oc-best { background: color-mix(in srgb, var(--success) 8%, var(--surface)); font-weight: 600; }
+    .oc-marked { color: var(--text-muted); }
+    .oc-totals td { background: var(--surface-2); font-weight: 600; }
+    .oc-winner { background: color-mix(in srgb, var(--success) 18%, var(--surface)); }
     .oc-actions { margin-top: 4px; }
-    .oc-badge { color: #059669; font-weight: 600; font-size: 11px; }
-    .oc-assign { font-size: 11px; padding: 2px 6px; border: 1px solid #059669; color: #059669; background: #fff; border-radius: 4px; cursor: pointer; }
-    .oc-assign:hover { background: #ecfdf5; }
+    .oc-badge { color: var(--success); font-weight: 600; font-size: 11px; }
+    .oc-assign { font-size: 11px; padding: 2px 6px; border: 1px solid var(--success); color: var(--success); background: var(--surface); border-radius: 4px; cursor: pointer; }
+    .oc-assign:hover { background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
     .oc-apply-link { margin-top: 14px; font-size: 13px; }
-    .oc-apply-link a { color: #2563eb; }
+    .oc-apply-link a { color: var(--accent); }
   `],
 })
 export class OfferComparisonComponent implements OnChanges {

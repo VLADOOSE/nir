@@ -126,109 +126,103 @@ import { NotificationService } from '../../services/notification.service';
       z-index: 2000; padding: 16px;
     }
     .modal-window {
-      background: #fff; width: 1000px; max-width: 95vw; max-height: 90vh;
+      background: var(--surface); width: 1000px; max-width: 95vw; max-height: 90vh;
       border-radius: 10px; display: flex; flex-direction: column;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      box-shadow: var(--shadow-lg);
       overflow: hidden;
     }
     .modal-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 18px 24px; border-bottom: 1px solid #e5e7eb;
+      padding: 18px 24px; border-bottom: 1px solid var(--border);
     }
-    .modal-header h2 { margin: 0; font-size: 18px; color: #111827; }
+    .modal-header h2 { margin: 0; font-size: 18px; color: var(--text); }
+    /* .btn-close намеренно НЕ в kit: прозрачный крестик, заливка из kit сделала бы из него кнопку. */
     .btn-close {
       background: transparent; border: none; font-size: 28px; line-height: 1;
-      color: #6b7280; cursor: pointer; padding: 0 4px;
+      color: var(--text-muted); cursor: pointer; padding: 0 4px;
     }
-    .btn-close:hover { color: #ef4444; }
+    .btn-close:hover { color: var(--danger); }
 
     .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 
     .modal-footer {
-      padding: 12px 24px; border-top: 1px solid #e5e7eb;
+      padding: 12px 24px; border-top: 1px solid var(--border);
       display: flex; justify-content: flex-end; gap: 8px;
     }
 
     .loading {
       display: flex; align-items: center; justify-content: center; gap: 12px;
-      padding: 60px 0; color: #6b7280; font-size: 14px;
+      padding: 60px 0; color: var(--text-muted); font-size: 14px;
     }
     .spinner {
-      width: 28px; height: 28px; border: 3px solid #e5e7eb;
-      border-top-color: #1a56db; border-radius: 50%;
+      width: 28px; height: 28px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .empty { text-align: center; color: #9ca3af; padding: 40px 0; font-size: 14px; }
 
     .alert {
       border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;
       border: 1px solid transparent;
     }
     .alert-danger {
-      background: #fef2f2; border-color: #fecaca; color: #991b1b;
+      background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+      border-color: var(--danger); color: var(--danger);
     }
-    .alert h3 { margin: 0 0 8px; font-size: 15px; color: #ef4444; }
+    .alert h3 { margin: 0 0 8px; font-size: 15px; color: var(--danger); }
     .alert ul { margin: 0 0 8px; padding-left: 20px; font-size: 14px; }
     .alert li { margin-bottom: 4px; }
-    .alert-hint { margin: 6px 0 0; font-size: 13px; color: #7f1d1d; font-style: italic; }
-    .muted { color: #6b7280; font-weight: normal; }
+    .alert-hint { margin: 6px 0 0; font-size: 13px; color: var(--danger); font-style: italic; }
+    .muted { color: var(--text-muted); font-weight: normal; }
 
     .group-card {
-      border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 18px;
-      margin-bottom: 14px; background: #fafbfc;
+      border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px;
+      margin-bottom: 14px; background: var(--surface-2);
     }
     .group-header {
       display: flex; flex-direction: column; align-items: flex-start;
       gap: 8px; margin-bottom: 12px;
     }
-    .group-title { font-size: 15px; color: #111827; line-height: 1.4; }
-    .group-title strong { color: #1a56db; }
-    .contact { color: #6b7280; font-size: 13px; }
+    .group-title { font-size: 15px; color: var(--text); line-height: 1.4; }
+    .group-title strong { color: var(--accent); }
+    .contact { color: var(--text-muted); font-size: 13px; }
     .group-types { display: flex; gap: 6px; flex-wrap: wrap; }
     .type-badge {
-      background: #e0e7ff; color: #3730a3; padding: 2px 10px;
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--accent); padding: 2px 10px;
       border-radius: 10px; font-size: 12px; font-weight: 500;
     }
 
-    .group-items { background: #fff; border-radius: 6px; padding: 4px 0; }
+    .group-items { background: var(--surface); border-radius: 6px; padding: 4px 0; }
     .item-row {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 12px; border-bottom: 1px solid #f3f4f6; gap: 12px;
+      padding: 10px 12px; border-bottom: 1px solid var(--border); gap: 12px;
     }
     .item-row:last-child { border-bottom: none; }
-    .item-row.warn { background: #fffbeb; }
+    .item-row.warn { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .item-label {
       display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1;
-      font-size: 14px; color: #111827; margin: 0;
+      font-size: 14px; color: var(--text); margin: 0;
     }
     .item-label input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
     .item-text { display: flex; flex-direction: column; gap: 2px; }
-    .lot-info { font-weight: 500; color: #1a56db; font-size: 13px; }
-    .equip-info { font-size: 14px; color: #374151; }
+    .lot-info { font-weight: 500; color: var(--accent); font-size: 13px; }
+    .equip-info { font-size: 14px; color: var(--text); }
     .item-price {
       display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
       white-space: nowrap;
     }
-    .price-value { font-weight: 600; color: #111827; font-size: 14px; }
-    .warn-icon { color: #ef4444; font-size: 12px; }
+    .price-value { font-weight: 600; color: var(--text); font-size: 14px; }
+    .warn-icon { color: var(--danger); font-size: 12px; }
 
     .group-actions {
       display: flex; align-items: center; justify-content: flex-end;
       gap: 12px; margin-top: 12px;
     }
-    .sent-mark { color: #059669; font-weight: 600; font-size: 14px; }
+    .sent-mark { color: var(--success); font-weight: 600; font-size: 14px; }
 
-    .btn {
-      padding: 8px 18px; border: none; border-radius: 5px; cursor: pointer;
-      font-size: 13px; font-weight: 500;
-    }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-send { background: #1a56db; color: #fff; }
-    .btn-send:hover:not(:disabled) { background: #1e429f; }
-    .btn-cancel { background: #e5e7eb; color: #374151; }
-    .btn-cancel:hover { background: #d1d5db; }
+    .btn-send { background: var(--accent); color: var(--accent-contrast); }
+    .btn-send:hover:not(:disabled) { background: var(--accent-hover); }
   `]
 })
 export class BulkPriceModalComponent implements OnChanges {

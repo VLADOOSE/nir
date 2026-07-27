@@ -11,6 +11,7 @@
   --danger:#ef4444; --warn:#f59e0b; --success:#10b981;
   --header-bg:#1a56db; --header-text:#ffffff;
   --shadow:0 2px 8px rgba(0,0,0,.08);
+  --shadow-lg:0 12px 32px rgba(0,0,0,.18);
 }
 :root[data-theme="dark"] {
   --app-bg:#1f1e1d; --surface:#292827; --surface-2:#35332f;
@@ -19,6 +20,7 @@
   --danger:#f87171; --warn:#fbbf24; --success:#34d399;
   --header-bg:#242322; --header-text:#f4f2ee;
   --shadow:0 2px 10px rgba(0,0,0,.45);
+  --shadow-lg:0 12px 32px rgba(0,0,0,.55);
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
