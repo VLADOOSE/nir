@@ -8,7 +8,7 @@ import { LotRegistryPanelComponent } from './lot-registry-panel.component';
 import { LotKpPanelComponent } from './lot-kp-panel.component';
 
 /** Стадия работы по лоту — считается на клиенте из уже загруженных лотов и запросов КП. */
-export interface LotStage { code: string; label: string; tone: 'muted' | 'accent' | 'warn' | 'success' | 'danger'; filled: boolean; }
+export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | 'success' | 'danger'; filled: boolean; }
 
 /**
  * Лоты тендера списком карточек-аккордеонов: свёрнутый лот несёт название, количество, цену,
@@ -50,9 +50,12 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
           <div class="lot-title">
             <span class="lot-num" *ngIf="l.lotNumber">&#8470;{{ l.lotNumber }}</span>
             <span class="lot-name">{{ l.equipName }}</span>
-            <span class="stage-chip" [class]="'stage-' + lotStage(l).tone">
-              {{ lotStage(l).filled ? '●' : '○' }} {{ lotStage(l).label }}
-            </span>
+            <!-- один вызов lotStage на лот: метод обходит priceRequests×items, в шаблоне звался трижды -->
+            <ng-container *ngIf="lotStage(l) as st">
+              <span class="stage-chip" [class]="'stage-' + st.tone">
+                {{ st.filled ? '●' : '○' }} {{ st.label }}
+              </span>
+            </ng-container>
             <span class="lot-chev">{{ isExpanded(l) ? '▴' : '▾' }}</span>
           </div>
           <div class="lot-metrics">
@@ -77,15 +80,17 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
           <span *ngIf="l.manufact"><b>Бренд/модель:</b> {{ l.manufact }}</span>
         </div>
 
+        <!-- всплытие в действиях НЕ гасим: .lot-body — сосед .lot-head, до toggleLot клик не дойдёт,
+             а document:click должен получить событие и закрыть открытое меню «⋯» -->
         <div class="lot-actions">
-          <button class="btn btn-tz" *ngIf="isImportedTender()" [disabled]="tzBusy.has(l.id)" (click)="parseTechSpec(l, $event)"
+          <button class="btn btn-tz" *ngIf="isImportedTender()" [disabled]="tzBusy.has(l.id)" (click)="parseTechSpec(l)"
                   title="Скачать и разобрать техспецификацию с площадки">{{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}</button>
-          <button class="btn btn-registry" *ngIf="isKz()" (click)="openRegistry(l, $event)"
+          <button class="btn btn-registry" *ngIf="isKz()" (click)="openRegistry(l)"
                   title="Подбор из реестра НЦЭЛС (кандидаты + комплектность аппаратов)">Подбор</button>
-          <button class="btn btn-kp" (click)="openKpFor(l, $event)">КП</button>
+          <button class="btn btn-kp" (click)="openKpFor(l)">КП</button>
           <!-- каталог-матч: только РФ (KZ-каталог наполняется из реестра, там подбор — через «Подбор») -->
           <button class="btn btn-match" *ngIf="lotHasCriteria(l) && !isKz()"
-                  (click)="$event.stopPropagation(); matchRequested.emit({ lotId: l.id, lotNumber: l.lotNumber })">Подобрать</button>
+                  (click)="matchRequested.emit({ lotId: l.id, lotNumber: l.lotNumber })">Подобрать</button>
           <span class="lot-menu-wrap">
             <button class="btn btn-more" (click)="toggleLotMenu(l, $event)" title="Ещё действия">⋯</button>
             <span class="lot-menu" *ngIf="openMenuLotId === l.id">
@@ -96,7 +101,7 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
         </div>
 
         <div class="lot-spec" *ngIf="l.requiredSpec">
-          <button class="spec-toggle" (click)="toggleSpec(l, $event)">
+          <button class="spec-toggle" (click)="toggleSpec(l)">
             {{ isSpecOpen(l) ? '▴' : '▾' }} Техническая спецификация
           </button>
           <div class="spec-body" *ngIf="isSpecOpen(l)">{{ l.requiredSpec }}</div>
@@ -129,7 +134,8 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
     .lot-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .lot-num { font-weight: 600; color: var(--accent); font-size: 14px; }
     .lot-name { font-size: 15px; color: var(--text); font-weight: 500; flex: 1; min-width: 0; }
-    .lot-chev { color: var(--text-muted); font-size: 11px; }
+    .lot-chev { color: var(--text); font-size: 14px; line-height: 1; }
+    .lot-open .lot-chev { color: var(--accent); }
     .lot-metrics { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
     .lot-proposed { margin-top: 5px; font-size: 12px; color: var(--text); }
     .lot-kp { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
@@ -146,8 +152,10 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
     .stage-success { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
     .stage-danger { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 
-    .lot-body { padding: 0 14px 14px; border-top: 1px solid var(--border); }
-    .lot-details { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text); padding: 10px 0; }
+    /* отступ от разделителя даёт САМО тело: у импортных лотов строки деталей нет (hasDetails=false),
+       и без padding-top кнопки действий упирались в border-top */
+    .lot-body { padding: 10px 14px 14px; border-top: 1px solid var(--border); }
+    .lot-details { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text); padding: 0 0 10px; }
     .lot-details b { color: var(--text-muted); font-weight: 600; }
     .lot-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 4px; }
     .lot-spec { margin-top: 10px; }
@@ -173,6 +181,9 @@ export interface LotStage { code: string; label: string; tone: 'muted' | 'accent
     .btn-kp-sel { background: #0e9f6e; color: var(--accent-contrast); }
     .btn-kp { background: #0e9f6e; color: var(--accent-contrast); }
     .btn-tz { background: #6366f1; color: var(--accent-contrast); }
+    /* разбор ТЗ — многосекундная операция (сеть + PDF): «идёт работа», а не «запрещено».
+       Правило ПОСЛЕ .btn:disabled — специфичность равная, побеждает позднее */
+    .btn-tz:disabled { opacity: .6; cursor: wait; }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .btn-match { background: var(--success); color: var(--accent-contrast); }
     .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
@@ -242,8 +253,7 @@ export class TenderLotsComponent implements OnChanges {
   isExpanded(l: any): boolean { return this.expandedLotId === l.id; }
 
   specOpenLotId: number | null = null;
-  toggleSpec(l: any, ev: Event) {
-    ev.stopPropagation();
+  toggleSpec(l: any) {
     this.specOpenLotId = this.specOpenLotId === l.id ? null : l.id;
     this.cdr.detectChanges();
   }
@@ -267,14 +277,14 @@ export class TenderLotsComponent implements OnChanges {
     const items = this.itemsForLot(l.id);
     // считаем по персистентной цене, не по редактируемой it._editPrice
     const priced = items.filter((it: any) => it.responsePrice != null).length;
-    if (priced > 0) return { code: 'PRICED', label: `Есть цены: ${priced}`, tone: 'success', filled: true };
+    if (priced > 0) return { label: `Есть цены: ${priced}`, tone: 'success', filled: true };
     const prs = this.prsForLot(l.id);
     if (prs.length && prs.every((pr: any) => pr.status === 'DECLINED'))
-      return { code: 'DECLINED', label: 'Отказы', tone: 'danger', filled: true };
-    if (prs.length) return { code: 'KP_SENT', label: 'КП отправлено', tone: 'warn', filled: true };
-    if (l.proposedEquipment) return { code: 'MODEL', label: 'Модель выбрана', tone: 'accent', filled: true };
-    if (l.requiredSpec) return { code: 'SPEC', label: 'Есть ТЗ', tone: 'accent', filled: true };
-    return { code: 'NO_SPEC', label: 'Нужно ТЗ', tone: 'muted', filled: false };
+      return { label: 'Отказы', tone: 'danger', filled: true };
+    if (prs.length) return { label: 'КП отправлено', tone: 'warn', filled: true };
+    if (l.proposedEquipment) return { label: 'Модель выбрана', tone: 'accent', filled: true };
+    if (l.requiredSpec) return { label: 'Есть ТЗ', tone: 'accent', filled: true };
+    return { label: 'Нужно ТЗ', tone: 'muted', filled: false };
   }
 
   kpDistributorsFor(lotId: number): string[] {
@@ -326,14 +336,20 @@ export class TenderLotsComponent implements OnChanges {
   }
 
   // ===== панели =====
-  openRegistry(l: any, ev: Event) {
-    ev.stopPropagation();
+  // Явное действие оператора отменяет отложенное открытие КП (иначе висящий pendingKpLotId
+  // после упавшей перезагрузки лотов внезапно откроет панель на следующем обновлении списка).
+  openRegistry(l: any) {
+    this.pendingKpLotId = null;
     this.registryLot = l; this.kpLots = [];
     this.expandedLotId = l.id;   // панель живёт внутри лота — он должен быть развёрнут
     this.cdr.detectChanges();
   }
-  openKpFor(l: any, ev: Event) { ev.stopPropagation(); this.openKp([l]); this.cdr.detectChanges(); }
-  openKpSelected() { this.openKp(this.lots.filter((l: any) => this.lotSel.has(l.id))); this.cdr.detectChanges(); }
+  openKpFor(l: any) { this.pendingKpLotId = null; this.openKp([l]); this.cdr.detectChanges(); }
+  openKpSelected() {
+    this.pendingKpLotId = null;
+    this.openKp(this.lots.filter((l: any) => this.lotSel.has(l.id)));
+    this.cdr.detectChanges();
+  }
 
   /**
    * Панель КП по набору лотов. Одиночная панель живёт ВНУТРИ лота, поэтому лот разворачиваем —
@@ -361,11 +377,15 @@ export class TenderLotsComponent implements OnChanges {
     this.lotsChanged.emit();
     this.cdr.detectChanges();
   }
-  onKpSent() { this.kpLots = []; this.lotSel.clear(); this.priceRequestsChanged.emit(); this.cdr.detectChanges(); }
+  onKpSent() {
+    this.pendingKpLotId = null;
+    this.kpLots = []; this.lotSel.clear();
+    this.priceRequestsChanged.emit();
+    this.cdr.detectChanges();
+  }
 
   // ===== действия лота =====
-  parseTechSpec(l: any, ev: Event) {
-    ev.stopPropagation();
+  parseTechSpec(l: any) {
     this.tzBusy.add(l.id);
     this.cdr.detectChanges();
     this.api.parseLotTechSpec(l.id).subscribe({
