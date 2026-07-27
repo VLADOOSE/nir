@@ -27,6 +27,103 @@ body {
 }
 
 /* ============================================================
+   UI-kit: общие примитивы на семантических токенах.
+
+   Зачем: те же правила были скопированы по компонентам (.empty в 14 файлах,
+   .subtitle в 13, .btn-cancel в 12, база th,td в 11, .badge* в 11) — из-за
+   этого тёмная тема требовала 24 одинаковых правки, а новый экран снова
+   приносил хексы.
+
+   Специфичность: Angular-scoped правило компилируется в `.btn[_ngcontent-x]`
+   (0,2,0) и перебивает глобальный `.btn` (0,1,0). Значит этот слой не влияет
+   ни на что, пока в компоненте лежит собственный блок, и «просыпается» ровно
+   тогда, когда локальный дубль удалили. Элементные правила (0,0,1) перебивает
+   вообще любое компонентное.
+
+   Правило дополнения: цвет и общая геометрия примитива — здесь; раскладка
+   (margin/flex/width/position) — в компоненте.
+   ============================================================ */
+
+/* --- базовые элементы: ТОЛЬКО цвет, без геометрии --- */
+h2, h3 { color: var(--text); }
+th, td { border-color: var(--border); }
+th { background: var(--surface-2); color: var(--text-muted); }
+
+/* Правила `input, select, textarea` здесь СОЗНАТЕЛЬНО нет.
+   Оно единственное во всём слое не инертно: фон поля на непереведённых
+   экранах обычно не задан вовсе, поэтому поле сразу становится тёмным — и
+   садится на ещё белую карточку компонента (живой замер на /login в тёмной
+   теме: .login-card rgb(255,255,255), input rgb(41,40,39)). Пока экраны не
+   переведены, это рассогласовывает, а не улучшает.
+   Вернуть последней задачей плана, когда все экраны уже на токенах — тогда
+   правило станет тем, ради чего задумано: страховкой для полей, у которых фон
+   не задан вовсе, и для экранов, написанных после этой работы. */
+
+/* --- кнопки --- */
+.btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-primary, .btn-add, .btn-save, .btn-open, .btn-login, .btn-search {
+  background: var(--accent); color: var(--accent-contrast);
+}
+.btn-primary:hover, .btn-add:hover, .btn-save:hover,
+.btn-open:hover, .btn-login:hover, .btn-search:hover { background: var(--accent-hover); }
+
+.btn-cancel, .btn-reset, .btn-reset-filter {
+  background: var(--surface-2); color: var(--text);
+}
+.btn-cancel:hover, .btn-reset:hover,
+.btn-reset-filter:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
+
+.btn-delete, .btn-danger, .btn-pdf { background: var(--danger); color: var(--accent-contrast); }
+.btn-edit { background: var(--warn); color: var(--accent-contrast); }
+.btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+/* «← Назад к списку» — заливная приглушённая, не светлая: так она выглядит
+   в обоих местах использования (tenders и applies). */
+.btn-back { background: var(--text-muted); color: var(--accent-contrast); }
+
+/* .btn-close здесь намеренно НЕТ: это не кнопка, а прозрачный крестик модалки
+   (bulk-price-modal, единственное место во всём приложении) — заливка из kit
+   превратила бы его в кнопку. Токенизирует его задача самой модалки. */
+
+/* --- бейджи: тинт семантического токена, читается в обеих темах --- */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+
+.badge-DRAFT, .badge-pr-CREATED { background: var(--surface-2); color: var(--text); }
+.badge-pr-CLOSED, .badge-d-NONE  { background: var(--surface-2); color: var(--text-muted); }
+
+.badge-ACTIVE, .badge-SUBMITTED, .badge-pr-SENT, .badge-d-DELIVERED {
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
+}
+.badge-COMPLETED, .badge-WON, .badge-d-PAID {
+  background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success);
+}
+.badge-pr-ACCEPTED {
+  background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); font-weight: 700;
+}
+.badge-UNDER_REVIEW, .badge-pr-RESPONDED, .badge-d-ORDERED {
+  background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn);
+}
+.badge-CANCELLED, .badge-REJECTED, .badge-LOST {
+  background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger);
+}
+.badge-pr-DECLINED {
+  background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); font-weight: 700;
+}
+
+/* --- общие утилиты страниц --- */
+.subtitle { color: var(--text-muted); font-size: 13px; margin: 4px 0 16px; }
+.counter { color: var(--text-muted); font-size: 13px; }
+.empty { color: var(--text-muted); font-size: 14px; padding: 32px 0; text-align: center; }
+.field-error { display: block; color: var(--danger); font-size: 12px; margin-top: 2px; }
+.error-banner {
+  background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger);
+  padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px;
+}
+.form-actions { margin-top: 16px; }
+
+/* ============================================================
    Адаптив под мобилку (брейкпоинт 900px). Десктоп-вид НЕ меняется —
    все правила ниже либо безопасны везде, либо под @media (max-width:900px).
    Стили глобальные (не scoped) → достают DOM inline-компонентов по opt-in классам.
