@@ -210,7 +210,10 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .subtitle {
       margin: 6px 0 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
-    .dot { color: var(--border); }
+    /* глиф-разделитель, а не рамка: --border в слоте color в тёмной теме
+       полупрозрачно-белый 11% и «·» исчезает. 45% от --text-muted держит
+       прежнюю бледность в светлой теме и остаётся видимым в тёмной. */
+    .dot { color: color-mix(in srgb, var(--text-muted) 45%, transparent); }
     .type-pill {
       display: inline-block; padding: 2px 10px;
       background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
