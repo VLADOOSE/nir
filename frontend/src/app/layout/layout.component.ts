@@ -173,8 +173,8 @@ import { ThemeService } from '../services/theme.service';
     .search-result:hover { background: var(--surface-2); }
     .result-type { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; white-space: nowrap; }
     .type-tender { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .type-equipment { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
-    .type-facility { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+    .type-equipment { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success-text); }
+    .type-facility { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn-text); }
     .type-distributor { background: color-mix(in srgb, var(--text-muted) 18%, transparent); color: var(--text-muted); }
     .result-content { flex: 1; min-width: 0; }
     .result-title { font-size: 14px; font-weight: 500; color: var(--text); }

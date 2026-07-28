@@ -110,50 +110,65 @@ const LS_KEY = 'smartMatch.v1';
     </div>
   `,
   styles: [`
-    .sm-panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fff; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .sm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #f3f4f6; }
-    .sm-header strong { font-size: 15px; color: #111827; }
-    .sm-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 2px 6px; border-radius: 4px; }
-    .sm-close:hover { background: #f3f4f6; color: #111827; }
+    .sm-panel { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--surface); margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .sm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .sm-header strong { font-size: 15px; color: var(--text); }
+    .sm-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
+    .sm-close:hover { background: var(--surface-2); color: var(--text); }
     .sm-presets { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-    .sm-presets button { padding: 6px 14px; border: 1px solid #d1d5db; background: #f9fafb; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
-    .sm-presets button:hover { background: #f3f4f6; }
-    .sm-presets button.active { background: #1a56db; color: #fff; border-color: #1a56db; }
-    .sm-sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; padding: 14px; background: #f9fafb; border-radius: 6px; margin-bottom: 12px; border: 1px dashed #d1d5db; }
-    .sm-sliders label { display: grid; grid-template-columns: 60px 1fr 30px; align-items: center; gap: 8px; font-size: 13px; color: #374151; }
+    /* color задан явно: у <button> цвет текста не наследуется (системный buttontext),
+       и на тёмной заливке --surface-2 подпись осталась бы чёрной. */
+    .sm-presets button { padding: 6px 14px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+    /* Оба исходных серых (фон и ховер) дают --surface-2, буквальный перевод сделал бы
+       правило no-op. Затемнение — идиомой kit (.btn-cancel:hover в styles.scss). */
+    .sm-presets button:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
+    .sm-presets button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+    .sm-sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; padding: 14px; background: var(--surface-2); border-radius: 6px; margin-bottom: 12px; border: 1px dashed var(--border); }
+    .sm-sliders label { display: grid; grid-template-columns: 60px 1fr 30px; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
     .sm-sliders input { width: 100%; }
-    .sm-sliders span { font-weight: 600; color: #1a56db; text-align: right; }
-    .sm-sum { grid-column: span 2; text-align: right; font-weight: 600; color: #6b7280; font-size: 12px; padding-top: 4px; border-top: 1px solid #e5e7eb; }
-    .sm-coldstart { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #92400e; }
-    .sm-recommend { background: linear-gradient(to right, #eff6ff, #fff); border-left: 3px solid #1a56db; padding: 12px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #1e3a8a; }
-    .sm-recommend strong { color: #1a56db; }
-    .sm-loading { padding: 24px; text-align: center; color: #6b7280; font-size: 13px; }
+    .sm-sliders span { font-weight: 600; color: var(--accent); text-align: right; }
+    .sm-sum { grid-column: span 2; text-align: right; font-weight: 600; color: var(--text-muted); font-size: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
+    .sm-coldstart { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--warn-text); }
+    .sm-recommend { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 15%, transparent), transparent); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--accent); }
+    .sm-recommend strong { color: var(--accent); }
+    .sm-loading { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
     .sm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .sm-table th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #d1d5db; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
-    .sm-table td { padding: 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-    .sm-table tr.top td { background: #eff6ff; }
-    .sm-table .cand-name { font-weight: 500; color: #111827; }
-    .sm-table .cand-meta { color: #6b7280; font-size: 11px; }
-    .sm-table .score { font-weight: 700; font-size: 15px; color: #1a56db; text-align: center; min-width: 50px; }
-    .sm-table .bar { width: 70px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-    .sm-table .bar span { display: block; height: 100%; background: linear-gradient(to right, #10b981, #059669); border-radius: 4px; transition: width 0.25s; }
-    .sm-table .bar span.nodata { background: repeating-linear-gradient(45deg, #d1d5db, #d1d5db 4px, #e5e7eb 4px, #e5e7eb 8px); }
-    .sm-table tr.expand td { background: #fafafa; padding: 14px 16px; }
+    .sm-table th { background: var(--surface-2); padding: 8px 10px; text-align: left; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .sm-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    /* Подсветка ОБЛАСТИ (рекомендованный кандидат): непрозрачный микс с --surface + рамка.
+       НЕ --surface-2 — урок 6b8dc3f: там подсветка совпала с фоном панели и смысл инвертировался.
+       Токен --accent, а не --success: исходный тинт синий, и вся семантика рекомендации
+       в этой модалке синяя (баннер СППР, score) — зелёный был бы перекраской, а не переводом. */
+    .sm-table tr.top td { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: var(--accent); }
+    .sm-table .cand-name { font-weight: 500; color: var(--text); }
+    .sm-table .cand-meta { color: var(--text-muted); font-size: 11px; }
+    .sm-table .score { font-weight: 700; font-size: 15px; color: var(--accent); text-align: center; min-width: 50px; }
+    .sm-table .bar { width: 70px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .sm-table .bar span { display: block; height: 100%; background: var(--success); border-radius: 4px; transition: width 0.25s; }
+    /* Штриховка «нет данных»: обе исходные краски полос дают --border, то есть слились бы
+       с дорожкой бара. Полосы — полупрозрачный --text-muted поверх дорожки. */
+    .sm-table .bar span.nodata { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text-muted) 35%, transparent), color-mix(in srgb, var(--text-muted) 35%, transparent) 4px, transparent 4px, transparent 8px); }
+    .sm-table tr.expand td { background: var(--surface-2); padding: 14px 16px; }
     .sm-table .raw-list { margin: 0 0 8px 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
-    .sm-table .raw-list li { font-size: 12px; color: #4b5563; }
-    .sm-table .raw-list strong { color: #111827; font-weight: 600; }
-    .sm-table .estim { margin: 6px 0; font-size: 13px; color: #374151; }
-    .sm-table .estim strong { color: #059669; }
-    .btn-pr { background: #1a56db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    .btn-pr:hover { background: #1e40af; }
-    .sm-specderived { background: #eef2ff; border-left: 3px solid #6366f1; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #3730a3; }
-    .btn-approve { background: #0e9f6e; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px; }
+    .sm-table .raw-list li { font-size: 12px; color: var(--text-muted); }
+    .sm-table .raw-list strong { color: var(--text); font-weight: 600; }
+    .sm-table .estim { margin: 6px 0; font-size: 13px; color: var(--text); }
+    .sm-table .estim strong { color: var(--success-text); }
+    .btn-pr { background: var(--accent); color: var(--accent-contrast); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    /* --accent-hover, а не --accent: в светлой теме токен равен прежнему тёмно-синему
+       значению, а перевод по букве таблицы (в --accent) сделал бы ховер no-op. */
+    .btn-pr:hover { background: var(--accent-hover); }
+    .sm-specderived { background: color-mix(in srgb, var(--accent) 15%, transparent); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--accent); }
+    /* Фикс-цветная заливка (ограничение 5 плана; тот же зелёный у .btn-adopt в lot-registry-panel):
+       белая подпись на осветлённом --success в тёмной теме даёт контраст <2:1.
+       Токенизируется только цвет текста; ховер остаётся собственным затемнением. */
+    .btn-approve { background: #0e9f6e; color: var(--accent-contrast); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px; }
     .btn-approve:hover { background: #057a55; }
-    .approved-badge { display: inline-block; margin-left: 8px; background: #d1fae5; color: #065f46; border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
-    .sm-toggle { background: #f3f4f6; border: 1px solid #d1d5db; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: #374151; }
-    .sm-toggle:hover { background: #e5e7eb; }
-    .sm-empty { text-align: center; color: #6b7280; padding: 24px; font-size: 13px; }
-    .sm-nocriteria { background: #fef2f2; border-left: 3px solid #ef4444; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #991b1b; }
+    .approved-badge { display: inline-block; margin-left: 8px; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+    .sm-toggle { background: var(--surface-2); border: 1px solid var(--border); width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: var(--text); }
+    .sm-toggle:hover { background: var(--border); }
+    .sm-empty { text-align: center; color: var(--text-muted); padding: 24px; font-size: 13px; }
+    .sm-nocriteria { background: color-mix(in srgb, var(--danger) 15%, transparent); border-left: 3px solid var(--danger); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--danger-text); }
   `]
 })
 export class SmartMatchComponent implements OnChanges {

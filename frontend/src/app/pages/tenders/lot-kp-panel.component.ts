@@ -128,9 +128,9 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     .supplier-link { color: var(--accent); text-decoration: none; }
     .supplier-link:hover { text-decoration: underline; }
     .tag-all { color: var(--text-muted); font-size: 11px; }
-    .no-email { color: var(--danger); font-size: 11px; margin-left: 6px; }
+    .no-email { color: var(--danger-text); font-size: 11px; margin-left: 6px; }
     .reason-chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; }
-    .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+    .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .reason-brand { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
     .zero-toggle:hover { color: var(--text); text-decoration: underline; }

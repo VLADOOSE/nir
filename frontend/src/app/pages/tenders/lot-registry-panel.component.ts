@@ -141,8 +141,8 @@ import { NotificationService } from '../../services/notification.service';
     .lrp-loading { color: var(--text-muted); padding: 6px 0; }
     .lrp-empty { color: var(--text-muted); font-size: 14px; padding: 12px 0; }
     .lrp-hint { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn);
-                padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn); }
-    .lrp-error { color: var(--danger); font-size: 14px; padding: 8px 0; }
+                padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn-text); }
+    .lrp-error { color: var(--danger-text); font-size: 14px; padding: 8px 0; }
     .cand { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; padding: 10px 12px; }
     .cand-main { cursor: pointer; }
     .cand-row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -159,9 +159,9 @@ import { NotificationService } from '../../services/notification.service';
     .cand-detail-meta { margin-bottom: 8px; font-weight: 600; color: var(--text); }
     .cand-detail-def { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
     .cand-detail-block { margin-bottom: 6px; color: var(--text); }
-    .cand-detail-error { color: var(--danger); padding: 4px 0; }
+    .cand-detail-error { color: var(--danger-text); padding: 4px 0; }
     .score-badge { background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
-    .score-badge.score-good { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+    .score-badge.score-good { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .score-badge.score-name { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .complect-cta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
     .complect { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }

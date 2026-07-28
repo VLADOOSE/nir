@@ -186,8 +186,8 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .sidebar {
       position: fixed; top: 0; right: 0; bottom: 0;
       width: 720px; max-width: 100vw;
-      background: #fff;
-      box-shadow: -8px 0 30px rgba(0,0,0,0.18);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
       display: flex; flex-direction: column;
       animation: slideIn 0.2s ease-out;
     }
@@ -197,31 +197,38 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       display: flex; align-items: flex-start; justify-content: space-between;
       gap: 12px;
       padding: 24px 32px 16px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
     .title-block { min-width: 0; flex: 1; }
     .title {
       margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600;
-      color: #111827; word-break: break-word;
+      color: var(--text); word-break: break-word;
     }
+    /* цвет и font-size приходят из kit (.subtitle); здесь остаётся только раскладка.
+       margin задан явно: у kit-версии есть нижний отступ 16px, в шапке он лишний. */
     .subtitle {
-      margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      font-size: 13px; color: #6b7280;
+      margin: 6px 0 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
-    .dot { color: #d1d5db; }
+    /* глиф-разделитель, а не рамка: --border в слоте color в тёмной теме
+       полупрозрачно-белый 11% и «·» исчезает. 45% от --text-muted держит
+       прежнюю бледность в светлой теме и остаётся видимым в тёмной. */
+    .dot { color: color-mix(in srgb, var(--text-muted) 45%, transparent); }
     .type-pill {
       display: inline-block; padding: 2px 10px;
-      background: #eef2ff; color: #3730a3;
+      background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
       border-radius: 999px; font-size: 12px; font-weight: 500;
     }
     .close-btn {
       background: transparent; border: none; cursor: pointer;
-      font-size: 28px; line-height: 1; color: #9ca3af;
+      font-size: 28px; line-height: 1; color: var(--text-muted);
       padding: 0 4px; border-radius: 4px;
       transition: color 0.15s, background 0.15s;
     }
-    .close-btn:hover { color: #ef4444; background: #fef2f2; }
+    /* --danger, а не --danger-text: крестик 28px — крупный текст (порог 3:1), сигнал
+       ховера в насыщенности. Та же роль и то же решение, что у .btn-close:hover
+       в bulk-price-modal (там причина расписана подробно). */
+    .close-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 
     .body {
       flex: 1; overflow-y: auto;
@@ -232,7 +239,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .section:last-child { margin-bottom: 0; }
     .section-title {
       margin: 0 0 12px; font-size: 13px; font-weight: 600;
-      color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;
     }
 
     .spec-grid {
@@ -240,74 +247,83 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       gap: 12px;
     }
     .spec-cell {
-      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
       padding: 10px 14px;
     }
-    .spec-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-    .spec-value { font-size: 14px; color: #111827; font-weight: 500; }
-    .spec-price { color: #1a56db; font-weight: 600; font-size: 15px; }
-    .spec-spec { margin-top: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 14px; }
-    .spec-text { font-size: 13px; color: #374151; white-space: pre-wrap; margin-top: 4px; line-height: 1.5; }
+    .spec-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .spec-value { font-size: 14px; color: var(--text); font-weight: 500; }
+    .spec-price { color: var(--accent); font-weight: 600; font-size: 15px; }
+    .spec-spec { margin-top: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+    .spec-text { font-size: 13px; color: var(--text); white-space: pre-wrap; margin-top: 4px; line-height: 1.5; }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-    tbody tr:hover { background: #f9fafb; }
-    tr.best-row { background: #fefce8; }
-    tr.best-row:hover { background: #fef9c3; }
-    .name-cell { font-weight: 500; color: #111827; }
-    .rank-cell { font-weight: 600; color: #6b7280; }
-    .best-tag { color: #b45309; font-size: 11px; font-weight: 600; margin-left: 6px; }
+    /* правило несёт саму линию (border-bottom), а kit даёт только border-color —
+       поэтому оставлено и токенизировано, иначе разлиновка таблиц пропала бы */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    /* background/color шапки берутся из kit (th → --surface-2 / --text-muted) */
+    th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tbody tr:hover { background: var(--surface-2); }
+    tr.best-row { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+    tr.best-row:hover { background: color-mix(in srgb, var(--warn) 16%, var(--surface)); }
+    .name-cell { font-weight: 500; color: var(--text); }
+    .rank-cell { font-weight: 600; color: var(--text-muted); }
+    .best-tag { color: var(--warn-text); font-size: 11px; font-weight: 600; margin-left: 6px; }
     .w-30 { width: 30px; } .w-60 { width: 60px; } .w-90 { width: 90px; }
     .w-100 { width: 100px; } .w-110 { width: 110px; } .w-140 { width: 140px; }
 
     .summary-card {
-      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
       padding: 14px 16px;
     }
-    .summary-row { font-size: 14px; color: #374151; margin-bottom: 6px; line-height: 1.5; }
+    .summary-row { font-size: 14px; color: var(--text); margin-bottom: 6px; line-height: 1.5; }
     .summary-row:last-child { margin-bottom: 0; }
-    .summary-row strong { color: #111827; font-weight: 600; }
-    .summary-row.muted { color: #6b7280; }
+    .summary-row strong { color: var(--text); font-weight: 600; }
+    .summary-row.muted { color: var(--text-muted); }
 
+    /* kit-версия .empty — простой центрированный текст; здесь пунктирная плашка,
+       которую kit не воспроизводит → правило оставлено и токенизировано */
     .empty {
-      color: #9ca3af; font-size: 13px; padding: 16px;
-      background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 6px;
+      color: var(--text-muted); font-size: 13px; padding: 16px;
+      background: var(--surface-2); border: 1px dashed var(--border); border-radius: 6px;
       text-align: center;
     }
     .loading {
-      color: #6b7280; font-size: 13px; text-align: center; padding: 12px;
+      color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;
     }
 
+    /* display/padding/font-weight базы даёт kit (.badge); здесь — то, чего в kit нет */
     .badge {
-      display: inline-block; padding: 2px 10px;
-      font-size: 11px; font-weight: 600; border-radius: 999px;
+      font-size: 11px; border-radius: 999px;
       text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
     }
-    .badge-created { background: #f3f4f6; color: #4b5563; }
-    .badge-sent { background: #dbeafe; color: #1e40af; }
-    .badge-responded { background: #dcfce7; color: #166534; }
-    .badge-closed { background: #fee2e2; color: #991b1b; }
-    .badge-other { background: #f3f4f6; color: #4b5563; }
+    /* Нижнерегистровое семейство: kit знает только SCREAMING_CASE (.badge-pr-SENT и т.п.),
+       поэтому эти пять правил токенизированы на месте, а НЕ удалены — иначе бейджи
+       истории запросов остались бы вовсе без цвета. */
+    .badge-created { background: var(--surface-2); color: var(--text-muted); }
+    .badge-sent { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .badge-responded { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .badge-closed { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .badge-other { background: var(--surface-2); color: var(--text-muted); }
 
+    .reg-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+    .reg-label { color: var(--text-muted); min-width: 90px; }
+    .reg-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+    .rb-UNCHECKED { background: var(--surface-2); color: var(--text); }
+    .rb-REGISTERED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .rb-NOT_REGISTERED { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .rb-NOT_MEDICAL { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
+    .reg-vat { font-size: 11px; color: var(--success-text); font-weight: 600; }
+    .reg-vat-no { color: var(--warn-text); }
+    .reg-link { display: inline-block; margin-top: 8px; color: var(--accent); font-size: 13px; cursor: pointer; text-decoration: none; }
+    .reg-link:hover { text-decoration: underline; }
+
+    /* @media — последним блоком (§14): при равной специфичности побеждает более позднее правило */
     @media (max-width: 768px) {
       .sidebar { width: 100vw; }
       .head { padding: 16px 20px 12px; }
       .body { padding: 16px 20px 24px; }
       .spec-grid { grid-template-columns: 1fr; }
     }
-
-    .reg-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
-    .reg-label { color: #6b7280; min-width: 90px; }
-    .reg-badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .rb-UNCHECKED { background: #e5e7eb; color: #374151; }
-    .rb-REGISTERED { background: #d1fae5; color: #065f46; }
-    .rb-NOT_REGISTERED { background: #fee2e2; color: #991b1b; }
-    .rb-NOT_MEDICAL { background: #fef3c7; color: #92400e; }
-    .reg-vat { font-size: 11px; color: #065f46; font-weight: 600; }
-    .reg-vat-no { color: #92400e; }
-    .reg-link { display: inline-block; margin-top: 8px; color: #1a56db; font-size: 13px; cursor: pointer; text-decoration: none; }
-    .reg-link:hover { text-decoration: underline; }
   `]
 })
 export class EquipmentDetailModalComponent implements OnChanges {

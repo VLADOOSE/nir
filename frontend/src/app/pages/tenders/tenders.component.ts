@@ -313,8 +313,8 @@ import { TenderLotsComponent } from './tender-lots.component';
     .eis-link:hover { background: color-mix(in srgb, var(--text) 15%, transparent); }
     .eis-link-h2 { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 10px; background: var(--surface-2); color: var(--accent); border-radius: 6px; text-decoration: none; font-weight: 500; margin-left: 12px; }
     .eis-link-h2:hover { background: color-mix(in srgb, var(--text) 15%, transparent); }
-    .demo-badge { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 6px; background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-    .demo-badge-h2 { display: inline-flex; align-items: center; font-size: 12px; padding: 4px 10px; background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); border-radius: 6px; font-weight: 600; margin-left: 12px; }
+    .demo-badge { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 6px; background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .demo-badge-h2 { display: inline-flex; align-items: center; font-size: 12px; padding: 4px 10px; background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); border-radius: 6px; font-weight: 600; margin-left: 12px; }
     .tender-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .tender-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .tender-number { font-weight: 600; color: var(--accent); font-size: 15px; }
@@ -328,7 +328,7 @@ import { TenderLotsComponent } from './tender-lots.component';
     .detail span:not(.detail-label) { font-size: 14px; }
     .price { font-weight: 600; color: var(--text); }
     .deadline { font-weight: 500; }
-    .deadline.overdue { color: var(--danger); }
+    .deadline.overdue { color: var(--danger-text); }
     .tender-card-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
 
     .tender-info { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
@@ -356,7 +356,7 @@ import { TenderLotsComponent } from './tender-lots.component';
     .lot-mini { background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 2px 9px; font-size: 12px;
                 max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lot-mini-more { background: var(--surface-2); color: var(--text-muted); }
-    .pr-decline-reason { padding: 7px 14px; background: var(--surface-2); color: var(--danger); font-size: 12px; border-top: 1px solid var(--border); }
+    .pr-decline-reason { padding: 7px 14px; background: var(--surface-2); color: var(--danger-text); font-size: 12px; border-top: 1px solid var(--border); }
     .pr-card.pr-accepted { border-color: var(--success); box-shadow: 0 0 0 1px var(--success); }
     .pr-markup-calc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface-2); border-radius: 6px; margin-bottom: 12px; border: 1px dashed var(--border); }
     .pmc-label { font-size: 13px; font-weight: 600; color: var(--text); margin-right: 4px; }
@@ -366,8 +366,8 @@ import { TenderLotsComponent } from './tender-lots.component';
     .pmc-custom { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
     .pmc-custom input { width: 60px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; text-align: right; }
     .pmc-calc { font-weight: 600; color: var(--accent); }
-    .pmc-calc small { display: block; color: var(--warn); font-size: 10px; font-weight: 400; }
-    .pmc-profit { color: var(--success); font-weight: 600; }
+    .pmc-calc small { display: block; color: var(--warn-text); font-size: 10px; font-weight: 400; }
+    .pmc-profit { color: var(--success-text); font-weight: 600; }
     .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
     .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }

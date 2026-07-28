@@ -173,18 +173,18 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-metrics { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
     .lot-proposed { margin-top: 5px; font-size: 12px; color: var(--text); }
     .lot-kp { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
-    .badge-proposed { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success);
+    .badge-proposed { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text);
                       border-radius: 8px; padding: 1px 7px; font-size: 11px; font-weight: 600; margin-right: 4px; }
     .badge-reg-ok { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
                     border-radius: 8px; padding: 1px 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
-    .x-mini { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 13px; margin-left: 4px; }
+    .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
     .stage-muted { background: var(--surface-2); color: var(--text-muted); }
     .stage-accent { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    .stage-warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
-    .stage-success { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-    .stage-danger { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+    .stage-warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
+    .stage-success { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .stage-danger { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
 
     /* отступ от разделителя даёт САМО тело: у импортных лотов строки деталей нет (hasDetails=false),
        и без padding-top кнопки действий упирались в border-top */
@@ -206,7 +206,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-menu button { background: none; border: none; text-align: left; padding: 8px 12px; cursor: pointer;
                        font-size: 13px; color: var(--text); white-space: nowrap; }
     .lot-menu button:hover { background: var(--surface-2); }
-    .lot-menu button.danger { color: var(--danger); }
+    .lot-menu button.danger { color: var(--danger-text); }
 
     .btn-bulk { background: #8b5cf6; color: var(--accent-contrast); }
     .btn-kp-sel { background: #0e9f6e; color: var(--accent-contrast); }
