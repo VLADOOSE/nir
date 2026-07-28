@@ -141,7 +141,12 @@ import { NotificationService } from '../../services/notification.service';
       background: transparent; border: none; font-size: 28px; line-height: 1;
       color: var(--text-muted); cursor: pointer; padding: 0 4px;
     }
-    .btn-close:hover { color: var(--danger-text); }
+    /* --danger, а не --danger-text: крестик 28px — крупный текст (порог 3:1),
+       #ef4444 давал 3,76:1 и проходил. Плюс это голый глиф на --surface, а не
+       надпись на светлом тинте, ради которой заведён текстовый токен: ховер —
+       обратная связь, её сигнал и есть насыщенность, а приглушённо-тёмный
+       крестик читается как «неактивно». */
+    .btn-close:hover { color: var(--danger); }
 
     .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 
