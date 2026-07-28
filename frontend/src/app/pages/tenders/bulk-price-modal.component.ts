@@ -141,7 +141,7 @@ import { NotificationService } from '../../services/notification.service';
       background: transparent; border: none; font-size: 28px; line-height: 1;
       color: var(--text-muted); cursor: pointer; padding: 0 4px;
     }
-    .btn-close:hover { color: var(--danger); }
+    .btn-close:hover { color: var(--danger-text); }
 
     .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 
@@ -167,12 +167,12 @@ import { NotificationService } from '../../services/notification.service';
     }
     .alert-danger {
       background: color-mix(in srgb, var(--danger) 8%, var(--surface));
-      border-color: var(--danger); color: var(--danger);
+      border-color: var(--danger); color: var(--danger-text);
     }
-    .alert h3 { margin: 0 0 8px; font-size: 15px; color: var(--danger); }
+    .alert h3 { margin: 0 0 8px; font-size: 15px; color: var(--danger-text); }
     .alert ul { margin: 0 0 8px; padding-left: 20px; font-size: 14px; }
     .alert li { margin-bottom: 4px; }
-    .alert-hint { margin: 6px 0 0; font-size: 13px; color: var(--danger); font-style: italic; }
+    .alert-hint { margin: 6px 0 0; font-size: 13px; color: var(--danger-text); font-style: italic; }
     .muted { color: var(--text-muted); font-weight: normal; }
 
     .group-card {
@@ -213,13 +213,13 @@ import { NotificationService } from '../../services/notification.service';
       white-space: nowrap;
     }
     .price-value { font-weight: 600; color: var(--text); font-size: 14px; }
-    .warn-icon { color: var(--danger); font-size: 12px; }
+    .warn-icon { color: var(--danger-text); font-size: 12px; }
 
     .group-actions {
       display: flex; align-items: center; justify-content: flex-end;
       gap: 12px; margin-top: 12px;
     }
-    .sent-mark { color: var(--success); font-weight: 600; font-size: 14px; }
+    .sent-mark { color: var(--success-text); font-weight: 600; font-size: 14px; }
 
     .btn-send { background: var(--accent); color: var(--accent-contrast); }
     .btn-send:hover:not(:disabled) { background: var(--accent-hover); }

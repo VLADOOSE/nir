@@ -86,8 +86,8 @@ import { MarketService } from '../../services/market.service';
     .oc-totals td { background: var(--surface-2); font-weight: 600; }
     .oc-winner { background: color-mix(in srgb, var(--success) 18%, var(--surface)); }
     .oc-actions { margin-top: 4px; }
-    .oc-badge { color: var(--success); font-weight: 600; font-size: 11px; }
-    .oc-assign { font-size: 11px; padding: 2px 6px; border: 1px solid var(--success); color: var(--success); background: var(--surface); border-radius: 4px; cursor: pointer; }
+    .oc-badge { color: var(--success-text); font-weight: 600; font-size: 11px; }
+    .oc-assign { font-size: 11px; padding: 2px 6px; border: 1px solid var(--success); color: var(--success-text); background: var(--surface); border-radius: 4px; cursor: pointer; }
     .oc-assign:hover { background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
     .oc-apply-link { margin-top: 14px; font-size: 13px; }
     .oc-apply-link a { color: var(--accent); }

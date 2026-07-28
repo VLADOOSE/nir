@@ -128,7 +128,7 @@ const LS_KEY = 'smartMatch.v1';
     .sm-sliders input { width: 100%; }
     .sm-sliders span { font-weight: 600; color: var(--accent); text-align: right; }
     .sm-sum { grid-column: span 2; text-align: right; font-weight: 600; color: var(--text-muted); font-size: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
-    .sm-coldstart { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--warn); }
+    .sm-coldstart { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--warn-text); }
     .sm-recommend { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 15%, transparent), transparent); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--accent); }
     .sm-recommend strong { color: var(--accent); }
     .sm-loading { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -153,7 +153,7 @@ const LS_KEY = 'smartMatch.v1';
     .sm-table .raw-list li { font-size: 12px; color: var(--text-muted); }
     .sm-table .raw-list strong { color: var(--text); font-weight: 600; }
     .sm-table .estim { margin: 6px 0; font-size: 13px; color: var(--text); }
-    .sm-table .estim strong { color: var(--success); }
+    .sm-table .estim strong { color: var(--success-text); }
     .btn-pr { background: var(--accent); color: var(--accent-contrast); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     /* --accent-hover, а не --accent: в светлой теме токен равен прежнему тёмно-синему
        значению, а перевод по букве таблицы (в --accent) сделал бы ховер no-op. */
@@ -164,11 +164,11 @@ const LS_KEY = 'smartMatch.v1';
        Токенизируется только цвет текста; ховер остаётся собственным затемнением. */
     .btn-approve { background: #0e9f6e; color: var(--accent-contrast); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px; }
     .btn-approve:hover { background: #057a55; }
-    .approved-badge { display: inline-block; margin-left: 8px; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+    .approved-badge { display: inline-block; margin-left: 8px; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
     .sm-toggle { background: var(--surface-2); border: 1px solid var(--border); width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: var(--text); }
     .sm-toggle:hover { background: var(--border); }
     .sm-empty { text-align: center; color: var(--text-muted); padding: 24px; font-size: 13px; }
-    .sm-nocriteria { background: color-mix(in srgb, var(--danger) 15%, transparent); border-left: 3px solid var(--danger); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--danger); }
+    .sm-nocriteria { background: color-mix(in srgb, var(--danger) 15%, transparent); border-left: 3px solid var(--danger); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--danger-text); }
   `]
 })
 export class SmartMatchComponent implements OnChanges {
