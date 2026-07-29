@@ -73,15 +73,15 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <section class="section">
             <h3 class="section-title">Потенциальные поставщики</h3>
             <div class="table-scroll" *ngIf="stats?.potentialDistributors?.length; else noDistributors">
-            <table>
+            <table class="responsive-cards">
               <thead>
                 <tr><th>Дистрибьютор</th><th>Email</th><th>Телефон</th></tr>
               </thead>
               <tbody>
                 <tr *ngFor="let d of stats.potentialDistributors">
-                  <td class="name-cell">{{ d.name }}</td>
-                  <td>{{ d.email || '—' }}</td>
-                  <td>{{ d.phone || '—' }}</td>
+                  <td class="name-cell" data-label="Дистрибьютор">{{ d.name }}</td>
+                  <td data-label="Email">{{ d.email || '—' }}</td>
+                  <td data-label="Телефон">{{ d.phone || '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -117,19 +117,19 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <section class="section" *ngIf="stats?.ranking?.length">
             <h3 class="section-title">Рейтинг дистрибьюторов</h3>
             <div class="table-scroll">
-            <table>
+            <table class="responsive-cards">
               <thead>
                 <tr><th class="w-30">#</th><th>Дистрибьютор</th><th class="w-90">Ответов</th><th class="w-140">Средняя цена</th></tr>
               </thead>
               <tbody>
                 <tr *ngFor="let r of stats.ranking; let i = index" [class.best-row]="i === 0">
-                  <td class="rank-cell">{{ i + 1 }}</td>
-                  <td class="name-cell">
+                  <td class="rank-cell" data-label="#">{{ i + 1 }}</td>
+                  <td class="name-cell" data-label="Дистрибьютор">
                     {{ r.distributor?.name }}
                     <span *ngIf="i === 0" class="best-tag">← лучший</span>
                   </td>
-                  <td>{{ r.responsesCount }}</td>
-                  <td>{{ r.avgPrice | money }}</td>
+                  <td data-label="Ответов">{{ r.responsesCount }}</td>
+                  <td data-label="Средняя цена">{{ r.avgPrice | money }}</td>
                 </tr>
               </tbody>
             </table>
@@ -140,7 +140,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <section class="section">
             <h3 class="section-title">История запросов</h3>
             <div class="table-scroll" *ngIf="stats?.history?.length; else noHistory">
-            <table>
+            <table class="responsive-cards">
               <thead>
                 <tr>
                   <th class="w-100">Дата</th>
@@ -153,12 +153,12 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
               </thead>
               <tbody>
                 <tr *ngFor="let h of stats.history">
-                  <td>{{ formatDate(h.date) }}</td>
-                  <td>{{ h.distributor?.name || '—' }}</td>
-                  <td>{{ h.tenderNumber || '—' }}</td>
-                  <td>{{ h.requestedQuantity ?? '—' }}</td>
-                  <td>{{ h.responsePrice != null ? (h.responsePrice | money) : '—' }}</td>
-                  <td>
+                  <td data-label="Дата">{{ formatDate(h.date) }}</td>
+                  <td data-label="Дистрибьютор">{{ h.distributor?.name || '—' }}</td>
+                  <td data-label="Тендер">{{ h.tenderNumber || '—' }}</td>
+                  <td data-label="Кол-во">{{ h.requestedQuantity ?? '—' }}</td>
+                  <td data-label="Цена ответа">{{ h.responsePrice != null ? (h.responsePrice | money) : '—' }}</td>
+                  <td data-label="Статус">
                     <span class="badge" [ngClass]="statusClass(h.status)">{{ statusLabel(h.status) }}</span>
                   </td>
                 </tr>
@@ -328,6 +328,36 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       .head { padding: 16px 20px 12px; }
       .body { padding: 16px 20px 24px; }
       .spec-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ─── Мобилка: три таблицы характеристик → пары «подпись / значение» ─────────
+       Здесь уместен МЕХАНИЧЕСКИЙ режим responsive-cards из глобального
+       styles.scss, а не спроектированный card-grid: это карточка ЗАПИСИ, а не
+       список. Оператор читает характеристики подряд сверху вниз, а не сканирует
+       глазами много однотипных строк, поэтому грид-раскладка с областями ничего
+       бы не добавила — пары «подпись: значение» читаются как есть.
+       Ячейкам проставлены data-label в шаблоне: без них механический режим
+       напечатал бы голые значения без подписей.
+
+       .table-scroll НАМЕРЕННО оставлен: на десктопе он осмыслен — «История
+       запросов» при дровере 720px реально уезжает вбок (656 против 699).
+       Здесь он лишь перестаёт быть скроллером, потому что мотать больше нечего. */
+    @media (max-width: 900px) {
+      .table-scroll { overflow-x: visible; }
+
+      /* Карточка на подложке дровера. Глобальное правило красит строку в
+         --surface, но сам дровер тоже --surface — карточки слились бы с фоном.
+         Берём ту же пару, что у .spec-cell/.summary-card ВЫШЕ в этом же
+         компоненте (--surface-2 + рамка): новых цветов не вводим. */
+      table.responsive-cards tr { background: var(--surface-2); }
+      /* Подсветка лучшего в рейтинге: правило выше (0,3,2) перебило бы базовое
+         .best-row (0,2,1) и погасило бы её на мобилке — возвращаем явно. */
+      table.responsive-cards tr.best-row { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+
+      /* Длинный неразрывный токен (почта дистрибьютора) не должен распирать
+         карточку: текст лежит в ячейке анонимным флекс-элементом, ему не
+         адресовать min-width: 0 — поэтому разрешаем перенос внутри слова. */
+      table.responsive-cards td { overflow-wrap: anywhere; }
     }
   `]
 })
