@@ -208,8 +208,9 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .edit-grid { width: 100%; border-collapse: collapse; }
     .edit-grid th { text-align: left; font-size: 11px; padding: 4px 6px; text-transform: uppercase; }
     .edit-grid td { padding: 4px 6px; }
-    /* фон/цвет полей явно: правила «input» в kit намеренно нет, иначе поля
-       остались бы белыми пятнами в тёмной теме */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает поля целиком и не зависит от глобального слоя. */
     .edit-grid input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .edit-grid input.qty { width: 64px; }
     .x-row { background: none; border: none; color: var(--danger-text); font-size: 18px; cursor: pointer; line-height: 1; }

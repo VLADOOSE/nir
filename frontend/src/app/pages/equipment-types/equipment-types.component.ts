@@ -59,8 +59,9 @@ import { ConfirmService } from '../../services/confirm.service';
     .btn-cancel { margin-left: 8px; }
     .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 400px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
-    /* фон/цвет полю задаём явно: контейнер формы на --surface-2, а правила input в kit
-       намеренно нет — иначе поле названия осталось бы белым в тёмной теме */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает поле целиком — --surface на подложке --surface-2. */
     .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
     .input-error { border-color: var(--danger) !important; }
   `]

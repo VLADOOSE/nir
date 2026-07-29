@@ -132,9 +132,9 @@ import { NotificationService } from '../../services/notification.service';
     .import-head { display: flex; justify-content: space-between; align-items: center; }
     .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
     .lbl { display: block; font-size: 12px; color: var(--text); margin: 8px 0 4px; }
-    /* Полям ввода фон и цвет проставлены ЯВНО: правила input,select,textarea в kit
-       намеренно нет, без этого в тёмной теме они остаются белыми пятнами
-       (те же прецеденты — tenders-filters, applies, private-requests). */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает селект целиком и не зависит от глобального слоя. */
     .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
     .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
     .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }

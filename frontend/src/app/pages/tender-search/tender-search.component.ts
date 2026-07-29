@@ -80,9 +80,9 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     .filter-form { margin-bottom: 20px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
     .filter-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
     .filter-row label { font-size: 13px; color: var(--text); font-weight: 500; flex: 1; min-width: 160px; }
-    /* фон/цвет полям задаём явно: контейнер фильтра на --surface-2, а правила
-       input/select в kit намеренно нет — иначе все семь полей поиска остались бы
-       белыми в тёмной теме */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает поля целиком — --surface на подложке --surface-2. */
     .filter-row input, .filter-row select { display: block; width: 100%; padding: 6px 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .filter-actions { display: flex; gap: 8px; }
     /* .btn/.btn-search/.btn-reset удалены целиком — цвет, ховеры и геометрию даёт kit.

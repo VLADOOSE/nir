@@ -92,9 +92,9 @@ import { NotificationService } from '../../services/notification.service';
     .btn-refresh { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-contrast); border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
     .btn-refresh:disabled { opacity: .6; cursor: default; }
     .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; color: var(--text); }
-    /* Полю фон и цвет проставлены ЯВНО: правила input,select,textarea в kit
-       намеренно нет, без этого в тёмной теме селект остаётся белым пятном
-       (те же прецеденты — tenders-filters, applies, private-requests). */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает селект целиком и не зависит от глобального слоя. */
     .filters select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     .count { color: var(--text-muted); }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }

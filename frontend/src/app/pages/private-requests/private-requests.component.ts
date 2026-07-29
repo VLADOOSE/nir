@@ -139,9 +139,9 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .form-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
     .form-card h3 { font-size: 15px; margin-bottom: 10px; }
     .form-card label { display: block; font-size: 13px; color: var(--text); margin-bottom: 10px; }
-    /* Поля лежат на подложке --surface-2, поэтому фон и цвет текста заданы явно:
-       правила «input/select/textarea» в kit намеренно нет, и без этого поля
-       остались бы белыми пятнами в тёмной теме. */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает поля целиком — --surface на подложке --surface-2. */
     .form-card select, .line input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
     .form-card select { min-width: 320px; margin-top: 4px; }
     .lines { margin: 8px 0; }
