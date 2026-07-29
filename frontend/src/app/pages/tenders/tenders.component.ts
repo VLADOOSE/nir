@@ -364,13 +364,17 @@ import { TenderLotsComponent } from './tender-lots.component';
     .pr-markup-calc button:hover { background: var(--surface-2); }
     .pr-markup-calc button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
     .pmc-custom { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
-    .pmc-custom input { width: 60px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; text-align: right; }
+    /* Собственные background/color у трёх групп полей (.pmc-custom, .edit-form, .pr-items):
+       раньше их не было вовсе — поля брали белый фон браузера и стояли на панелях
+       --surface-2. Пробел преэкзистующий, всплыл, когда в kit вернулось правило
+       input/select/textarea (оно самое слабое по специфичности и здесь ничего не решает). */
+    .pmc-custom input { width: 60px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; text-align: right; background: var(--surface); color: var(--text); }
     .pmc-calc { font-weight: 600; color: var(--accent); }
     .pmc-calc small { display: block; color: var(--warn-text); font-size: 10px; font-weight: 400; }
     .pmc-profit { color: var(--success-text); font-weight: 600; }
     .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 700px; }
     .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
-    .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
+    .edit-form input, .edit-form select, .edit-form textarea { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; background: var(--surface); color: var(--text); }
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .input-error { border-color: var(--danger) !important; }
@@ -386,7 +390,7 @@ import { TenderLotsComponent } from './tender-lots.component';
     .pr-items { width: 100%; border-collapse: collapse; }
     .pr-items th { background: var(--surface-2); padding: 6px 10px; font-size: 12px; color: var(--text-muted); }
     .pr-items td { padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .pr-items input { width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 3px; font-size: 13px; }
+    .pr-items input { width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 3px; font-size: 13px; background: var(--surface); color: var(--text); }
     .pr-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
     .btn-close-pr { background: var(--text-muted); color: var(--accent-contrast); padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn-accept-pr { background: var(--success); color: var(--accent-contrast); padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
@@ -627,13 +631,18 @@ export class TendersComponent {
   }
 
   // Инлайн-стиль (НЕ CSS-класс: style-бюджет tenders.component исчерпан — §12 CLAUDE.md).
+  // Цвета — те же тинт-формулы, что у чипов стадии .stage-* в tender-lots.component:
+  // инлайн-стиль перебивает любой CSS, поэтому из styles эти хексы было не достать,
+  // и в тёмной теме чип светился пятном на карточке. Токены в инлайн-стиле работают —
+  // var()/color-mix() резолвятся на самом элементе; разделители парсера (':' и ';')
+  // внутри color-mix(...) не встречаются.
   stageChipStyle(code: string): string {
     const c: { [k: string]: string } = {
-      REQUESTED: 'background:#fef3c7;color:#92400e',
-      PRICED: 'background:#dbeafe;color:#1e40af',
-      WINNER_SELECTED: 'background:#d1fae5;color:#065f46',
+      REQUESTED: 'background:color-mix(in srgb, var(--warn) 15%, transparent);color:var(--warn-text)',
+      PRICED: 'background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent)',
+      WINNER_SELECTED: 'background:color-mix(in srgb, var(--success) 15%, transparent);color:var(--success-text)',
     };
-    return (c[code] || 'background:#e5e7eb;color:#374151')
+    return (c[code] || 'background:var(--surface-2);color:var(--text)')
       + ';display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px';
   }
 

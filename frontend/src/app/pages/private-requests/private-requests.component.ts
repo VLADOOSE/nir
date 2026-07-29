@@ -130,6 +130,12 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
        кнопка стала «как везде», ради чего унификация и делалась. Без этого
        правила кнопка осталась бы нативной: браузерная рамка и padding 1px 6px. */
     .btn-primary { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    /* Кнопка не несёт базового класса «btn», поэтому «.btn:disabled» из kit до неё
+       не достаёт, а «.btn-primary:hover» — достаёт, и Chrome применяет ховер к
+       заблокированной кнопке. Без этих двух строк она подсвечивается как живая
+       ровно тогда, когда не работает. Прецедент: private-request-card. */
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary:disabled:hover { background: var(--accent); }
     /* .btn-ghost и .btn-line-solid — контурные кнопки, которых в kit нет: цвет
        живёт здесь. Геометрия выровнена по kit-овской «.btn», потому что обе
        стоят в одном ряду с .btn-primary (форма создания и шапка) — иначе после
@@ -139,9 +145,9 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .form-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
     .form-card h3 { font-size: 15px; margin-bottom: 10px; }
     .form-card label { display: block; font-size: 13px; color: var(--text); margin-bottom: 10px; }
-    /* Поля лежат на подложке --surface-2, поэтому фон и цвет текста заданы явно:
-       правила «input/select/textarea» в kit намеренно нет, и без этого поля
-       остались бы белыми пятнами в тёмной теме. */
+    /* Фон и цвет заданы локально и совпадают с kit (правило input/select/textarea
+       вернулось в styles.scss последней задачей волны): объявление несёт ещё и
+       геометрию, поэтому описывает поля целиком — --surface на подложке --surface-2. */
     .form-card select, .line input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
     .form-card select { min-width: 320px; margin-top: 4px; }
     .lines { margin: 8px 0; }

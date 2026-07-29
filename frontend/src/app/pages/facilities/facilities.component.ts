@@ -69,36 +69,31 @@ import { KZ_REGIONS } from '../../shared/kz-regions';
     </table>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
-    .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; }
-    .search-input:focus { outline: none; border-color: #1a56db; }
+    h2 { margin: 0; font-size: 20px; }
+    .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
+    .search-input:focus { outline: none; border-color: var(--accent); }
     .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-    .counter { color: #6b7280; font-size: 13px; }
-    .empty { color: #9ca3af; font-size: 14px; padding: 32px 0; text-align: center; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
-    tr:hover { background: #f9fafb; }
+    /* Саму рамку и раскладку ячеек kit не задаёт (только border-color) — правило остаётся */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { font-weight: 600; }
+    /* tr:hover в kit нет вовсе — оставлено и токенизировано */
+    tr:hover { background: var(--surface-2); }
     .actions { white-space: nowrap; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-add { background: #1a56db; color: #fff; }
-    .btn-save { background: #1a56db; color: #fff; }
-    .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
-    .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
-    .btn-delete { background: #ef4444; color: #fff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 500px; }
-    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
-    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
-    .edit-form select { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
+    /* от .btn-cancel/.btn-edit остаётся только раскладка: цвет и геометрию даёт kit */
+    .btn-cancel { margin-left: 8px; }
+    .btn-edit { margin-right: 4px; }
+    .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 500px; }
+    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
+    /* фон/цвет полям задаём явно: контейнер формы на --surface-2, иначе в тёмной теме поля и селектор региона остались бы белыми */
+    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
+    .edit-form select { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
     .edit-form label.check { display: flex; align-items: center; gap: 8px; font-weight: 500; }
     .edit-form label.check input { display: inline-block; width: auto; margin-top: 0; }
-    .badge-monitor { display: inline-block; margin-left: 6px; padding: 1px 7px; background: #dbeafe; color: #1e40af; border-radius: 10px; font-size: 11px; vertical-align: middle; }
-    .form-actions { margin-top: 16px; }
-    .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
-    .input-error { border-color: #dc2626 !important; }
-    .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    /* бейдж «тендеры» — не kit-овский .badge-<СТАТУС>, геометрия остаётся здесь;
+       синий тинт переведён тинт-формулой на акцент */
+    .badge-monitor { display: inline-block; margin-left: 6px; padding: 1px 7px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 10px; font-size: 11px; vertical-align: middle; }
+    .input-error { border-color: var(--danger) !important; }
   `]
 })
 export class FacilitiesComponent {

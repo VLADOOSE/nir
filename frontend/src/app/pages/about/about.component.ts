@@ -49,19 +49,22 @@ import { MarketService, APP_NAME } from '../../services/market.service';
     </div>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 24px; }
+    /* Цвет h2/h3 даёт kit — здесь остаётся только геометрия.
+       .subtitle удалён целиком (kit; нижний отступ выравнялся 24px → 16px). */
+    h2 { margin: 0; font-size: 20px; }
     .about-section { margin-bottom: 24px; }
-    .about-section h3 { font-size: 16px; color: #111827; margin: 0 0 12px; }
-    .about-section p { font-size: 14px; color: #374151; line-height: 1.6; margin: 0; }
+    .about-section h3 { font-size: 16px; margin: 0 0 12px; }
+    .about-section p { font-size: 14px; color: var(--text); line-height: 1.6; margin: 0; }
     .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .feature { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; }
-    .feature-title { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 4px; }
-    .feature-desc { font-size: 13px; color: #6b7280; line-height: 1.4; }
+    .feature { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; }
+    .feature-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .feature-desc { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
     .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
-    .tech-item { display: flex; flex-direction: column; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
-    .tech-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; margin-bottom: 2px; }
-    .tech-item span:not(.tech-label) { font-size: 14px; color: #111827; }
+    /* Разделитель строки: #f3f4f6 стоял в слоте рамки → var(--border), как во
+       всех уже переведённых экранах (--surface-2 здесь читался бы как заливка). */
+    .tech-item { display: flex; flex-direction: column; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .tech-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
+    .tech-item span:not(.tech-label) { font-size: 14px; color: var(--text); }
     @media (max-width: 900px) { .features-grid, .tech-grid { grid-template-columns: 1fr; } }
   `]
 })

@@ -160,6 +160,11 @@ import { ThemeService } from '../services/theme.service';
     .header-right { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: 0.95; }
     .user-name { font-weight: 500; }
     .role-badge { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    /* Хексы намеренные (та же логика, что у фикс-цветных кнопок, ограничение 5 плана):
+       бейдж лежит НЕ на поверхности карточки, а на шапке, которая тёмная в обеих темах
+       (--header-bg = синий в светлой, #242322 в тёмной). Это непрозрачная светлая плашка
+       с тёмной подписью — читается и там, и там. Тинт color-mix(--warn 15%, transparent)
+       здесь нельзя: он пропустит синеву шапки, и тёмно-коричневый текст на ней утонет. */
     .role-badge.role-admin { background: #fef3c7; color: #92400e; }
     .btn-logout { background: rgba(255,255,255,0.15); color: var(--header-text); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; }
     .btn-logout:hover { background: rgba(255,255,255,0.3); }

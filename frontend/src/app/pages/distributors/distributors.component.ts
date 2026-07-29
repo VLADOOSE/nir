@@ -85,46 +85,45 @@ import { AuthService } from '../../services/auth.service';
     </table>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
-    .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; }
-    .search-input:focus { outline: none; border-color: #1a56db; }
+    h2 { margin: 0; font-size: 20px; }
+    .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
+    .search-input:focus { outline: none; border-color: var(--accent); }
     .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-    .counter { color: #6b7280; font-size: 13px; }
-    .empty { color: #9ca3af; font-size: 14px; padding: 32px 0; text-align: center; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
-    tr:hover { background: #f9fafb; }
+    /* Саму рамку и раскладку ячеек kit не задаёт (только border-color) — правило остаётся */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { font-weight: 600; }
+    /* tr:hover в kit нет вовсе — оставлено и токенизировано */
+    tr:hover { background: var(--surface-2); }
     .actions { white-space: nowrap; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-add { background: #1a56db; color: #fff; }
-    .btn-save { background: #1a56db; color: #fff; }
-    .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
-    .btn-edit { background: #f59e0b; color: #fff; margin-right: 4px; }
-    .btn-delete { background: #ef4444; color: #fff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 500px; }
-    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
-    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
-    .form-actions { margin-top: 16px; }
-    .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
-    .input-error { border-color: #dc2626 !important; }
-    .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
-    .specialization-label { display: block; margin: 12px 0 6px; font-weight: 500; font-size: 14px; color: #374151; }
-    .specialization-block { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; background: #fff; border-radius: 6px; border: 1px solid #d1d5db; margin-bottom: 12px; }
+    /* от .btn-cancel/.btn-edit остаётся только раскладка: цвет и геометрию даёт kit */
+    .btn-cancel { margin-left: 8px; }
+    .btn-edit { margin-right: 4px; }
+    .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 500px; }
+    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
+    /* фон/цвет полям задаём явно: контейнер формы на --surface-2, иначе в тёмной теме поля остались бы белыми */
+    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
+    .input-error { border-color: var(--danger) !important; }
+    .specialization-label { display: block; margin: 12px 0 6px; font-weight: 500; font-size: 14px; color: var(--text); }
+    .specialization-block { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px; }
     .type-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; margin: 0 !important; font-weight: 400 !important; }
     .type-checkbox.universal { font-weight: 600 !important; }
     .type-checkbox input { width: auto !important; padding: 0 !important; margin: 0 !important; display: inline !important; }
     .type-checkbox input[disabled] { opacity: 0.6; cursor: not-allowed; }
-    .tag { display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 12px; margin-right: 4px; margin-bottom: 2px; }
-    .tag-all { background: #fef3c7; color: #92400e; font-weight: 600; }
+    .tag { display: inline-block; padding: 2px 8px; background: var(--border); border-radius: 4px; font-size: 12px; margin-right: 4px; margin-bottom: 2px; }
+    .tag-all { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); font-weight: 600; }
     .brands-block { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-    .brand-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
-    .brand-x { background: none; border: none; color: #6366f1; cursor: pointer; font-size: 14px; line-height: 1; }
+    /* чип бренда был индиго-тинтом — переведён тинт-формулой на акцент, как чип «возит <бренд>» в панели КП */
+    .brand-chip { display: inline-flex; align-items: center; gap: 4px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+    .brand-x { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 14px; line-height: 1; }
     .brand-add { display: flex; gap: 8px; align-items: center; }
-    .brand-add input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-    .btn-line { background: #fff; border: 1px dashed #9ca3af; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: #374151; }
+    .brand-add input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
+    /* Пунктир намеренный: это кнопка «добавить ещё», а не обычная линейная.
+       Заливку/цвет/рамку даёт kit-овская .btn-line — здесь только стиль рамки и
+       геометрия (мельче kit, отдельная мелкая аффорданса), плюс cursor:
+       базового класса «btn», который его даёт, у кнопки в шаблоне НЕТ.
+       Не удалять как дубль. */
+    .btn-line { border-style: dashed; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
   `]
 })
 export class DistributorsComponent {

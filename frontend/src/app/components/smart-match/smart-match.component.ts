@@ -125,7 +125,12 @@ const LS_KEY = 'smartMatch.v1';
     .sm-presets button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
     .sm-sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; padding: 14px; background: var(--surface-2); border-radius: 6px; margin-bottom: 12px; border: 1px dashed var(--border); }
     .sm-sliders label { display: grid; grid-template-columns: 60px 1fr 30px; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
-    .sm-sliders input { width: 100%; }
+    /* background: transparent обязателен. Ползунок — input, и вернувшееся в kit
+       правило input/select/textarea красит его коробку в --surface: на панели
+       --surface-2 за каждым ползунком появлялся бы светлый прямоугольник. Сам
+       трек рисует браузер (color-scheme + accent-color из kit), фон коробки ему
+       не нужен. */
+    .sm-sliders input { width: 100%; background: transparent; }
     .sm-sliders span { font-weight: 600; color: var(--accent); text-align: right; }
     .sm-sum { grid-column: span 2; text-align: right; font-weight: 600; color: var(--text-muted); font-size: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
     .sm-coldstart { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--warn-text); }
