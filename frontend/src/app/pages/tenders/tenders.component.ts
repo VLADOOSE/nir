@@ -261,8 +261,14 @@ import { TenderLotsComponent } from './tender-lots.component';
                 <span>%</span>
               </label>
             </div>
+            <!-- responsive-cards card-grid: ≤900px строка ввода превращается в карточку
+                 позиции (раскладка — в @media последним блоком styles). На десктопе
+                 классы и data-label инертны: глобальные правила живут только внутри
+                 @media (max-width: 900px). Подписи двух колонок динамические (валюта
+                 рынка, процент наценки) → они едут в [attr.data-label], а CSS
+                 адресуется к устойчивым классам .pr-price-in/.pmc-calc. -->
             <div class="table-scroll">
-            <table class="pr-items">
+            <table class="pr-items responsive-cards card-grid">
               <thead><tr>
                 <th>Лот</th><th>Модель</th><th>Кол-во</th>
                 <th>Цена ответа ({{ market.symbol() }})</th>
@@ -272,15 +278,15 @@ import { TenderLotsComponent } from './tender-lots.component';
               </tr></thead>
               <tbody>
                 <tr *ngFor="let it of pr.items">
-                  <td>{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
-                  <td>{{ it.medEquipment?.name || '— по лоту' }}</td>
-                  <td>{{ it.requestedQuantity }}</td>
-                  <td><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
-                  <td class="pmc-calc">{{ markedPrice(it, pr) | money }}
+                  <td data-label="Лот">{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
+                  <td data-label="Модель">{{ it.medEquipment?.name || '— по лоту' }}</td>
+                  <td data-label="Кол-во">{{ it.requestedQuantity }}</td>
+                  <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
+                  <td class="pmc-calc" [attr.data-label]="'Предл. цена при ' + (pr._markup ?? 25) + '%'">{{ markedPrice(it, pr) | money }}
                     <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
                   </td>
-                  <td class="pmc-profit">+{{ markedProfit(it, pr) | money }}</td>
-                  <td><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
+                  <td class="pmc-profit" data-label="Маржа">+{{ markedProfit(it, pr) | money }}</td>
+                  <td data-label="Заметка"><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
                 </tr>
               </tbody>
             </table>
@@ -405,6 +411,77 @@ import { TenderLotsComponent } from './tender-lots.component';
       .info-grid { grid-template-columns: 1fr; }
       .tender-card { padding: 14px 16px; }
       .tender-card-actions { flex-wrap: wrap; }
+
+      /* ─── Секция «Запросы КП» ──────────────────────────────────────────────
+         Замер 390px дал ТРИ горизонтальных скроллера, и все три — следствие
+         одной причины: .pr-header это flex без переноса, где имя поставщика
+         («ТОО «Медико-Инновационные Технологии»») не сжимается ниже
+         min-content, а блок мета-данных «отправлено … · N позиций · ▼» держит
+         свои 149px. 214 + 149 не влезали в 324px контент-бокса, мета
+         вылезала за правый край (x=396 при вьюпорте 390) и раздувала
+         scrollWidth сначала карточке, потом секции, потом MAIN.content.
+         Лечится переносом: шапка становится двухрядной. */
+      .pr-section-head { flex-wrap: wrap; }
+      .pr-section-head h3 { flex: 1 1 100%; margin: 0; }
+      .pr-header { flex-wrap: wrap; row-gap: 6px; padding: 12px 14px; }
+      .pr-header-main { flex: 1 1 100%; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+      .pr-header-meta { flex: 1 1 100%; gap: 10px; }
+      /* ▼ остаётся у правого края — это единственный признак «карточка
+         раскрывается», и в первом ряду его нет. */
+      .pr-header-meta .chevron { margin-left: auto; }
+      .pr-actions { flex-wrap: wrap; }
+
+      /* ─── Таблица ввода цен → карточка на позицию ──────────────────────────
+         Было 615px содержимого в 324px окне (291px мотать вбок). Раскладка:
+           ЛОТ  N — имя лота
+           МОДЕЛЬ (заголовок карточки)
+           [ поле цены ]            Кол-во N
+           предл. цена              маржа
+           [ заметка ]
+         Ширины столбцов не задаём — грид сам держит поле во всю ширину. */
+      .pr-body .table-scroll { overflow-x: visible; }
+      /* Своё .pr-items td { padding: 6px 10px } сильнее глобального card-grid
+         (0,3,1 против 0,2,2) — гасим, иначе поля ввода не доходят до краёв
+         карточки, а каждый ряд грида получает лишнюю высоту. */
+      .pr-items td { padding: 2px 0; }
+      .pr-items tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "lot   lot"
+          "model model"
+          "price qty"
+          "calc  profit"
+          "note  note";
+        gap: 6px 10px;
+      }
+      .pr-items td[data-label="Лот"] { grid-area: lot; display: block; font-size: 12px; color: var(--text-muted); }
+      .pr-items td[data-label="Лот"]::before { display: inline; content: attr(data-label) ' '; font-weight: 600; }
+      .pr-items td[data-label="Модель"] { grid-area: model; display: block; font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
+      .pr-items td.pr-price-in { grid-area: price; display: block; }
+      .pr-items td.pmc-calc { grid-area: calc; display: block; }
+      .pr-items td.pmc-profit { grid-area: profit; display: block; text-align: right; }
+      .pr-items td[data-label="Заметка"] { grid-area: note; display: block; }
+      /* Подпись над значением/полем: у поля ввода без неё не понять, что вводим. */
+      .pr-items td.pr-price-in::before,
+      .pr-items td.pmc-calc::before,
+      .pr-items td.pmc-profit::before,
+      .pr-items td[data-label="Заметка"]::before {
+        display: block; content: attr(data-label); font-size: 11px; font-weight: 600;
+        color: var(--text-muted); margin-bottom: 3px; letter-spacing: 0.02em;
+      }
+      /* Тач-таргет. Глобальное min-height:40px в styles.scss покрывает только
+         button/.btn/a.btn — поля ввода в него не попадают, а собственное
+         .pr-items input (padding 4px + font 13px) давало 25,5px. 16px шрифта —
+         конвенция репо: iOS не зумит поле при фокусе. */
+      .pr-items input { min-height: 40px; font-size: 16px; padding: 8px 10px; }
+      .pmc-custom input { min-height: 40px; font-size: 16px; width: 72px; }
+      .pr-items td[data-label="Кол-во"] {
+        grid-area: qty; display: flex; align-items: center; gap: 5px;
+        align-self: end; min-height: 40px; white-space: nowrap;
+      }
+      .pr-items td[data-label="Кол-во"]::before {
+        display: inline; content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--text-muted);
+      }
     }
   `]
 })
