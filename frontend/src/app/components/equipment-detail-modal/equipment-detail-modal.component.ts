@@ -140,7 +140,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <section class="section">
             <h3 class="section-title">История запросов</h3>
             <div class="table-scroll" *ngIf="stats?.history?.length; else noHistory">
-            <table class="responsive-cards">
+            <table class="responsive-cards card-grid history-cards">
               <thead>
                 <tr>
                   <th class="w-100">Дата</th>
@@ -330,12 +330,12 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       .spec-grid { grid-template-columns: 1fr; }
     }
 
-    /* ─── Мобилка: три таблицы характеристик → пары «подпись / значение» ─────────
-       Здесь уместен МЕХАНИЧЕСКИЙ режим responsive-cards из глобального
-       styles.scss, а не спроектированный card-grid: это карточка ЗАПИСИ, а не
-       список. Оператор читает характеристики подряд сверху вниз, а не сканирует
-       глазами много однотипных строк, поэтому грид-раскладка с областями ничего
-       бы не добавила — пары «подпись: значение» читаются как есть.
+    /* ─── Мобилка: таблицы характеристик → карточки ──────────────────────────────
+       Две верхние таблицы («Потенциальные поставщики», «Рейтинг дистрибьюторов»)
+       — на МЕХАНИЧЕСКОМ режиме responsive-cards из глобального styles.scss:
+       записей мало, оператор читает их подряд, и пары «подпись: значение»
+       читаются как есть — грид-раскладка там ничего бы не добавила.
+       «История запросов» — на card-grid, причина ниже по месту.
        Ячейкам проставлены data-label в шаблоне: без них механический режим
        напечатал бы голые значения без подписей.
 
@@ -358,6 +358,44 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
          карточку: текст лежит в ячейке анонимным флекс-элементом, ему не
          адресовать min-width: 0 — поэтому разрешаем перенос внутри слова. */
       table.responsive-cards td { overflow-wrap: anywhere; }
+
+      /* ─── «История запросов»: парная раскладка вместо простыни ─────────────────
+         Восемь однотипных записей подряд — это уже СПИСОК, который сканируют
+         глазами, а не характеристики, которые читают. Механический режим ставил
+         каждое из 6 полей на свою строку: 186px на запись и 1558px на восемь,
+         выше порога ~140px, выведенного замером на задаче 3 (из-за него там
+         специально переводили users 156px и registry-reconciliation 200–259px).
+         Поля собраны парами, НИЧЕГО НЕ СКРЫТО — все 6 колонок на месте:
+
+             ООО «МедТехРесурс»            71 092 ₽
+             04.07.2026               [Ответ получен]
+             Тендер 014220000132…            Кол-во 1
+
+         Раскладку задаёт компонент (глобальный слой даёт только display:grid),
+         адресация — по td[data-label], поэтому разметка не дублируется.
+         Правила прибиты к .history-cards: две другие таблицы остаются
+         механическими, и подсветка «лучшего» в рейтинге сюда не попадает. */
+      table.history-cards.card-grid tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "name   price"
+          "date   status"
+          "tender qty";
+      }
+      table.history-cards td[data-label="Дистрибьютор"] { grid-area: name; font-weight: 500; }
+      table.history-cards td[data-label="Цена ответа"] { grid-area: price; justify-content: flex-end; font-weight: 600; }
+      table.history-cards td[data-label="Дата"] { grid-area: date; font-size: 12px; color: var(--text-muted); }
+      table.history-cards td[data-label="Статус"] { grid-area: status; justify-content: flex-end; }
+      table.history-cards td[data-label="Тендер"] { grid-area: tender; justify-content: flex-start; }
+      table.history-cards td[data-label="Кол-во"] { grid-area: qty; justify-content: flex-end; }
+
+      /* Подписи возвращаем ТОЧЕЧНО и только там, где значение без них
+         нечитаемо: «0142200001326011043» и «1» сами по себе ничего не говорят,
+         а дата, валюта и бейдж статуса говорят. */
+      table.history-cards td[data-label="Тендер"],
+      table.history-cards td[data-label="Кол-во"] { font-size: 12px; color: var(--text-muted); }
+      table.history-cards td[data-label="Тендер"]::before,
+      table.history-cards td[data-label="Кол-во"]::before { display: inline; }
     }
   `]
 })
