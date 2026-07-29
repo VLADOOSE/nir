@@ -197,6 +197,11 @@ import { ChartComponent } from '../../components/chart/chart.component';
     .summary-item.highlight .summary-value { color: var(--success-text); }
     .summary-value { display: block; font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
     .summary-label { font-size: 12px; color: var(--text-muted); }
+    /* 5%, а не 8% из плана, — сознательно. Внутри этой секции лежит
+       .summary-item.highlight («Чистая прибыль»), собранный по идиоме на честных 8%:
+       уравняй их — и подсвеченная карточка сольётся с подложкой секции, останется
+       только рамка. Это ровно урок бага 6b8dc3f (подсветку утопили в фоне панели).
+       Исходник тоже держал секцию бледнее карточки: #fdfffe против #ecfdf5. */
     .profit-section { border-color: var(--success); background: color-mix(in srgb, var(--success) 5%, var(--surface)); }
     .subsection-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
     .positive { color: var(--success-text); font-weight: 500; }

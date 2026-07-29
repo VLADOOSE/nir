@@ -56,6 +56,12 @@ export class ChartComponent implements OnChanges, OnDestroy, AfterViewInit {
     }
 
     const isPie = this.type === 'pie' || this.type === 'doughnut';
+    /* Хексы-фолбэки ниже НЕДОСТИЖИМЫ: токены объявлены в :root всегда, пустую строку
+       getPropertyValue не вернёт. Оставлены сознательно, а не забыты. Снять их — не
+       значит «сделать отказ громким»: без фолбэка chart.js подставит СВОИ дефолты
+       (#666 и rgba(0,0,0,0.1)) — ровно те цвета, из-за которых график был нечитаем в
+       тёмной теме. Отказ молчалив в обоих вариантах, поэтому выбран тот, где значение
+       видно в коде и совпадает со светлой темой. Переименуете токен — правьте здесь. */
     const muted = this.cssVar('--text-muted', '#6b7280');   // подписи осей и легенды
     const grid = this.cssVar('--border', '#e5e7eb');        // линии сетки и осей
     /* Кольцо между сегментами — это ЗАЗОР, а не рамка: раньше здесь стоял #fff под
@@ -90,15 +96,19 @@ export class ChartComponent implements OnChanges, OnDestroy, AfterViewInit {
             }
           }
         },
+        /* border.color задаётся ОТДЕЛЬНО от grid.color: chart.js роутит его как
+           defaults.route('scale.border','color','','borderColor'), то есть на общий
+           borderColor = rgba(0,0,0,0.1), а не на цвет сетки. Без этой строки базовая
+           1px линия оси остаётся почти чёрной на тёмной --surface-2. */
         scales: isPie ? undefined : (
           this.horizontal
             ? {
-                x: { beginAtZero: true, ticks: { color: muted, callback: (v) => this.formatValue(v as number) }, grid: { color: grid } },
-                y: { ticks: { color: muted }, grid: { color: grid } }
+                x: { beginAtZero: true, ticks: { color: muted, callback: (v) => this.formatValue(v as number) }, grid: { color: grid }, border: { color: grid } },
+                y: { ticks: { color: muted }, grid: { color: grid }, border: { color: grid } }
               }
             : {
-                y: { beginAtZero: true, ticks: { color: muted, callback: (v) => this.formatValue(v as number) }, grid: { color: grid } },
-                x: { ticks: { color: muted }, grid: { color: grid } }
+                y: { beginAtZero: true, ticks: { color: muted, callback: (v) => this.formatValue(v as number) }, grid: { color: grid }, border: { color: grid } },
+                x: { ticks: { color: muted }, grid: { color: grid }, border: { color: grid } }
               }
         )
       }
