@@ -241,6 +241,33 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
   table.responsive-cards td:not([data-label])::before { content: none; }
   table.responsive-cards td:empty { display: none; }
 
+  /* ─── Спроектированная карточка списка (opt-in класс card-grid) ───────────────
+     Механический режим выше делает из каждой колонки строку «подпись: значение»:
+     на 9-колоночном списке это карточка в 307px и 51 экран прокрутки на 141
+     запись. Здесь строка становится ГРИДОМ, а ячейки раскладываются по
+     именованным областям через td[data-label="…"] в самом компоненте — разметка
+     не дублируется, порядок колонок не важен, десктоп не затронут.
+
+     Opt-in, а не замена: таблицы без card-grid остаются на механическом режиме,
+     экраны переводим по одному.
+
+     Раскладку (grid-template-columns/areas) задаёт КОМПОНЕНТ — она у каждого
+     списка своя. Здесь только общее поведение. Компонентное правило всегда
+     сильнее этих: Angular дописывает [_ngcontent-x] к каждому compound-селектору,
+     поэтому scoped `.applies-list td[data-label="…"]` (0,4,2) перебивает
+     `table.responsive-cards.card-grid td` (0,2,3) — на это же опирается UI-kit
+     выше. Подпись ::before здесь гасится; где она всё же нужна («позиций: 5»),
+     компонент включает её обратно точечно с явным content. */
+  table.responsive-cards.card-grid tr {
+    display: grid;
+    gap: 2px 8px;
+    align-items: center;
+    padding: 10px 12px;
+  }
+  table.responsive-cards.card-grid td { padding: 2px 0; text-align: left; }
+  table.responsive-cards.card-grid td::before { display: none; }
+  table.responsive-cards.card-grid td > * { min-width: 0; }
+
   /* Тач-таргеты крупнее + инпуты 16px (iOS не зумит поле при фокусе) */
   button, .btn, a.btn { min-height: 40px; }
   input, select, textarea { font-size: 16px; }
