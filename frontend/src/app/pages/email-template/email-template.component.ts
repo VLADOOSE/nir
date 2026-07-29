@@ -36,19 +36,25 @@ import { MarketService } from '../../services/market.service';
   `,
   styles: [`
     .et-page { max-width: 820px; }
-    .et-market { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
-    .et-lbl { display: block; font-size: 13px; color: #374151; margin: 12px 0 4px; font-weight: 600; }
-    .et-input { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-    .et-body { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; resize: vertical; }
+    .et-market { color: var(--text-muted); font-size: 13px; margin: 4px 0 16px; }
+    .et-lbl { display: block; font-size: 13px; color: var(--text); margin: 12px 0 4px; font-weight: 600; }
+    .et-input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .et-body { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; resize: vertical; background: var(--surface); color: var(--text); }
     .et-vars { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0; }
-    .et-vars-title { font-size: 12px; color: #6b7280; margin-right: 4px; }
-    .et-chip { background: #eef2ff; color: #3730a3; border: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
-    .et-chip:hover { background: #e0e7ff; }
-    .et-note { color: #6b7280; font-size: 12px; }
+    .et-vars-title { font-size: 12px; color: var(--text-muted); margin-right: 4px; }
+    /* Чип-плейсхолдер — тинт-формула чипа на --accent (текстового варианта у
+       --accent нет, надпись — сам --accent). Индиго #eef2ff/#3730a3 был просто
+       вторым синим диалектом, отдельного смысла не нёс. */
+    .et-chip { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+    /* Ховер усилен до 25%: буквальный перевод #e0e7ff дал бы тот же 15%-тинт,
+       и чип перестал бы отзываться на наведение. */
+    .et-chip:hover { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+    .et-note { color: var(--text-muted); font-size: 12px; }
     .et-actions { display: flex; gap: 10px; margin-top: 16px; }
-    .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; }
-    .btn-save { background: #4f46e5; color: #fff; }
-    .btn-line { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+    /* .btn / .btn-save / .btn-line удалены — их даёт kit. Обе кнопки шаблона
+       несут базовый класс btn, поэтому геометрию повторять не нужно; заодно ушли
+       два случайных расхождения: своя геометрия .btn (8px 16px / 6px / 14px) и
+       индиго #4f46e5 у «Сохранить» вместо бренд-синего. */
   `],
 })
 export class EmailTemplateComponent implements OnInit {

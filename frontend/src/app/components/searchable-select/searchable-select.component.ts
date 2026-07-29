@@ -29,22 +29,34 @@ import { FormsModule } from '@angular/forms';
   `,
   styles: [`
     .ss-container { position: relative; width: 100%; margin-top: 4px; }
-    .ss-selected { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer; background: #fff; font-size: 14px; min-height: 38px; }
-    .ss-selected:hover { border-color: #9ca3af; }
-    .ss-placeholder { color: #9ca3af; }
-    .ss-value { color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ss-arrow { font-size: 10px; color: #9ca3af; margin-left: 8px; }
-    .ss-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d1d5db; border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 50; margin-top: -1px; }
-    .ss-search { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid #e5e7eb; font-size: 14px; outline: none; box-sizing: border-box; }
+    .ss-selected { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: var(--surface); color: var(--text); font-size: 14px; min-height: 38px; }
+    /* Ховер-рамка. Буквальный перевод в var(--border) был бы no-op — база уже
+       --border; а голый var(--text-muted) в тёмной теме светит ярче, чем рамка
+       сфокусированного поля. Смесь 60/40 даёт ровно прежний #9ca3af в светлой
+       теме и спокойный, но заметный шаг в тёмной. */
+    .ss-selected:hover { border-color: color-mix(in srgb, var(--text-muted) 60%, var(--border)); }
+    .ss-placeholder { color: var(--text-muted); }
+    .ss-value { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ss-arrow { font-size: 10px; color: var(--text-muted); margin-left: 8px; }
+    .ss-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 0 0 6px 6px; box-shadow: var(--shadow); z-index: 50; margin-top: -1px; }
+    /* Поле поиска намеренно сливается с фоном списка (как и было: белое на белом),
+       граница между ними — только нижняя рамка. */
+    .ss-search { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid var(--border); font-size: 14px; outline: none; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .ss-options { max-height: 250px; overflow-y: auto; }
     .ss-option { padding: 8px 12px; cursor: pointer; font-size: 14px; display: flex; flex-direction: column; }
-    .ss-option:hover { background: #f3f4f6; }
-    .ss-option.active { background: #eff6ff; color: #1a56db; }
-    .ss-option-main { color: #111827; }
-    .ss-option-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
-    .ss-group-label { padding: 6px 12px; font-size: 11px; color: #9ca3af; text-transform: uppercase; background: #f9fafb; font-weight: 600; }
-    .ss-empty { padding: 12px; text-align: center; color: #9ca3af; font-size: 13px; }
-    .open .ss-selected { border-color: #1a56db; border-radius: 4px 4px 0 0; }
+    .ss-option:hover { background: var(--surface-2); }
+    /* Выбранный пункт — подсветка ОБЛАСТИ: смешивается с --surface непрозрачно,
+       а НЕ заменяется на --surface-2 (иначе совпал бы с ховером соседей и
+       перестал читаться как выбор). Правило идёт после :hover — на равной
+       специфичности выигрывает по порядку, менять местами нельзя. */
+    .ss-option.active { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent); }
+    .ss-option-main { color: var(--text); }
+    .ss-option-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .ss-group-label { padding: 6px 12px; font-size: 11px; color: var(--text-muted); text-transform: uppercase; background: var(--surface-2); font-weight: 600; }
+    /* .ss-empty — не kit-овский .empty (другой класс, своя геометрия внутри
+       выпадающего списка), поэтому остаётся локальным. */
+    .ss-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
+    .open .ss-selected { border-color: var(--accent); border-radius: 4px 4px 0 0; }
   `]
 })
 export class SearchableSelectComponent {
