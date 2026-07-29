@@ -144,7 +144,13 @@ import { NotificationService } from '../../services/notification.service';
     .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
     .err { color: var(--danger-text); font-size: 13px; margin: 8px 0; }
-    .btn-line-solid { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); }
+    /* .btn-line-solid — контурная кнопка, которой в kit нет: цвет живёт здесь.
+       Радиус выровнен по kit-овской «.btn» (4px), потому что кнопка стоит в одном
+       ряду с .btn-primary (.import-actions: «Создать заявку» + «Отмена») — иначе
+       после унификации соседи разъезжаются по радиусу. Тот же класс в
+       private-requests.component.ts приведён к 4px по этой же причине; не
+       возвращать 6px. */
+    .btn-line-solid { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); }
     .client-row { display: flex; gap: 8px; align-items: center; }
     .client-sel:disabled { background: var(--surface-2); color: var(--text-muted); }
     .new-client { margin: 8px 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
