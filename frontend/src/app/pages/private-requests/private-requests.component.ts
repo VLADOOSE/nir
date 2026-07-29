@@ -119,47 +119,75 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
   styles: [`
     .page { padding: 24px; max-width: 1100px; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-    h1 { font-size: 22px; color: #111827; }
-    .sub { color: #6b7280; font-size: 13px; margin-top: 4px; max-width: 640px; }
-    .btn-primary { background: #1a56db; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-    .btn-ghost { background: #fff; border: 1px solid #d1d5db; color: #374151; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-    .form-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+    h1 { font-size: 22px; color: var(--text); }
+    .sub { color: var(--text-muted); font-size: 13px; margin-top: 4px; max-width: 640px; }
+
+    /* Кнопки этого экрана стоят в шаблоне БЕЗ базового класса «btn»
+       («class="btn-primary"»), а шаблоны эта задача не трогает. Поэтому заливка
+       и :hover приходят из kit, а геометрию базовой «.btn» приходится повторить
+       здесь — значениями ровно kit-овскими (6px 14px / radius 4px / 13px), чтобы
+       кнопка стала «как везде», ради чего унификация и делалась. Без этого
+       правила кнопка осталась бы нативной: браузерная рамка и padding 1px 6px. */
+    .btn-primary { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    /* .btn-ghost и .btn-line-solid — контурные кнопки, которых в kit нет: цвет
+       живёт здесь. Геометрия выровнена по kit-овской «.btn», потому что обе
+       стоят в одном ряду с .btn-primary (форма создания и шапка) — иначе после
+       унификации соседи разъехались бы по высоте и радиусу. */
+    .btn-ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-line-solid { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .form-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
     .form-card h3 { font-size: 15px; margin-bottom: 10px; }
-    .form-card label { display: block; font-size: 13px; color: #374151; margin-bottom: 10px; }
-    .form-card select, .line input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+    .form-card label { display: block; font-size: 13px; color: var(--text); margin-bottom: 10px; }
+    /* Поля лежат на подложке --surface-2, поэтому фон и цвет текста заданы явно:
+       правила «input/select/textarea» в kit намеренно нет, и без этого поля
+       остались бы белыми пятнами в тёмной теме. */
+    .form-card select, .line input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
     .form-card select { min-width: 320px; margin-top: 4px; }
     .lines { margin: 8px 0; }
     .line-head, .line { display: grid; grid-template-columns: 1fr 200px 90px 32px; gap: 8px; align-items: center; margin-bottom: 6px; }
-    .line-head span { font-size: 11px; color: #6b7280; text-transform: uppercase; }
+    .line-head span { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
     .line input { width: 100%; }
-    .btn-del { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; color: #991b1b; }
-    .btn-line { background: #fff; border: 1px dashed #9ca3af; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: #374151; }
-    .form-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .err { color: #991b1b; font-size: 13px; margin-top: 8px; }
+    .btn-del { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--danger-text); }
+    /* Пунктир намеренный: это кнопка «добавить ещё», а не обычная линейная.
+       Заливку/цвет/рамку даёт kit-овская .btn-line — здесь только стиль рамки и
+       геометрия (мельче kit, это отдельная мелкая аффорданса), плюс cursor:
+       базового класса «btn», который его даёт, у кнопки в шаблоне нет. */
+    .btn-line { border-style: dashed; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+    /* margin-top даёт kit, здесь остаётся только раскладка ряда кнопок */
+    .form-actions { display: flex; gap: 8px; }
+    .err { color: var(--danger-text); font-size: 13px; margin-top: 8px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    thead th { text-align: left; padding: 8px 10px; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
-    .row { cursor: pointer; border-bottom: 1px solid #f3f4f6; }
-    .row:hover { background: #f9fafb; }
+    /* цвет текста и фон шапки даёт kit («th»), здесь остаётся геометрия и линия:
+       саму рамку kit не задаёт, только её цвет */
+    thead th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .row { cursor: pointer; border-bottom: 1px solid var(--border); }
+    .row:hover { background: var(--surface-2); }
     .row td { padding: 9px 10px; }
-    .num { font-weight: 600; color: #1a56db; }
-    .badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #e5e7eb; color: #374151; }
+    .num { font-weight: 600; color: var(--accent); }
+    /* У бейджа в шаблоне нет класса-статуса («badge-<СТАТУС>»), которым kit
+       раскрашивает бейджи, — статус приходит строкой с бэкенда. Поэтому
+       нейтральная заливка задана здесь (та же пара, что у kit-овского
+       .badge-DRAFT); форму бейджа даёт kit. */
+    .badge { background: var(--surface-2); color: var(--text); }
     .reg-summary { font-size: 12px; font-weight: 600; }
-    .loading, .empty { padding: 30px; text-align: center; color: #9ca3af; }
+    .loading { padding: 30px; text-align: center; color: var(--text-muted); }
     .head-actions { display: flex; gap: 8px; align-items: center; }
-    .import-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 12px 0; background: #fff; }
+    .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 12px 0; background: var(--surface); }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
-    .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: #6b7280; }
-    .import-panel .hint { color: #6b7280; font-size: 12px; margin: 6px 0 12px; }
-    .import-panel .lbl { display: block; font-size: 12px; color: #374151; margin-bottom: 4px; }
-    .client-sel { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 12px; min-width: 260px; }
-    .grid-wrap { overflow-x: auto; border: 1px solid #eee; border-radius: 8px; }
+    .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
+    .import-panel .hint { color: var(--text-muted); font-size: 12px; margin: 6px 0 12px; }
+    .import-panel .lbl { display: block; font-size: 12px; color: var(--text); margin-bottom: 4px; }
+    .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
+    .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
     .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
-    .import-grid th { background: #f9fafb; padding: 8px; border: 1px solid #eee; vertical-align: top; }
+    /* Цвет текста НЕ приглушённый из kit: в шапке грида импорта стоят заголовки
+       ИЗ ФАЙЛА пользователя — это данные, которые он глазами сверяет с разметкой
+       колонок, а не служебная подпись. Фон шапки приходит из kit. */
+    .import-grid th { color: var(--text); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
     .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
-    .import-grid th select { width: 100%; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
-    .import-grid td { padding: 6px 8px; border: 1px solid #f0f0f0; white-space: nowrap; }
+    .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
+    .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .btn-line-solid { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
   `]
 })
 export class PrivateRequestsComponent {
