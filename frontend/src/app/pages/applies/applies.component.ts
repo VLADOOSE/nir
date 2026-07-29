@@ -413,17 +413,9 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .all-done { color: var(--success-text); font-weight: 600; font-size: 14px; }
     .muted { color: var(--text-muted); font-size: 12px; }
 
-    /* Меню «⋯» строки списка. На десктопе скрыто целиком (display:none), поэтому
-       ряд действий там ровно тот же, что был; включается только в @media ниже. */
-    .row-menu-wrap { position: relative; display: none; }
-    .row-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--surface);
-                border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); z-index: 20;
-                display: flex; flex-direction: column; min-width: 160px; overflow: hidden; }
-    .row-menu button { background: none; border: none; text-align: left; padding: 10px 12px; cursor: pointer;
-                       font-size: 13px; color: var(--text); white-space: nowrap; }
-    .row-menu button:hover { background: var(--surface-2); }
-    .row-menu button.danger { color: var(--danger-text); }
-    .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
+    /* Внешний вид меню «⋯» (.row-menu-wrap / .row-menu / .btn-more) переехал в
+       глобальный styles.scss — он нужен всем переведённым спискам. Здесь
+       остаётся только логика открытия/закрытия (см. openMenuApplyId ниже). */
 
     /* ============================================================
        МОБИЛЬНАЯ РАСКЛАДКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
@@ -471,7 +463,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
          действие, остальные в «⋯» (тот же обработчик, дубль только в разметке) */
       .applies-list td.actions .btn-edit,
       .applies-list td.actions .btn-delete { display: none; }
-      .applies-list .row-menu-wrap { display: inline-block; }
+      /* показ .row-menu-wrap — в глобальном card-grid слое (общий для всех списков) */
       .applies-list .btn-open { margin-right: 0; }
 
       /* ─── Позиции заявки ──────────────────────────────────────────────
