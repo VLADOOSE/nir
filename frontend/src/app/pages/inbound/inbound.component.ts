@@ -111,43 +111,54 @@ import { NotificationService } from '../../services/notification.service';
     .page { padding: 20px; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
     .head h1 { margin: 0; }
-    .sub { color: #6b7280; font-size: 13px; margin: 4px 0 0; }
-    .btn-primary { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
-    .grid { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
-    .grid th { background: #f9fafb; text-align: left; padding: 10px; font-size: 12px; color: #374151; }
-    .grid td { padding: 10px; border-top: 1px solid #f0f0f0; font-size: 13px; }
-    .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
-    .b-sup { background: #dcfce7; color: #166534; }
-    .b-cli { background: #dbeafe; color: #1e40af; }
-    .b-unm { background: #f3f4f6; color: #6b7280; }
-    .muted { color: #6b7280; font-size: 12px; }
-    .when { white-space: nowrap; color: #374151; font-size: 12px; }
-    .empty { color: #6b7280; padding: 20px 0; }
-    .import-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-top: 16px; background: #fff; }
+    .sub { color: var(--text-muted); font-size: 13px; margin: 4px 0 0; }
+    /* Обе кнопки в шаблоне несут ТОЛЬКО класс .btn-primary, без базового .btn, —
+       геометрия из kit (.btn) до них не достаёт. Поэтому цвет отдаём kit
+       (.btn-primary = --accent/--accent-contrast), а геометрию повторяем здесь
+       ровно kit-овскими значениями. Не удалять как «дубль»: без неё кнопка
+       станет нативной. */
+    .btn-primary { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .grid { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 8px; overflow: hidden; }
+    /* .grid th специфичнее голого th из kit — kit сюда не достаёт. Повторяем его
+       цвета на месте, чтобы шапка таблицы совпадала с остальными экранами. */
+    .grid th { background: var(--surface-2); text-align: left; padding: 10px; font-size: 12px; color: var(--text-muted); }
+    .grid td { padding: 10px; border-top: 1px solid var(--border); font-size: 13px; }
+    .b-sup { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .b-cli { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .b-unm { background: var(--surface-2); color: var(--text-muted); }
+    .muted { color: var(--text-muted); font-size: 12px; }
+    .when { white-space: nowrap; color: var(--text); font-size: 12px; }
+    .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; background: var(--surface); }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
-    .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: #6b7280; }
-    .lbl { display: block; font-size: 12px; color: #374151; margin: 8px 0 4px; }
-    .client-sel { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 12px; min-width: 260px; }
-    .grid-wrap { overflow-x: auto; border: 1px solid #eee; border-radius: 8px; }
+    .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
+    .lbl { display: block; font-size: 12px; color: var(--text); margin: 8px 0 4px; }
+    /* Полям ввода фон и цвет проставлены ЯВНО: правила input,select,textarea в kit
+       намеренно нет, без этого в тёмной теме они остаются белыми пятнами
+       (те же прецеденты — tenders-filters, applies, private-requests). */
+    .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
+    .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
     .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
-    .import-grid th { background: #f9fafb; padding: 8px; border: 1px solid #eee; vertical-align: top; }
+    .import-grid th { background: var(--surface-2); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
     .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
-    .import-grid th select { width: 100%; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
-    .import-grid td { padding: 6px 8px; border: 1px solid #f0f0f0; white-space: nowrap; }
+    .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
+    .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .err { color: #b91c1c; font-size: 13px; margin: 8px 0; }
-    .btn-line-solid { background: #fff; border: 1px solid #9ca3af; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #374151; }
+    .err { color: var(--danger-text); font-size: 13px; margin: 8px 0; }
+    .btn-line-solid { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); }
     .client-row { display: flex; gap: 8px; align-items: center; }
-    .client-sel:disabled { background: #f3f4f6; color: #9ca3af; }
+    .client-sel:disabled { background: var(--surface-2); color: var(--text-muted); }
     .new-client { margin: 8px 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
-    .new-client input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; min-width: 320px; }
-    .hint-sm { color: #6b7280; font-size: 12px; margin-left: 8px; }
-    .msg-preview { background: #f9fafb; border: 1px solid #eef0f3; border-radius: 8px; padding: 10px 12px; margin: 8px 0 14px; }
-    .msg-meta { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
-    .msg-from { font-weight: 600; color: #374151; }
-    .msg-body { font-size: 13px; color: #1f2937; white-space: pre-wrap; line-height: 1.5; }
+    .new-client input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; min-width: 320px; background: var(--surface); color: var(--text); }
+    .hint-sm { color: var(--text-muted); font-size: 12px; margin-left: 8px; }
+    .msg-preview { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0 14px; }
+    .msg-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+    .msg-from { font-weight: 600; color: var(--text); }
+    .msg-body { font-size: 13px; color: var(--text); white-space: pre-wrap; line-height: 1.5; }
+    /* #000 в mask-image — НЕ цвет, а непрозрачность маски (плавное затухание
+       обрезанного текста). Маска читает альфу, тема на неё не влияет:
+       токенизировать нечего, оставлено намеренно. */
     .msg-body.clamped { max-height: 4.5em; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent); }
-    .msg-toggle { margin-top: 6px; background: none; border: none; color: #2563eb; cursor: pointer; font-size: 12px; padding: 0; }
+    .msg-toggle { margin-top: 6px; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
   `],
 })
 export class InboundComponent {

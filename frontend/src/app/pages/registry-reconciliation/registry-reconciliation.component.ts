@@ -87,43 +87,54 @@ import { NotificationService } from '../../services/notification.service';
   styles: [`
     .page { padding: 24px; max-width: 1100px; }
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-    h1 { font-size: 22px; color: #111827; }
-    .sub { color: #6b7280; font-size: 13px; margin-top: 4px; }
-    .btn-refresh { display: inline-flex; align-items: center; gap: 6px; background: #1a56db; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    h1 { font-size: 22px; color: var(--text); }
+    .sub { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+    .btn-refresh { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-contrast); border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
     .btn-refresh:disabled { opacity: .6; cursor: default; }
-    .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; color: #374151; }
-    .filters select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-    .count { color: #6b7280; }
+    .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; color: var(--text); }
+    /* Полю фон и цвет проставлены ЯВНО: правила input,select,textarea в kit
+       намеренно нет, без этого в тёмной теме селект остаётся белым пятном
+       (те же прецеденты — tenders-filters, applies, private-requests). */
+    .filters select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .count { color: var(--text-muted); }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    thead th { text-align: left; padding: 8px 10px; color: #6b7280; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
-    .row { cursor: pointer; border-bottom: 1px solid #f3f4f6; }
-    .row:hover { background: #f9fafb; }
-    .row.focused { background: #eff6ff; }
+    /* Правило оставлено: kit даёт только border-COLOR, саму рамку и отступы шапки
+       несёт оно. Фон шапки приходит из kit (голый th), здесь он не задан. */
+    thead th { text-align: left; padding: 8px 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+    /* #f3f4f6 стоял в слоте border — это разделитель строк, а не поверхность,
+       поэтому --border, а не --surface-2 (иначе линия схлопнулась бы с фоном). */
+    .row { cursor: pointer; border-bottom: 1px solid var(--border); }
+    .row:hover { background: var(--surface-2); }
+    /* Подсветка выбранной строки — формула подсветки ОБЛАСТИ (непрозрачный микс
+       акцента с --surface), а не --surface-2: иначе «выбрана» стала бы неотличима
+       от ховера соседней строки. Правило идёт после :hover — оно и должно
+       побеждать при наведении на выбранную строку. */
+    .row.focused { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
     .row td { padding: 9px 10px; vertical-align: middle; }
-    .chev { width: 24px; color: #9ca3af; }
-    .name { font-weight: 500; color: #111827; }
-    .badge { padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .b-UNCHECKED { background: #e5e7eb; color: #374151; }
-    .b-REGISTERED { background: #d1fae5; color: #065f46; }
-    .b-NOT_REGISTERED { background: #fee2e2; color: #991b1b; }
-    .b-NOT_MEDICAL { background: #fef3c7; color: #92400e; }
-    .vat { margin-left: 8px; font-size: 11px; color: #065f46; font-weight: 600; }
-    .vat-no { color: #92400e; }
-    .top .muted { color: #9ca3af; }
-    .detail td { background: #f9fafb; padding: 12px 16px; }
+    .chev { width: 24px; color: var(--text-muted); }
+    .name { font-weight: 500; color: var(--text); }
+    .b-UNCHECKED { background: var(--surface-2); color: var(--text); }
+    .b-REGISTERED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .b-NOT_REGISTERED { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .b-NOT_MEDICAL { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
+    .vat { margin-left: 8px; font-size: 11px; color: var(--success-text); font-weight: 600; }
+    .vat-no { color: var(--warn-text); }
+    .top .muted { color: var(--text-muted); }
+    .detail td { background: var(--surface-2); padding: 12px 16px; }
     .cands { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .cand { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; }
-    .cand.current { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
+    .cand { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+    .cand.current { border-color: var(--success); box-shadow: 0 0 0 1px var(--success); }
     .cand-main { flex: 1; }
-    .cand-name { font-weight: 500; color: #111827; }
-    .cand-meta { color: #6b7280; font-size: 12px; margin: 2px 0 5px; }
-    .bar { height: 5px; background: #e5e7eb; border-radius: 3px; overflow: hidden; max-width: 280px; }
-    .bar-fill { height: 100%; background: #1a56db; }
-    .btn-confirm { background: #10b981; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+    .cand-name { font-weight: 500; color: var(--text); }
+    .cand-meta { color: var(--text-muted); font-size: 12px; margin: 2px 0 5px; }
+    .bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; max-width: 280px; }
+    .bar-fill { height: 100%; background: var(--accent); }
+    .btn-confirm { background: var(--success); color: var(--accent-contrast); border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
     .actions { display: flex; gap: 8px; }
-    .btn-sm { background: #fff; border: 1px solid #d1d5db; color: #374151; padding: 5px 11px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-    .btn-sm:hover { background: #f3f4f6; }
-    .loading, .empty { padding: 30px; text-align: center; color: #9ca3af; }
+    .btn-sm { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 11px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    .btn-sm:hover { background: var(--surface-2); }
+    /* .empty ушёл из этого селектора — его даёт kit. .loading в kit нет: остаётся. */
+    .loading { padding: 30px; text-align: center; color: var(--text-muted); }
   `]
 })
 export class RegistryReconciliationComponent {
