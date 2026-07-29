@@ -45,27 +45,24 @@ import { ConfirmService } from '../../services/confirm.service';
     </table>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
+    h2 { margin: 0; font-size: 20px; }
     .toolbar { margin-bottom: 16px; }
-    .empty { color: #9ca3af; font-size: 14px; padding: 32px 0; text-align: center; }
     table { width: 100%; max-width: 600px; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+    /* Саму рамку и раскладку ячеек kit не задаёт (только border-color) — правило остаётся */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { font-weight: 600; }
     .actions { white-space: nowrap; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 4px; }
-    .btn-add, .btn-save { background: #1a56db; color: #fff; }
-    .btn-cancel { background: #e5e7eb; color: #374151; margin-left: 8px; }
-    .btn-edit { background: #f59e0b; color: #fff; }
-    .btn-delete { background: #ef4444; color: #fff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .edit-form { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 400px; }
-    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: #374151; font-weight: 500; }
-    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
-    .form-actions { margin-top: 16px; }
-    .field-error { display: block; color: #dc2626; font-size: 12px; margin-top: 2px; }
-    .input-error { border-color: #dc2626 !important; }
-    .error-banner { background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+    /* от .btn/.btn-cancel остаётся только раскладка: цвет и геометрию даёт kit.
+       margin-right на базовом .btn — не декор, а зазор между «Редактировать» и «Удалить»
+       в колонке действий (kit отступов не даёт), поэтому правило сохранено */
+    .btn { margin-right: 4px; }
+    .btn-cancel { margin-left: 8px; }
+    .edit-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; max-width: 400px; }
+    .edit-form label { display: block; margin-bottom: 12px; font-size: 14px; color: var(--text); font-weight: 500; }
+    /* фон/цвет полю задаём явно: контейнер формы на --surface-2, а правила input в kit
+       намеренно нет — иначе поле названия осталось бы белым в тёмной теме */
+    .edit-form input { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
+    .input-error { border-color: var(--danger) !important; }
   `]
 })
 export class EquipmentTypesComponent {

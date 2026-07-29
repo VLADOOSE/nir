@@ -73,38 +73,41 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     </div>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
-    .counter { color: #6b7280; font-size: 13px; display: block; margin-bottom: 12px; }
-    .empty { color: #9ca3af; font-size: 14px; padding: 32px 0; text-align: center; }
+    h2 { margin: 0; font-size: 20px; }
+    /* от .counter остаётся только раскладка: цвет и размер даёт kit */
+    .counter { display: block; margin-bottom: 12px; }
 
-    .filter-form { margin-bottom: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; }
+    .filter-form { margin-bottom: 20px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
     .filter-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
-    .filter-row label { font-size: 13px; color: #374151; font-weight: 500; flex: 1; min-width: 160px; }
-    .filter-row input, .filter-row select { display: block; width: 100%; padding: 6px 8px; margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+    .filter-row label { font-size: 13px; color: var(--text); font-weight: 500; flex: 1; min-width: 160px; }
+    /* фон/цвет полям задаём явно: контейнер фильтра на --surface-2, а правила
+       input/select в kit намеренно нет — иначе все семь полей поиска остались бы
+       белыми в тёмной теме */
+    .filter-row input, .filter-row select { display: block; width: 100%; padding: 6px 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .filter-actions { display: flex; gap: 8px; }
-    .btn { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-search { background: #1a56db; color: #fff; }
-    .btn-reset { background: #e5e7eb; color: #374151; }
+    /* .btn/.btn-search/.btn-reset удалены целиком — цвет, ховеры и геометрию даёт kit.
+       Локальный .btn был шире kit (8px 18px против 6px 14px); по решению оператора об
+       унификации примитивов кнопки поиска приведены к общему виду приложения. */
 
-    .tender-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s; }
-    .tender-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #d1d5db; }
+    .tender-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s; }
+    /* в ховере было ещё border-color:#d1d5db, но и рамка карточки (#e5e7eb), и он
+       схлопываются в один --border — объявление стало бы мёртвым, поэтому убрано;
+       отклик несёт тень, ровно как на карточках /tenders */
+    .tender-card:hover { box-shadow: var(--shadow); }
     .tender-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .tender-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .tender-number { font-weight: 600; color: #1a56db; font-size: 15px; }
-    .tender-price { font-size: 18px; font-weight: 700; color: #111827; white-space: nowrap; }
-    .tender-card-title { font-size: 14px; color: #374151; margin-bottom: 12px; line-height: 1.5; }
+    .tender-number { font-weight: 600; color: var(--accent); font-size: 15px; }
+    .tender-price { font-size: 18px; font-weight: 700; color: var(--text); white-space: nowrap; }
+    .tender-card-title { font-size: 14px; color: var(--text); margin-bottom: 12px; line-height: 1.5; }
     .tender-card-details { margin-bottom: 4px; }
     .detail-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .detail { display: flex; flex-direction: column; }
-    .detail-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; margin-bottom: 2px; }
+    .detail-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
     .detail span:not(.detail-label) { font-size: 14px; }
     .deadline { font-weight: 500; }
-    .deadline.overdue { color: #ef4444; }
-    .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .badge-DRAFT { background: #e5e7eb; color: #374151; }
-    .badge-ACTIVE { background: #dbeafe; color: #1a56db; }
-    .badge-COMPLETED { background: #d1fae5; color: #065f46; }
+    /* слот color → текстовый токен (заливочный --danger как текст даёт ~3:1 в светлой);
+       та же строка на карточках /tenders */
+    .deadline.overdue { color: var(--danger-text); }
   `]
 })
 export class TenderSearchComponent {
