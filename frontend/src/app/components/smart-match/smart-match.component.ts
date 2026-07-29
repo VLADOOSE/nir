@@ -61,8 +61,11 @@ const LS_KEY = 'smartMatch.v1';
         <span *ngIf="recommended.bestDistributor"> · лучший дистрибьютор: {{ recommended.bestDistributor.name }} (ср. маржа {{ recommended.bestDistributor.avgMarginPercent }} %)</span>
       </div>
 
+      <!-- responsive-cards card-grid: ≤900px строка кандидата становится карточкой
+           (раскладка — в @media последним блоком styles). На десктопе классы и
+           data-label инертны: глобальные правила живут только внутри @media. -->
       <div class="table-scroll" *ngIf="result?.candidates?.length">
-      <table class="sm-table">
+      <table class="sm-table responsive-cards card-grid">
         <thead>
           <tr>
             <th>#</th><th>Наименование</th><th>Score</th><th>Цена</th><th>Маржа</th><th>Опыт</th><th>Габар.</th><th></th>
@@ -71,17 +74,27 @@ const LS_KEY = 'smartMatch.v1';
         <tbody>
           <ng-container *ngFor="let c of result.candidates">
             <tr [class.top]="c.recommended">
-              <td>{{ c.rank }}</td>
-              <td>
+              <td data-label="#">{{ c.rank }}</td>
+              <td data-label="Наименование">
                 <div class="cand-name">{{ c.name }}</div>
                 <small class="cand-meta">{{ c.manufact }} · {{ c.equipType }}</small>
               </td>
-              <td class="score">{{ c.score }}</td>
-              <td><div class="bar" [title]="c.breakdown.price.raw"><span [style.width.%]="c.breakdown.price.value" [class.nodata]="c.breakdown.price.noData"></span></div></td>
-              <td><div class="bar" [title]="c.breakdown.margin.raw"><span [style.width.%]="c.breakdown.margin.value" [class.nodata]="c.breakdown.margin.noData"></span></div></td>
-              <td><div class="bar" [title]="c.breakdown.track.raw"><span [style.width.%]="c.breakdown.track.value"></span></div></td>
-              <td><div class="bar" [title]="c.breakdown.dim.raw"><span [style.width.%]="c.breakdown.dim.value"></span></div></td>
-              <td><button class="sm-toggle" (click)="toggle(c.equipmentId)">{{ expanded.has(c.equipmentId) ? '−' : '+' }}</button></td>
+              <td class="score" data-label="Score">{{ c.score }}</td>
+              <td data-label="Цена"><div class="bar" [title]="c.breakdown.price.raw"><span [style.width.%]="c.breakdown.price.value" [class.nodata]="c.breakdown.price.noData"></span></div></td>
+              <td data-label="Маржа"><div class="bar" [title]="c.breakdown.margin.raw"><span [style.width.%]="c.breakdown.margin.value" [class.nodata]="c.breakdown.margin.noData"></span></div></td>
+              <td data-label="Опыт"><div class="bar" [title]="c.breakdown.track.raw"><span [style.width.%]="c.breakdown.track.value"></span></div></td>
+              <td data-label="Габар."><div class="bar" [title]="c.breakdown.dim.raw"><span [style.width.%]="c.breakdown.dim.value"></span></div></td>
+              <td class="sm-act"><button class="sm-toggle" (click)="toggle(c.equipmentId)">{{ expanded.has(c.equipmentId) ? '−' : '+' }}</button><!--
+                   Мобильный дубль «Утвердить» по образцу .row-menu-wrap из applies
+                   (styles.scss): на десктопе .sm-approve-m скрыт целиком, кнопка
+                   живёт только в развороте «+», как и раньше. На карточке разворот
+                   ради одного действия — лишний тап, поэтому кнопка тут же. Условия
+                   и обработчик те же, что в развороте. -->
+                <span class="sm-approve-m">
+                  <button class="btn-approve" *ngIf="proposedEquipmentId !== c.equipmentId" (click)="approve(c)">☑ Утвердить</button>
+                  <span class="approved-badge" *ngIf="proposedEquipmentId === c.equipmentId">Предложена</span>
+                </span>
+              </td>
             </tr>
             <tr *ngIf="expanded.has(c.equipmentId)" class="expand">
               <td colspan="8">
@@ -169,11 +182,77 @@ const LS_KEY = 'smartMatch.v1';
        Токенизируется только цвет текста; ховер остаётся собственным затемнением. */
     .btn-approve { background: #0e9f6e; color: var(--accent-contrast); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px; }
     .btn-approve:hover { background: #057a55; }
+    /* Мобильный дубль «Утвердить» в строке кандидата: на десктопе скрыт целиком,
+       показывается только в @media ниже (идиома .row-menu-wrap из styles.scss). */
+    .sm-approve-m { display: none; }
     .approved-badge { display: inline-block; margin-left: 8px; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
     .sm-toggle { background: var(--surface-2); border: 1px solid var(--border); width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-weight: 700; color: var(--text); }
     .sm-toggle:hover { background: var(--border); }
     .sm-empty { text-align: center; color: var(--text-muted); padding: 24px; font-size: 13px; }
     .sm-nocriteria { background: color-mix(in srgb, var(--danger) 15%, transparent); border-left: 3px solid var(--danger); padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: var(--danger-text); }
+
+    /* ============================================================
+       МОБИЛЬНАЯ РАСКЛАДКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка таблицы кандидатов.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 627px содержимого в 324px окне — 303px мотать вбок, имя кандидата
+         в колонке 131px. Стало карточкой:
+           МОДЕЛЬ (2 строки, «…»)                    SCORE
+           производитель · тип
+           Цена   Маржа   Опыт   Габар.   (шкалы, подписи сверху)
+           [+]                          [☑ Утвердить]
+         Скрыт «#»: в вертикальном списке порядок и так виден, а рекомендованный
+         кандидат помечен подсветкой строки. */
+      .table-scroll { overflow-x: visible; }
+      /* Своё .sm-table td { padding: 10px } сильнее глобального card-grid
+         (0,3,1 против 0,2,2) и в карточке даёт 20px лишней высоты на каждом
+         ряду грида — гасим, зазоры держит gap. */
+      .sm-table td { padding: 2px 0; }
+      .sm-table tr {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-areas:
+          "name name name score"
+          "prc  mrg  trk  dim"
+          "act  act  act  act";
+        gap: 8px;
+      }
+      .sm-table td[data-label="#"] { display: none; }
+      .sm-table td[data-label="Наименование"] { grid-area: name; display: block; }
+      .sm-table .cand-name { font-size: 15px; line-height: 1.3; }
+      .sm-table .cand-meta { display: block; margin-top: 2px; }
+      .sm-table td.score { grid-area: score; display: block; text-align: right; font-size: 19px; min-width: 0; }
+      .sm-table td[data-label="Цена"]   { grid-area: prc; }
+      .sm-table td[data-label="Маржа"]  { grid-area: mrg; }
+      .sm-table td[data-label="Опыт"]   { grid-area: trk; }
+      .sm-table td[data-label="Габар."] { grid-area: dim; }
+      .sm-table td[data-label="Цена"], .sm-table td[data-label="Маржа"],
+      .sm-table td[data-label="Опыт"], .sm-table td[data-label="Габар."] { display: block; }
+      .sm-table td[data-label="Цена"]::before, .sm-table td[data-label="Маржа"]::before,
+      .sm-table td[data-label="Опыт"]::before, .sm-table td[data-label="Габар."]::before {
+        display: block; content: attr(data-label); font-size: 10px; font-weight: 600;
+        color: var(--text-muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.02em;
+      }
+      /* шкала растягивается по своей колонке вместо фиксированных 70px */
+      .sm-table .bar { width: auto; }
+      /* Подсветка рекомендации переезжает с ячеек на строку: в гриде ячейки
+         разделены зазорами, и тинт по ячейкам шёл бы полосами. */
+      .sm-table tr.top { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: var(--accent); }
+      .sm-table tr.top td { background: transparent; }
+      .sm-table td.sm-act { grid-area: act; display: flex; align-items: center; gap: 8px; }
+      .sm-toggle { width: 40px; }
+      .sm-approve-m { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+      .sm-approve-m .btn-approve, .sm-approve-m .approved-badge { margin-left: 0; }
+      /* Разворот «+» — продолжение карточки кандидата, а не отдельный блок. */
+      .sm-table tr:has(+ tr.expand) { margin-bottom: 0; border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+      .sm-table tr.expand { display: block; padding: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+      .sm-table tr.expand td { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; }
+      .sm-table .raw-list { grid-template-columns: 1fr; margin-bottom: 0; }
+      .sm-table .estim { margin: 0; }
+      .sm-table tr.expand .btn-approve { margin-left: 0; }
+    }
   `]
 })
 export class SmartMatchComponent implements OnChanges {
