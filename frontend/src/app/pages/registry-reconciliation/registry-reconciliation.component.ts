@@ -35,7 +35,7 @@ import { NotificationService } from '../../services/notification.service';
 
       <div class="loading" *ngIf="loading">Загрузка…</div>
 
-      <table class="responsive-cards" *ngIf="!loading && rows.length">
+      <table class="responsive-cards card-grid recon-list" *ngIf="!loading && rows.length">
         <thead>
           <tr><th></th><th>Позиция каталога</th><th>Производитель</th><th>Статус</th><th>Топ-кандидат</th></tr>
         </thead>
@@ -135,6 +135,71 @@ import { NotificationService } from '../../services/notification.service';
     .btn-sm:hover { background: var(--surface-2); }
     /* .empty ушёл из этого селектора — его даёт kit. .loading в kit нет: остаётся. */
     .loading { padding: 30px; text-align: center; color: var(--text-muted); }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 5 строк «подпись: значение» — 200–259px на карточку (замер живьём,
+         сильно выше ориентира 140). Стало:
+           ▸  ПОЗИЦИЯ КАТАЛОГА (2 строки, «…»)
+           ▸  производитель
+           ▸  [статус] НДС-льгота
+           ▸  топ-кандидат · score
+         Ничего не скрыто: на этом экране оператор принимает решение по РУ, и
+         обрезать тут нечего. Каждая строка во всю ширину, а не парами: бейдж
+         статуса вместе с НДС-меткой занимает ~175px, и в паре с ним
+         производитель сжимался до ~75px — «ООО «Мед ТеКо»» превращалось в
+         «ООО «М…». Плата за это — 4 строки вместо 3, всё равно ниже цели. */
+      .recon-list td { padding: 2px 0; }
+      .recon-list tr.row {
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+          "chev name"
+          "chev manu"
+          "chev stat"
+          "chev top";
+        column-gap: 10px;
+      }
+      /* Шеврон — колонка на все четыре ряда: это аффорданс «строка
+         раскрывается», он должен стоять у левого края карточки, а не прыгать
+         по рядам. */
+      .recon-list td.chev { grid-area: chev; align-self: center; width: auto; }
+      /* Клэмп прямо на ячейке: внутри неё только текст. Две строки — имена
+         позиций каталога KZ приходят из реестра НЦЭЛС и доходят до 196
+         символов. */
+      .recon-list td.name {
+        grid-area: name; font-size: 14px; overflow: hidden;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      /* display:block — иначе текст становится анонимным флекс-элементом и
+         многоточие до него не достаёт */
+      .recon-list td[data-label="Производитель"] {
+        grid-area: manu; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .recon-list td[data-label="Статус"] {
+        grid-area: stat; justify-content: flex-start; flex-wrap: nowrap; gap: 0;
+      }
+      .recon-list td.top {
+        grid-area: top; display: block; color: var(--text-muted); font-size: 11px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      /* Раскрытая панель кандидатов — НЕ карточка-грид: это одна ячейка на
+         colspan=5, и раскладка родителя ей не нужна. Без этого правила
+         tr.detail тоже стал бы гридом (правило card-grid бьёт по всем tr
+         таблицы) и панель поехала бы по колонкам «chev/name». */
+      .recon-list tr.detail { display: block; padding: 0; }
+      .recon-list tr.detail td { display: block; padding: 12px; }
+      /* Кандидат: кнопка «Подтвердить» уходит под текст — в ряд она оставляет
+         названию РУ ~150px. */
+      .recon-list .cand { flex-direction: column; align-items: stretch; gap: 8px; }
+      .recon-list .btn-confirm { width: 100%; }
+      .recon-list .actions { flex-wrap: wrap; }
+    }
   `]
 })
 export class RegistryReconciliationComponent {
