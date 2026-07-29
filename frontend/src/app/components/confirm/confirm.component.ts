@@ -40,15 +40,12 @@ import { ConfirmService, ConfirmEvent } from '../../services/confirm.service';
     .confirm-message { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
     .confirm-details { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5; }
     .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
-    /* Цвет кнопок (.btn-cancel / .btn-primary / .btn-danger + их :hover, кроме danger)
-       приходит из UI-kit в styles.scss. Локально осталась ТОЛЬКО геометрия: в модалке
-       подтверждения кнопка крупнее kit-дефолта (6px 14px / 13px), это осознанно. */
+    /* Цвет кнопок (.btn-cancel / .btn-primary / .btn-danger) и все их :hover приходят
+       из UI-kit в styles.scss — включая danger-ховер, который раньше лежал копией здесь
+       (поднят в kit в задаче 9, чтобы одна роль не темнела двумя разными способами).
+       Локально осталась ТОЛЬКО геометрия: в модалке подтверждения кнопка крупнее
+       kit-дефолта (6px 14px / 13px), это осознанно. */
     .btn { padding: 8px 16px; font-size: 14px; font-weight: 500; }
-    /* :hover для danger kit НЕ даёт (там у .btn-danger только заливка), поэтому правило
-       живёт здесь. Затемняем к чёрному, а не к --text (как .btn-cancel:hover в kit):
-       у залитой кнопки белая подпись, и в тёмной теме подмешивание светлого --text
-       уронило бы её контраст вместо того, чтобы поднять. */
-    .btn-danger:hover { background: color-mix(in srgb, black 15%, var(--danger)); }
   `]
 })
 export class ConfirmComponent {

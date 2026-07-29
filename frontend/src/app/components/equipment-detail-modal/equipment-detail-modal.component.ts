@@ -183,11 +183,16 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       animation: fadeIn 0.15s ease-out;
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    /* Тень дровера направленная: панель выезжает от правого края экрана, тень
+       падает влево («-8px 0»). Здесь стоял --shadow-lg, но он светит вниз
+       («0 12px 32px») — направленность терялась. Токенизирована только сила
+       тени (--shadow-color), которая и зависит от темы; смещения остаются на
+       месте использования, потому что у левого дровера сайдбара они другие. */
     .sidebar {
       position: fixed; top: 0; right: 0; bottom: 0;
       width: 720px; max-width: 100vw;
       background: var(--surface);
-      box-shadow: var(--shadow-lg);
+      box-shadow: -8px 0 30px var(--shadow-color);
       display: flex; flex-direction: column;
       animation: slideIn 0.2s ease-out;
     }

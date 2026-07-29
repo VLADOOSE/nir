@@ -166,78 +166,109 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     </div>
   `,
   styles: [`
+    /* rgba-вуаль НЕ токенизируется: это затемнение фона под дровером, уместно в обеих темах */
     .overlay { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1000; animation: fadeIn 0.15s ease-out; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .sidebar { position: fixed; top: 0; right: 0; bottom: 0; width: 720px; max-width: 100vw; background: #fff; box-shadow: -8px 0 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; animation: slideIn 0.2s ease-out; }
+    /* Тень дровера направленная и остаётся такой: панель выезжает от правого края
+       экрана, тень падает влево («-8px 0»). Готовый --shadow-lg сюда не ставим —
+       он светит вниз («0 12px 32px») и направленность теряется. Токенизирована
+       только сила тени (--shadow-color), которая и зависит от темы. */
+    .sidebar { position: fixed; top: 0; right: 0; bottom: 0; width: 720px; max-width: 100vw; background: var(--surface); box-shadow: -8px 0 30px var(--shadow-color); display: flex; flex-direction: column; animation: slideIn 0.2s ease-out; }
     @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-    .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 32px 16px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+    .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 32px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .title-block { min-width: 0; flex: 1; }
-    .title { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; color: #111827; word-break: break-word; }
-    .subtitle { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: #6b7280; }
-    .dot { color: #d1d5db; }
-    .type-pill { display: inline-block; padding: 2px 10px; background: #eef2ff; color: #3730a3; border-radius: 999px; font-size: 12px; font-weight: 500; }
-    .close-btn { background: transparent; border: none; cursor: pointer; font-size: 28px; line-height: 1; color: #9ca3af; padding: 0 4px; border-radius: 4px; transition: color 0.15s, background 0.15s; }
-    .close-btn:hover { color: #ef4444; background: #fef2f2; }
+    .title { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; word-break: break-word; }
+    /* margin задан целиком, а не только сверху: kit-овский «.subtitle» несёт
+       «margin: 4px 0 16px», и без явного нуля снизу в шапке дровера появился бы
+       лишний отступ. Цвет и размер — из kit, здесь только раскладка. */
+    .subtitle { margin: 6px 0 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    /* Светло-серый в слоте «color» — это приглушённый ТЕКСТ, а не рамка: с
+       --border разделитель «·» исчезает в тёмной теме (там это белый 11%). */
+    .dot { color: color-mix(in srgb, var(--text-muted) 45%, transparent); }
+    .type-pill { display: inline-block; padding: 2px 10px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 999px; font-size: 12px; font-weight: 500; }
+    .close-btn { background: transparent; border: none; cursor: pointer; font-size: 28px; line-height: 1; color: var(--text-muted); padding: 0 4px; border-radius: 4px; transition: color 0.15s, background 0.15s; }
+    /* --danger, а не --danger-text: крестик 28px — крупный текст (порог 3:1),
+       сигнал ховера в насыщенности; приглушённо-тёмный глиф читался бы как
+       «неактивно». То же решение, что у крестика equipment-detail-modal. */
+    .close-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 
     .body { flex: 1; overflow-y: auto; padding: 24px 32px 32px; }
     .section { margin-bottom: 28px; }
     .section:last-child { margin-bottom: 0; }
-    .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+    /* приглушённая подпись секции: kit красит h3 в --text, здесь роль другая */
+    .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .section-head .section-title { margin: 0; }
-    .btn-line { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: #374151; }
+    /* Заливку/цвет/рамку даёт kit-овская .btn-line; здесь остаётся геометрия
+       (мельче kit-овской .btn) и cursor — базового класса «btn», который его
+       даёт, у кнопок в шаблоне нет. Пунктирный вариант этой же кнопки —
+       .add-line ниже. */
+    .btn-line { border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
     .edit-grid { width: 100%; border-collapse: collapse; }
-    .edit-grid th { text-align: left; font-size: 11px; color: #6b7280; padding: 4px 6px; text-transform: uppercase; }
+    .edit-grid th { text-align: left; font-size: 11px; padding: 4px 6px; text-transform: uppercase; }
     .edit-grid td { padding: 4px 6px; }
-    .edit-grid input { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+    /* фон/цвет полей явно: правила «input» в kit намеренно нет, иначе поля
+       остались бы белыми пятнами в тёмной теме */
+    .edit-grid input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .edit-grid input.qty { width: 64px; }
-    .x-row { background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer; line-height: 1; }
+    .x-row { background: none; border: none; color: var(--danger-text); font-size: 18px; cursor: pointer; line-height: 1; }
+    /* пунктир намеренный: это кнопка «добавить ещё», а не обычная линейная */
     .add-line { margin-top: 6px; border-style: dashed; }
-    .edit-err { color: #b91c1c; font-size: 13px; margin: 8px 0; }
+    .edit-err { color: var(--danger-text); font-size: 13px; margin: 8px 0; }
     .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
     .w-160 { width: 160px; } .w-80 { width: 80px; }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-    .name-cell { font-weight: 500; color: #111827; }
+    /* саму рамку kit не задаёт, только её цвет — правило остаётся */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .name-cell { font-weight: 500; color: var(--text); }
     .w-40 { width: 40px; text-align: center; } .w-60 { width: 60px; } .w-140 { width: 140px; } .w-160 { width: 160px; }
-    .requested-at { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .requested-at { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-    .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .b-REGISTERED { background: #d1fae5; color: #065f46; }
-    .b-NOT_FOUND { background: #e5e7eb; color: #374151; }
-    .b-status { background: #dbeafe; color: #1e40af; }
-    .vat { margin-left: 8px; font-size: 11px; color: #065f46; font-weight: 600; }
-    .reg-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    /* Реестр-статус строки: чипы по тинт-формуле, токен идёт от исходного цвета —
+       зелёный «Зарегистрировано» → success, нейтрально-серый «Не найдено»
+       (он и был серым, а не красным) → --surface-2, синий статус КП → accent. */
+    .b-REGISTERED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .b-NOT_FOUND { background: var(--surface-2); color: var(--text); }
+    .b-status { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    /* НДС-льгота — просто подпись без подложки, поэтому текстовый токен */
+    .vat { margin-left: 8px; font-size: 11px; color: var(--success-text); font-weight: 600; }
+    .reg-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
     .ask-row { display: flex; gap: 10px; align-items: center; }
-    .dist-select { padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; min-width: 300px; }
-    .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+    .dist-select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; min-width: 300px; background: var(--surface); color: var(--text); }
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
-    .pr-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
+    .pr-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: var(--surface); }
     .pr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .pr-dist { font-weight: 600; color: #111827; font-size: 14px; }
+    .pr-dist { font-weight: 600; color: var(--text); font-size: 14px; }
     .pr-items th, .pr-items td { padding: 6px 8px; }
-    .price-input { width: 110px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-    .note-input { width: 100%; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-    .cur-price { display: block; font-size: 11px; color: #9ca3af; margin-top: 2px; }
+    .price-input { width: 110px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
+    .note-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
+    .cur-price { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .pr-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
 
-    .btn-primary { background: #1a56db; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    /* Заливка и :hover — из kit; здесь геометрия базовой «.btn» (kit-овские
+       значения), потому что в шаблоне кнопки идут без класса «btn», а шаблоны
+       эта задача не трогает. По той же причине правило :disabled живёт здесь:
+       kit-овское «.btn:disabled» до этих кнопок не достаёт. */
+    .btn-primary { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 
-    .src-group { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+    .src-group { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
     .src-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .src-dist { font-weight: 600; color: #111827; font-size: 14px; }
-    .src-lines { margin: 0; padding-left: 18px; font-size: 13px; color: #374151; }
-    .src-brand { color: #6b7280; }
-    .src-unmatched { margin-top: 10px; padding: 10px 12px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 8px; }
-    .src-unmatched-title { font-size: 12px; color: #92400e; font-weight: 600; margin-bottom: 4px; }
+    .src-dist { font-weight: 600; color: var(--text); font-size: 14px; }
+    .src-lines { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); }
+    .src-brand { color: var(--text-muted); }
+    .src-unmatched { margin-top: 10px; padding: 10px 12px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; }
+    .src-unmatched-title { font-size: 12px; color: var(--warn-text); font-weight: 600; margin-bottom: 4px; }
 
-    .empty { color: #9ca3af; font-size: 13px; padding: 16px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 6px; text-align: center; }
-    .loading { color: #6b7280; font-size: 13px; text-align: center; padding: 12px; }
+    /* kit-версия .empty — простой центрированный текст; здесь пунктирная плашка,
+       которую kit не воспроизводит → правило оставлено и токенизировано */
+    .empty { color: var(--text-muted); font-size: 13px; padding: 16px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+    .loading { color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px; }
 
     @media (max-width: 768px) {
       .sidebar { width: 100vw; }

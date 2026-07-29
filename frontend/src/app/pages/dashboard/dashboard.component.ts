@@ -112,66 +112,66 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
     </div>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 20px; }
-    .empty { color: #9ca3af; font-size: 13px; padding: 16px 0; text-align: center; }
-    .empty-cta { color: #1a56db; text-decoration: none; font-weight: 500; }
+    h2 { margin: 0; font-size: 20px; }
+    .empty-cta { color: var(--accent); text-decoration: none; font-weight: 500; }
     .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
     .alerts-row { margin-bottom: 16px; }
-    .alert-banner { display: flex; align-items: center; gap: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; color: #92400e; flex-wrap: wrap; }
-    .alert-banner.alert-overdue { background: #fee2e2; border-left-color: #ef4444; color: #991b1b; }
+    .alert-banner { display: flex; align-items: center; gap: 12px; background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 4px solid var(--warn); padding: 12px 16px; border-radius: 6px; color: var(--warn-text); flex-wrap: wrap; }
+    .alert-banner.alert-overdue { background: color-mix(in srgb, var(--danger) 15%, transparent); border-left-color: var(--danger); color: var(--danger-text); }
     .alert-text { font-size: 14px; }
     .alert-text strong { font-weight: 700; }
     .alert-items { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
-    .alert-tender { font-size: 12px; padding: 4px 10px; background: rgba(255,255,255,0.6); border-radius: 4px; text-decoration: none; color: inherit; font-weight: 500; }
-    .alert-tender:hover { background: rgba(255,255,255,0.9); }
-    .alert-tender span { color: #6b7280; margin-left: 4px; font-weight: 400; }
-    .stat-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+    /* Плашка лежит НА тинте баннера, поэтому подложка мешается из --surface, а не
+       остаётся белой: в светлой теме это те же ~60-90% белого, что были, в тёмной —
+       плитка чуть темнее баннера. Белый rgba давал бы на тёмной теме яркое пятно. */
+    .alert-tender { font-size: 12px; padding: 4px 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); border-radius: 4px; text-decoration: none; color: inherit; font-weight: 500; }
+    .alert-tender:hover { background: color-mix(in srgb, var(--surface) 90%, transparent); }
+    .alert-tender span { color: var(--text-muted); margin-left: 4px; font-weight: 400; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
     .stat-card-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
-    .stat-card-label { font-size: 13px; color: #6b7280; }
-    .stat-card.blue .stat-card-value { color: #1a56db; }
-    .stat-card.gray .stat-card-value { color: #6b7280; }
-    .stat-card.yellow .stat-card-value { color: #f59e0b; }
-    .stat-card.green .stat-card-value { color: #10b981; }
+    .stat-card-label { font-size: 13px; color: var(--text-muted); }
+    .stat-card.blue .stat-card-value { color: var(--accent); }
+    .stat-card.gray .stat-card-value { color: var(--text-muted); }
+    .stat-card.yellow .stat-card-value { color: var(--warn-text); }
+    .stat-card.green .stat-card-value { color: var(--success-text); }
 
-    .profit-card { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #a7f3d0; border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    /* Градиент сохранён (это декор карточки, а не цвет роли) — обе его точки собраны
+       по идиоме «подсветка области»: тинт --success поверх непрозрачной --surface,
+       поэтому подложка тянется за темой, а не остаётся бледно-зелёной на тёмном. */
+    .profit-card { background: linear-gradient(135deg, color-mix(in srgb, var(--success) 6%, var(--surface)) 0%, color-mix(in srgb, var(--success) 14%, var(--surface)) 100%); border: 1px solid var(--success); border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .profit-card-header { display: flex; align-items: center; gap: 14px; }
     .profit-card-icon { font-size: 32px; }
-    .profit-card-label { font-size: 13px; color: #047857; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
-    .profit-card-meta { font-size: 12px; color: #047857; opacity: 0.8; margin-top: 2px; }
-    .profit-card-value { font-size: 28px; font-weight: 700; color: #047857; }
+    .profit-card-label { font-size: 13px; color: var(--success-text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .profit-card-meta { font-size: 12px; color: var(--success-text); opacity: 0.8; margin-top: 2px; }
+    .profit-card-value { font-size: 28px; font-weight: 700; color: var(--success-text); }
     .profit-card-margin { font-size: 14px; font-weight: 500; margin-left: 8px; opacity: 0.85; }
 
     .dashboard-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
     .dashboard-row.single { grid-template-columns: 1fr; }
-    .dashboard-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
-    .dashboard-panel h3 { font-size: 16px; margin: 0 0 16px; color: #111827; }
+    .dashboard-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+    .dashboard-panel h3 { font-size: 16px; margin: 0 0 16px; }
 
-    .deadline-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+    .deadline-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
     .deadline-item:last-child { border-bottom: none; }
     .deadline-info { display: flex; flex-direction: column; gap: 2px; }
-    .tender-link { color: #1a56db; font-weight: 600; text-decoration: none; }
+    .tender-link { color: var(--accent); font-weight: 600; text-decoration: none; }
     .tender-link:hover { text-decoration: underline; }
-    .facility-name { color: #374151; font-size: 13px; }
-    .deadline-date { color: #6b7280; font-size: 12px; }
+    .facility-name { color: var(--text); font-size: 13px; }
+    .deadline-date { color: var(--text-muted); font-size: 12px; }
     .days-left { font-weight: 600; font-size: 13px; }
-    .days-left.urgent { color: #ef4444; }
-    .days-left.soon { color: #f59e0b; }
-    .days-left.ok { color: #10b981; }
+    .days-left.urgent { color: var(--danger-text); }
+    .days-left.soon { color: var(--warn-text); }
+    .days-left.ok { color: var(--success-text); }
 
     .bar-container { margin-bottom: 12px; }
-    .bar-label { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; color: #374151; }
-    .bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-    .bar-fill { height: 100%; background: #1a56db; border-radius: 4px; transition: width 0.3s; }
+    .bar-label { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; color: var(--text); }
+    .bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
 
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
-    .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-    .badge-DRAFT { background: #e5e7eb; color: #374151; }
-    .badge-SUBMITTED { background: #dbeafe; color: #1a56db; }
-    .badge-WON { background: #d1fae5; color: #065f46; }
-    .badge-REJECTED { background: #fee2e2; color: #991b1b; }
+    /* Правило несёт саму рамку (kit даёт только её цвет) — остаётся здесь. */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { font-weight: 600; }
 
     /* мобилка: @media В КОНЦЕ стилей — иначе при равной специфичности базовые правила ниже перебивают */
     @media (max-width: 900px) {

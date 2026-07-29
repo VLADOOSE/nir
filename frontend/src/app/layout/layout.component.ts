@@ -229,10 +229,14 @@ import { ThemeService } from '../services/theme.service';
       .drawer-search input:focus { border-color: var(--accent); }
       .drawer-results { margin-top: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; max-height: 45vh; overflow-y: auto; }
 
+      /* Тень дровера направленная: выезжает от ЛЕВОГО края, тень падает вправо
+         («2px 0») — поэтому не --shadow-lg, который светит вниз. Токенизирована
+         только сила тени: литеральная .18 растворялась на тёмном фоне. Смещения
+         остаются здесь, у правых дроверов карточек они зеркальные. */
       .sidebar {
         position: fixed; top: 52px; left: 0; bottom: 0; width: 264px; z-index: 200;
         transform: translateX(-100%); transition: transform 0.22s ease;
-        box-shadow: 2px 0 16px rgba(0,0,0,0.18);
+        box-shadow: 2px 0 16px var(--shadow-color);
       }
       .sidebar.open { transform: translateX(0); }
       .backdrop {

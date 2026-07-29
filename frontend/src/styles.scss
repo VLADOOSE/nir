@@ -15,6 +15,15 @@
    там до токенизации (#991b1b/#92400e/#065f46) — это возврат точности.
    В ТЁМНОЙ теме роли совпадают: осветлённый цвет читается и как текст, а
    тёмный на тёмном фоне — нет. Поэтому там значения равны заливочным. */
+
+/* --shadow-color — ЦВЕТ тени отдельно от её геометрии, для боковых дроверов.
+   Готовые --shadow/--shadow-lg им не годятся: у дровера тень направленная,
+   падает от края экрана (левый дровер сайдбара — `2px 0 16px`, правые дроверы
+   карточек — `-8px 0 30px`), а --shadow-lg светит вниз (`0 12px 32px`). Одним
+   значением обе стороны не покрыть, поэтому токенизировано ровно то, что
+   зависит от темы: сила тени. Альфа .18 читается на светлом и растворяется на
+   тёмном — там .55, как у --shadow-lg. Смещения остаются на месте
+   использования. */
 :root {
   --app-bg:#f7f7f8; --surface:#ffffff; --surface-2:#f3f4f6;
   --border:#e5e7eb; --text:#111827; --text-muted:#6b7280;
@@ -24,6 +33,7 @@
   --header-bg:#1a56db; --header-text:#ffffff;
   --shadow:0 2px 8px rgba(0,0,0,.08);
   --shadow-lg:0 12px 32px rgba(0,0,0,.18);
+  --shadow-color:rgba(0,0,0,.18);
 }
 :root[data-theme="dark"] {
   --app-bg:#1f1e1d; --surface:#292827; --surface-2:#35332f;
@@ -35,6 +45,7 @@
   --header-bg:#242322; --header-text:#f4f2ee;
   --shadow:0 2px 10px rgba(0,0,0,.45);
   --shadow-lg:0 12px 32px rgba(0,0,0,.55);
+  --shadow-color:rgba(0,0,0,.55);
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -92,6 +103,9 @@ th { background: var(--surface-2); color: var(--text-muted); }
 .btn-reset-filter:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
 
 .btn-delete, .btn-danger, .btn-pdf { background: var(--danger); color: var(--accent-contrast); }
+/* Затемнение к чёрному, а не к --text: у залитой кнопки белая подпись, а --text
+   в тёмной теме почти белый и уронил бы её контраст. Замер: база 2,77:1 → ховер 3,74:1. */
+.btn-delete:hover, .btn-danger:hover, .btn-pdf:hover { background: color-mix(in srgb, black 15%, var(--danger)); }
 .btn-edit { background: var(--warn); color: var(--accent-contrast); }
 .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 
