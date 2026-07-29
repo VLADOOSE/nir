@@ -96,7 +96,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
       </div>
 
       <div class="loading" *ngIf="loading">Загрузка…</div>
-      <table class="responsive-cards" *ngIf="!loading && rows.length">
+      <table class="responsive-cards card-grid pr-list" *ngIf="!loading && rows.length">
         <thead><tr><th>Номер</th><th>Клиент</th><th>Позиций</th><th>Реестр</th><th>Статус</th></tr></thead>
         <tbody>
           <tr class="row" *ngFor="let r of rows" (click)="openCard(r)">
@@ -198,6 +198,55 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
     .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 5 строк «подпись: значение» — 214–229px на карточку. Стало три:
+           НОМЕР ЗАЯВКИ            [статус]
+           клиника            позиций: N
+           реестр-сводка (мелким)
+         Ничего не скрыто: у списка всего пять колонок, и каждая работает. */
+      /* Сброс десктопного padding ячеек (.row td — 9px 10px): правило
+         специфичнее глобального card-grid, без сброса карточка распухла бы
+         на 7px в каждой ячейке. Работает за счёт порядка — @media последним. */
+      .pr-list td { padding: 2px 0; }
+      .pr-list tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "num  status"
+          "cust cnt"
+          "reg  reg";
+      }
+      .pr-list td[data-label="Номер"] { grid-area: num; font-size: 15px; }
+      .pr-list td[data-label="Статус"] { grid-area: status; justify-content: flex-end; }
+      /* ellipsis требует блочной ячейки: во flex-контейнере текст становится
+         анонимным флекс-элементом и не обрезается многоточием. Имена клиник
+         длинные: «ГКП на ПХВ «Ауданаралық сауықтыру ауруханасы оңалту
+         орталығы» УЗ акимата ЗКО». */
+      .pr-list td[data-label="Клиент"] {
+        grid-area: cust; display: block; color: var(--text-muted); font-size: 13px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .pr-list td[data-label="Позиций"] {
+        grid-area: cnt; justify-content: flex-end; gap: 4px;
+        color: var(--text-muted); font-size: 12px; white-space: nowrap;
+      }
+      /* подпись возвращается точечно: «2» без слова не читается.
+         Порядок «позиций: 2», а не «2 позиции» — иначе ломается согласование. */
+      .pr-list td[data-label="Позиций"]::before { display: inline; content: "позиций:"; font-weight: 400; }
+      /* Реестр-сводка — второй строкой мелким. ⚠ На живых данных она всегда
+         читается «в карточке»: список НЕ считает реестр (findAll ставит
+         registeredCount = -1), потому что триграммный матч по всему реестру на
+         каждую строку стоил 10,6с — CLAUDE.md §11. Строка станет
+         содержательной («3 из 5 в реестре») ровно тогда, когда счёт появится
+         в списке; до тех пор её цена — 14px. */
+      .pr-list td[data-label="Реестр"] { grid-area: reg; justify-content: flex-start; }
+    }
   `]
 })
 export class PrivateRequestsComponent {
