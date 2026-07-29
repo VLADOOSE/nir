@@ -104,8 +104,9 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
             <td data-label="Клиент">{{ r.client?.name || '—' }}</td>
             <td data-label="Позиций">{{ r.lineCount ?? 0 }}</td>
             <td data-label="Реестр">
-              <span *ngIf="(r.registeredCount ?? -1) >= 0" class="reg-summary" [style.color]="r.registeredCount > 0 ? '#065f46' : '#6b7280'">{{ r.registeredCount }} из {{ r.lineCount ?? 0 }} в реестре</span>
-              <span *ngIf="(r.registeredCount ?? -1) < 0" class="reg-summary" style="color:#9ca3af">в карточке</span>
+              <span *ngIf="(r.registeredCount ?? -1) >= 0" class="reg-summary"
+                    [class.reg-has]="r.registeredCount > 0">{{ r.registeredCount }} из {{ r.lineCount ?? 0 }} в реестре</span>
+              <span *ngIf="(r.registeredCount ?? -1) < 0" class="reg-summary">в карточке</span>
             </td>
             <td data-label="Статус"><span class="badge">{{ r.status }}</span></td>
           </tr>
@@ -169,7 +170,10 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
        нейтральная заливка задана здесь (та же пара, что у kit-овского
        .badge-DRAFT); форму бейджа даёт kit. */
     .badge { background: var(--surface-2); color: var(--text); }
-    .reg-summary { font-size: 12px; font-weight: 600; }
+    /* цвет колонки «Реестр» перенесён из инлайн-биндинга: инлайн перебивал лист
+       и в тёмной теме давал 2,1:1 */
+    .reg-summary { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .reg-summary.reg-has { color: var(--success-text); }
     .loading { padding: 30px; text-align: center; color: var(--text-muted); }
     .head-actions { display: flex; gap: 8px; align-items: center; }
     .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 12px 0; background: var(--surface); }
