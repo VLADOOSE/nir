@@ -118,6 +118,12 @@ import { NotificationService } from '../../services/notification.service';
        ровно kit-овскими значениями. Не удалять как «дубль»: без неё кнопка
        станет нативной. */
     .btn-primary { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    /* Кнопка не несёт базового класса «btn», поэтому «.btn:disabled» из kit до неё
+       не достаёт, а «.btn-primary:hover» — достаёт, и Chrome применяет ховер к
+       заблокированной кнопке. Без этих двух строк она подсвечивается как живая
+       ровно тогда, когда не работает. Прецедент: private-request-card. */
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary:disabled:hover { background: var(--accent); }
     .grid { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 8px; overflow: hidden; }
     /* .grid th специфичнее голого th из kit — kit сюда не достаёт. Повторяем его
        цвета на месте, чтобы шапка таблицы совпадала с остальными экранами. */
@@ -138,7 +144,11 @@ import { NotificationService } from '../../services/notification.service';
     .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
     .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
     .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
-    .import-grid th { background: var(--surface-2); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
+    /* Цвет текста НЕ приглушённый из kit: в шапке грида импорта стоят заголовки
+       ИЗ ФАЙЛА пользователя — это данные, которые он глазами сверяет с разметкой
+       колонок, а не служебная подпись. Тот же грид и то же правило живут в
+       private-requests — держать их одинаковыми. */
+    .import-grid th { background: var(--surface-2); color: var(--text); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
     .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
     .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
     .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
