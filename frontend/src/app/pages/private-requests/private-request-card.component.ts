@@ -33,7 +33,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
               <h3 class="section-title">Строки заявки</h3>
               <button class="btn-line" type="button" *ngIf="!editMode" (click)="startEdit()">✎ Редактировать</button>
             </div>
-            <table *ngIf="!editMode && lines.length">
+            <table class="responsive-cards card-grid pr-lines" *ngIf="!editMode && lines.length">
               <thead>
                 <tr>
                   <th class="w-40"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll($any($event.target).checked)" /></th>
@@ -46,13 +46,13 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
               <tbody>
                 <tr *ngFor="let l of lines">
                   <td class="w-40"><input type="checkbox" [(ngModel)]="l._selected" /></td>
-                  <td class="name-cell">
+                  <td class="name-cell" data-label="Наименование/модель">
                     {{ l.name }}
                     <div class="requested-at" *ngIf="requestedDistributorsFor(l.lotId).length">Запрошен у: {{ requestedDistributorsFor(l.lotId).join(', ') }}</div>
                   </td>
-                  <td>{{ l.manufact || '—' }}</td>
-                  <td>{{ l.quantity ?? '—' }}</td>
-                  <td>
+                  <td data-label="Бренд">{{ l.manufact || '—' }}</td>
+                  <td data-label="Кол-во">{{ l.quantity ?? '—' }}</td>
+                  <td data-label="Реестр НЦЭЛС">
                     <div class="reg-block" *ngIf="l.registrationStatus === 'REGISTERED'; else notFound">
                       <span class="badge b-REGISTERED">Зарегистрировано</span>
                       <span class="vat">НДС-льгота</span>
@@ -71,15 +71,15 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
             <!-- режим редактирования строк -->
             <div *ngIf="editMode" class="edit-block">
-              <table class="edit-grid">
+              <table class="edit-grid responsive-cards card-grid">
                 <thead>
                   <tr><th>Наименование/модель</th><th class="w-160">Бренд</th><th class="w-80">Кол-во</th><th class="w-40"></th></tr>
                 </thead>
                 <tbody>
                   <tr *ngFor="let l of editLines; let i = index">
-                    <td><input [(ngModel)]="l.name" [ngModelOptions]="{standalone:true}" placeholder="наименование/модель" /></td>
-                    <td><input [(ngModel)]="l.manufact" [ngModelOptions]="{standalone:true}" placeholder="бренд" /></td>
-                    <td><input type="number" min="1" [(ngModel)]="l.quantity" [ngModelOptions]="{standalone:true}" class="qty" /></td>
+                    <td data-label="Наименование/модель"><input [(ngModel)]="l.name" [ngModelOptions]="{standalone:true}" placeholder="наименование/модель" /></td>
+                    <td data-label="Бренд"><input [(ngModel)]="l.manufact" [ngModelOptions]="{standalone:true}" placeholder="бренд" /></td>
+                    <td data-label="Кол-во"><input type="number" min="1" [(ngModel)]="l.quantity" [ngModelOptions]="{standalone:true}" class="qty" /></td>
                     <td><button type="button" class="x-row" (click)="removeEditLine(i)" title="удалить строку">×</button></td>
                   </tr>
                 </tbody>
@@ -140,19 +140,19 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
                 <span class="pr-dist">{{ pr.distributor?.name || '—' }}</span>
                 <span class="badge" [class]="'b-status'">{{ pr.status }}</span>
               </div>
-              <table class="pr-items">
+              <table class="pr-items responsive-cards card-grid">
                 <thead>
                   <tr><th>Позиция</th><th class="w-60">Кол-во</th><th class="w-160">Цена ответа</th><th>Примечание</th></tr>
                 </thead>
                 <tbody>
                   <tr *ngFor="let it of pr.items">
-                    <td>{{ it.tenderLot?.equipName || it.medEquipment?.name || '—' }}</td>
-                    <td>{{ it.requestedQuantity ?? '—' }}</td>
-                    <td>
+                    <td data-label="Позиция">{{ it.tenderLot?.equipName || it.medEquipment?.name || '—' }}</td>
+                    <td data-label="Кол-во">{{ it.requestedQuantity ?? '—' }}</td>
+                    <td data-label="Цена ответа">
                       <input type="number" min="0" class="price-input" [(ngModel)]="it._editPrice" placeholder="0" />
                       <span class="cur-price" *ngIf="it.responsePrice != null">тек.: {{ it.responsePrice | money }}</span>
                     </td>
-                    <td><input class="note-input" [(ngModel)]="it._editNote" placeholder="—" /></td>
+                    <td data-label="Примечание"><input class="note-input" [(ngModel)]="it._editNote" placeholder="—" /></td>
                   </tr>
                 </tbody>
               </table>
@@ -276,6 +276,129 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       .head { padding: 16px 20px 12px; }
       .body { padding: 16px 20px 24px; }
       .dist-select { min-width: 0; flex: 1; }
+    }
+
+    /* ⚠️ Этот блок — ПОСЛЕДНИЙ в styles, и стоит ПОСЛЕ @media 768px намеренно
+       (CLAUDE.md §14): при равной специфичности побеждает то правило, что ниже.
+       Брейкпоинт здесь 900px — общий для всего приложения (глобальный слой
+       responsive-cards включается именно на нём), а 768px выше — собственный
+       брейкпоинт дровера (ширина панели). Пересечения правил между блоками нет.
+
+       Все три таблицы дровера переведены на спроектированную карточку
+       (card-grid): механический режим «подпись: значение» дал бы 5 строк на
+       позицию — простыню выше порога ~140px, который вывели замером
+       предшественники. */
+    @media (max-width: 900px) {
+      /* Карточка на подложке дровера. Глобальный слой красит строку в --surface,
+         но и сама панель --surface: карточки слились бы с фоном, остались бы
+         одни рамки. Пара --surface-2 на --surface уже работает в этом же файле
+         (.src-unmatched). Подсвеченных строк, которым такой фон мог бы перебить
+         подсветку, ни в одной из трёх таблиц нет — проверено. */
+      table.responsive-cards tr { background: var(--surface-2); }
+      /* длинное наименование позиции не должно распирать карточку */
+      table.responsive-cards td { overflow-wrap: anywhere; }
+      /* Собственные отступы ячеек (базовые «8px 12px», «.pr-items 6px 8px»,
+         «.edit-grid 4px 6px») специфичнее глобального card-grid-правила
+         «padding: 2px 0» — компонентный селектор (0,3,1) против (0,2,2), — и
+         молча возвращали табличные поля внутрь карточки: −16px ширины и +12px
+         высоты на КАЖДУЮ ячейку. На .pr-items это давало +36px к записи. */
+      .pr-items td, .edit-grid td { padding: 2px 0; }
+
+      /* ─── Строки заявки: наименование · бренд · кол-во · реестр-статус ─── */
+      .pr-lines tr {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "chk name  name"
+          "chk brand qty"
+          "chk reg   reg";
+      }
+      .pr-lines td { justify-content: flex-start; }
+      /* колонка выбора тянется на все три ряда — это «поле карточки», а не строка.
+         width:auto снимает табличные 40px: в карточке они отъедали ширину у
+         наименования и гнали «Запрошен у: …» на лишнюю строку. */
+      .pr-lines td.w-40 { grid-area: chk; width: auto; align-self: start; padding: 6px 0 2px; }
+      .pr-lines td.w-40 input[type="checkbox"] { width: 20px; height: 20px; }
+      .pr-lines td[data-label="Наименование/модель"] {
+        grid-area: name; flex-direction: column; align-items: flex-start; gap: 2px;
+        font-size: 15px; font-weight: 600;
+      }
+      .pr-lines td[data-label="Бренд"] { grid-area: brand; color: var(--text-muted); font-size: 13px; }
+      .pr-lines td[data-label="Кол-во"] {
+        grid-area: qty; justify-content: flex-end;
+        gap: 4px; color: var(--text-muted); font-size: 13px; white-space: nowrap;
+      }
+      /* голое число нечитаемо — единица измерения возвращается точечно */
+      .pr-lines td[data-label="Кол-во"]::after { content: "шт"; }
+      .pr-lines td[data-label="Реестр НЦЭЛС"] { grid-area: reg; margin-top: 2px; }
+      /* Чип «Не найдено в реестре» залит --surface-2 — ровно тем же, чем теперь
+         залита карточка: пилюля растворялась, оставался жирный текст. Меняем
+         местами: чип берёт --surface карточкиной подложки. Новых цветов нет,
+         зелёный «Зарегистрировано» (тинт) не трогаем — он и так читается. */
+      .pr-lines .b-NOT_FOUND { background: var(--surface); }
+
+      /* ─── Режим редактирования: поля в столбик, подпись над полем ─── */
+      .edit-grid tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "ename  ename"
+          "ebrand ebrand"
+          "eqty   edel";
+        gap: 8px;
+      }
+      .edit-grid td[data-label] { flex-direction: column; align-items: stretch; gap: 4px; }
+      /* подпись вернулась: thead в режиме карточек скрыт, а у поля «Кол-во»
+         нет даже placeholder-а */
+      .edit-grid td[data-label]::before {
+        display: block; content: attr(data-label);
+        font-size: 12px; font-weight: 600; color: var(--text-muted);
+      }
+      .edit-grid td[data-label="Наименование/модель"] { grid-area: ename; }
+      .edit-grid td[data-label="Бренд"] { grid-area: ebrand; }
+      .edit-grid td[data-label="Кол-во"] { grid-area: eqty; }
+      .edit-grid td:not([data-label]) { grid-area: edel; align-self: end; justify-content: flex-end; }
+      /* 16px — iOS не зумит поле при фокусе; 40px — тач-таргет */
+      .edit-grid input { min-height: 40px; font-size: 16px; }
+      .edit-grid input.qty { width: 120px; }
+      /* Селектор с двумя предками намеренно: глобальное «card-grid td > *
+         { min-width: 0 }» (0,2,3) сильнее одиночного .x-row (0,2,0) и
+         оставляло крестик шириной 10,5px — тач-таргета не получалось. */
+      .edit-grid td .x-row { min-width: 40px; min-height: 40px; }
+
+      /* ─── Позиции запроса КП: ввод цены и примечания ───
+         Два поля стоят В РЯД, а не в столбик: каждое обязано быть 40px высотой
+         (тач-таргет), и в столбик запись выходила 220px — простыня. Рядом это
+         144px при тех же 40px на поле. Замер до/после в отчёте задачи. */
+      .pr-items tr {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+          "pos   pos"
+          "price note"
+          "qty   qty";
+        gap: 6px 8px;
+      }
+      .pr-items td[data-label="Позиция"] { grid-area: pos; font-weight: 600; }
+      .pr-items td[data-label="Кол-во"] {
+        grid-area: qty; justify-content: flex-start;
+        gap: 4px; color: var(--text-muted); font-size: 13px; white-space: nowrap;
+      }
+      .pr-items td[data-label="Кол-во"]::after { content: "шт"; }
+      /* align-self: start — иначе более низкая ячейка примечания центрируется
+         в ряду (глобальное «card-grid tr { align-items: center }») и её подпись
+         не совпадает по базовой линии с подписью цены */
+      .pr-items td[data-label="Цена ответа"],
+      .pr-items td[data-label="Примечание"] { flex-direction: column; align-items: stretch; align-self: start; gap: 4px; }
+      .pr-items td[data-label="Цена ответа"] { grid-area: price; }
+      .pr-items td[data-label="Примечание"] { grid-area: note; }
+      .pr-items td[data-label="Цена ответа"]::before,
+      .pr-items td[data-label="Примечание"]::before {
+        display: block; content: attr(data-label);
+        font-size: 12px; font-weight: 600; color: var(--text-muted);
+      }
+      .price-input, .note-input { min-height: 40px; font-size: 16px; }
+      .price-input { width: 100%; }
+      /* длинное название поставщика не должно выдавливать бейдж статуса за край */
+      .pr-head { flex-wrap: wrap; }
+      .pr-dist { overflow-wrap: anywhere; }
     }
   `]
 })
