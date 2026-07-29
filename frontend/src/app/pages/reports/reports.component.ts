@@ -159,45 +159,52 @@ import { ChartComponent } from '../../components/chart/chart.component';
     </div>
   `,
   styles: [`
-    h2 { margin: 0; font-size: 20px; color: #111827; }
-    h3 { margin: 0 0 16px; font-size: 16px; color: #111827; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 4px 0 20px; }
-    .empty { color: #9ca3af; font-size: 13px; padding: 16px 0; text-align: center; }
+    h2 { margin: 0; font-size: 20px; }
+    h3 { margin: 0 0 16px; font-size: 16px; }
 
-    .report-section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .report-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
 
     .bar-container { margin-bottom: 14px; }
-    .bar-label { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; color: #374151; }
-    .bar { height: 10px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-    .bar-fill { height: 100%; background: #1a56db; border-radius: 4px; transition: width 0.3s; }
-    .bar-fill.fill-ACTIVE { background: #1a56db; }
-    .bar-fill.fill-DRAFT { background: #6b7280; }
-    .bar-fill.fill-COMPLETED { background: #10b981; }
+    .bar-label { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; color: var(--text); }
+    .bar { height: 10px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+    .bar-fill.fill-ACTIVE { background: var(--accent); }
+    .bar-fill.fill-DRAFT { background: var(--text-muted); }
+    .bar-fill.fill-COMPLETED { background: var(--success); }
 
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
-    tr:hover { background: #f9fafb; }
-    .report-actions { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+    /* Правило несёт саму рамку (kit даёт только её цвет) — остаётся здесь. */
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th { font-weight: 600; }
+    tr:hover { background: var(--surface-2); }
+    .report-actions { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
     .report-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .btn-pdf { background: #dc2626; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn-pdf:hover { background: #b91c1c; }
-    .btn-excel { background: #059669; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    /* .btn-pdf (заливка + ховер) целиком из kit. .btn-excel в kit нет и не должно быть:
+       это залитая кнопка с белой подписью, а --success в тёмной теме осветлён — белая
+       надпись на нём даёт ~1,9:1. Поэтому зелёный остаётся фикс-цветным хексом (как
+       кнопки «КП» и «ТЗ», Global Constraint 5), токенизирован только цвет подписи.
+       Геометрию (padding 8px 16px) НЕ оставляем: .btn-pdf её теряет, забрав kit-овские
+       6px 14px, а обе кнопки стоят в одном ряду и разъехались бы по высоте. */
+    .btn-excel { background: #059669; color: var(--accent-contrast); }
     .btn-excel:hover { background: #047857; }
     .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
-    .chart-cell h4 { font-size: 13px; color: #6b7280; margin: 0 0 8px; text-align: center; }
-    .chart-cell { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
+    .chart-cell h4 { font-size: 13px; color: var(--text-muted); margin: 0 0 8px; text-align: center; }
+    .chart-cell { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
     .summary-grid-4 { grid-template-columns: repeat(3, 1fr); }
-    .summary-item { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; text-align: center; }
-    .summary-item.highlight { background: #ecfdf5; border-color: #a7f3d0; }
-    .summary-item.highlight .summary-value { color: #047857; }
-    .summary-value { display: block; font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 4px; }
-    .summary-label { font-size: 12px; color: #6b7280; }
-    .profit-section { border-color: #a7f3d0; background: #fdfffe; }
-    .subsection-title { font-size: 14px; font-weight: 600; color: #374151; margin: 20px 0 10px; }
-    .positive { color: #059669; font-weight: 500; }
+    .summary-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+    .summary-item.highlight { background: color-mix(in srgb, var(--success) 8%, var(--surface)); border-color: var(--success); }
+    .summary-item.highlight .summary-value { color: var(--success-text); }
+    .summary-value { display: block; font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .summary-label { font-size: 12px; color: var(--text-muted); }
+    .profit-section { border-color: var(--success); background: color-mix(in srgb, var(--success) 5%, var(--surface)); }
+    .subsection-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    .positive { color: var(--success-text); font-weight: 500; }
+
+    /* @media перенесён из середины блока в конец (CLAUDE.md §14): при равной
+       специфичности любое базовое правило .charts-grid ниже молча перебило бы
+       мобильную переопределялку. Само правило не менялось. */
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
   `]
 })
 export class ReportsComponent {

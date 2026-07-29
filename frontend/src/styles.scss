@@ -103,6 +103,9 @@ th { background: var(--surface-2); color: var(--text-muted); }
 .btn-reset-filter:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface-2)); }
 
 .btn-delete, .btn-danger, .btn-pdf { background: var(--danger); color: var(--accent-contrast); }
+/* Затемнение к чёрному, а не к --text: у залитой кнопки белая подпись, а --text
+   в тёмной теме почти белый и уронил бы её контраст. Замер: база 2,77:1 → ховер 3,74:1. */
+.btn-delete:hover, .btn-danger:hover, .btn-pdf:hover { background: color-mix(in srgb, black 15%, var(--danger)); }
 .btn-edit { background: var(--warn); color: var(--accent-contrast); }
 .btn-line { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 
