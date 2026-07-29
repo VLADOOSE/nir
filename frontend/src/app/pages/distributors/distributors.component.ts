@@ -66,11 +66,15 @@ import { AuthService } from '../../services/auth.service';
 
     <div *ngIf="filteredDistributors.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table class="responsive-cards" *ngIf="filteredDistributors.length > 0">
-      <thead><tr><th>Название</th><th>ИНН</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Специализация</th><th *ngIf="auth.isAdmin()">Действия</th></tr></thead>
+    <table class="responsive-cards card-grid distributors-list" *ngIf="filteredDistributors.length > 0">
+      <thead><tr><th>Название</th><th class="brands-col">Бренды</th><th>ИНН</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th>Специализация</th><th *ngIf="auth.isAdmin()">Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let d of filteredDistributors">
-          <td data-label="Название">{{ d.name }}</td><td data-label="ИНН">{{ d.inn }}</td>
+          <!-- «Бренды» — колонка только для мобильной карточки: на десктопе скрыта
+               (.brands-col), таблица там остаётся прежней. Бренды уже приходят в
+               ответе списка (DistributorResponse.brands) — это тот же массив, что
+               показывает форма редактирования. -->
+          <td data-label="Название">{{ d.name }}</td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
           <td data-label="Контактное лицо">{{ d.lastName }} {{ d.firstName }}</td><td data-label="Телефон">{{ d.phone }}</td><td data-label="Эл. почта">{{ d.email }}</td>
           <td data-label="Специализация">
             <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
@@ -124,6 +128,81 @@ import { AuthService } from '../../services/auth.service';
        базового класса «btn», который его даёт, у кнопки в шаблоне НЕТ.
        Не удалять как дубль. */
     .btn-line { border-style: dashed; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+
+    /* Колонка «Бренды» живёт только в мобильной карточке — на десктопе скрыта,
+       чтобы таблица осталась ровно такой, какой была (там бренды видны при
+       редактировании). Показывается правилом в @media ниже. */
+    .brands-col { display: none; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 6 строк «подпись: значение» — 243–461px на карточку (простыню
+         раздували чипы «Специализации»: до 17 видов МИ у одного поставщика).
+         Стало три строки:
+           НАЗВАНИЕ
+           [бренд] [бренд] [бренд] +N
+           почта                              [✎][🗑]
+         Скрыты ИНН (техническое поле), «Специализация» (виды МИ — та самая
+         простыня, разметка есть в карточке), «Контактное лицо» и «Телефон»:
+         у всех 20 KZ-поставщиков и то и другое пусто, а рабочий канал —
+         почта, ей же уходит запрос КП. */
+      .distributors-list tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "name   name"
+          "brands brands"
+          "mail   act";
+      }
+      .distributors-list td[data-label="Название"] {
+        grid-area: name; font-size: 15px; font-weight: 600; overflow: hidden;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      /* Чипы в ОДНУ строку без переноса: у «Медико-Инновационных Технологий»
+         22 бренда — переносом они дали бы карточку в пол-экрана. */
+      /* justify-content: flex-start обязателен — механический слой ставит
+         ячейкам space-between, и три чипа расползались по всей ширине,
+         читаясь как три отдельных поля, а «+N» улетал к правому краю. */
+      .distributors-list td.brands-col {
+        grid-area: brands; display: flex; flex-wrap: nowrap; align-items: center;
+        justify-content: flex-start; gap: 4px;
+        position: relative; overflow: hidden; counter-reset: more;
+      }
+      /* display:block (а не inline-flex базового чипа) — иначе текст внутри
+         становится анонимным флекс-элементом и многоточие до него не достаёт */
+      .distributors-list .brand-chip {
+        display: block; flex: 0 1 auto; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      /* Видны первые три, остальные — счётчиком «+N». Считать без TypeScript
+         умеет только CSS-счётчик, а он не работает на display:none: такой
+         элемент не создаёт бокс и счётчик не увеличивает. Поэтому лишние чипы
+         убираются ИЗ ПОТОКА (position:absolute) и гасятся visibility — бокс
+         остаётся, счётчик считает, места не занимает. */
+      .distributors-list .brand-chip:nth-child(n+4) {
+        position: absolute; visibility: hidden; counter-increment: more;
+      }
+      .distributors-list td.brands-col:has(.brand-chip:nth-child(n+4))::after {
+        display: block; content: "+" counter(more); flex: 0 0 auto;
+        color: var(--text-muted); font-size: 11px;
+      }
+      .distributors-list td[data-label="Эл. почта"] {
+        grid-area: mail; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .distributors-list td[data-label="ИНН"],
+      .distributors-list td[data-label="Контактное лицо"],
+      .distributors-list td[data-label="Телефон"],
+      .distributors-list td[data-label="Специализация"] { display: none; }
+      /* Действий две и обе иконочные — по правилу шага 4 остаются в ряд,
+         меню «⋯» тут не нужно. */
+      .distributors-list td.actions { grid-area: act; justify-content: flex-end; gap: 6px; }
+      .distributors-list td.actions .btn-edit { margin-right: 0; }
+    }
   `]
 })
 export class DistributorsComponent {
