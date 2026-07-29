@@ -52,13 +52,20 @@ import { KZ_REGIONS } from '../../shared/kz-regions';
 
     <div *ngIf="filteredFacilities.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table class="responsive-cards" *ngIf="filteredFacilities.length > 0">
+    <table class="responsive-cards card-grid facilities-list" *ngIf="filteredFacilities.length > 0">
       <thead>
         <tr><th>Название</th><th>{{ isKz() ? 'БИН' : 'ИНН' }}</th><th>Регион</th><th>Адрес</th><th>Контактное лицо</th><th>Телефон</th><th>Эл. почта</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let f of filteredFacilities">
-          <td data-label="Название">{{ f.name }}<span class="badge-monitor" *ngIf="f.monitorTenders">🔔 тендеры</span></td><td data-label="БИН/ИНН">{{ f.inn }}</td><td data-label="Регион">{{ f.region }}</td><td data-label="Адрес">{{ f.address }}</td>
+          <!-- Обёртки нужны мобильной карточке: голый текстовый узел рядом с
+               бейджем стилями не достанешь, а многоточие на второй строке даёт
+               только -webkit-line-clamp, который требует display:-webkit-box и
+               потому НЕ работает на флекс-элементе (тот блокифицируется).
+               Поэтому .f-name — флекс-элемент рядом с бейджем, а клэмп висит на
+               вложенном .f-name-text. На десктопе оба — обычные inline-span
+               без единого правила, вид таблицы не меняется. -->
+          <td data-label="Название"><span class="f-name"><span class="f-name-text">{{ f.name }}</span></span><span class="badge-monitor" *ngIf="f.monitorTenders">🔔 тендеры</span></td><td data-label="БИН/ИНН">{{ f.inn }}</td><td data-label="Регион">{{ f.region }}</td><td data-label="Адрес">{{ f.address }}</td>
           <td data-label="Контактное лицо">{{ f.lastName }} {{ f.firstName }}</td><td data-label="Телефон">{{ f.phone }}</td><td data-label="Эл. почта">{{ f.email }}</td>
           <td class="actions" *ngIf="auth.isAdmin()">
             <button class="btn btn-edit" (click)="onEdit(f)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
@@ -94,6 +101,92 @@ import { KZ_REGIONS } from '../../shared/kz-regions';
        синий тинт переведён тинт-формулой на акцент */
     .badge-monitor { display: inline-block; margin-left: 6px; padding: 1px 7px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 10px; font-size: 11px; vertical-align: middle; }
     .input-error { border-color: var(--danger) !important; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 7 строк «подпись: значение»: 286–308px на РФ, 175–339px на KZ.
+         Стало три строки:
+           НАЗВАНИЕ (до двух строк)              [🔔 тендеры]
+           регион · адрес                            [✎][🗑]
+           телефон · почта
+         Скрыты БИН/ИНН (техническое поле, видно при редактировании) и
+         «Контактное лицо»: ФИО пусто у всех 31 KZ-учреждения, а на РФ
+         дублирует телефон/почту — по ним и связываются.
+         Регион и адрес стоят в одной строке намеренно: они дополняют друг
+         друга — на KZ заполнен регион (адрес пуст у 14 из 31), на РФ регион
+         пуст у всех, а адрес несёт город. Пустая ячейка схлопывается в 0. */
+      /* Текстовые колонки — minmax(0, 1fr), а не content-based треки: ячейка
+         названия растянута на две колонки, и её max-content (всё имя в одну
+         строку, ~500px) грид раздаёт трекам с ИНТРИНСИК-размером. На «auto»
+         это ломало раскладку: колонка действий раздувалась до 151px, а с
+         max-content — до 513px, и карточка уезжала за экран. 1fr не
+         интринсик — вклад ячейки в него не течёт, ширины предсказуемы.
+         Кнопки стоят в СВОЕЙ колонке (act на все три ряда, название её не
+         пересекает), поэтому auto там честно даёт ширину двух иконок. */
+      /* 1.1fr / 0.9fr, а не поровну: в левой колонке стоит телефон — единственная
+         ячейка с ЖЁСТКОЙ шириной («+7 (846) 372-30-30» = 118px, переносить и
+         обрезать номер нельзя). При 113px он вылезал за ячейку и наезжал на
+         почту. 124px его держат, а правой колонке (адрес/почта) 102px хватает —
+         они и так с многоточием. */
+      .facilities-list tr {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) auto;
+        grid-template-areas:
+          "name name act"
+          "reg  addr act"
+          "tel  mail act";
+      }
+      /* flex-wrap: nowrap ОБЯЗАТЕЛЕН: механический слой ставит ячейкам
+         flex-wrap: wrap, и бейдж уезжал на вторую строку под название —
+         строка названия занимала 62px вместо 39px. */
+      .facilities-list td[data-label="Название"] {
+        grid-area: name; display: flex; flex-wrap: nowrap; align-items: flex-start;
+        gap: 6px; font-size: 15px; font-weight: 600; line-height: 1.25;
+      }
+      /* Две строки, а не одна: у KZ-больниц различающая часть в СЕРЕДИНЕ
+         («ГКП на ПХВ «Областной онкологический диспансер» УЗ акимата ЗКО»),
+         и однострочная обрезка схлопнула бы весь список в одинаковый
+         префикс «ГКП на ПХВ «Областной…».
+         Клэмп висит на ВЛОЖЕННОМ .f-name-text: -webkit-line-clamp работает
+         только при display:-webkit-box, а флекс-элемент блокифицируется
+         (замерено: display приходил flow-root) и свойство молча ничего не
+         делало. Вложенный элемент флекс-элементом уже не является — клэмп
+         действует и даёт «…» на второй строке. */
+      .facilities-list .f-name { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+      .facilities-list .f-name-text {
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .facilities-list .badge-monitor { flex: 0 0 auto; margin-left: auto; }
+      .facilities-list td[data-label="Регион"] {
+        grid-area: reg; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .facilities-list td[data-label="Адрес"] {
+        grid-area: addr; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      /* многоточие здесь — страховка на случай длинного формата номера:
+         лучше «…», чем номер, наезжающий на почту соседней колонки */
+      .facilities-list td[data-label="Телефон"] {
+        grid-area: tel; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .facilities-list td[data-label="Эл. почта"] {
+        grid-area: mail; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .facilities-list td[data-label="БИН/ИНН"],
+      .facilities-list td[data-label="Контактное лицо"] { display: none; }
+      /* Действий две и обе иконочные — по правилу шага 4 остаются в ряд,
+         меню «⋯» тут не нужно. Колонка занимает обе нижние строки. */
+      .facilities-list td.actions { grid-area: act; justify-content: flex-end; gap: 6px; }
+      .facilities-list td.actions .btn-edit { margin-right: 0; }
+    }
   `]
 })
 export class FacilitiesComponent {

@@ -42,7 +42,7 @@ import { ConfirmService } from '../../services/confirm.service';
 
     <div *ngIf="users.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table class="responsive-cards" *ngIf="users.length > 0">
+    <table class="responsive-cards card-grid users-list" *ngIf="users.length > 0">
       <thead><tr><th>Логин</th><th>ФИО</th><th>Роль</th><th>Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let u of users">
@@ -75,6 +75,42 @@ import { ConfirmService } from '../../services/confirm.service';
        геометрию, поэтому описывает поле целиком — --surface на подложке --surface-2. */
     .edit-form input, .edit-form select { display: block; width: 100%; padding: 8px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--surface); color: var(--text); }
     .input-error { border-color: var(--danger) !important; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 4 строки «подпись: значение» — 156px на карточку (замер живьём,
+         выше ориентира 140). Стало три:
+           ЛОГИН            [✎]
+           ФИО              [🗑]
+           роль
+         Ничего не скрыто: у списка три колонки, и каждая работает. */
+      .users-list tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "login act"
+          "name  act"
+          "role  act";
+      }
+      .users-list td[data-label="Логин"] { grid-area: login; font-size: 15px; font-weight: 600; }
+      /* display:block — иначе текст становится анонимным флекс-элементом и
+         многоточие до него не достаёт */
+      .users-list td[data-label="ФИО"] {
+        grid-area: name; display: block; color: var(--text-muted); font-size: 13px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .users-list td[data-label="Роль"] { grid-area: role; color: var(--text-muted); font-size: 12px; }
+      /* Действий две и обе иконочные — по правилу шага 4 остаются в ряд.
+         Своя колонка на все три ряда: в общей раскладке грид раздаёт
+         max-content растянутой ячейки интринсик-трекам и колонка действий
+         раздувается (ловили в facilities). */
+      .users-list td.actions { grid-area: act; justify-content: flex-end; gap: 6px; }
+      .users-list td.actions .btn-edit { margin-right: 0; }
+    }
   `]
 })
 export class UsersComponent {

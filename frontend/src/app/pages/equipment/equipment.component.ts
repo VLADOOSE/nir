@@ -60,7 +60,7 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
 
     <div *ngIf="filteredEquipment.length === 0 && !showForm" class="empty">Нет данных</div>
 
-    <table class="responsive-cards" *ngIf="filteredEquipment.length > 0">
+    <table class="responsive-cards card-grid equipment-list" *ngIf="filteredEquipment.length > 0">
       <thead>
         <tr><th>Название</th><th>Производитель</th><th>Тип</th><th>Д×Ш×В (мм)</th><th>Вес (кг)</th><th *ngIf="auth.isAdmin()">Действия</th></tr>
       </thead>
@@ -106,6 +106,65 @@ import { EquipmentDetailModalComponent } from '../../components/equipment-detail
     .dims-row { display: flex; gap: 12px; }
     .dims-row label { flex: 1; }
     .input-error { border-color: var(--danger) !important; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 5 строк «подпись: значение» — 186–266px на карточку. Стало три:
+           НАЗВАНИЕ (2 строки, «…»)        [✎]
+           производитель                   [🗑]
+           тип
+         Скрыты «Д×Ш×В» и «Вес»: в списке это не опознавательные признаки, а
+         КРИТЕРИИ ОТБОРА — для них прямо над списком стоит блок фильтров
+         «Длина/Ширина/Высота/Вес до». Сами значения видны в карточке позиции
+         (клик по строке) и в форме редактирования. На KZ они к тому же пусты
+         почти везде: каталог наполняется из реестра НЦЭЛС, а там габаритов нет. */
+      .equipment-list tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "name act"
+          "manu act"
+          "type act";
+      }
+      /* Клэмп работает прямо на ячейке: внутри неё только текст. Там, где в
+         ячейке лежит вложенный флекс (facilities), -webkit-box блокифицируется
+         и клэмп молча пропадает — здесь этого случая нет. Две строки, а не
+         одна: у KZ-позиций имя из реестра длиной до 196 символов, и по первой
+         строке «Тест-система иммуноферментная для определения…» они не
+         различаются. */
+      .equipment-list td[data-label="Название"] {
+        grid-area: name; font-size: 15px; font-weight: 600; overflow: hidden;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      /* display:block (а не флекс механического слоя) — иначе текст внутри
+         становится анонимным флекс-элементом и многоточие до него не достаёт */
+      .equipment-list td[data-label="Производитель"] {
+        grid-area: manu; display: block; font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      /* Тип приглушён сильнее производителя: на РФ он почти дословно повторяет
+         начало названия («Компьютерный томограф Canon Aquilion ONE» → тип
+         «Компьютерный томограф»), на KZ пуст у 6 позиций из 8 — тогда строка
+         схлопывается в ноль, и карточка сама становится на 14px ниже. */
+      .equipment-list td[data-label="Тип"] {
+        grid-area: type; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .equipment-list td[data-label="Д×Ш×В (мм)"],
+      .equipment-list td[data-label="Вес (кг)"] { display: none; }
+      /* Действий две и обе иконочные — по правилу шага 4 остаются в ряд,
+         меню «⋯» тут не нужно. Своя колонка на все три ряда: если отдать
+         кнопки в общую раскладку, грид раздаёт max-content растянутого
+         названия трекам с интринсик-размером и колонка действий раздувается
+         (ловили в facilities). У оператора-неадмина ячейки нет вовсе —
+         колонка схлопывается в 0 и весь текст получает полную ширину. */
+      .equipment-list td.actions { grid-area: act; justify-content: flex-end; gap: 6px; }
+      .equipment-list td.actions .btn-edit { margin-right: 0; }
+    }
   `]
 })
 export class EquipmentComponent {

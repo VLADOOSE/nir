@@ -18,7 +18,7 @@ import { NotificationService } from '../../services/notification.service';
       <button class="btn-primary" [disabled]="polling" (click)="poll()">⟳ Проверить почту</button>
     </div>
 
-    <table class="grid responsive-cards" *ngIf="rows.length">
+    <table class="grid responsive-cards card-grid inbound-list" *ngIf="rows.length">
       <thead>
         <tr><th>Отправитель</th><th>Тема</th><th>Получено</th><th>Тип</th><th>Статус</th><th></th></tr>
       </thead>
@@ -175,6 +175,64 @@ import { NotificationService } from '../../services/notification.service';
        токенизировать нечего, оставлено намеренно. */
     .msg-body.clamped { max-height: 4.5em; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent); }
     .msg-toggle { margin-top: 6px; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
+
+    /* ============================================================
+       МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media-правило).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка этого списка.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* Было 6 строк «подпись: значение» — 188–337px на карточку. Стало три:
+           ТЕМА (2 строки, «…»)
+           отправитель                        получено
+           [бейдж типа] · КП #id              [Импортировать]
+         Порядок как в почтовом клиенте: чем письмо является — сверху крупно,
+         служебное — ниже мелким.
+         Скрыт «Статус» («Новое»/«Обработано»): на карточке его роль несёт
+         кнопка «Импортировать» — она и появляется ровно у необработанного
+         письма клиники с вложением. Единственное скрытие, о котором стоит
+         спорить, см. отчёт задачи. */
+      /* Сброс десктопной геометрии .grid: её правила (.grid td — 10px padding и
+         разделительная линия; .grid — своя подложка и радиус) СПЕЦИФИЧНЕЕ
+         глобального card-grid, поэтому без явного сброса карточка распухла бы
+         на 8px в каждой ячейке, а внутри неё рисовались бы линии таблицы. */
+      .inbound-list { background: none; border-radius: 0; }
+      .inbound-list td { padding: 2px 0; border-top: none; }
+      .inbound-list tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "subj subj"
+          "from when"
+          "type act";
+      }
+      /* Клэмп прямо на ячейке: внутри неё только текст (случай facilities с
+         вложенным флексом здесь не возникает). Две строки — темы писем длинные
+         и различаются в конце: «…оборудования и расходных материалов на 2026». */
+      .inbound-list td[data-label="Тема"] {
+        grid-area: subj; font-size: 15px; font-weight: 600; color: var(--text);
+        overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      /* display:block — иначе текст становится анонимным флекс-элементом и
+         многоточие до него не достаёт (адреса вида «ГКП на ПХВ «Городская
+         поликлиника №5 г. Уральск» <zakup@…>» длиннее ячейки всегда) */
+      .inbound-list td[data-label="Отправитель"] {
+        grid-area: from; display: block; color: var(--text-muted); font-size: 12px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .inbound-list td[data-label="Получено"] {
+        grid-area: when; justify-content: flex-end; color: var(--text-muted);
+        font-size: 11px; white-space: nowrap;
+      }
+      /* nowrap обязателен: механический слой ставит ячейкам flex-wrap: wrap, и
+         хвост «· КП #508» уезжал под бейдж, добавляя карточке лишнюю строку. */
+      .inbound-list td[data-label="Тип"] {
+        grid-area: type; justify-content: flex-start; flex-wrap: nowrap;
+        gap: 4px; overflow: hidden;
+      }
+      .inbound-list td[data-label="Статус"] { display: none; }
+      .inbound-list td:not([data-label]) { grid-area: act; justify-content: flex-end; }
+    }
   `],
 })
 export class InboundComponent {

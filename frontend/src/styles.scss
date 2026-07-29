@@ -213,6 +213,25 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
    горизонтальный скролл вместо обрезки. Безопасно на любом экране. */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+/* ─── Меню «⋯» в ряду действий карточки ──────────────────────────────────────
+   Общий слой, а не копия в каждом списке: ряд из трёх кнопок не влезает в
+   карточку ни на одном экране, поэтому паттерн «первичное действие + ⋯»
+   нужен всем переведённым спискам. Раньше жил в applies.component.ts.
+   Здесь ТОЛЬКО внешний вид. Логика открытия/закрытия остаётся в компоненте
+   (openMenu<Что>Id + toggle со stopPropagation + @HostListener('document:click')) —
+   у каждого списка своё поле состояния.
+   На десктопе обёртка скрыта целиком, поэтому ряд действий там ровно тот же,
+   что был; показывается только внутри @media ниже. */
+.row-menu-wrap { position: relative; display: none; }
+.row-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); z-index: 20;
+            display: flex; flex-direction: column; min-width: 160px; overflow: hidden; }
+.row-menu button { background: none; border: none; text-align: left; padding: 10px 12px; cursor: pointer;
+                   font-size: 13px; color: var(--text); white-space: nowrap; }
+.row-menu button:hover { background: var(--surface-2); }
+.row-menu button.danger { color: var(--danger-text); }
+.btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
+
 @media (max-width: 900px) {
   /* Таблицы-списки → карточки-стопки. На <table class="responsive-cards">,
      каждой <td> проставить data-label="<Колонка>" (подпись слева, значение справа). */
@@ -240,6 +259,36 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
   table.responsive-cards td:not([data-label]) { justify-content: flex-end; flex-wrap: wrap; }
   table.responsive-cards td:not([data-label])::before { content: none; }
   table.responsive-cards td:empty { display: none; }
+
+  /* ─── Спроектированная карточка списка (opt-in класс card-grid) ───────────────
+     Механический режим выше делает из каждой колонки строку «подпись: значение»:
+     на 9-колоночном списке это карточка в 307px и 51 экран прокрутки на 141
+     запись. Здесь строка становится ГРИДОМ, а ячейки раскладываются по
+     именованным областям через td[data-label="…"] в самом компоненте — разметка
+     не дублируется, порядок колонок не важен, десктоп не затронут.
+
+     Opt-in, а не замена: таблицы без card-grid остаются на механическом режиме,
+     экраны переводим по одному.
+
+     Раскладку (grid-template-columns/areas) задаёт КОМПОНЕНТ — она у каждого
+     списка своя. Здесь только общее поведение. Компонентное правило всегда
+     сильнее этих: Angular дописывает [_ngcontent-x] к каждому compound-селектору,
+     поэтому scoped `.applies-list td[data-label="…"]` (0,4,2) перебивает
+     `table.responsive-cards.card-grid td` (0,2,3) — на это же опирается UI-kit
+     выше. Подпись ::before здесь гасится; где она всё же нужна («позиций: 5»),
+     компонент включает её обратно точечно с явным content. */
+  table.responsive-cards.card-grid tr {
+    display: grid;
+    gap: 2px 8px;
+    align-items: center;
+    padding: 10px 12px;
+  }
+  table.responsive-cards.card-grid td { padding: 2px 0; text-align: left; }
+  table.responsive-cards.card-grid td::before { display: none; }
+  table.responsive-cards.card-grid td > * { min-width: 0; }
+  /* «⋯» — только в карточке: на десктопе .row-menu-wrap скрыт базовым правилом
+     выше. (0,3,1) против (0,1,0) — включается здесь, гасится там. */
+  table.responsive-cards.card-grid .row-menu-wrap { display: inline-block; }
 
   /* Тач-таргеты крупнее + инпуты 16px (iOS не зумит поле при фокусе) */
   button, .btn, a.btn { min-height: 40px; }

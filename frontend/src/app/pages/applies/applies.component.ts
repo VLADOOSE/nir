@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
@@ -70,7 +70,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div *ngIf="filteredApplies.length === 0 && !showApplyForm" class="empty">Нет данных</div>
 
-      <table class="responsive-cards" *ngIf="filteredApplies.length > 0">
+      <table class="responsive-cards card-grid applies-list" *ngIf="filteredApplies.length > 0">
         <thead><tr><th>ID</th><th>Номер тендера</th><th>Заказчик</th><th>Статус</th><th>Поставка</th><th>Позиций</th><th>Сумма</th><th>Дата создания</th><th>Действия</th></tr></thead>
         <tbody>
           <tr *ngFor="let a of filteredApplies">
@@ -91,6 +91,17 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
               <button class="btn btn-open" (click)="onOpen(a)">Открыть</button>
               <button class="btn btn-edit" (click)="onEditApply(a)">Редактировать</button>
               <button class="btn btn-delete" (click)="onDeleteApply(a.id)">Удалить</button>
+              <!-- Мобильный дубль тех же действий: три кнопки в ряд не помещаются
+                   рядом с суммой, поэтому ≤900px видны «Открыть» + «⋯», а
+                   Редактировать/Удалить уезжают в меню. На десктопе .row-menu-wrap
+                   скрыт целиком — ряд кнопок остаётся прежним. -->
+              <span class="row-menu-wrap">
+                <button class="btn btn-more" (click)="toggleApplyMenu(a, $event)" title="Ещё действия">⋯</button>
+                <span class="row-menu" *ngIf="openMenuApplyId === a.id">
+                  <button (click)="onEditApply(a)">✎ Редактировать</button>
+                  <button class="danger" (click)="onDeleteApply(a.id)">🗑 Удалить</button>
+                </span>
+              </span>
             </td>
           </tr>
         </tbody>
@@ -196,7 +207,7 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
 
       <div *ngIf="items.length === 0 && !showItemForm" class="empty">Нет позиций</div>
 
-      <table class="responsive-cards" *ngIf="items.length > 0">
+      <table class="responsive-cards card-grid applies-items" *ngIf="items.length > 0">
         <thead><tr>
           <th>Лот</th><th>Оборудование</th><th>Дистрибьютор</th>
           <th class="num-col">Предл. цена</th>
@@ -401,6 +412,100 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
     .btn-step-paid { background: var(--success); }
     .all-done { color: var(--success-text); font-weight: 600; font-size: 14px; }
     .muted { color: var(--text-muted); font-size: 12px; }
+
+    /* Внешний вид меню «⋯» (.row-menu-wrap / .row-menu / .btn-more) переехал в
+       глобальный styles.scss — он нужен всем переведённым спискам. Здесь
+       остаётся только логика открытия/закрытия (см. openMenuApplyId ниже). */
+
+    /* ============================================================
+       МОБИЛЬНАЯ РАСКЛАДКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
+       специфичности позднее базовое правило молча перебивает @media).
+       Общее поведение card-grid — в глобальном styles.scss; здесь только
+       раскладка двух таблиц этого экрана.
+       ============================================================ */
+    @media (max-width: 900px) {
+      /* ─── Список заявок ───────────────────────────────────────────────
+         Было 9 строк «подпись: значение» (307px). Стало три строки:
+           номер тендера        [статус]
+           заказчик        позиций: N
+           СУММА        [Открыть] [⋯]
+         Скрыты ID и «Дата создания» (техническое, в списке не работают) и
+         «Поставка» — она рисует «—» у всех заявок кроме выигранных, а у
+         выигранных состояние поставки целиком видно в самой карточке. */
+      .applies-list tr {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "num   status"
+          "cust  cnt"
+          "sum   act";
+      }
+      .applies-list td[data-label="Номер тендера"] { grid-area: num; font-weight: 600; font-size: 15px; }
+      .applies-list td[data-label="Статус"] { grid-area: status; justify-content: flex-end; }
+      /* ellipsis требует блочной ячейки: во flex-контейнере текст становится
+         анонимным флекс-элементом и не обрезается многоточием */
+      .applies-list td[data-label="Заказчик"] {
+        grid-area: cust; display: block; color: var(--text-muted); font-size: 13px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .applies-list td[data-label="Сумма"] { grid-area: sum; font-weight: 700; font-size: 16px; }
+      .applies-list td[data-label="Позиций"] {
+        grid-area: cnt; justify-content: flex-end; gap: 4px;
+        color: var(--text-muted); font-size: 12px; white-space: nowrap;
+      }
+      /* подпись возвращается точечно: «12» без слова не читается.
+         Порядок «позиций: 12», а не «12 позиций» — иначе ломается согласование. */
+      .applies-list td[data-label="Позиций"]::before { display: inline; content: "позиций:"; font-weight: 400; }
+      .applies-list td[data-label="ID"],
+      .applies-list td[data-label="Дата создания"],
+      .applies-list td[data-label="Поставка"] { display: none; }
+      .applies-list td.actions { grid-area: act; justify-content: flex-end; gap: 6px; }
+      /* три кнопки в ряд не влезают рядом с суммой → остаётся первичное
+         действие, остальные в «⋯» (тот же обработчик, дубль только в разметке) */
+      .applies-list td.actions .btn-edit,
+      .applies-list td.actions .btn-delete { display: none; }
+      /* показ .row-menu-wrap — в глобальном card-grid слое (общий для всех списков) */
+      .applies-list .btn-open { margin-right: 0; }
+
+      /* ─── Позиции заявки ──────────────────────────────────────────────
+           оборудование
+           дистрибьютор            закупка N
+           N шт   ПРЕДЛ. ЦЕНА        маржа
+           [Редактировать] [Удалить]
+         Скрыты «Лот» (все позиции внутри одной заявки относятся к одному
+         тендеру, а имя лота почти всегда повторяет оборудование; полное имя
+         видно в форме позиции) и «%» (производная от маржи; итоговый процент
+         есть в блоке прибыли ниже). Кнопок две — по правилу шага 4 остаются
+         в ряд, растянутые на всю ширину. */
+      .applies-items tr {
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas:
+          "equip equip  equip"
+          "dist  dist   proc"
+          "qty   offer  margin"
+          "act   act    act";
+      }
+      .applies-items td[data-label="Оборудование"] { grid-area: equip; font-weight: 600; }
+      .applies-items td[data-label="Дистрибьютор"] {
+        grid-area: dist; display: block; color: var(--text-muted); font-size: 13px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .applies-items td[data-label="Закупка"] {
+        grid-area: proc; justify-content: flex-end; gap: 4px; color: var(--text-muted); font-size: 12px;
+      }
+      .applies-items td[data-label="Закупка"]::before { display: inline; content: "закупка"; font-weight: 400; }
+      .applies-items td[data-label="Кол-во"] {
+        grid-area: qty; justify-content: flex-start; gap: 3px; color: var(--text-muted); font-size: 12px;
+      }
+      .applies-items td[data-label="Кол-во"]::after { content: "шт"; }
+      .applies-items td[data-label="Предл. цена"] {
+        grid-area: offer; justify-content: flex-start; font-weight: 700; font-size: 15px;
+      }
+      .applies-items td[data-label="Маржа"] { grid-area: margin; justify-content: flex-end; font-weight: 600; }
+      .applies-items td[data-label="Лот"],
+      .applies-items td[data-label="%"] { display: none; }
+      .applies-items td.actions { grid-area: act; justify-content: flex-start; gap: 8px; margin-top: 2px; }
+      .applies-items td.actions .btn { flex: 1; margin: 0; }
+    }
   `]
 })
 export class AppliesComponent {
@@ -419,6 +524,8 @@ export class AppliesComponent {
 
   showApplyForm = false;
   editingApplyId: number | null = null;
+  /* Меню «⋯» строки списка (видно только ≤900px). Образец — tender-lots.component. */
+  openMenuApplyId: number | null = null;
   applyForm = new FormGroup({ tenderId: new FormControl<number | null>(null), status: new FormControl('DRAFT') });
 
   contractEdit: { contractNumber: string; contractSignedAt: string } = { contractNumber: '', contractSignedAt: '' };
@@ -501,6 +608,16 @@ export class AppliesComponent {
       },
       error: err => this.notify.error('Ошибка загрузки заявок: ' + (err.error?.message || err.message))
     });
+  }
+
+  toggleApplyMenu(a: any, ev: MouseEvent) {
+    ev.stopPropagation();   // иначе document:click тут же закроет
+    this.openMenuApplyId = this.openMenuApplyId === a.id ? null : a.id;
+  }
+
+  @HostListener('document:click')
+  closeApplyMenu() {
+    if (this.openMenuApplyId !== null) { this.openMenuApplyId = null; this.cdr.detectChanges(); }
   }
 
   onAddApply() { this.editingApplyId = null; this.applyForm.reset({ status: 'DRAFT' }); this.validationErrors = {}; this.showApplyForm = true; }
