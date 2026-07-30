@@ -62,43 +62,43 @@ import { ChartComponent } from '../../components/chart/chart.component';
 
       <h4 class="subsection-title">Топ-5 прибыльных тендеров</h4>
       <div *ngIf="!profit.topTenders?.length" class="empty">Пока нет данных по WON-заявкам с известной закупкой</div>
-      <table *ngIf="profit.topTenders?.length">
+      <table class="responsive-cards card-grid profit-top" *ngIf="profit.topTenders?.length">
         <thead><tr><th>Тендер</th><th>Заказчик</th><th>Выручка</th><th>Прибыль</th><th>Маржа %</th></tr></thead>
         <tbody>
           <tr *ngFor="let t of profit.topTenders">
-            <td>&#8470; {{ t.tenderNumber }}</td>
-            <td>{{ t.facilityName }}</td>
-            <td>{{ t.revenue | money }}</td>
-            <td class="positive">{{ t.profit | money }}</td>
-            <td>{{ t.marginPercent ?? '—' }} %</td>
+            <td data-label="Тендер">&#8470; {{ t.tenderNumber }}</td>
+            <td data-label="Заказчик">{{ t.facilityName }}</td>
+            <td data-label="Выручка">{{ t.revenue | money }}</td>
+            <td class="positive" data-label="Прибыль">{{ t.profit | money }}</td>
+            <td data-label="Маржа %">{{ t.marginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
       </table>
 
       <h4 class="subsection-title">Рейтинг дистрибьюторов по прибыли</h4>
       <div *ngIf="!profit.distributorRanking?.length" class="empty">Нет данных</div>
-      <table *ngIf="profit.distributorRanking?.length">
+      <table class="responsive-cards card-grid profit-dist" *ngIf="profit.distributorRanking?.length">
         <thead><tr><th>Дистрибьютор</th><th>Позиций в WON</th><th>Прибыль с них</th><th>Средняя маржа</th></tr></thead>
         <tbody>
           <tr *ngFor="let d of profit.distributorRanking">
-            <td>{{ d.name }}</td>
-            <td>{{ d.dealsCount }}</td>
-            <td class="positive">{{ d.totalProfit | money }}</td>
-            <td>{{ d.avgMarginPercent ?? '—' }} %</td>
+            <td data-label="Дистрибьютор">{{ d.name }}</td>
+            <td data-label="Позиций в WON">{{ d.dealsCount }}</td>
+            <td class="positive" data-label="Прибыль с них">{{ d.totalProfit | money }}</td>
+            <td data-label="Средняя маржа">{{ d.avgMarginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
       </table>
 
       <h4 class="subsection-title">Прибыль по типам оборудования</h4>
       <div *ngIf="!profit.profitByType?.length" class="empty">Нет данных</div>
-      <table *ngIf="profit.profitByType?.length">
+      <table class="responsive-cards card-grid profit-type" *ngIf="profit.profitByType?.length">
         <thead><tr><th>Тип</th><th>Позиций</th><th>Прибыль</th><th>Средняя маржа</th></tr></thead>
         <tbody>
           <tr *ngFor="let t of profit.profitByType">
-            <td>{{ t.typeName }}</td>
-            <td>{{ t.positionsCount }}</td>
-            <td class="positive">{{ t.totalProfit | money }}</td>
-            <td>{{ t.avgMarginPercent ?? '—' }} %</td>
+            <td data-label="Тип">{{ t.typeName }}</td>
+            <td data-label="Позиций">{{ t.positionsCount }}</td>
+            <td class="positive" data-label="Прибыль">{{ t.totalProfit | money }}</td>
+            <td data-label="Средняя маржа">{{ t.avgMarginPercent ?? '—' }} %</td>
           </tr>
         </tbody>
       </table>
@@ -143,16 +143,16 @@ import { ChartComponent } from '../../components/chart/chart.component';
     <div class="report-section">
       <h3>Статистика по дистрибьюторам (запросы КП)</h3>
       <div *ngIf="distributorPrStats.length === 0" class="empty">Нет данных</div>
-      <table *ngIf="distributorPrStats.length > 0">
+      <table class="responsive-cards card-grid pr-stats" *ngIf="distributorPrStats.length > 0">
         <thead>
           <tr><th>Дистрибьютор</th><th>Всего запросов КП</th><th>Получено ответов</th><th>Средняя цена ответа</th></tr>
         </thead>
         <tbody>
           <tr *ngFor="let d of distributorPrStats">
-            <td>{{ d.name }}</td>
-            <td>{{ d.totalRequests }}</td>
-            <td>{{ d.responded }}</td>
-            <td>{{ d.avgPrice | money }}</td>
+            <td data-label="Дистрибьютор">{{ d.name }}</td>
+            <td data-label="Всего запросов КП">{{ d.totalRequests }}</td>
+            <td data-label="Получено ответов">{{ d.responded }}</td>
+            <td data-label="Средняя цена ответа">{{ d.avgPrice | money }}</td>
           </tr>
         </tbody>
       </table>
@@ -209,7 +209,100 @@ import { ChartComponent } from '../../components/chart/chart.component';
     /* @media перенесён из середины блока в конец (CLAUDE.md §14): при равной
        специфичности любое базовое правило .charts-grid ниже молча перебило бы
        мобильную переопределялку. Само правило не менялось. */
-    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) {
+      .charts-grid { grid-template-columns: 1fr; }
+
+      /* ─── Сводки: ДВА грида, оба стояли на repeat(3, 1fr) ────────────────────
+         «1fr» — это minmax(auto, 1fr), и нижняя граница «auto» = min-content:
+         колонка не сжимается уже суммы вроде «1 372 500 000 ₽», три такие
+         колонки в 390px не влезают, и лента обрезается (гоча CLAUDE.md §14).
+         auto-fit сам считает, сколько колонок поместится (на 390px — две),
+         minmax даёт им нижнюю границу. Правило стоит ПОСЛЕ .summary-grid-4,
+         поэтому перебивает его при равной специфичности. Размер значения
+         уменьшен здесь же: 24px в колонке 154px не оставлял запаса. */
+      .summary-grid, .summary-grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .summary-item { padding: 12px 10px; }
+      .summary-value { font-size: 17px; }
+
+      /* ─── Таблицы отчётов → спроектированные карточки ───────────────────────
+         Механический режим «подпись: значение» дал бы 4–5 строк на запись
+         (простыня выше порога ~140px), поэтому все четыре таблицы на card-grid:
+         это списки, которые сканируют глазами, а не карточка записи. */
+      /* .report-section сам --surface, и глобальный слой красит строку тоже в
+         --surface: карточки слились бы с фоном. Подсвеченных строк, которым
+         этот фон мог бы перебить подсветку, в таблицах отчётов нет. */
+      table.responsive-cards tr { background: var(--surface-2); }
+      table.responsive-cards td { gap: 2px 6px; overflow-wrap: anywhere; }
+      /* общий вид микро-подписи; включается точечно там, где голое число
+         нечитаемо («12 %», «4») — thead в режиме карточек скрыт */
+      table.responsive-cards td::before { font-weight: 600; color: var(--text-muted); font-size: 12px; }
+      /* ⚠️ Ячейка с подписью читается как одна фраза («позиций 11») → flex-start,
+         иначе глобальное space-between расталкивает подпись и число по краям
+         колонки. Правило ставится ПОКЛЕТОЧНО, а не общим «table.responsive-cards
+         td»: общий селектор (0,4,2) сильнее поклеточных (0,4,1) и молча погасил
+         бы flex-end у прибыли и маржи — они уехали бы влево. */
+
+      /* Топ-5 прибыльных тендеров.
+         ⚠️ Номер тендера занимает ВСЮ ширину, а прибыль вынесена отдельной
+         строкой намеренно. В раскладке «номер | прибыль в одной колонке» ширину
+         второй колонки задавала самая длинная сумма («прибыль 17 386 302 ₽»,
+         ~150px) — номеру оставалось ~134px, и 19-значный номер ломался посреди
+         цифр («01422000013250 / 24166»). Замер: запись 151,5px → 121px. */
+      .profit-top tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "num    num"
+          "cust   cust"
+          "rev    margin"
+          "profit profit";
+      }
+      .profit-top td[data-label="Тендер"] { grid-area: num; font-weight: 600; font-size: 15px; }
+      .profit-top td[data-label="Заказчик"] { grid-area: cust; color: var(--text-muted); font-size: 13px; }
+      .profit-top td[data-label="Маржа %"] { grid-area: margin; justify-content: flex-end; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+      .profit-top td[data-label="Маржа %"]::before { display: inline; content: "маржа"; }
+      .profit-top td[data-label="Выручка"] { grid-area: rev; justify-content: flex-start; font-size: 13px; white-space: nowrap; }
+      .profit-top td[data-label="Выручка"]::before { display: inline; content: "выручка"; }
+      /* цвет НЕ трогаем — он от класса .positive; здесь только вес и место */
+      .profit-top td[data-label="Прибыль"] { grid-area: profit; justify-content: flex-end; font-weight: 600; }
+      .profit-top td[data-label="Прибыль"]::before { display: inline; content: "прибыль"; }
+
+      /* Рейтинг дистрибьюторов по прибыли · Прибыль по типам оборудования —
+         раскладка у них одна, различаются только имена колонок */
+      .profit-dist tr, .profit-type tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "name  profit"
+          "count margin";
+      }
+      .profit-dist td[data-label="Дистрибьютор"],
+      .profit-type td[data-label="Тип"] { grid-area: name; font-weight: 600; }
+      .profit-dist td[data-label="Прибыль с них"],
+      .profit-type td[data-label="Прибыль"] { grid-area: profit; justify-content: flex-end; font-weight: 600; }
+      .profit-dist td[data-label="Позиций в WON"],
+      .profit-type td[data-label="Позиций"] { grid-area: count; justify-content: flex-start; color: var(--text-muted); font-size: 13px; }
+      .profit-dist td[data-label="Позиций в WON"]::before,
+      .profit-type td[data-label="Позиций"]::before { display: inline; content: "позиций"; }
+      .profit-dist td[data-label="Средняя маржа"],
+      .profit-type td[data-label="Средняя маржа"] { grid-area: margin; justify-content: flex-end; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+      .profit-dist td[data-label="Средняя маржа"]::before,
+      .profit-type td[data-label="Средняя маржа"]::before { display: inline; content: "маржа"; }
+
+      /* Статистика по дистрибьюторам (запросы КП) */
+      .pr-stats tr {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "name  name"
+          "reqs  price"
+          "resp  price";
+      }
+      .pr-stats td[data-label="Дистрибьютор"] { grid-area: name; font-weight: 600; }
+      .pr-stats td[data-label="Всего запросов КП"] { grid-area: reqs; justify-content: flex-start; color: var(--text-muted); font-size: 13px; }
+      .pr-stats td[data-label="Всего запросов КП"]::before { display: inline; content: "запросов КП"; }
+      .pr-stats td[data-label="Получено ответов"] { grid-area: resp; justify-content: flex-start; color: var(--text-muted); font-size: 13px; }
+      .pr-stats td[data-label="Получено ответов"]::before { display: inline; content: "получено ответов"; }
+      .pr-stats td[data-label="Средняя цена ответа"] { grid-area: price; justify-content: flex-end; align-items: flex-end; flex-direction: column; gap: 0; }
+      .pr-stats td[data-label="Средняя цена ответа"]::before { display: block; content: "средняя цена"; }
+    }
   `]
 })
 export class ReportsComponent {
