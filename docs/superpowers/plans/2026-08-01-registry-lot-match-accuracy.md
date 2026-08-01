@@ -1416,11 +1416,39 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 Главная причина «не могу»: ТЗ разобрано у 1 лота из 225. Механизм разбора уже есть и работает — здесь только очередь вокруг него. Постановка в очередь уже сделана в Task 6 (новый лот получает `PENDING`).
 
 **Files:**
+- Create: `src/main/resources/db/migration/V15__lot_tech_spec_backfill.sql`
 - Create: `src/main/java/com/vladoose/nir/service/TechSpecStatusWriter.java`
 - Create: `src/main/java/com/vladoose/nir/service/TechSpecBackfillScheduler.java`
 - Modify: `src/main/resources/application.yaml`
 - Modify: `src/main/java/com/vladoose/nir/repository/TenderLotRepository.java`
 - Test: `src/test/java/com/vladoose/nir/service/TechSpecBackfillSchedulerTest.java`
+
+> **Поправка по итогам ревью Task 2 (2026-08-01).** V14 ставит статус только у НОВЫХ лотов (Task 6), поэтому 225 уже импортированных остались бы `NULL` навсегда — очередь никогда бы их не взяла, и главная цель захода («ТЗ разобрано у 1 лота из 225») не была бы достигнута. Нужен разовый бэкфилл миграцией **V15** (V14 уже применена — править её нельзя, §10).
+>
+> ⚠️ Гейт по `required_spec IS NULL` **неверен, не использовать**: импорт кладёт туда `description_ru`, поэтому у 1449 из 1490 лотов (97 %) поле непустое, а разобрано ноль. Такой гейт поставил бы в очередь 41 лот и пропустил 1449 — ровно наоборот. Единственный корректный дискриминатор — сам `tech_spec_status`.
+>
+> **V15 делает три вещи:**
+> ```sql
+> -- 1. Лоты с уже разобранным ТЗ помечаем OK, чтобы очередь их не перекачивала.
+> --    Порог 200 символов: короткое значение — это description_ru с площадки,
+> --    длинное — текст, вытащенный из PDF. Живая выборка: ровно 1 такой лот.
+> UPDATE tender_lot SET tech_spec_status = 'OK'
+>  WHERE tech_spec_status IS NULL AND length(required_spec) > 200;
+>
+> -- 2. Остальные лоты ИМПОРТНЫХ тендеров ставим в очередь. Ручные тендеры
+> --    (platform IS NULL) пропускаем: техспеку неоткуда качать.
+> UPDATE tender_lot l SET tech_spec_status = 'PENDING'
+>  WHERE l.tech_spec_status IS NULL
+>    AND EXISTS (SELECT 1 FROM tender t WHERE t.id = l.tender_id AND t.platform IS NOT NULL);
+>
+> -- 3. Индекс под реальный запрос воркера (фильтр + порядок + LIMIT из одного индекса).
+> --    Прежний индекс по одному лишь статусу вырождался в список TID: ключ у всех записей
+> --    одинаковый ('PENDING'), и ORDER BY ... LIMIT всё равно уходил в heap fetch + sort.
+> DROP INDEX IF EXISTS idx_lot_tech_spec_status;
+> CREATE INDEX IF NOT EXISTS idx_lot_tech_spec_pending ON tender_lot (id)
+>     WHERE tech_spec_status = 'PENDING';
+> ```
+> Использовать `IF EXISTS`/`IF NOT EXISTS` — доминирующая конвенция миграций проекта (V4, V5, V6, V13), и на проде с автодеплоем неидемпотентная миграция роняет старт приложения.
 
 **Interfaces:**
 - Consumes: `TechSpecService.parse(Long lotId)` → `ParseResult(TenderLot lot, boolean dimsFound, boolean weightFound, boolean ambiguous, String source)`; бросает `BadRequestException` (нет площадки/токена), `NotFoundException` (нет файла), `UnprocessableException` (PDF нечитаем), `UpstreamException` (сеть) — **все четыре класса проверены, лежат в `com.vladoose.nir.exception`**; `TechSpecStatus` (Task 2); постановка в очередь — из Task 6
