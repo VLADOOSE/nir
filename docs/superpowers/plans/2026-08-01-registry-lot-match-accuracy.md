@@ -837,7 +837,19 @@ Expected: FAIL — `getConfidence()` не существует.
 Run: `cd /Users/vlad/IdeaProjects/AIS && ./gradlew test --tests '*RegistryMatchConfidenceTest*'`
 Expected: PASS, 5 тестов.
 
-- [ ] **Step 7: Проверить, что не сломался остальной бэк**
+- [ ] **Step 7: Удалить старый `searchByTokens`**
+
+После Step 5 у него не остаётся вызовов (проверено при планировании: единственный был `RegistryMatchService:115`). Спека требует именно замены, а не сосуществования — две живые шкалы скора дают молчаливые расхождения между панелью «Подбор» и подсказками поставщиков.
+
+Удалить метод `searchByTokens` и его javadoc из `MedRegistryRepository`. Убедиться, что вызовов не осталось:
+
+```bash
+cd /Users/vlad/IdeaProjects/AIS
+grep -rn "searchByTokens\b" src/main/java/ src/test/java/ | grep -v searchByTokensV2
+```
+Expected: пусто.
+
+- [ ] **Step 8: Проверить, что не сломался остальной бэк**
 
 Run: `cd /Users/vlad/IdeaProjects/AIS && ./gradlew test`
 Expected: 0 падений. `RegistryLotMatchTest` может упасть на изменившейся шкале — если так, поправить его ассерты под новую шкалу (порядок кандидатов важнее абсолютных чисел), но **не ослаблять** проверки до бессмысленных.
@@ -848,7 +860,7 @@ grep -c "computeLotMatch" src/main/java/com/vladoose/nir/service/RegistryMatchSe
 ```
 Expected: 3 (объявление + 2 вызова из `candidatesForLot`/`matchForLotUi`).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd /Users/vlad/IdeaProjects/AIS
