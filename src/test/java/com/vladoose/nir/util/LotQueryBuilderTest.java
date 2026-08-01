@@ -15,6 +15,8 @@ class LotQueryBuilderTest {
         LotQuery q = LotQueryBuilder.build("Нить", "хирургическая, синтетическая, стерильная");
 
         assertThat(q.identity()).extracting(WeightedToken::token).containsExactly("нить");
+        // вес identity пинуется явно: tokenize(null, equipName) дал бы те же токены на 0.5
+        assertThat(q.identity()).extracting(WeightedToken::weight).containsOnly(1.0);
         assertThat(q.qualifier()).contains("хирургическая", "синтетическая", "стерильная");
         assertThat(q.techSpecParsed()).isFalse();
     }
@@ -38,6 +40,8 @@ class LotQueryBuilderTest {
         LotQuery q = LotQueryBuilder.build("Насос вакуумный", "вакуумный, производительность 1500");
 
         assertThat(q.identity()).extracting(WeightedToken::token).contains("насос", "вакуумный");
+        // положительная половина: без неё тест прошёл бы и на qualifier == List.of()
+        assertThat(q.qualifier()).contains("производительность");
         assertThat(q.qualifier()).doesNotContain("насос", "вакуумный");
     }
 
@@ -50,10 +54,36 @@ class LotQueryBuilderTest {
         assertThat(q.techSpecParsed()).isFalse();
     }
 
+    /**
+     * Живой случай: 5 лотов названы ровно «Аппарат» — слово в стоп-листе, значит отбирающих
+     * токенов ноль, хотя описание идеальное. Продвигаем описание в identity.
+     */
     @Test
-    void blankNameGivesEmptyIdentity() {
+    void promotesQualifierToIdentityWhenNameIsAllStopWords() {
+        LotQuery q = LotQueryBuilder.build("Аппарат", "ультразвуковой низкочастотный оториноларингологический");
+
+        assertThat(q.identity()).extracting(WeightedToken::token)
+                .contains("ультразвуковой", "низкочастотный", "оториноларингологический");
+        assertThat(q.identity()).extracting(WeightedToken::weight).containsOnly(1.0);
+        assertThat(q.qualifier()).isEmpty();
+    }
+
+    /** Пустое имя — та же развилка: отбирать нечем, значит описание становится identity. */
+    @Test
+    void blankNamePromotesSpecToIdentity() {
         LotQuery q = LotQueryBuilder.build("  ", "что-то");
 
+        assertThat(q.identity()).extracting(WeightedToken::token).containsExactly("что-то");
+        assertThat(q.qualifier()).isEmpty();
+    }
+
+    /** Продвигать нечего — запрос честно пустой, этот лот неотвечаем. */
+    @Test
+    void blankNameAndBlankSpecGivesEmptyQuery() {
+        LotQuery q = LotQueryBuilder.build("  ", null);
+
         assertThat(q.identity()).isEmpty();
+        assertThat(q.qualifier()).isEmpty();
+        assertThat(q.techSpecParsed()).isFalse();
     }
 }

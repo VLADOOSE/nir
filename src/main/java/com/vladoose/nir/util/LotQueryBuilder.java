@@ -21,9 +21,14 @@ import java.util.Set;
  * <p>Почему так: названия реестра описывают товар, а не его функцию. Замер 2026-08-01 —
  * пуск описания в отбор раздул «Спектрофотометр» с 3 кандидатов до 278 и утопил верный ответ.
  *
+ * <p>Единственное исключение: имя лота целиком из стоп-слов даёт пустой identity, то есть
+ * ноль отбирающих токенов. Тогда токены описания продвигаются в identity (см. {@code build}) —
+ * лучше отобрать по описанию, чем не отобрать ничего.
+ *
  * <p>Дефект, который здесь исправлен: раньше в подбор шёл только результат
  * {@link TechSpecExtractor#characteristics(String)}, а он null без якоря разобранного PDF —
- * то есть у 224 лотов из 225 описание {@code description_ru} выбрасывалось целиком.
+ * то есть у 185 лотов описание {@code description_ru} выбрасывалось целиком, а ещё у 39
+ * (SK-лоты с пустым {@code required_spec}) описания не было вовсе.
  */
 public final class LotQueryBuilder {
 
@@ -39,12 +44,23 @@ public final class LotQueryBuilder {
         String qualifierText = techSpecParsed ? chars : requiredSpec;
 
         List<WeightedToken> identity = LotQueryTokenizer.tokenize(equipName, null);
+        List<WeightedToken> qualifierTokens = LotQueryTokenizer.tokenize(qualifierText, null);
+
+        // Имя целиком из стоп-слов → отбирать нечем, даже когда описание идеальное. Живой случай:
+        // 5 лотов названы ровно «Аппарат» (слово в STOP), у одного при этом разобранное ТЗ на
+        // 5307 символов, начинающееся с «Аппарат ультразвуковой низкочастотный оториноларинго-
+        // логический». Продвигаем токены описания в identity — инвариант «identity отбирает,
+        // qualifier переранжирует» держится, просто других отбирающих слов у лота нет.
+        // Веса уже NAME-уровня: tokenize(text, null) кладёт первый аргумент как имя.
+        if (identity.isEmpty() && !qualifierTokens.isEmpty()) {
+            return new LotQuery(qualifierTokens, List.of(), techSpecParsed);
+        }
 
         Set<String> identityTokens = new LinkedHashSet<>();
         for (WeightedToken t : identity) identityTokens.add(t.token());
 
         List<String> qualifier = new ArrayList<>();
-        for (WeightedToken t : LotQueryTokenizer.tokenize(qualifierText, null)) {
+        for (WeightedToken t : qualifierTokens) {
             if (!identityTokens.contains(t.token())) qualifier.add(t.token());
         }
         return new LotQuery(identity, qualifier, techSpecParsed);
