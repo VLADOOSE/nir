@@ -65,6 +65,8 @@
 - Consumes: `LotQueryTokenizer.tokenize(String lotName, String specCharacteristics)` → `List<WeightedToken>`; `LotQueryTokenizer.WeightedToken(String token, double weight)`; `TechSpecExtractor.characteristics(String fullText)` → `String` или `null`
 - Produces: `LotQueryBuilder.build(String equipName, String requiredSpec)` → `LotQuery`; `record LotQuery(List<WeightedToken> identity, List<String> qualifier, boolean techSpecParsed)`
 
+> **Поправка по итогам ревью Task 1 (2026-08-01).** Добавлено правило: если `identity` пуст, а `qualifier` — нет, токены qualifier **повышаются в identity** (вес 1.0), а qualifier остаётся пустым. Причина: отбирает только `identity`, а имя лота бывает целиком из стоп-слов — в `nirdb` 5 лотов названы ровно «Аппарат», и у лота 5817 при этом 5307-символьное разобранное ТЗ «Аппарат ультразвуковой низкочастотный оториноларингологический…». Без этого правила система сказала бы «не могу» на лоте с идеальным отбирающим текстом; старый код имел такой фолбэк (`computeLotMatch:92–94`), и план его терял. Оба пустые — оба остаются пустыми, это честно неотвечаемый случай.
+
 - [ ] **Step 1: Write the failing test**
 
 ```java
