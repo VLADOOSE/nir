@@ -122,11 +122,30 @@ class LotQueryBuilderTest {
         assertThat(q.techSpecParsed()).isFalse();
     }
 
+    /** Имя целиком из стоп-слов → отбирать нечем, продвигаем описание в identity. */
     @Test
-    void blankNameGivesEmptyIdentity() {
+    void promotesQualifierToIdentityWhenNameIsAllStopWords() {
+        LotQuery q = LotQueryBuilder.build("Аппарат", "ультразвуковой низкочастотный оториноларингологический");
+
+        assertThat(q.identity()).extracting(WeightedToken::token)
+                .contains("ультразвуковой", "низкочастотный", "оториноларингологический");
+        assertThat(q.identity()).extracting(WeightedToken::weight).containsOnly(1.0);
+        assertThat(q.qualifier()).isEmpty();
+    }
+
+    @Test
+    void blankNamePromotesSpecToIdentity() {
         LotQuery q = LotQueryBuilder.build("  ", "что-то");
 
+        assertThat(q.identity()).extracting(WeightedToken::token).contains("что-то");
+    }
+
+    @Test
+    void blankNameAndBlankSpecGivesEmptyQuery() {
+        LotQuery q = LotQueryBuilder.build("  ", null);
+
         assertThat(q.identity()).isEmpty();
+        assertThat(q.qualifier()).isEmpty();
     }
 }
 ```
@@ -164,7 +183,8 @@ import java.util.Set;
  *
  * <p>Дефект, который здесь исправлен: раньше в подбор шёл только результат
  * {@link TechSpecExtractor#characteristics(String)}, а он null без якоря разобранного PDF —
- * то есть у 224 лотов из 225 описание {@code description_ru} выбрасывалось целиком.
+ * то есть у 185 лотов описание {@code description_ru} выбрасывалось целиком, а ещё у 39
+ * (SK-лоты с пустым {@code required_spec}) описания не было вовсе.
  */
 public final class LotQueryBuilder {
 
@@ -180,12 +200,22 @@ public final class LotQueryBuilder {
         String qualifierText = techSpecParsed ? chars : requiredSpec;
 
         List<WeightedToken> identity = LotQueryTokenizer.tokenize(equipName, null);
+        List<WeightedToken> qualifierTokens = LotQueryTokenizer.tokenize(qualifierText, null);
+
+        // Имя целиком из стоп-слов → отбирать нечем, даже когда описание идеальное. Живой случай:
+        // 5 лотов названы ровно «Аппарат» (слово в STOP), у одного при этом разобранное ТЗ на
+        // 5307 символов. Продвигаем токены описания в identity — инвариант «identity отбирает,
+        // qualifier переранжирует» держится, просто других отбирающих слов у лота нет.
+        // Веса уже NAME-уровня: tokenize(text, null) кладёт первый аргумент как имя.
+        if (identity.isEmpty() && !qualifierTokens.isEmpty()) {
+            return new LotQuery(qualifierTokens, List.of(), techSpecParsed);
+        }
 
         Set<String> identityTokens = new LinkedHashSet<>();
         for (WeightedToken t : identity) identityTokens.add(t.token());
 
         List<String> qualifier = new ArrayList<>();
-        for (WeightedToken t : LotQueryTokenizer.tokenize(qualifierText, null)) {
+        for (WeightedToken t : qualifierTokens) {
             if (!identityTokens.contains(t.token())) qualifier.add(t.token());
         }
         return new LotQuery(identity, qualifier, techSpecParsed);
