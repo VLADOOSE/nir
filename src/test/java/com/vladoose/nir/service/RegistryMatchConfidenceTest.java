@@ -81,26 +81,54 @@ class RegistryMatchConfidenceTest {
         assertThat(r.getCannotReason()).isEqualTo(CannotReason.NO_CANDIDATES);
     }
 
-    /** Слабый матч + ТЗ не пытались брать → подсказка «разберите ТЗ». */
+    /**
+     * Слабый матч + ТЗ не пытались брать → подсказка «разберите ТЗ».
+     *
+     * <p>Ассерт БЕЗУСЛОВНЫЙ намеренно. Замер 2026-08-02 на живом реестре: топ-кандидат
+     * («Транспортный бокс с активным охлаждением») даёт <b>0.2629</b> — ниже
+     * {@code SHORTLIST_MIN} (0.30) на 0.037, то есть кейс лежит в зоне CANNOT ПО ЗАМЫСЛУ:
+     * кандидаты есть, но это мусор (транспортный бокс, наборы для микробиологических
+     * исследований), а верный ламинарный бокс BioGuard только пятый с 0.2292.
+     *
+     * <p>⚠️ Калибровка порогов — Task 5. Опустите {@code SHORTLIST_MIN} до 0.25 — кейс
+     * уедет в SHORTLIST и этот тест УПАДЁТ. Так и задумано: падение заставит принять
+     * решение осознанно. Прежняя формулировка через {@code if (confidence == CANNOT)}
+     * вместо падения молча переставала проверять что-либо, унося с собой единственное
+     * покрытие {@code NEED_TECH_SPEC}.
+     */
     @Test
     void weakMatchWithoutTechSpecAsksForIt() {
         TenderLot l = lot("Бокс микробиологической безопасности", null, null);
 
         LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
 
-        if (r.getConfidence() == MatchConfidence.CANNOT) {
-            assertThat(r.getCannotReason()).isEqualTo(CannotReason.NEED_TECH_SPEC);
-        }
+        assertThat(r.getCandidates()).isNotEmpty();   // кандидаты есть — отличие от NO_CANDIDATES
+        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
+        assertThat(r.getCannotReason()).isEqualTo(CannotReason.NEED_TECH_SPEC);
     }
 
-    /** Слабый матч, но ТЗ уже пытались взять и не смогли → причина другая. */
+    /**
+     * Тот же слабый матч, но ТЗ уже пытались взять и не смогли → причина ДРУГАЯ:
+     * не «разберите ТЗ» (разбирать нечего), а «ТЗ взять не удалось».
+     *
+     * <p>Отличие от {@link #noCandidatesGivesCannot()} — именно в кандидатах: здесь они
+     * ЕСТЬ, но слабые (топ 0.2629 < SHORTLIST_MIN), поэтому {@code cannotReasonOf} доходит
+     * до чтения {@code lot.getTechSpecStatus()}. На ненайденном лоте (0 кандидатов) ветка
+     * {@code candidates.isEmpty()} возвращает NO_CANDIDATES раньше, статус ТЗ не читается
+     * вовсе — и тест был бы дубликатом соседнего.
+     *
+     * <p>Это единственное покрытие {@code TECH_SPEC_FAILED}. Значение поднимется в проде,
+     * когда Task 7 начнёт писать {@code TechSpecStatus}: сейчас его в {@code src/main}
+     * не пишет никто, так что ошибку в наборе статусов ловит только этот тест.
+     */
     @Test
     void weakMatchAfterFailedTechSpecSaysSo() {
-        TenderLot l = lot("Криптовалютный майнер", null, TechSpecStatus.ERROR);
+        TenderLot l = lot("Бокс микробиологической безопасности", null, TechSpecStatus.ERROR);
 
         LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
 
+        assertThat(r.getCandidates()).isNotEmpty();
         assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
-        assertThat(r.getCannotReason()).isEqualTo(CannotReason.NO_CANDIDATES);
+        assertThat(r.getCannotReason()).isEqualTo(CannotReason.TECH_SPEC_FAILED);
     }
 }
