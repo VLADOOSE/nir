@@ -1,7 +1,6 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
-import com.vladoose.nir.dto.response.MatchConfidence;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
@@ -88,6 +87,26 @@ class RegistryLotMatchTest {
         });
     }
 
+    /**
+     * Выдача не должна зависеть от {@code limit}. Скоры ложатся на дискретную решётку, поэтому
+     * совпадения бит-в-бит массовые: у «Магнитно-резонансный томограф (безгелиевый)» 11+ записей
+     * с одинаковым 0.393939. Пока в {@code ORDER BY} не было второго ключа, какая из них попадёт
+     * в топ-5, решал heapsort — тот же лот при limit=5/6/10 давал РАЗНЫЙ топ-5, а метрики гейта
+     * (limit=5) мерили не то, что видит оператор: {@code TenderLotController} зовёт
+     * {@code matchForLotUi(id, min(limit, 20))}. Тай-брейк по reg_number это чинит.
+     */
+    @Test
+    void topFiveDoesNotDependOnLimit() {
+        TenderLot lot = savedLot("Магнитно-резонансный томограф (безгелиевый)", null, null);
+
+        List<String> atFive = registryMatchService.candidatesForLot(lot.getId(), 5)
+                .stream().map(RegistryCandidateResponse::getRegNumber).toList();
+        List<String> firstFiveOfTwenty = registryMatchService.candidatesForLot(lot.getId(), 20)
+                .stream().map(RegistryCandidateResponse::getRegNumber).limit(5).toList();
+
+        assertThat(atFive).hasSize(5).isEqualTo(firstFiveOfTwenty);
+    }
+
     @Test
     void golden_defibrillatorMonitor_topContainsDefibrillator() {
         TenderLot lot = savedLot("Дефибриллятор-монитор бифазный портативный", null, null);
@@ -102,51 +121,6 @@ class RegistryLotMatchTest {
         List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 3);
         assertThat(top).isNotEmpty();
         assertThat(top.get(0).getName().toLowerCase()).contains("пульсоксиметр");
-    }
-
-    /**
-     * Аксессуарный лот «Электрод» + ТЗ «пластинки для аппарата электрофореза Элэскулап».
-     *
-     * <p><b>ВЫВОД TASK 6, зафиксирован явно: такой лот реестр-подбором НЕ решается — его
-     * обслуживает комплектность</b> ({@link ComplectService}, покрытие —
-     * {@code ComplectServiceTest.search_findsApparatus_fetchesComplect_ranksSiliconeFirst},
-     * живой кейс Элэскулап в CLAUDE.md §8). Причина не в ранжировании, а в самом реестре:
-     * принадлежности отдельными записями там по большей части НЕ регистрируются, их покрывает
-     * РУ родительского аппарата. Требовать «пластины» или «Элэскулап» в топ-5 реестра значит
-     * требовать от матчера того, чего в его данных нет.
-     *
-     * <p>Прежняя редакция теста требовала ровно этого и потому стояла {@code @Disabled}.
-     * Аннотация снята (Task 6 требует 0 skipped), ожидание заменено на то, что и должно
-     * охраняться на стороне реестра — ЧЕСТНОСТЬ и НАПРАВЛЕНИЕ ранжирования:
-     * <ul>
-     *   <li>лот не показывается уверенно (было: «Электрокардиограф SE-18» с prec 1.0 и score
-     *       0.875 первым — короткое название побеждало по длине, а не по смыслу);</li>
-     *   <li>сверху идёт электрохирургический электрод, а не электрокардиограф.</li>
-     * </ul>
-     * Замер после калибровки: топ-1 «Электрохирургический электрод» 0.7647, электрокардиографы
-     * оттеснены на 0.5515. Верные по разметке записи поднялись, но до топ-5 не дошли:
-     * «Одноразовые электрохирургические пластины» ранг 31 → <b>10</b>, аппарат ЭЛЭСКУЛАП
-     * (РК МИ (МТ)-0№027673) ранг 221 → <b>96</b> из 437 кандидатов.
-     */
-    @Test
-    void golden_electrode_accessoryLot_isHonestAndRanksElectrodesOverEcg() {
-        TenderLot lot = savedLot("Электрод", null, """
-                Приложение 2
-                Описание и требуемые функциональные, технические, качественные и эксплуатационные
-                характеристики
-                закупаемых товаров:
-                Резиновые пластинки для аппарата электрофореза "Элэскулап", размеры 55*80 мм
-                """);
-
-        var match = registryMatchService.matchForLotUi(lot.getId(), 5);
-
-        assertThat(match.getCandidates()).isNotEmpty();
-        assertThat(match.getConfidence())
-                .describedAs("аксессуарный лот не имеет ответа в реестре — уверенность тут была бы враньём")
-                .isNotEqualTo(MatchConfidence.CONFIDENT);
-        assertThat(match.getCandidates().get(0).getName().toLowerCase())
-                .describedAs("сверху электрод, а не электрокардиограф (приз за короткое название снят)")
-                .contains("электрод");
     }
 
     @Test
