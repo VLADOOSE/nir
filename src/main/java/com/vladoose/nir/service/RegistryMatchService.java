@@ -2,6 +2,8 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.RegistrationAction;
+import com.vladoose.nir.dto.response.CannotReason;
+import com.vladoose.nir.dto.response.MatchConfidence;
 import com.vladoose.nir.dto.response.ReconciliationRowResponse;
 import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
@@ -9,15 +11,16 @@ import com.vladoose.nir.dto.response.TokenDfRow;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegistrationStatus;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
-import com.vladoose.nir.util.LotQueryTokenizer;
+import com.vladoose.nir.util.LotQueryBuilder;
+import com.vladoose.nir.util.LotQueryBuilder.LotQuery;
 import com.vladoose.nir.util.LotQueryTokenizer.WeightedToken;
-import com.vladoose.nir.util.TechSpecExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,45 +81,91 @@ public class RegistryMatchService {
         return findCandidates(e.getName(), e.getManufact(), limit);
     }
 
-    /** Общий матч по лоту: бренд задан → бренд-путь; иначе значимые токены имени (+ токены из
-     *  характеристик разобранного ТЗ, вес ×0.5) → пословный триграммный матч. Флаг distinctive —
-     *  есть ли чем различать записи (≥2 токена или задан бренд); при 1 токене процент врёт. */
-    private record LotMatch(List<RegistryCandidateResponse> candidates, boolean distinctive, boolean techSpecParsed) {}
+    /** Пороги зон. Стартовые значения — из прототипа 2026-08-01; калибруются в Task 5. */
+    static final double QUALIFIER_BONUS = 0.3;
+    static final double SCORE_CUTOFF    = 0.2;
+    static final double CONFIDENT_MIN   = 0.55;
+    static final double SHORTLIST_MIN   = 0.30;
+
+    /** Общий матч по лоту: бренд задан → бренд-путь; иначе identity-токены отбирают кандидатов,
+     *  qualifier-токены (описание/ТЗ) их переранжируют. Зона честности считается из РЕЗУЛЬТАТА
+     *  (скор топ-кандидата), а не из числа токенов запроса. */
+    private record LotMatch(List<RegistryCandidateResponse> candidates,
+                            MatchConfidence confidence,
+                            CannotReason cannotReason,
+                            boolean techSpecParsed) {}
 
     private LotMatch computeLotMatch(TenderLot lot, int limit) {
-        String chars = TechSpecExtractor.characteristics(lot.getRequiredSpec()); // один раз (может быть большой текст)
-        boolean techSpecParsed = chars != null;
+        LotQuery query = LotQueryBuilder.build(lot.getEquipName(), lot.getRequiredSpec());
+
+        // Бренд задан оператором (частные заявки West-Med) — прежний бренд-путь, он не диагностирован как проблемный
         if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
-            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), true, techSpecParsed);
+            List<RegistryCandidateResponse> byBrand =
+                    findCandidates(lot.getEquipName(), lot.getManufact(), limit);
+            return new LotMatch(byBrand,
+                    byBrand.isEmpty() ? MatchConfidence.CANNOT : MatchConfidence.CONFIDENT,
+                    byBrand.isEmpty() ? CannotReason.NO_CANDIDATES : null,
+                    query.techSpecParsed());
         }
-        List<WeightedToken> tokens = LotQueryTokenizer.tokenize(lot.getEquipName(), chars);
-        if (tokens.isEmpty()) {
-            return new LotMatch(findCandidates(lot.getEquipName(), lot.getManufact(), limit), false, techSpecParsed);
+
+        if (query.identity().isEmpty()) {
+            return new LotMatch(List.of(), MatchConfidence.CANNOT,
+                    CannotReason.NO_CANDIDATES, query.techSpecParsed());
         }
+
+        List<WeightedToken> effective = withIdfWeights(query.identity());
+        String toks = effective.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
+        String wgts = effective.stream()
+                .map(t -> String.format(Locale.ROOT, "%.3f", t.weight()))
+                .collect(Collectors.joining("|"));
+        String quals = String.join("|", query.qualifier());
+
+        List<RegistryCandidateResponse> candidates = registryRepository
+                .searchByTokensV2(toks, wgts, quals, QUALIFIER_BONUS, SCORE_CUTOFF, limit).stream()
+                .map(this::toCandidate)
+                .toList();
+
+        return new LotMatch(candidates,
+                confidenceOf(candidates),
+                cannotReasonOf(candidates, lot, query.techSpecParsed()),
+                query.techSpecParsed());
+    }
+
+    /** Финальный вес = фактор источника × IDF ln((N+1)/(df+1)); токены с df=0 выкидываем (§8). */
+    private List<WeightedToken> withIdfWeights(List<WeightedToken> tokens) {
         String allToks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
         Map<String, Long> df = registryRepository.tokenDocFreq(allToks).stream()
                 .collect(Collectors.toMap(TokenDfRow::getTok, TokenDfRow::getDf, (a, b) -> a));
-        // Токен, которого НЕТ в названиях реестра (df=0, спец-слово вроде «бифазный»), совпадений не
-        // даёт и лишь раздувает знаменатель score (Σw), сплющивая разницу различающих/родовых слов → выкидываем.
-        List<WeightedToken> effective = tokens.stream()
+        List<WeightedToken> present = tokens.stream()
                 .filter(t -> df.getOrDefault(t.token(), 0L) > 0).toList();
-        if (effective.isEmpty()) effective = tokens;   // все отсутствуют → матч вернёт пусто, но не падаем
+        if (present.isEmpty()) present = tokens;   // все отсутствуют → матч вернёт пусто, но не падаем
 
         double n = registryCount();
-        String toks = effective.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
-        // Финальный вес = фактор источника (1.0 имя / 0.5 ТЗ) × IDF ln((N+1)/(df+1)): редкое слово
-        // тяжелее частого — чинит позиционную эвристику, где различал как раз хвост («Компьютерный томограф»).
-        String wgts = effective.stream()
-                .map(t -> {
-                    double idf = Math.log((n + 1.0) / (df.getOrDefault(t.token(), 0L) + 1.0));
-                    return String.format(Locale.ROOT, "%.3f", t.weight() * idf);
-                })
-                .collect(Collectors.joining("|"));
-        List<RegistryCandidateResponse> candidates = registryRepository.searchByTokens(toks, wgts, limit).stream()
-                .map(this::toCandidate)
+        return present.stream()
+                .map(t -> new WeightedToken(t.token(),
+                        t.weight() * Math.log((n + 1.0) / (df.getOrDefault(t.token(), 0L) + 1.0))))
                 .toList();
-        // ≥2 значимых токена → есть чем различать записи; 1 токен → совпадение только по названию
-        return new LotMatch(candidates, tokens.size() >= 2, techSpecParsed);
+    }
+
+    private MatchConfidence confidenceOf(List<RegistryCandidateResponse> candidates) {
+        if (candidates.isEmpty()) return MatchConfidence.CANNOT;
+        Double top = candidates.get(0).getScore();
+        if (top == null) return MatchConfidence.SHORTLIST;
+        if (top >= CONFIDENT_MIN) return MatchConfidence.CONFIDENT;
+        if (top >= SHORTLIST_MIN) return MatchConfidence.SHORTLIST;
+        return MatchConfidence.CANNOT;
+    }
+
+    private CannotReason cannotReasonOf(List<RegistryCandidateResponse> candidates,
+                                        TenderLot lot, boolean techSpecParsed) {
+        if (confidenceOf(candidates) != MatchConfidence.CANNOT) return null;
+        if (candidates.isEmpty()) return CannotReason.NO_CANDIDATES;
+        if (techSpecParsed) return CannotReason.WEAK_MATCH;
+        TechSpecStatus st = lot.getTechSpecStatus();
+        if (st == TechSpecStatus.NO_FILE || st == TechSpecStatus.UNREADABLE || st == TechSpecStatus.ERROR) {
+            return CannotReason.TECH_SPEC_FAILED;
+        }
+        return CannotReason.NEED_TECH_SPEC;
     }
 
     /** Размер реестра для IDF; стабилен на процесс (JSON-инициализатор наполняет один раз). */
@@ -134,14 +183,15 @@ public class RegistryMatchService {
         return computeLotMatch(lot, limit).candidates();
     }
 
-    /** Для панели «Реестр»: кандидаты + метаданные достоверности матча (distinctive/techSpecParsed). */
+    /** Для панели «Подбор»: кандидаты + зона честности матча (confidence/cannotReason/techSpecParsed). */
     public LotRegistryMatchResponse matchForLotUi(Long lotId, int limit) {
         TenderLot lot = tenderLotRepository.findById(lotId)
                 .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
         LotMatch m = computeLotMatch(lot, limit);
         LotRegistryMatchResponse r = new LotRegistryMatchResponse();
         r.setCandidates(m.candidates());
-        r.setDistinctive(m.distinctive());
+        r.setConfidence(m.confidence());
+        r.setCannotReason(m.cannotReason());
         r.setTechSpecParsed(m.techSpecParsed());
         return r;
     }
