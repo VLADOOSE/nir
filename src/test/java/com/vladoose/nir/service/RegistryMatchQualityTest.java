@@ -83,7 +83,10 @@ class RegistryMatchQualityTest {
      * побитый до одной уцелевшей строки, всё так же напечатал бы baseline — просто бессмысленный.
      * Поэтому три отказа ГРОМКИЕ, а не «continue»:
      * <ol>
-     *   <li>строк с данными разобрано меньше, чем есть в файле — молчаливая потеря кейсов;</li>
+     *   <li>разобрано не столько кейсов, сколько объявлено строкой {@code # КЕЙСОВ: N}
+     *       в шапке файла. Считать строки самого файла для этого НЕДОСТАТОЧНО: у усечённого
+     *       файла счётчик усечётся вместе с ним и сойдётся сам с собой — поймать потерю
+     *       может только число, объявленное ВНЕ данных;</li>
      *   <li>метка не из словаря — опечатка вроде {@code None} или кириллической «С» в
      *       {@code GENERIC} превратила бы кейс в РУ-ключ, который не найдётся никогда,
      *       то есть в вечный промах recall, выглядящий как дефект ранжирования;</li>
@@ -94,11 +97,16 @@ class RegistryMatchQualityTest {
     private List<Case> load() throws Exception {
         List<Case> cases = new ArrayList<>();
         int dataLines = 0;
+        Integer declared = null;
         List<String> bad = new ArrayList<>();
         try (BufferedReader in = new BufferedReader(new InputStreamReader(
                 new ClassPathResource("registry/golden-lots.tsv").getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = in.readLine()) != null) {
+                if (line.startsWith("# КЕЙСОВ:")) {
+                    declared = Integer.parseInt(line.substring("# КЕЙСОВ:".length()).trim());
+                    continue;
+                }
                 if (line.isBlank() || line.startsWith("#")) continue;
                 dataLines++;
                 String[] p = line.split("\t", -1);
@@ -119,6 +127,9 @@ class RegistryMatchQualityTest {
         }
         assertThat(bad).as("набор разобран без потерь").isEmpty();
         assertThat(cases).as("строк данных разобрано столько же, сколько в файле").hasSize(dataLines);
+        assertThat(declared).as("шапка объявляет число кейсов строкой «# КЕЙСОВ: N»").isNotNull();
+        assertThat(cases).as("кейсов столько, сколько объявлено в шапке (гард от усечения файла)")
+                .hasSize(declared);
 
         List<String> unknown = cases.stream().flatMap(c -> c.keys().stream()).distinct()
                 .filter(k -> registryRepository.findByRegNumber(k).isEmpty()).toList();
