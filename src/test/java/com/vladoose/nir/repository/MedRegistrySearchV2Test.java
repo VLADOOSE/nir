@@ -22,10 +22,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class MedRegistrySearchV2Test {
 
-    private static final double BONUS = 0.3;
-    private static final double MIN_SCORE = 0.2;
+    // Зеркалят откалиброванные константы RegistryMatchService (там же и обоснование).
+    // Дублируются, а не импортируются: константы служебные (package-private в другом пакете),
+    // а тест обязан гонять запрос ровно с боевыми значениями.
+    private static final double BETA2 = 2.25;
+    private static final double SMOOTH = 2.0;
+    private static final double BONUS = 0.5;
+    private static final double FULL_COVER = 0.8;
+    private static final double MIN_SCORE = 0.19;
 
     @Autowired MedRegistryRepository repo;
+
+    private List<? extends RegistryCandidateRow> search(String tokens, String weights, String quals,
+                                                        double minScore, int limit) {
+        return repo.searchByTokensV2(tokens, weights, quals, BETA2, SMOOTH, BONUS, FULL_COVER,
+                minScore, limit);
+    }
 
     /**
      * Находка 2: у «перчатки» было 147 записей со скором ровно 1.000 — оператор видел 6 из них,
@@ -33,28 +45,26 @@ class MedRegistrySearchV2Test {
      *
      * <p><b>Уникальности скоров тут ждать НЕЛЬЗЯ, и это не слабость проверки.</b> При одном
      * токене запроса и одном совпавшем слове (nhit=1) скор равен
-     * {@code 2r/(r·nsig + 1)}, где r = recall, nsig — число значимых слов названия записи,
-     * то есть значений ровно столько, сколько различных nsig в выдаче. Скоры ложатся на
-     * дискретную решётку {@code 2/(n+1)}: 0.400, 0.333, 0.286, 0.250, 0.222, 0.200, 0.182 …
+     * {@code 3.25r/(2.25 + r·(nsig+2))}, где r = recall, nsig — число значимых слов названия
+     * записи, то есть различных значений ровно столько, сколько различных nsig в выдаче.
+     * При r=1 это решётка {@code 3.25/(nsig+4.25)}: 0.619, 0.520, 0.448, 0.394, 0.351 …
+     * (до калибровки 2026-08-02 формула была F1 без сглаживания и решётка была {@code 2/(n+1)}).
      *
      * <p>NB: НЕВЕРНО думать, будто r всегда равен 1.0 (это правда для «перчатки» — 98.6% строк,
      * но не вообще: у «спектрофотометр» 0 из 3, у «шприц» 33.5%, у «томограф» 44.7%). Вывод
-     * держится на более сильном основании: отсечка score ≥ 0.2 равносильна
-     * {@code nsig ≤ 10 − 1/r}, а на всей допустимой полосе r ∈ [0.6, 1] эта граница пробегает
-     * лишь [8.33, 9] — то есть практически не зависит от близости совпадения. Фактическая
-     * константа — <b>8, а не 9</b>: при r=1 и nsig=9 арифметика float8 даёт
-     * {@code 2·(1/9)/(1+1/9) = 0.19999999999999998}, что порог ≥ 0.2 не проходит.
+     * держится на более сильном основании: отсечка {@code score >= 0.19} равносильна
+     * {@code nsig <= 15.105 − 2.25/r}, а на всей допустимой полосе r ∈ [0.6, 1] эта граница
+     * пробегает лишь [11.36, 12.86] — то есть отсечка по-прежнему управляет ДЛИНОЙ названия,
+     * а не близостью совпадения. Порог намеренно выбран МЕЖДУ узлами решётки (узел nsig=12
+     * приходится ровно на 0.2000, следующий — 0.1884), иначе судьбу целой корзины записей
+     * решало бы округление float8.
      *
      * <p>Проверяем то, ради чего всё делалось: скор перестал быть константой и выдача
-     * осмысленно упорядочена. Порог «≥ 3 различных» взят не с потолка и не подогнан под
-     * зелёный: замер по «перчатки» на живом реестре даёт в топ-10 ровно <b>4</b> различных
-     * значения — вёдра 0.4000 (1 запись), 0.3333 (5), 0.2927 (1), 0.2857 (6), далее
-     * 0.2500 (24), 0.2222 (29). То есть у проверки один запас-ведро на дрейф реестра.
+     * осмысленно упорядочена (прежняя выдача была сплошь 1.000 у 147 записей).
      */
     @Test
     void breaksTiesForGenericOneWordLot() {
-        List<RegistryCandidateRow> rows =
-                repo.searchByTokensV2("перчатки", "1.0", "", BONUS, MIN_SCORE, 10);
+        List<? extends RegistryCandidateRow> rows = search("перчатки", "1.0", "", MIN_SCORE, 10);
 
         assertThat(rows).hasSizeGreaterThan(3);
 
@@ -71,8 +81,8 @@ class MedRegistrySearchV2Test {
     /** Находка 5: описание «вакуумный» должно поднять вакуумный насос на первое место. */
     @Test
     void qualifierLiftsMatchingCandidate() {
-        List<RegistryCandidateRow> rows =
-                repo.searchByTokensV2("насос", "1.0", "вакуумный|производительность", BONUS, MIN_SCORE, 5);
+        List<? extends RegistryCandidateRow> rows =
+                search("насос", "1.0", "вакуумный|производительность", MIN_SCORE, 5);
 
         assertThat(rows).isNotEmpty();
         assertThat(rows.get(0).getName().toLowerCase()).contains("вакуумн");
@@ -87,11 +97,9 @@ class MedRegistrySearchV2Test {
      */
     @Test
     void qualifierDoesNotWidenCandidateSet() {
-        int withoutQualifier =
-                repo.searchByTokensV2("спектрофотометр", "1.0", "", BONUS, 0.0, 100).size();
-        int withQualifier =
-                repo.searchByTokensV2("спектрофотометр", "1.0",
-                        "измерения|оптической|плотности|раствора", BONUS, 0.0, 100).size();
+        int withoutQualifier = search("спектрофотометр", "1.0", "", 0.0, 100).size();
+        int withQualifier = search("спектрофотометр", "1.0",
+                "измерения|оптической|плотности|раствора", 0.0, 100).size();
 
         assertThat(withQualifier).isEqualTo(withoutQualifier);
     }
@@ -105,13 +113,10 @@ class MedRegistrySearchV2Test {
      */
     @Test
     void qualifierNeverExceedsIdentityCandidateCountAtRealThreshold() {
-        int identityCandidates =
-                repo.searchByTokensV2("перчатки", "1.0", "", BONUS, 0.0, 1000).size();
-        int withQualifierAtThreshold =
-                repo.searchByTokensV2("перчатки", "1.0",
-                        "смотровые|нитриловые|неопудренные", BONUS, MIN_SCORE, 1000).size();
-        int withoutQualifierAtThreshold =
-                repo.searchByTokensV2("перчатки", "1.0", "", BONUS, MIN_SCORE, 1000).size();
+        int identityCandidates = search("перчатки", "1.0", "", 0.0, 1000).size();
+        int withQualifierAtThreshold = search("перчатки", "1.0",
+                "смотровые|нитриловые|неопудренные", MIN_SCORE, 1000).size();
+        int withoutQualifierAtThreshold = search("перчатки", "1.0", "", MIN_SCORE, 1000).size();
 
         assertThat(withQualifierAtThreshold)
                 .describedAs("qualifier не может привести строку вне identity-отбора")
@@ -131,8 +136,7 @@ class MedRegistrySearchV2Test {
      */
     @Test
     void latinTradeNamesDoNotDiluteDenominatorForCyrillicQuery() {
-        List<RegistryCandidateRow> rows =
-                repo.searchByTokensV2("катетер", "1.0", "", BONUS, MIN_SCORE, 200);
+        List<? extends RegistryCandidateRow> rows = search("катетер", "1.0", "", MIN_SCORE, 200);
 
         assertThat(rows).isNotEmpty();
         assertThat(rows).extracting(RegistryCandidateRow::getRegNumber)
@@ -149,8 +153,7 @@ class MedRegistrySearchV2Test {
      */
     @Test
     void penalizesRegistryEntriesWithMuchUnexplainedContent() {
-        List<RegistryCandidateRow> rows =
-                repo.searchByTokensV2("морозильник", "1.0", "", BONUS, MIN_SCORE, 10);
+        List<? extends RegistryCandidateRow> rows = search("морозильник", "1.0", "", MIN_SCORE, 10);
 
         // нужны минимум две строки, иначе top == last и сравнение бессмысленно
         assertThat(rows).hasSizeGreaterThan(1);
@@ -176,6 +179,6 @@ class MedRegistrySearchV2Test {
 
     @Test
     void emptyQualifierIsHandled() {
-        assertThat(repo.searchByTokensV2("центрифуга", "1.0", "", BONUS, MIN_SCORE, 5)).isNotEmpty();
+        assertThat(search("центрифуга", "1.0", "", MIN_SCORE, 5)).isNotEmpty();
     }
 }

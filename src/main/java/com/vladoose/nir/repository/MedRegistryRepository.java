@@ -2,6 +2,7 @@ package com.vladoose.nir.repository;
 
 import com.vladoose.nir.dto.response.ApparatusRow;
 import com.vladoose.nir.dto.response.RegistryCandidateRow;
+import com.vladoose.nir.dto.response.RegistryCandidateRowV2;
 import com.vladoose.nir.dto.response.TokenDfRow;
 import com.vladoose.nir.entity.MedRegistry;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -48,16 +49,51 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
      * 66 → 143 из 148 кандидатов). Инвариант — «не больше, чем отобрал identity», а не
      * «выдача не меняется».
      *
-     * <p>score = F1(recall_q, precision_d) + bonus·qualifier_hit_ratio, где
+     * <p>score = F<sub>β</sub>(recall_q, precision_d) + bonus·qualifier_hit_ratio, где
      * <ul>
      *   <li>recall_q — взвешенное (IDF) покрытие запроса названием записи;</li>
-     *   <li>precision_d — доля значимых (≥4 симв.) слов НАЗВАНИЯ ЗАПИСИ, покрытых запросом.
+     *   <li>precision_d — доля значимых (≥4 симв.) слов НАЗВАНИЯ ЗАПИСИ, покрытых запросом,
+     *       со СГЛАЖЕННЫМ знаменателем {@code nhit/(nden + :smoothing)}.
      *       Знаменатель: слова алфавита запроса поштучно + вся латиница как ОДНА единица
      *       (почему именно так и какие два «очевидных» варианта отвергнуты — в комментарии
      *       у знаменателя ниже). Это новый член: он нормирует по длине записи, чего в V1
      *       не было вообще, из-за чего «перчатки» давали 147 записей со скором 1.000.</li>
      * </ul>
-     * Порог совпадения слова 0.6 = глобальный word_similarity_threshold; передаётся в запрос,
+     *
+     * <p><b>Почему F<sub>β</sub>, а не F1, и почему знаменатель сглажен (калибровка 2026-08-02,
+     * golden-набор 71 лот / реестр 14072).</b> При одном-двух identity-токенах симметричный F1
+     * вырождался в приз за КОРОТКОЕ название реестра: у однотокенного запроса скор алгебраически
+     * схлопывается в {@code 2/(nsig+1)} — чистую функцию ДЛИНЫ названия записи, не несущую
+     * никакой информации о качестве совпадения, а однословных имён лотов в корпусе 52.5 %.
+     * Мерялись все три варианта из плана, по одному за раз:
+     * <ul>
+     *   <li>(а) сглаживание знаменателя {@code nden+2} В ОДИНОЧКУ ранжирование НЕ двигает
+     *       (recall@5 10/19 → 10/19): оно монотонно по nden, поэтому порядок записей с равным
+     *       recall сохраняет — сжимает шкалу, но не переставляет;</li>
+     *   <li>(б) IDF-взвешивание qualifier-попаданий — при бонусе 0.5 метрики те же, что у простой
+     *       доли (13/19 и 11/19), поэтому оставлена простая доля как более дешёвая;</li>
+     *   <li>(в) сдвиг баланса к recall (β=1.5) — единственное, что переставляет выдачу:
+     *       recall@5 10 → 12/19, precision@1 9 → 10/19. β=2.0 дальше не улучшает (12/19).</li>
+     * </ul>
+     * Принято (в) + (а): сглаживание само по себе нейтрально к ранжированию, но убирает взрывной
+     * приз за {@code nsig=1} и вместе с β даёт +1 к корректности зоны. Бонус qualifier поднят
+     * 0.3 → 0.5 (ещё +1 recall@5 и +1 precision@1): именно он вытаскивает случаи «класс верный,
+     * запись не та» — у лота «Стерилизатор» ТЗ прямым текстом называет «плазменного
+     * стерилизатора Lowtem», и при бонусе 0.3 этот сигнал тонул в разнице длин названий.
+     *
+     * <p><b>Отвергнуто с цифрами:</b> расширение qualifier-текста (санитайз goszakup-шапки через
+     * {@code LotDescriptiveText}) и подъём потолка qualifier-токенов 5 → 12/25 метрик НЕ меняют,
+     * а в связке с бонусом 0.5 даже теряют один кейс (recall@5 13 → 12/19): лишние токены
+     * размывают долю попаданий сильнее, чем добавляют сигнала. Способ сборки запроса оставлен
+     * как был.
+     *
+     * <p><b>{@code rivals}</b> — сколько записей реестра ПОЛНОСТЬЮ покрывают identity-запрос
+     * ({@code recall >= :fullCover}), то есть сколько равноправных ответов у лота есть в
+     * принципе. Считается окном по ВСЕМУ отобранному пулу (до отсечки {@code :minScore}),
+     * поэтому одинаково у всех строк выдачи. Это честная мера неразличимости: «Перчатки» дают
+     * 147 равноправных записей, и показывать первую с процентом — враньё независимо от её скора.
+     *
+     * <p>Порог совпадения слова 0.6 = глобальный word_similarity_threshold; передаётся в запрос,
      * глобальную настройку не трогаем.
      */
     @Query(nativeQuery = true, value =
@@ -65,8 +101,13 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "  SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, " +
             "         m.country AS country, m.reg_date AS regDate, m.expiration_date AS expirationDate, " +
             "         m.unlimited AS unlimited, " +
-            "         (2 * r.recall * p.prec / NULLIF(r.recall + p.prec, 0) " +
-            "          + :bonus * COALESCE(q.hit, 0)) AS score " +
+            "         ((1 + :beta2) * r.recall * (p.nhit / (p.nden + :smoothing)) " +
+            "          / NULLIF(:beta2 * (p.nhit / (p.nden + :smoothing)) + r.recall, 0) " +
+            "          + :bonus * COALESCE(q.hit, 0)) AS score, " +
+            // окно по всему пулу: считается ДО отсечки :minScore, поэтому не зависит от того,
+            // сколько строк переживёт порог — иначе «сколько равноправных ответов» мерило бы
+            // само себя после фильтра
+            "         CAST(count(*) FILTER (WHERE r.recall >= :fullCover) OVER () AS int) AS rivals " +
             "  FROM med_registry m " +
             "  CROSS JOIN LATERAL ( " +
             "    SELECT sum(w.wgt::float8 * word_similarity(t.tok, m.name)) / sum(w.wgt::float8) AS recall " +
@@ -96,13 +137,13 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "  CROSS JOIN LATERAL ( " +
             "    SELECT count(*) FILTER (WHERE EXISTS ( " +
             "             SELECT 1 FROM unnest(string_to_array(:tokens,'|')) tk(tok) " +
-            "             WHERE word_similarity(tk.tok, d.w) >= 0.6))::float8 " +
-            "           / greatest( " +
+            "             WHERE word_similarity(tk.tok, d.w) >= 0.6))::float8 AS nhit, " +
+            "           greatest( " +
             "               count(*) FILTER (WHERE (d.w ~ '[а-яё]' AND lower(:tokens) ~ '[а-яё]') " +
             "                                   OR (d.w ~ '[a-z]'  AND lower(:tokens) ~ '[a-z]')) " +
             "             + least(count(*) FILTER (WHERE NOT ((d.w ~ '[а-яё]' AND lower(:tokens) ~ '[а-яё]') " +
             "                                             OR (d.w ~ '[a-z]'  AND lower(:tokens) ~ '[a-z]'))), 1) " +
-            "             , 1) AS prec " +
+            "             , 1)::float8 AS nden " +
             "    FROM unnest(string_to_array(lower(regexp_replace(m.name,'[^[:alpha:]]',' ','g')),' ')) d(w) " +
             "    WHERE length(d.w) >= 4 " +
             "  ) p " +
@@ -117,12 +158,15 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             ") s WHERE s.score >= :minScore " +
             "ORDER BY s.score DESC " +
             "LIMIT :limit")
-    List<RegistryCandidateRow> searchByTokensV2(@Param("tokens") String tokens,
-                                                @Param("weights") String weights,
-                                                @Param("qualifiers") String qualifiers,
-                                                @Param("bonus") double bonus,
-                                                @Param("minScore") double minScore,
-                                                @Param("limit") int limit);
+    List<RegistryCandidateRowV2> searchByTokensV2(@Param("tokens") String tokens,
+                                                  @Param("weights") String weights,
+                                                  @Param("qualifiers") String qualifiers,
+                                                  @Param("beta2") double beta2,
+                                                  @Param("smoothing") double smoothing,
+                                                  @Param("bonus") double bonus,
+                                                  @Param("fullCover") double fullCover,
+                                                  @Param("minScore") double minScore,
+                                                  @Param("limit") int limit);
 
     /**
      * Частотность (document frequency) каждого токена: сколько записей реестра пословно похожи

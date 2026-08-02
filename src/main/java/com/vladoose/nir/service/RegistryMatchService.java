@@ -7,6 +7,7 @@ import com.vladoose.nir.dto.response.MatchConfidence;
 import com.vladoose.nir.dto.response.ReconciliationRowResponse;
 import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
+import com.vladoose.nir.dto.response.RegistryCandidateRowV2;
 import com.vladoose.nir.dto.response.TokenDfRow;
 import com.vladoose.nir.entity.MedEquipment;
 import com.vladoose.nir.entity.MedRegistry;
@@ -81,11 +82,71 @@ public class RegistryMatchService {
         return findCandidates(e.getName(), e.getManufact(), limit);
     }
 
-    /** Пороги зон. Стартовые значения — из прототипа 2026-08-01; калибруются в Task 5. */
-    static final double QUALIFIER_BONUS = 0.3;
-    static final double SCORE_CUTOFF    = 0.2;
+    /*
+     * Формула и пороги зон. КАЛИБРОВАНО 2026-08-02 на golden-наборе
+     * (src/test/resources/registry/golden-lots.tsv — 71 размеченный лот, снимок реестра 14072).
+     * Baseline до калибровки: recall@5 10/19, precision@1 9/19, корректность зоны 20/71 (28 %).
+     * После: recall@5 13/19, precision@1 11/19, корректность зоны 58/71 (82 %),
+     * «уверенных выдумок» 3 → 0. Метрики защищены гейтом RegistryMatchQualityTest.
+     * Перекалибровывать при переимпорте реестра (веса IDF зависят от его размера).
+     */
+
+    /** β² для F<sub>β</sub>: β=1.5 — баланс сдвинут к recall. Единственный из трёх вариантов
+     *  плана, который реально переставляет выдачу (recall@5 10 → 12/19); подробности и цифры
+     *  отвергнутых вариантов — в javadoc {@code MedRegistryRepository.searchByTokensV2}. */
+    static final double BETA_SQUARED    = 2.25;
+    /** Сглаживание знаменателя precision_d: {@code nhit/(nden+2)} вместо {@code nhit/nden} —
+     *  убирает взрывной приз за односложное название реестра (nsig=1 давало prec=1.0). */
+    static final double PREC_SMOOTHING  = 2.0;
+    /** Вес qualifier-бонуса (доля попавших токенов ТЗ). 0.3 → 0.5: +1 recall@5 и +1 precision@1;
+     *  это и есть рычаг режима «класс верный, запись не та» («Стерилизатор» → Lowtem). */
+    static final double QUALIFIER_BONUS = 0.5;
+    /**
+     * Отсечка по скору. НЕ порог похожести: для однотокенного запроса {@code score >= X}
+     * эквивалентно «в названии записи не больше N значимых слов» и от близости совпадения не
+     * зависит. На наборе значение в диапазоне 0.00…0.30 не меняет НИ ОДНОЙ метрики, поэтому
+     * выбрано не по метрике, а по устойчивости: скоры однотокенных запросов лежат на
+     * дискретной решётке {@code 3.25/(nsig+4.25)}, и узел nsig=12 приходится ровно на 0.200 —
+     * порог, поставленный НА узел, отдаёт судьбу целой корзины записей округлению float8.
+     * 0.19 лежит между узлами 12 (0.2000) и 13 (0.1884).
+     */
+    static final double SCORE_CUTOFF    = 0.19;
+    /**
+     * Порог показа процента и порог «слабого матча» совпадают НАМЕРЕННО, это не опечатка.
+     * После введения гардов ниже границу между SHORTLIST и CANNOT проводит не скор, а
+     * структура выдачи: низкий скор при нескольких равноправных записях — признак РОДОВОГО
+     * лота, а не плохого совпадения, и прятать такой список нечестно. Скор же решает только
+     * «показывать ли процент». Сетка 0.25…0.75 × шаг 0.05: 0.55/0.55 даёт максимум
+     * корректности зоны (58/71); соседи стоят 1–2 кейса (0.60/0.55 → 57, 0.55/0.40 → 56).
+     */
     static final double CONFIDENT_MIN   = 0.55;
-    static final double SHORTLIST_MIN   = 0.30;
+    static final double SHORTLIST_MIN   = 0.55;
+
+    /** Порог «запись полностью покрывает запрос» для подсчёта {@code rivals}. */
+    static final double FULL_COVER_MIN  = 0.8;
+    /**
+     * Сколько равноправных записей ещё допускает CONFIDENT. Пять — потому что столько строк
+     * и показывает панель: если полностью подходящих записей больше, чем помещается в выдачу,
+     * называть первую ответом нельзя. Это главный гард — он один поднимает корректность зоны
+     * с 42/71 до 58/71 и обнуляет главную ошибку baseline (20 GENERIC-лотов с процентом).
+     * Плато 5…8 на наборе; за ним деградация (10 → 58, 15 → 56, без гарда → 43).
+     */
+    static final int    MAX_RIVALS      = 5;
+    /**
+     * При скольких равноправных записях показывать шорт-лист ВОПРЕКИ низкому скору. У родового
+     * лота скор низок из-за длины названий реестра, а не из-за плохого совпадения (см.
+     * SCORE_CUTOFF), поэтому без этого правила 13 GENERIC-лотов из 30 получали ПУСТОЙ ЭКРАН
+     * при живых кандидатах. Метрика корректности зоны этого не видит (для неё CANNOT на
+     * GENERIC — зачёт), и именно поэтому правило выбрано по диагностике «тихих зачётов»,
+     * а не по метрике: 13 → 0 ценой 1 кейса зоны.
+     */
+    static final int    SHORTLIST_IF_RIVALS = 2;
+    /**
+     * Минимальная доля слов имени лота, которые вообще встречаются в реестре. Ниже — отбор шёл
+     * по обрывку запроса, см. {@link CannotReason#QUERY_NOT_IN_REGISTRY}. Плато 0.6…1.0 на
+     * наборе; взято левое, наименее вмешивающееся значение.
+     */
+    static final double MIN_QUERY_COVER = 0.6;
 
     /** Общий матч по лоту: бренд задан → бренд-путь; иначе identity-токены отбирают кандидатов,
      *  qualifier-токены (описание/ТЗ) их переранжируют. Зона честности считается из РЕЗУЛЬТАТА
@@ -113,53 +174,78 @@ public class RegistryMatchService {
                     CannotReason.NO_CANDIDATES, query.techSpecParsed());
         }
 
-        List<WeightedToken> effective = withIdfWeights(query.identity());
-        String toks = effective.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
-        String wgts = effective.stream()
+        WeightedQuery wq = withIdfWeights(query.identity());
+        String toks = wq.tokens().stream().map(WeightedToken::token).collect(Collectors.joining("|"));
+        String wgts = wq.tokens().stream()
                 .map(t -> String.format(Locale.ROOT, "%.3f", t.weight()))
                 .collect(Collectors.joining("|"));
         String quals = String.join("|", query.qualifier());
 
-        List<RegistryCandidateResponse> candidates = registryRepository
-                .searchByTokensV2(toks, wgts, quals, QUALIFIER_BONUS, SCORE_CUTOFF, limit).stream()
-                .map(this::toCandidate)
-                .toList();
+        List<RegistryCandidateRowV2> rows = registryRepository.searchByTokensV2(
+                toks, wgts, quals, BETA_SQUARED, PREC_SMOOTHING, QUALIFIER_BONUS,
+                FULL_COVER_MIN, SCORE_CUTOFF, limit);
+        List<RegistryCandidateResponse> candidates = rows.stream().map(this::toCandidate).toList();
+        // rivals одинаков во всех строках (окно по пулу) — берём из любой
+        int rivals = rows.isEmpty() || rows.get(0).getRivals() == null ? 0 : rows.get(0).getRivals();
 
-        return new LotMatch(candidates,
-                confidenceOf(candidates),
-                cannotReasonOf(candidates, lot, query.techSpecParsed()),
+        MatchConfidence zone = confidenceOf(candidates, rivals, wq.cover());
+        return new LotMatch(candidates, zone,
+                cannotReasonOf(zone, candidates, wq.cover(), lot, query.techSpecParsed()),
                 query.techSpecParsed());
     }
 
-    /** Финальный вес = фактор источника × IDF ln((N+1)/(df+1)); токены с df=0 выкидываем (§8). */
-    private List<WeightedToken> withIdfWeights(List<WeightedToken> tokens) {
+    /** Взвешенный запрос + доля слов имени, которые вообще есть в реестре ({@code cover}). */
+    private record WeightedQuery(List<WeightedToken> tokens, double cover) {}
+
+    /**
+     * Финальный вес = фактор источника × IDF ln((N+1)/(df+1)); токены с df=0 выкидываем (§8).
+     *
+     * <p>Возвращает ещё и {@code cover} — какая доля исходных identity-токенов пережила выброс.
+     * В двухстадийной схеме выброс df=0 решает не вес, а ОТБОР, поэтому «сколько слов лота
+     * вообще есть в реестре» — самостоятельный вход зоны честности, а не деталь взвешивания.
+     */
+    private WeightedQuery withIdfWeights(List<WeightedToken> tokens) {
         String allToks = tokens.stream().map(WeightedToken::token).collect(Collectors.joining("|"));
         Map<String, Long> df = registryRepository.tokenDocFreq(allToks).stream()
                 .collect(Collectors.toMap(TokenDfRow::getTok, TokenDfRow::getDf, (a, b) -> a));
         List<WeightedToken> present = tokens.stream()
                 .filter(t -> df.getOrDefault(t.token(), 0L) > 0).toList();
+        double cover = tokens.isEmpty() ? 1.0 : (double) present.size() / tokens.size();
         if (present.isEmpty()) present = tokens;   // все отсутствуют → матч вернёт пусто, но не падаем
 
         double n = registryCount();
-        return present.stream()
+        return new WeightedQuery(present.stream()
                 .map(t -> new WeightedToken(t.token(),
                         t.weight() * Math.log((n + 1.0) / (df.getOrDefault(t.token(), 0L) + 1.0))))
-                .toList();
+                .toList(), cover);
     }
 
-    private MatchConfidence confidenceOf(List<RegistryCandidateResponse> candidates) {
+    /**
+     * Зона честности. Три входа, а не один: скор топ-кандидата отвечает только на вопрос
+     * «показывать ли процент», а «есть ли вообще что показывать» решают структурные признаки —
+     * сколько равноправных ответов у лота ({@code rivals}) и по всему ли имени шёл отбор
+     * ({@code queryCover}). Прежняя версия читала ТОЛЬКО скор и потому объявляла уверенность
+     * на «Перчатках» (147 равноправных записей) и на обрывке запроса.
+     */
+    private MatchConfidence confidenceOf(List<RegistryCandidateResponse> candidates,
+                                         int rivals, double queryCover) {
         if (candidates.isEmpty()) return MatchConfidence.CANNOT;
+        if (queryCover < MIN_QUERY_COVER) return MatchConfidence.CANNOT;
         Double top = candidates.get(0).getScore();
         if (top == null) return MatchConfidence.SHORTLIST;
-        if (top >= CONFIDENT_MIN) return MatchConfidence.CONFIDENT;
-        if (top >= SHORTLIST_MIN) return MatchConfidence.SHORTLIST;
+        if (top >= CONFIDENT_MIN && rivals <= MAX_RIVALS) return MatchConfidence.CONFIDENT;
+        if (top >= SHORTLIST_MIN || rivals >= SHORTLIST_IF_RIVALS) return MatchConfidence.SHORTLIST;
         return MatchConfidence.CANNOT;
     }
 
-    private CannotReason cannotReasonOf(List<RegistryCandidateResponse> candidates,
-                                        TenderLot lot, boolean techSpecParsed) {
-        if (confidenceOf(candidates) != MatchConfidence.CANNOT) return null;
+    private CannotReason cannotReasonOf(MatchConfidence zone,
+                                        List<RegistryCandidateResponse> candidates,
+                                        double queryCover, TenderLot lot, boolean techSpecParsed) {
+        if (zone != MatchConfidence.CANNOT) return null;
         if (candidates.isEmpty()) return CannotReason.NO_CANDIDATES;
+        // проверяется РАНЬШЕ ТЗ: если слов лота нет в реестре, разбор техспеки этого не исправит —
+        // предлагать «разберите ТЗ» значит отправить оператора за бесполезной работой
+        if (queryCover < MIN_QUERY_COVER) return CannotReason.QUERY_NOT_IN_REGISTRY;
         if (techSpecParsed) return CannotReason.WEAK_MATCH;
         TechSpecStatus st = lot.getTechSpecStatus();
         if (st == TechSpecStatus.NO_FILE || st == TechSpecStatus.UNREADABLE || st == TechSpecStatus.ERROR) {
