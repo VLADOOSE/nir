@@ -80,12 +80,17 @@ public class SkPharmacyTenderWriter {
             return;
         }
 
-        LotMergeIndex index = new LotMergeIndex(t.getLots());
+        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
+        // Имя обрезаем так же, как при записи в equipName — иначе длинные имена не совпадут сами с собой.
+        List<TenderLot> matched = new LotMergeIndex(t.getLots())
+                .matchAll(lots, l -> trunc(l.code(), 50), l -> trunc(l.name(), 255));
+
         List<TenderLot> result = new ArrayList<>();
         int n = 1;
-        for (SkLot l : lots) {
+        for (int i = 0; i < lots.size(); i++) {
+            SkLot l = lots.get(i);
             String code = trunc(l.code(), 50);
-            TenderLot lot = index.claim(code, l.name());
+            TenderLot lot = matched.get(i);
             if (lot == null) {
                 lot = new TenderLot();
                 lot.setTender(t);

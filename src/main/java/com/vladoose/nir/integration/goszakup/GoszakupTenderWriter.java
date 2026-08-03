@@ -110,11 +110,15 @@ public class GoszakupTenderWriter {
             return;
         }
 
-        LotMergeIndex index = new LotMergeIndex(t.getLots());
+        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex)
+        List<TenderLot> matched = new LotMergeIndex(t.getLots())
+                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), LotDto::getNameRu);
+
         List<TenderLot> result = new ArrayList<>();
-        for (LotDto d : lots) {
+        for (int i = 0; i < lots.size(); i++) {
+            LotDto d = lots.get(i);
             String code = trunc(d.getLotNumber(), 50);
-            TenderLot lot = index.claim(code, d.getNameRu());
+            TenderLot lot = matched.get(i);
             if (lot == null) {
                 lot = new TenderLot();
                 lot.setTender(t);

@@ -11,6 +11,7 @@ import com.vladoose.nir.dto.response.ParseTechSpecResponse;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.entity.EquipmentType;
 import com.vladoose.nir.entity.MedEquipment;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
@@ -175,6 +176,11 @@ public class TenderLotController {
     public TenderLotResponse update(@PathVariable Long id, @Valid @RequestBody TenderLotRequest request) {
         TenderLot existing = service.findById(id);
         mapper.updateEntity(request, existing);
+        // ТЗ, вписанное оператором руками, — такое же разобранное ТЗ: без отметки переимпорт
+        // затёр бы его описанием с площадки (та же дыра, что чинилась в TechSpecWriter).
+        if (request.getRequiredSpec() != null && !request.getRequiredSpec().isBlank()) {
+            existing.setTechSpecStatus(TechSpecStatus.OK);
+        }
         if (request.getTenderId() != null) {
             // Replace the stub reference with the managed entity
             Tender tender = tenderService.findById(request.getTenderId());

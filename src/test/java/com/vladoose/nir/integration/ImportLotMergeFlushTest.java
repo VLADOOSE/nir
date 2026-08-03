@@ -1,6 +1,8 @@
 package com.vladoose.nir.integration;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.controller.TenderLotController;
+import com.vladoose.nir.dto.request.TenderLotRequest;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.Tender;
@@ -46,6 +48,7 @@ class ImportLotMergeFlushTest {
     @Autowired GoszakupTenderWriter goszakupWriter;
     @Autowired SkPharmacyTenderWriter skWriter;
     @Autowired TechSpecWriter techSpecWriter;
+    @Autowired TenderLotController lotController;
     @Autowired TenderRepository tenderRepository;
     @PersistenceContext EntityManager em;
 
@@ -179,6 +182,144 @@ class ImportLotMergeFlushTest {
 
         assertThat(em.find(TenderLot.class, lot.getId()).getRequiredSpec())
                 .as("техспека не затёрта коротким описанием площадки").contains("2.0-9.0 МГц");
+    }
+
+    /**
+     * Живой случай мис-привязки: тендер 17294802-1 — шесть лотов «Набор реагентов», у одного
+     * разобранное ТЗ (1724 симв.), и именно он из-за UPDATE уехал в конец кучи, поэтому приходил
+     * из БД ПОСЛЕДНИМ. Слияние по неоднозначному имени спарило бы входящий лот №1 с чужой строкой,
+     * затерев её ТЗ коротким описанием, а разобранное ТЗ предъявило бы под лотом №6 с его
+     * количеством и ценой.
+     *
+     * <p>Тест утверждает ПРИВЯЗКУ, а не выживание текста: замер, считающий только «сколько ТЗ
+     * уцелело», такую ошибку увидеть не может в принципе.
+     */
+    @Test
+    void ambiguousNamesDoNotMisattachParsedSpec() {
+        String anno = "MERGE-AMBIG-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(
+                lot(null, "Набор реагентов", "описание с площадки"),
+                lot(null, "Набор реагентов", "описание с площадки")));
+        em.flush();
+        Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
+        // у всех исторических лотов кода нет — слияние пошло бы на 100% по имени
+        for (TenderLot l : t.getLots()) l.setSourceLotCode(null);
+        TenderLot parsed = t.getLots().get(0);
+        parsed.setRequiredSpec("разобранное ТЗ: набор реагентов для определения глюкозы, 400 определений");
+        parsed.setTechSpecStatus(TechSpecStatus.OK);
+        em.flush();
+        Long parsedId = parsed.getId();
+
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(
+                lot("17294802-ОИ1", "Набор реагентов", "описание с площадки"),
+                lot("17294802-ОИ2", "Набор реагентов", "описание с площадки")));
+        em.flush();
+        em.clear();
+
+        // неоднозначное имя соответствием не считается: строки пересозданы, ТЗ потеряно ВИДИМО,
+        // но ни одна строка не получила чужое ТЗ вместе с чужими количеством и ценой
+        TenderLot old = em.find(TenderLot.class, parsedId);
+        assertThat(old).as("строка со старым ТЗ не сливалась вслепую").isNull();
+        assertThat(lotCount(anno)).isEqualTo(2L);
+        assertThat(tenderRepository.findBySourceExtId(anno).orElseThrow().getLots())
+                .as("ни на один лот не переклеено чужое разобранное ТЗ")
+                .allSatisfy(l -> assertThat(l.getRequiredSpec()).doesNotContain("400 определений"));
+    }
+
+    /** Однозначное имя по-прежнему спасает лот без кода — ради этого запасной матч и нужен. */
+    @Test
+    void uniqueNameStillRescuesLegacyLot() {
+        String anno = "MERGE-UNIQ-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(
+                lot(null, "Датчик ультразвуковой", "описание"),
+                lot(null, "Набор реагентов", "описание")));
+        em.flush();
+        Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
+        for (TenderLot l : t.getLots()) l.setSourceLotCode(null);
+        TenderLot parsed = t.getLots().stream()
+                .filter(x -> "Датчик ультразвуковой".equals(x.getEquipName())).findFirst().orElseThrow();
+        parsed.setRequiredSpec("разобранное ТЗ: диапазон 2.0-9.0 МГц, конвексный");
+        parsed.setTechSpecStatus(TechSpecStatus.OK);
+        em.flush();
+        Long parsedId = parsed.getId();
+
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(
+                lot("17304732-ОИ1", "Датчик ультразвуковой", "описание"),
+                lot("17304732-ОИ2", "Набор реагентов", "описание")));
+        em.flush();
+        em.clear();
+
+        TenderLot kept = em.find(TenderLot.class, parsedId);
+        assertThat(kept).as("лот с уникальным именем найден, а не пересоздан").isNotNull();
+        assertThat(kept.getRequiredSpec()).contains("2.0-9.0 МГц");
+        assertThat(kept.getEquipName()).as("ТЗ осталось на СВОЁМ лоте").isEqualTo("Датчик ультразвуковой");
+        assertThat(kept.getSourceLotCode()).isEqualTo("17304732-ОИ1");
+    }
+
+    /**
+     * Двухпроходность на уровне БД: входящий НОВЫЙ лот с тем же именем не должен уводить строку,
+     * которую заберёт по коду другой входящий лот, — иначе разобранное ТЗ переезжает на чужой лот.
+     */
+    @Test
+    void codePassRunsBeforeNamePass_soSpecStaysOnItsOwnLot() {
+        String anno = "MERGE-TWOPASS-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("17300000-ОИ7", "Датчик ультразвуковой", "описание")));
+        em.flush();
+        Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
+        TenderLot parsed = t.getLots().get(0);
+        parsed.setRequiredSpec("разобранное ТЗ: диапазон 2.0-9.0 МГц");
+        parsed.setTechSpecStatus(TechSpecStatus.OK);
+        em.flush();
+        Long parsedId = parsed.getId();
+
+        // новый лот с ТЕМ ЖЕ именем идёт ПЕРВЫМ, старый — вторым, по своему коду
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(
+                lot("17300000-ОИ9", "Датчик ультразвуковой", "описание"),
+                lot("17300000-ОИ7", "Датчик ультразвуковой", "описание")));
+        em.flush();
+        em.clear();
+
+        TenderLot kept = em.find(TenderLot.class, parsedId);
+        assertThat(kept).isNotNull();
+        assertThat(kept.getSourceLotCode()).as("ТЗ осталось на лоте со своим кодом").isEqualTo("17300000-ОИ7");
+        assertThat(kept.getRequiredSpec()).contains("2.0-9.0 МГц");
+
+        TenderLot fresh = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
+                .filter(x -> "17300000-ОИ9".equals(x.getSourceLotCode())).findFirst().orElseThrow();
+        assertThat(fresh.getRequiredSpec()).as("новый лот не унаследовал чужое ТЗ").doesNotContain("2.0-9.0 МГц");
+        assertThat(fresh.getTechSpecStatus()).isEqualTo(TechSpecStatus.PENDING);
+    }
+
+    /**
+     * ТЗ, вписанное оператором руками через {@code PUT /api/lots/{id}}, — такое же разобранное ТЗ.
+     * Без отметки {@code OK} переимпорт затирал его описанием с площадки: та же дыра, что
+     * закрывалась в {@code TechSpecWriter}, но вторым входом в лот.
+     */
+    @Test
+    void handTypedSpecIsProtectedFromReimport() {
+        String anno = "MERGE-HANDSPEC-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("17300001-ОИ1", "Центрифуга", "короткое описание с площадки")));
+        em.flush();
+        TenderLot l = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+
+        TenderLotRequest req = new TenderLotRequest();
+        req.setEquipName("Центрифуга");
+        req.setRequiredSpec("вписано руками: центрифуга лабораторная, 15000 об/мин, ротор угловой");
+        lotController.update(l.getId(), req);
+        em.flush();
+
+        assertThat(em.find(TenderLot.class, l.getId()).getTechSpecStatus())
+                .as("ручное ТЗ помечается разобранным").isEqualTo(TechSpecStatus.OK);
+
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("17300001-ОИ1", "Центрифуга", "короткое описание с площадки")));
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(TenderLot.class, l.getId()).getRequiredSpec())
+                .as("ручное ТЗ не затёрто описанием площадки").contains("15000 об/мин");
     }
 
     // ---------- СК-Фармация ----------
