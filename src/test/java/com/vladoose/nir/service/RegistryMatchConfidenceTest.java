@@ -94,43 +94,6 @@ class RegistryMatchConfidenceTest {
                 .isEqualTo(MatchConfidence.SHORTLIST);
     }
 
-    /**
-     * Токенный путь ОБЯЗАН уметь говорить CONFIDENT — иначе гарды можно затянуть до немоты,
-     * и ни один юнит-тест этого не заметит.
-     *
-     * <p>Проверено при написании: с {@code MAX_RIVALS = 0} весь остальной юнит-набор оставался
-     * зелёным, а падал только 71-кейсовый гейт. Этот тест закрывает дыру: «Бокс микробиологической
-     * безопасности» + «II класс» — РУ-кейс набора, у него rivals=0 и топ 0.7490, то есть он
-     * проходит ОБА условия уверенности, и любое затягивание {@link RegistryMatchService#MAX_RIVALS}
-     * или {@link RegistryMatchService#CONFIDENT_MIN} уронит его здесь.
-     */
-    @Test
-    void tokenPathCanStillBeConfident() {
-        TenderLot l = lot("Бокс микробиологической безопасности", "II класс", null);
-
-        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
-
-        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CONFIDENT);
-        assertThat(r.getCannotReason()).isNull();
-        assertThat(r.getCandidates().get(0).getScore()).isGreaterThanOrEqualTo(0.55);
-    }
-
-    /**
-     * Слов лота нет в реестре → отбор идёт по ОБРЫВКУ запроса, и это отдельная причина, а не
-     * «слабый матч». «Криптовалютный майнер квантовый»: «криптовалютный» и «майнер» в реестре
-     * не встречаются ни разу, остаётся одно «квантовый» (df=2) — и прежняя версия уверенно
-     * отвечала «Аппаратом квантовой терапии "Витязь"».
-     */
-    @Test
-    void queryWordsAbsentFromRegistryAreReportedAsSuch() {
-        TenderLot l = lot("Криптовалютный майнер квантовый", null, null);
-
-        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
-
-        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
-        assertThat(r.getCannotReason()).isEqualTo(CannotReason.QUERY_NOT_IN_REGISTRY);
-    }
-
     /** Генерик: кандидаты есть и они верные, но неразличимы между собой. */
     @Test
     void genericLotIsShortlistNotConfident() {
@@ -156,6 +119,93 @@ class RegistryMatchConfidenceTest {
     }
 
     /**
+     * Слов лота нет в реестре → отбор идёт по ОБРЫВКУ запроса, и это отдельная причина, а не
+     * «слабый матч». «Криптовалютный майнер квантовый»: «криптовалютный» и «майнер» в реестре
+     * не встречаются ни разу, остаётся одно «квантовый» (df=2) — и прежняя версия уверенно
+     * отвечала «Аппаратом квантовой терапии "Витязь"».
+     *
+     * <p>Единственное покрытие {@code QUERY_NOT_IN_REGISTRY} — пятой причины, введённой этой
+     * же задачей. Отличие от {@link #noCandidatesGivesCannot()}: там выдача ПУСТА, здесь она
+     * непуста, но собрана по одному уцелевшему слову.
+     */
+    @Test
+    void queryWordsAbsentFromRegistryAreReportedAsSuch() {
+        TenderLot l = lot("Криптовалютный майнер квантовый", null, null);
+
+        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
+
+        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
+        assertThat(r.getCannotReason()).isEqualTo(CannotReason.QUERY_NOT_IN_REGISTRY);
+    }
+
+    /**
+     * Токенный путь ОБЯЗАН уметь говорить CONFIDENT, и гард {@code rivals} обязан быть ЖИВЫМ —
+     * иначе его можно затянуть до немоты, и ни один юнит-тест этого не заметит.
+     *
+     * <p><b>Фикстуры выбраны по измеренному {@code rivals}, а не «по смыслу» — предыдущая
+     * редакция этого теста свою же заявку не выполняла.</b> Она брала «Бокс микробиологической
+     * безопасности» + «II класс», у которого {@code rivals = 0}: условие {@code rivals <= MAX_RIVALS}
+     * при {@code MAX_RIVALS = 0} обращается в {@code 0 <= 0} — тест оставался ЗЕЛЁНЫМ на той самой
+     * мутации, ради которой писался, а его javadoc утверждал обратное. Ловится такое только
+     * прогоном мутации, а не рассуждением.
+     *
+     * <p>Здесь фикстуры с {@code rivals} внутри рабочего диапазона (замерено запросом к реестру):
+     * <ul>
+     *   <li>«Система факоэмульсификационная» — {@code rivals = 3}, топ 0.5671: краснеет при
+     *       {@code MAX_RIVALS} 0, 1 и 2;</li>
+     *   <li>«Экскаватор» (стоматологический) — {@code rivals = 1}, топ 0.6759: краснеет при
+     *       {@code MAX_RIVALS = 0}, зато с большим запасом по скору (0.126 против 0.017),
+     *       поэтому переживёт дрейф реестра, если первая фикстура станет хрупкой.</li>
+     * </ul>
+     *
+     * <p>Имя И описание берутся ДОСЛОВНО из golden-набора (обе строки размечены как РУ и
+     * попадают в топ-5 верной записью). Это существенно: без описания qualifier-бонус исчезает
+     * и «Система факоэмульсификационная» перестаёт быть CONFIDENT — на этом первая попытка
+     * зафиксировать фикстуру и споткнулась.
+     *
+     * <p><b>Мутация ПРОГНАНА, а не выведена</b> (2026-08-03): при {@code MAX_RIVALS = 0} этот тест
+     * краснеет; значение возвращено.
+     */
+    @Test
+    void tokenPathStaysConfidentAndRivalsGuardIsLive() {
+        LotRegistryMatchResponse phaco = service.matchForLotUi(
+                lot("Система факоэмульсификационная", "для микрохирургии глаза", null).getId(), 5);
+        assertThat(phaco.getConfidence())
+                .describedAs("rivals=3 — краснеет, если MAX_RIVALS затянуть до 2 и ниже")
+                .isEqualTo(MatchConfidence.CONFIDENT);
+        assertThat(phaco.getCannotReason()).isNull();
+
+        LotRegistryMatchResponse excavator = service.matchForLotUi(
+                lot("Экскаватор", "стоматологический", null).getId(), 5);
+        assertThat(excavator.getConfidence())
+                .describedAs("rivals=1 — краснеет при MAX_RIVALS=0; запас по скору больше")
+                .isEqualTo(MatchConfidence.CONFIDENT);
+    }
+
+    /**
+     * Разобранное ТЗ превращает слабый матч в уверенный — пара к
+     * {@link #weakMatchWithoutTechSpecAsksForIt()}: ТОТ ЖЕ лот без описания даёт 0.2527 и
+     * честный CANNOT с подсказкой «разберите ТЗ», а с «II класс» — 0.7490 и CONFIDENT.
+     * Ради этой пары фикстура и держится: она показывает, что подсказка ведёт к результату,
+     * а не в никуда.
+     *
+     * <p>⚠️ Гардом {@code MAX_RIVALS} этот тест НЕ является, хотя прошлая редакция это
+     * утверждала: у лота {@code rivals = 0}, поэтому {@code rivals <= MAX_RIVALS} выполняется
+     * даже при {@code MAX_RIVALS = 0}. Живость гарда проверяет
+     * {@link #tokenPathStaysConfidentAndRivalsGuardIsLive()}.
+     */
+    @Test
+    void parsedSpecTurnsWeakBoxIntoConfident() {
+        TenderLot l = lot("Бокс микробиологической безопасности", "II класс", null);
+
+        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
+
+        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CONFIDENT);
+        assertThat(r.getCannotReason()).isNull();
+        assertThat(r.getCandidates().get(0).getScore()).isGreaterThanOrEqualTo(0.55);
+    }
+
+    /**
      * Слабый матч + ТЗ не пытались брать → подсказка «разберите ТЗ».
      *
      * <p><b>Обоснование переписано 2026-08-02 (fix-round 1): прежнее устарело и врало.</b>
@@ -173,7 +223,7 @@ class RegistryMatchConfidenceTest {
      *       семейства равноправных.</li>
      * </ul>
      * Верный ламинарный бокс появляется только с разобранным ТЗ — см.
-     * {@link #tokenPathCanStillBeConfident()}, где тот же лот с «II класс» даёт 0.7490
+     * {@link #parsedSpecTurnsWeakBoxIntoConfident()}, где тот же лот с «II класс» даёт 0.7490
      * и честный CONFIDENT. Именно поэтому подсказка «разберите ТЗ» здесь по делу.
      *
      * <p>⚠️ Тест УПАДЁТ, если опустить {@code SHORTLIST_MIN} ниже 0.2527 или разрешить

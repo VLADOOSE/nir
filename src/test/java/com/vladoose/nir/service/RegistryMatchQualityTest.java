@@ -168,7 +168,7 @@ class RegistryMatchQualityTest {
         int recallHits = 0, recallTotal = 0;
         int precisionHits = 0, precisionTotal = 0;
         int zoneHits = 0, silentPass = 0, confidentFiction = 0;
-        int hiddenRight = 0, hiddenRank1 = 0, genericConfident = 0;
+        int hiddenRight = 0, hiddenRank1 = 0, genericConfident = 0, ruConfidentCorrect = 0;
         Map<MatchConfidence, int[]> byExpectation = new EnumMap<>(MatchConfidence.class);
         for (MatchConfidence z : MatchConfidence.values()) byExpectation.put(z, new int[3]); // NONE|GENERIC|РУ
         List<String> failures = new ArrayList<>();
@@ -223,7 +223,19 @@ class RegistryMatchQualityTest {
                         if (inTop5) hiddenRight++;
                         if (atRank1) hiddenRank1++;
                     }
-                    if (r.getConfidence() == MatchConfidence.CONFIDENT && inTop5) zoneHits++;
+                    // ⚠️ И zoneHits, И гейт считаются ТОЛЬКО по «уверенно И верно». Раньше гейт
+                    // стоял на сырой зонной раскладке byExpectation[CONFIDENT][2], которая
+                    // растёт от одной лишь уверенности: при MAX_RIVALS=8 «Трубка
+                    // эндотрахеальная» становилась CONFIDENT с чужой записью в топе (ни один
+                    // из четырёх размеченных эндобронхиальных ключей не в топ-5), счётчик
+                    // поднимался до 9 и читался как улучшение, а все шесть отсечек проходили.
+                    // Это третий режим отказа плана («класс верный, запись не та») с зелёным
+                    // гейтом. Уверенная выдумка охранялась на NONE и GENERIC, но не на РУ —
+                    // здесь эта асимметрия и закрывается.
+                    if (r.getConfidence() == MatchConfidence.CONFIDENT && inTop5) {
+                        zoneHits++;
+                        ruConfidentCorrect++;
+                    }
                 }
             }
         }
@@ -251,8 +263,9 @@ class RegistryMatchQualityTest {
         System.out.printf("генерик с ложным процентом:                 %d%n", genericConfident);
         System.out.printf("СПРЯТАНО верных (РУ в топ-5, зона CANNOT):  %d (из них ранг-1: %d)%n",
                 hiddenRight, hiddenRank1);
-        System.out.printf("РУ уверенно и верно (информативная часть):   %d/%d%n",
-                byExpectation.get(MatchConfidence.CONFIDENT)[2], recallTotal);
+        System.out.printf("РУ уверенно и верно (информативная часть):   %d/%d  "
+                + "(в зоне CONFIDENT всего %d — разница = уверенно, но НЕ то)%n",
+                ruConfidentCorrect, recallTotal, byExpectation.get(MatchConfidence.CONFIDENT)[2]);
         System.out.printf("пол метрики «всегда CANNOT»:                %d/%d%n",
                 cases.stream().filter(c -> c.keys().isEmpty()).count(), cases.size());
         failures.forEach(f -> System.out.println("  ✗ " + f));
@@ -270,6 +283,13 @@ class RegistryMatchQualityTest {
         // Поэтому гейт стоит на СОСТАВЛЯЮЩИХ, каждая из которых молчанием не накручивается.
         // Вместе они покрывают все три компонента корректности зоны, но в той полярности,
         // в какой ошибка вредна.
+        //
+        // ⚠️ ЗАПАС У ОТСЕЧЕК 1–2 И 5 РОВНО НУЛЕВОЙ (13, 11, 8) — это храповик, он намеренный.
+        // Но переимпорт реестра сдвигает веса IDF и потому МОЖЕТ уронить сборку без единой
+        // правки кода (об этом же говорит «Перекалибровывать при переимпорте» в
+        // RegistryMatchService). Покраснело после переимпорта — сперва прочитайте шапку
+        // src/test/resources/registry/golden-lots.tsv: там записан снимок реестра, на котором
+        // сняты эти числа, и порядок перемера baseline. Это перекалибровка, а не регрессия.
         //
         // Замеры 2026-08-02 (снимок реестра 14072, тай-брейк по reg_number включён):
         // recall@5 13/19 · precision@1 11/19 · зона 49/71 (69 %) · РУ уверенно и верно 8/19 ·
@@ -298,9 +318,11 @@ class RegistryMatchQualityTest {
                 .isZero();
 
         // 5. Информативная часть корректности зоны — та единственная, которую политика
-        //    молчания набрать не может (у неё здесь ровно 0).
-        assertThat(byExpectation.get(MatchConfidence.CONFIDENT)[2])
-                .as("РУ-лотов, названных уверенно И верно, не меньше достигнутого")
+        //    молчания набрать не может (у неё здесь ровно 0). Считается по «CONFIDENT И
+        //    ключ в топ-5», а не по одной лишь зоне: иначе гейт зеленел бы от уверенности
+        //    с ЧУЖОЙ записью в топе (см. комментарий у ruConfidentCorrect выше).
+        assertThat(ruConfidentCorrect)
+                .as("РУ-лотов, названных уверенно И ВЕРНО, не меньше достигнутого")
                 .isGreaterThanOrEqualTo(8);
 
         // 6. Грубый предохранитель от катастрофического дрейфа. НЕ показатель качества:
