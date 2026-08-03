@@ -1563,8 +1563,30 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 Главная причина «не могу»: ТЗ разобрано у 1 лота из 225. Механизм разбора уже есть и работает — здесь только очередь вокруг него. Постановка в очередь уже сделана в Task 6 (новый лот получает `PENDING`).
 
+> **⚠️ Поправка по итогам Task 7 (2026-08-03). Читать до начала работы — два номера и одно условие изменились.**
+>
+> **1. Миграция теперь V16, а не V15.** Task 7 занял `V15__backfill_parsed_tech_spec_status.sql`.
+>
+> **2. Половина бэкфилла уже сделана.** V15 из Task 7 проставила `tech_spec_status = OK` одиннадцати лотам с уже разобранным ТЗ. Порог там **выведен из данных, а не выбран**: `length > 400` И маркер секции разделяют множества начисто — 11 строк длиннее 400, все с маркером; самое длинное описание с площадки останавливается на 262 символах. Не переделывать и не «уточнять» этот порог.
+>
+> Значит **V16 делает только вторую половину** — ставит `PENDING` остальным лотам импортных тендеров и меняет индекс:
+> ```sql
+> UPDATE tender_lot l SET tech_spec_status = 'PENDING'
+>  WHERE l.tech_spec_status IS NULL
+>    AND EXISTS (SELECT 1 FROM tender t WHERE t.id = l.tender_id AND t.source_ext_id IS NOT NULL);
+>
+> DROP INDEX IF EXISTS idx_lot_tech_spec_status;
+> CREATE INDEX IF NOT EXISTS idx_lot_tech_spec_pending ON tender_lot (id)
+>     WHERE tech_spec_status = 'PENDING';
+> ```
+> Условие импортности — **`source_ext_id IS NOT NULL`**, а не `platform IS NOT NULL`: `platform` появилась в V11, и у 1119 старых goszakup-лотов она NULL (по `platform` нашлось бы 225 лотов вместо 1344).
+>
+> **3. Из-за V16 запрос воркера остаётся `= 'PENDING'`.** Реализатор Task 7 предупреждал, что без бэкфилла пришлось бы брать `IS NULL OR = 'PENDING'`, а частичный индекс по `PENDING` такой запрос не обслуживает — вышел бы seq scan по всем лотам. Бэкфилл снимает вопрос: после V16 у существующих лотов статус проставлен, запрос простой, индекс работает.
+>
+> **4. Объём бэкфилла осознан:** ~1300 лотов встанут в очередь разом. При `batch-size 10` и `interval 10 мин` это примерно сутки капельного разбора — приемлемо для разового наполнения. На проде goszakup блокирует IP, поэтому его лоты быстро осядут в `ERROR` и очередь до СК-Фармации дойдёт скорее.
+
 **Files:**
-- Create: `src/main/resources/db/migration/V15__lot_tech_spec_backfill.sql`
+- Create: `src/main/resources/db/migration/V16__lot_tech_spec_backfill.sql`
 - Create: `src/main/java/com/vladoose/nir/service/TechSpecStatusWriter.java`
 - Create: `src/main/java/com/vladoose/nir/service/TechSpecBackfillScheduler.java`
 - Modify: `src/main/resources/application.yaml`
