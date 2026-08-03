@@ -25,7 +25,7 @@ import { NotificationService } from '../../services/notification.service';
         <div>{{ cannotText() }}</div>
       </div>
       <div *ngIf="zone() === 'SHORTLIST'" class="lrp-hint">
-        Кандидаты похожи между собой — лот описан слишком общо, чтобы выбрать один. Проверьте глазами и выберите сами.
+        {{ shortlistText() }}
         <span *ngIf="!registry?.techSpecParsed && imported"> Разбор техспецификации уточнит подбор — кнопка «ТЗ» в строке лота.</span>
       </div>
       <div *ngIf="registry?.loading" class="lrp-loading">Ищем похожие изделия в реестре…</div>
@@ -64,8 +64,11 @@ import { NotificationService } from '../../services/notification.service';
             {{ c.unlimited ? 'бессрочно' : (c.expirationDate ? 'до ' + formatDate(c.expirationDate) : '—') }}
           </div>
         </div>
+        <!-- в CANNOT кнопка приглушена (паттерн 0%-компонентов комплектности ниже): adopt не косметика —
+             он ставит предложенную модель лота, и она уезжает поставщику в письме КП -->
         <div class="cand-actions">
-          <button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptFromRegistry(c)"
+          <button class="btn" [class.btn-adopt]="zone() !== 'CANNOT'" [class.btn-adopt-muted]="zone() === 'CANNOT'"
+                  [disabled]="adoptBusy" (click)="adoptFromRegistry(c)"
                   title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button>
         </div>
 
@@ -320,6 +323,18 @@ export class LotRegistryPanelComponent implements OnChanges {
     return !!z && (z !== 'CANNOT' || this.showWeak);
   }
 
+  /**
+   * У SHORTLIST две причины, и они требуют РАЗНЫХ слов (бэк, confidenceOf): либо равноправных
+   * записей много (родовой лот), либо кандидат ровно один, но скор не дотянул до уверенности —
+   * именно ради него порог SHORTLIST_MIN опускали 0.55 → 0.30. Общий текст «кандидаты похожи
+   * между собой, выберите один» на одном кандидате противоречит экрану: выбирать не из чего.
+   */
+  shortlistText(): string {
+    return this.registry?.items?.length === 1
+      ? 'Один правдоподобный кандидат, но данных лота не хватило, чтобы за него поручиться, — проверьте сами.'
+      : 'Кандидаты похожи между собой — лот описан слишком общо, чтобы выбрать один. Проверьте глазами и выберите сами.';
+  }
+
   /** Причина «нельзя» человеческим языком + действие, которое из неё следует. */
   cannotText(): string {
     switch (this.registry?.cannotReason) {
@@ -327,8 +342,13 @@ export class LotRegistryPanelComponent implements OnChanges {
         return 'В реестре НЦЭЛС не нашлось ни одной похожей записи. Если лот — принадлежность к аппарату '
              + '(электрод, датчик, пластина), допуск может быть в комплектности аппарата — кнопка ниже.';
       case 'NEED_TECH_SPEC':
-        return 'Данных лота не хватает, чтобы отличить модели друг от друга. Разберите техспецификацию — '
-             + 'кнопка «ТЗ» в строке лота — и откройте «Подбор» снова.';
+        // кнопка «ТЗ» есть только у импортных тендеров (*ngIf="isImportedTender()" у родителя);
+        // на ручном KZ-тендере отправлять оператора к несуществующей кнопке нельзя
+        return 'Данных лота не хватает, чтобы отличить модели друг от друга. '
+             + (this.imported
+                 ? 'Разберите техспецификацию — кнопка «ТЗ» в строке лота — и откройте «Подбор» снова.'
+                 : 'Заполните «Требования к спецификации» в форме лота («✎ Редактировать» в меню «⋯») '
+                   + 'и откройте «Подбор» снова.');
       case 'TECH_SPEC_FAILED':
         return 'Техспецификацию получить не удалось: файла нет на площадке или площадка недоступна. '
              + 'Уточните запрос вручную или ищите изделие по названию в реестре.';
