@@ -12,6 +12,7 @@ import com.vladoose.nir.integration.skpharmacy.SkAnnounce;
 import com.vladoose.nir.integration.skpharmacy.SkLot;
 import com.vladoose.nir.integration.skpharmacy.SkPharmacyTenderWriter;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.TechSpecWriter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
@@ -25,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Слияние лотов при переимпорте проверяется НА УРОВНЕ БД (flush + clear + перечитывание).
@@ -43,6 +45,7 @@ class ImportLotMergeFlushTest {
 
     @Autowired GoszakupTenderWriter goszakupWriter;
     @Autowired SkPharmacyTenderWriter skWriter;
+    @Autowired TechSpecWriter techSpecWriter;
     @Autowired TenderRepository tenderRepository;
     @PersistenceContext EntityManager em;
 
@@ -76,19 +79,21 @@ class ImportLotMergeFlushTest {
     void goszakupReimport_keptRowSurvivesFlush_droppedRowDeleted() {
         String anno = "MERGE-GZ-" + System.nanoTime();
         goszakupWriter.upsertOne(trdBuy(anno), null,
-                List.of(lot("1", "Центрифуга", "лабораторная"), lot("2", "Морозильник", "низкотемпературный")));
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ3", "Морозильник", "низкотемпературный")));
         Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
         TenderLot keeper = t.getLots().stream()
-                .filter(x -> Integer.valueOf(1).equals(x.getLotNumber())).findFirst().orElseThrow();
+                .filter(x -> "87197521-ОИ2".equals(x.getSourceLotCode())).findFirst().orElseThrow();
         keeper.setRequiredSpec("разобранное ТЗ: скорость до 15000 об/мин");
         keeper.setTechSpecStatus(TechSpecStatus.OK);
         em.flush();
         Long keptId = keeper.getId();
         Long droppedId = t.getLots().stream()
-                .filter(x -> Integer.valueOf(2).equals(x.getLotNumber())).findFirst().orElseThrow().getId();
+                .filter(x -> "87197521-ОИ3".equals(x.getSourceLotCode())).findFirst().orElseThrow().getId();
 
-        // переимпорт: лот 1 остался (с новым названием), лот 2 исчез с площадки
-        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга обновлённая", "лабораторная")));
+        // переимпорт: лот ОИ2 остался (с новым названием), лот ОИ3 исчез с площадки
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Центрифуга обновлённая", "лабораторная")));
         em.flush();
         em.clear();   // дальше читаем из БД, а не из персистентного контекста
 
@@ -103,25 +108,77 @@ class ImportLotMergeFlushTest {
     }
 
     /**
-     * Два лота площадки с ОДИНАКОВЫМ номером не должны схлопнуться в один.
+     * Два лота площадки с ОДИНАКОВЫМ ключом не должны схлопнуться в один.
      *
-     * <p>Слияние ищет существующий лот по номеру, поэтому оба таких лота нашли бы ОДНУ сущность,
+     * <p>Слияние ищет существующий лот по ключу, поэтому оба таких лота нашли бы ОДНУ сущность,
      * она попадала бы в коллекцию дважды, а в БД оставалась одна строка — лот молча исчезал.
-     * Замерено: со {@code get} в БД оказывалась 1 строка, тогда как прежний код (пересоздание)
-     * давал 2. Лечится тем, что существующий лот забирается из карты через {@code remove}.
+     * Замерено: при поиске без изъятия в БД оказывалась 1 строка, тогда как прежний код
+     * (пересоздание) давал 2. Лечится тем, что существующий лот ЗАБИРАЕТСЯ из индекса.
      */
     @Test
     void duplicateLotNumbersDoNotCollapseIntoOneRow() {
         String anno = "MERGE-DUP-" + System.nanoTime();
-        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        goszakupWriter.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
         em.flush();
 
         goszakupWriter.upsertOne(trdBuy(anno), null,
-                List.of(lot("1", "Центрифуга", "лабораторная"), lot("1", "Морозильник", "низкотемпературный")));
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ2", "Морозильник", "низкотемпературный")));
         em.flush();
         em.clear();
 
         assertThat(lotCount(anno)).as("оба лота площадки существуют, ни один не потерян").isEqualTo(2L);
+    }
+
+    /**
+     * Симметричный случай на стороне СУЩЕСТВУЮЩИХ строк: два лота с одним ключом раньше затирали
+     * друг друга в карте (last-wins), и незабранный удалялся orphanRemoval при живом счётчике.
+     */
+    @Test
+    void twoExistingRowsWithSameKeySurviveReimport() {
+        String anno = "MERGE-DUP2-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
+        em.flush();
+        assertThat(lotCount(anno)).isEqualTo(2L);
+
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
+        em.flush();
+        em.clear();
+
+        assertThat(lotCount(anno)).as("обе существующие строки забраны, ни одна не осиротела").isEqualTo(2L);
+    }
+
+    /**
+     * Сквозной случай C2: разбор ТЗ кнопкой «ТЗ» помечает лот как разобранный, и переимпорт
+     * НЕ затирает многотысячную техспеку однострочным description_ru с площадки.
+     * Без отметки {@code TechSpecStatus.OK} в {@link TechSpecWriter} гард в райтере был декоративным.
+     */
+    @Test
+    void parsedTechSpecSurvivesReimport_endToEnd() {
+        String anno = "MERGE-TS-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Датчик ультразвуковой", "Датчик ультразвуковой")));
+        em.flush();
+        TenderLot lot = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+
+        // так ТЗ попадает в лот в проде — через TechSpecWriter (кнопка «ТЗ» и будущая очередь)
+        techSpecWriter.apply(lot.getId(), "ТЕХНИЧЕСКАЯ СПЕЦИФИКАЦИЯ: датчик конвексный, 2.0-9.0 МГц, "
+                + "глубина сканирования не менее 240 мм", null);
+        em.flush();
+        assertThat(em.find(TenderLot.class, lot.getId()).getTechSpecStatus())
+                .as("разбор ТЗ помечает лот разобранным").isEqualTo(TechSpecStatus.OK);
+
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Датчик ультразвуковой", "Датчик ультразвуковой")));
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(TenderLot.class, lot.getId()).getRequiredSpec())
+                .as("техспека не затёрта коротким описанием площадки").contains("2.0-9.0 МГц");
     }
 
     // ---------- СК-Фармация ----------
@@ -169,5 +226,40 @@ class ImportLotMergeFlushTest {
                 .filter(x -> "A-Т3".equals(x.getSourceLotCode())).findFirst().orElseThrow();
         assertThat(fresh.getTechSpecStatus()).as("новый лот встал в очередь разбора ТЗ")
                 .isEqualTo(TechSpecStatus.PENDING);
+    }
+
+    /** Правило «забрать можно один раз» должно держаться и на стороне СК-Ф, а не только goszakup. */
+    @Test
+    void skDuplicateLotCodesDoNotCollapseIntoOneRow() {
+        String anno = "MERGE-SKDUP-" + System.nanoTime();
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1)), null);
+        em.flush();
+
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1),
+                new SkLot("A-Т1", "Аппарат МРТ", new BigDecimal("700000"), 1)), null);
+        em.flush();
+        em.clear();
+
+        assertThat(lotCount(anno)).isEqualTo(2L);
+    }
+
+    /**
+     * Пустой разбор lots-таблицы СК-Ф (смена вёрстки ЦЭФ / страница ошибки / троттлинг) не должен
+     * читаться как «лотов больше нет»: скрейп хрупок, а ценой была бы вся работа оператора.
+     */
+    @Test
+    void skEmptyLotListDoesNotWipeExistingLots() {
+        String anno = "MERGE-SKEMPTY-" + System.nanoTime();
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1)), null);
+        em.flush();
+
+        assertThatThrownBy(() -> skWriter.upsert(announce(anno), List.of(), null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("0 лотов");
+
+        assertThat(lotCount(anno)).isEqualTo(1L);
     }
 }

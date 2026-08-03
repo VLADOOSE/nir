@@ -21,10 +21,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Переимпорт тендера не должен уничтожать работу оператора и результат разбора ТЗ.
  * До этой задачи rebuildLots делал clear() + создание заново — терялось всё.
+ *
+ * <p>⚠ Номера лотов здесь ЖИВОЙ формы («87197521-ОИ2»), а не «1»/«2». Живой goszakup отдаёт
+ * номер с суффиксом (см. {@code GoszakupDtoJsonTest}), в {@code Integer} он не разбирается —
+ * на синтетических числовых номерах тест зеленел бы, а на реальных данных слияние не работало.
  */
 @SpringBootTest
 @Transactional
@@ -58,7 +63,7 @@ class ImportPreservesLotWorkTest {
         String anno = "REIMPORT-" + System.nanoTime();
 
         // первый импорт
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
         Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
         TenderLot l = t.getLots().get(0);
 
@@ -78,7 +83,7 @@ class ImportPreservesLotWorkTest {
         Long lotIdBefore = l.getId();
 
         // переимпорт того же тендера
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
 
         Tender after = tenderRepository.findBySourceExtId(anno).orElseThrow();
         assertThat(after.getLots()).hasSize(1);
@@ -95,10 +100,11 @@ class ImportPreservesLotWorkTest {
     @Test
     void newLotIsAddedAndEnqueued() {
         String anno = "REIMPORT-ADD-" + System.nanoTime();
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
 
         writer.upsertOne(trdBuy(anno), null,
-                List.of(lot("1", "Центрифуга", "лабораторная"), lot("2", "Морозильник", "низкотемпературный")));
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ3", "Морозильник", "низкотемпературный")));
 
         Tender after = tenderRepository.findBySourceExtId(anno).orElseThrow();
         assertThat(after.getLots()).hasSize(2);
@@ -112,9 +118,10 @@ class ImportPreservesLotWorkTest {
     void removedLotDisappears() {
         String anno = "REIMPORT-DEL-" + System.nanoTime();
         writer.upsertOne(trdBuy(anno), null,
-                List.of(lot("1", "Центрифуга", "лабораторная"), lot("2", "Морозильник", "низкотемпературный")));
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ3", "Морозильник", "низкотемпературный")));
 
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
 
         Tender after = tenderRepository.findBySourceExtId(anno).orElseThrow();
         assertThat(after.getLots()).hasSize(1);
@@ -125,9 +132,9 @@ class ImportPreservesLotWorkTest {
     @Test
     void importedFieldsAreRefreshed() {
         String anno = "REIMPORT-UPD-" + System.nanoTime();
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "лабораторная")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
 
-        LotDto updated = lot("1", "Центрифуга лабораторная", "лабораторная охлаждаемая");
+        LotDto updated = lot("87197521-ОИ2", "Центрифуга лабораторная", "лабораторная охлаждаемая");
         updated.setCount(7);
         writer.upsertOne(trdBuy(anno), null, List.of(updated));
 
@@ -140,11 +147,102 @@ class ImportPreservesLotWorkTest {
     @Test
     void descriptionRefreshedWhileTechSpecNotParsed() {
         String anno = "REIMPORT-DESC-" + System.nanoTime();
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "старое описание")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "старое описание")));
 
-        writer.upsertOne(trdBuy(anno), null, List.of(lot("1", "Центрифуга", "новое описание")));
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "новое описание")));
 
         TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
         assertThat(kept.getRequiredSpec()).isEqualTo("новое описание");
+    }
+
+    /** Живой номер лота обязан ДОЕХАТЬ до БД — иначе слияния при следующем импорте не будет. */
+    @Test
+    void livePlatformLotNumberIsPersistedAsMergeKey() {
+        String anno = "REIMPORT-KEY-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
+
+        TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        assertThat(kept.getSourceLotCode()).isEqualTo("87197521-ОИ2");
+        assertThat(kept.getLotNumber()).as("нечисловой номер в int не разбирается — остаётся пустым").isNull();
+    }
+
+    /** Числовой номер по-прежнему попадает в отображаемое поле. */
+    @Test
+    void numericLotNumberStillFillsDisplayField() {
+        String anno = "REIMPORT-NUM-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null, List.of(lot("4", "Центрифуга", "лабораторная")));
+
+        TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        assertThat(kept.getLotNumber()).isEqualTo(4);
+        assertThat(kept.getSourceLotCode()).isEqualTo("4");
+    }
+
+    /** Без номера лота ключа нет — слияние невозможно, лот пересоздаётся (эта ветка должна остаться покрытой). */
+    @Test
+    void lotWithoutAnyCodeIsRecreated() {
+        String anno = "REIMPORT-NOKEY-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null, List.of(lot(null, "Центрифуга", "лабораторная")));
+        Long before = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0).getId();
+
+        // имя тоже меняем, иначе сработает запасной матч по наименованию
+        writer.upsertOne(trdBuy(anno), null, List.of(lot(null, "Совсем другой лот", "описание")));
+
+        TenderLot after = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        assertThat(after.getId()).isNotEqualTo(before);
+        assertThat(after.getTechSpecStatus()).isEqualTo(TechSpecStatus.PENDING);
+    }
+
+    /**
+     * Переходный случай, ради которого всё и делается: в живой БД у ВСЕХ goszakup-лотов
+     * {@code source_lot_code} пуст. Такой лот обязан найтись по имени, сохранить разобранное ТЗ
+     * и получить код — иначе первый же переимпорт после этой правки уничтожил бы ровно те данные,
+     * которые она защищает.
+     */
+    @Test
+    void legacyLotWithoutCodeIsMergedByNameAndGetsCode() {
+        String anno = "REIMPORT-LEGACY-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null, List.of(lot(null, "Датчик ультразвуковой", "краткое описание")));
+        Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
+        TenderLot legacy = t.getLots().get(0);
+        legacy.setSourceLotCode(null);                       // как у 1305 живых лотов
+        legacy.setRequiredSpec("разобранное ТЗ: диапазон 2.0-9.0 МГц, конвексный");
+        legacy.setTechSpecStatus(TechSpecStatus.OK);
+        tenderRepository.saveAndFlush(t);
+        Long legacyId = legacy.getId();
+
+        writer.upsertOne(trdBuy(anno), null,
+                List.of(lot("17304732-Т1", "Датчик ультразвуковой", "краткое описание")));
+
+        TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        assertThat(kept.getId()).as("лот найден по имени, а не пересоздан").isEqualTo(legacyId);
+        assertThat(kept.getRequiredSpec()).contains("2.0-9.0 МГц");
+        assertThat(kept.getSourceLotCode()).as("код проставлен — дальше сливаемся по нему").isEqualTo("17304732-Т1");
+    }
+
+    /**
+     * Пустой список лотов = сбой получения (пустой/битый ответ /lots), а не «лотов больше нет».
+     * Молчаливое удаление здесь стоило бы всей работы оператора по тендеру.
+     */
+    @Test
+    void emptyLotListDoesNotWipeExistingLots() {
+        String anno = "REIMPORT-EMPTY-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null,
+                List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная"),
+                        lot("87197521-ОИ3", "Морозильник", "низкотемпературный")));
+
+        assertThatThrownBy(() -> writer.upsertOne(trdBuy(anno), null, List.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("0 лотов");
+
+        assertThat(tenderRepository.findBySourceExtId(anno).orElseThrow().getLots())
+                .as("лоты на месте").hasSize(2);
+    }
+
+    /** У тендера без лотов пустой список — не сбой, а норма (новое объявление без лотов). */
+    @Test
+    void emptyLotListIsFineWhenTenderHadNoLots() {
+        String anno = "REIMPORT-EMPTY-OK-" + System.nanoTime();
+        writer.upsertOne(trdBuy(anno), null, List.of());
+        assertThat(tenderRepository.findBySourceExtId(anno).orElseThrow().getLots()).isEmpty();
     }
 }

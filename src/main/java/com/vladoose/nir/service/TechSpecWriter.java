@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.TenderLotRepository;
@@ -25,6 +26,10 @@ public class TechSpecWriter {
         TenderLot lot = lotRepository.findById(lotId)
                 .orElseThrow(() -> new NotFoundException("Лот не найден: id=" + lotId));
         lot.setRequiredSpec(text);
+        // Единственное место, где появляется разобранное ТЗ (кнопка «ТЗ» и будущая фоновая очередь
+        // ходят сюда обе). Без этой отметки переимпорт считает ТЗ неразобранным и затирает
+        // многотысячный текст техспеки однострочным description_ru с площадки.
+        lot.setTechSpecStatus(TechSpecStatus.OK);
         if (c != null) {
             if (c.maxLengthMm() != null) lot.setMaxLengthMm(c.maxLengthMm());
             if (c.maxWidthMm() != null) lot.setMaxWidthMm(c.maxWidthMm());

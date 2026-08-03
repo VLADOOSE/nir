@@ -13,10 +13,10 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.vladoose.nir.integration.LotMergeIndex;
+
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Пишет ОДИН импортный тендер в собственной транзакции (отдельный бин → Spring-прокси
@@ -87,35 +87,42 @@ public class GoszakupTenderWriter {
     }
 
     /**
-     * Слияние лотов по номеру вместо пересоздания. §7/§14: работаем ТОЛЬКО через коллекцию
-     * (orphanRemoval), не через repository.delete.
+     * Слияние лотов вместо пересоздания. §7/§14: работаем ТОЛЬКО через коллекцию (orphanRemoval),
+     * не через repository.delete.
      *
      * <p>Раньше здесь был {@code clear()} + создание заново — переимпорт стирал разобранное ТЗ,
      * предложенную модель, вид МИ и габариты. То есть вся работа оператора и фонового разбора
      * жила до следующего обновления тендера.
+     *
+     * <p><b>Ключ слияния — сырой номер лота площадки в {@code source_lot_code}, не разобранный int.</b>
+     * Живые номера goszakup имеют вид «87197521-ОИ2» ({@code GoszakupDtoJsonTest}), в {@code Integer}
+     * не разбираются, и слияние по {@code lotNumber} не срабатывало бы никогда. {@code lotNumber}
+     * остаётся отображаемым полем — заполняется, только когда номер действительно числовой.
      */
     private void rebuildLots(Tender t, List<LotDto> lots) {
-        if (lots == null) { t.getLots().clear(); return; }
-
-        Map<String, TenderLot> existing = new LinkedHashMap<>();
-        for (TenderLot l : t.getLots()) {
-            if (l.getLotNumber() != null) existing.put(String.valueOf(l.getLotNumber()), l);
+        if (lots == null || lots.isEmpty()) {
+            // «ноль лотов» у тендера, где они были — это сбой получения (пустой/битый ответ /lots),
+            // а не команда всё удалить. Исключение ловит importOne: +1 к ошибкам прогона, лоты целы.
+            if (!t.getLots().isEmpty()) {
+                throw new IllegalStateException("goszakup вернул 0 лотов для тендера " + t.getSourceExtId()
+                        + ", у которого их " + t.getLots().size() + " — считаем сбоем получения, лоты не трогаем");
+            }
+            return;
         }
 
+        LotMergeIndex index = new LotMergeIndex(t.getLots());
         List<TenderLot> result = new ArrayList<>();
         for (LotDto d : lots) {
-            Integer num = GoszakupParse.intOrNull(d.getLotNumber());
-            // remove, а не get: каждый существующий лот забирается ОДИН раз. Иначе два лота площадки
-            // с одинаковым номером («1» и «01» → оба 1) ссылались бы на ОДНУ сущность, и в коллекции
-            // она оказывалась дважды — в БД оставалась одна строка вместо двух, то есть лот молча пропадал.
-            TenderLot lot = num != null ? existing.remove(String.valueOf(num)) : null;
+            String code = trunc(d.getLotNumber(), 50);
+            TenderLot lot = index.claim(code, d.getNameRu());
             if (lot == null) {
                 lot = new TenderLot();
                 lot.setTender(t);
                 lot.setTechSpecStatus(TechSpecStatus.PENDING);   // новый лот → в очередь на разбор ТЗ
             }
             // поля площадки обновляем всегда
-            lot.setLotNumber(num);
+            lot.setSourceLotCode(code);                          // «87197521-ОИ2» — ключ слияния
+            lot.setLotNumber(GoszakupParse.intOrNull(d.getLotNumber()));
             lot.setEquipName(d.getNameRu());
             lot.setQuantity(d.getCount());
             lot.setMaxCost(d.getAmount());
@@ -128,6 +135,12 @@ public class GoszakupTenderWriter {
         // всё, чего больше нет на площадке, уходит через orphanRemoval
         t.getLots().clear();
         t.getLots().addAll(result);
+    }
+
+    private static String trunc(String s, int max) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.length() <= max ? t : t.substring(0, max);
     }
 
     /** Словарь /v2/refs/ref_buy_status: 210–245 «Опубликовано…», 250+ рассмотрение/итоги, 410/420/430 отказ/пауза/отмена. */

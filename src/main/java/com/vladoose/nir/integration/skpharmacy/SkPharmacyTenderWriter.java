@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.LotMergeIndex;
 import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
@@ -8,9 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /** Upsert объявления СК-Фармации в Tender (platform=SK_PHARMACY). Отдельный @Transactional-бин (сеть вне tx, §6). */
 @Component
@@ -71,23 +70,22 @@ public class SkPharmacyTenderWriter {
     /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval). Слияние по коду площадки —
      *  переимпорт не должен стирать разобранное ТЗ и выбор оператора. */
     private void rebuildLots(Tender t, List<SkLot> lots) {
-        if (lots == null) { t.getLots().clear(); return; }
-
-        Map<String, TenderLot> existing = new LinkedHashMap<>();
-        for (TenderLot l : t.getLots()) {
-            if (l.getSourceLotCode() != null && !l.getSourceLotCode().isBlank()) {
-                existing.put(l.getSourceLotCode().toLowerCase(), l);
+        if (lots == null || lots.isEmpty()) {
+            // Пустой разбор lots-таблицы = смена вёрстки ЦЭФ / страница ошибки / троттлинг, а не «лотов больше нет».
+            // Исключение ловит импорт-сервис: +1 к ошибкам прогона, лоты и работа оператора целы.
+            if (!t.getLots().isEmpty()) {
+                throw new IllegalStateException("СК-Фармация вернула 0 лотов для тендера " + t.getSourceExtId()
+                        + ", у которого их " + t.getLots().size() + " — считаем сбоем получения, лоты не трогаем");
             }
+            return;
         }
 
+        LotMergeIndex index = new LotMergeIndex(t.getLots());
         List<TenderLot> result = new ArrayList<>();
         int n = 1;
         for (SkLot l : lots) {
             String code = trunc(l.code(), 50);
-            // remove, а не get: каждый существующий лот забирается ОДИН раз — иначе два лота с одинаковым
-            // кодом ссылались бы на одну сущность и в БД оставалась бы одна строка вместо двух.
-            TenderLot lot = code != null && !code.isBlank()
-                    ? existing.remove(code.toLowerCase()) : null;
+            TenderLot lot = index.claim(code, l.name());
             if (lot == null) {
                 lot = new TenderLot();
                 lot.setTender(t);
