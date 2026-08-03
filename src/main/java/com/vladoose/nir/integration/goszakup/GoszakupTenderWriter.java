@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
@@ -12,7 +13,10 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Пишет ОДИН импортный тендер в собственной транзакции (отдельный бин → Spring-прокси
@@ -82,20 +86,48 @@ public class GoszakupTenderWriter {
         t.setRegion(regionResolver.resolve(customerName, address)); // null допустим
     }
 
+    /**
+     * Слияние лотов по номеру вместо пересоздания. §7/§14: работаем ТОЛЬКО через коллекцию
+     * (orphanRemoval), не через repository.delete.
+     *
+     * <p>Раньше здесь был {@code clear()} + создание заново — переимпорт стирал разобранное ТЗ,
+     * предложенную модель, вид МИ и габариты. То есть вся работа оператора и фонового разбора
+     * жила до следующего обновления тендера.
+     */
     private void rebuildLots(Tender t, List<LotDto> lots) {
-        // §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval), не repository.delete
-        t.getLots().clear();
-        if (lots == null) return;
-        for (LotDto l : lots) {
-            TenderLot lot = new TenderLot();
-            lot.setTender(t);
-            lot.setLotNumber(GoszakupParse.intOrNull(l.getLotNumber()));
-            lot.setEquipName(l.getNameRu());
-            lot.setRequiredSpec(l.getDescriptionRu());
-            lot.setQuantity(l.getCount());
-            lot.setMaxCost(l.getAmount());
-            t.getLots().add(lot);
+        if (lots == null) { t.getLots().clear(); return; }
+
+        Map<String, TenderLot> existing = new LinkedHashMap<>();
+        for (TenderLot l : t.getLots()) {
+            if (l.getLotNumber() != null) existing.put(String.valueOf(l.getLotNumber()), l);
         }
+
+        List<TenderLot> result = new ArrayList<>();
+        for (LotDto d : lots) {
+            Integer num = GoszakupParse.intOrNull(d.getLotNumber());
+            // remove, а не get: каждый существующий лот забирается ОДИН раз. Иначе два лота площадки
+            // с одинаковым номером («1» и «01» → оба 1) ссылались бы на ОДНУ сущность, и в коллекции
+            // она оказывалась дважды — в БД оставалась одна строка вместо двух, то есть лот молча пропадал.
+            TenderLot lot = num != null ? existing.remove(String.valueOf(num)) : null;
+            if (lot == null) {
+                lot = new TenderLot();
+                lot.setTender(t);
+                lot.setTechSpecStatus(TechSpecStatus.PENDING);   // новый лот → в очередь на разбор ТЗ
+            }
+            // поля площадки обновляем всегда
+            lot.setLotNumber(num);
+            lot.setEquipName(d.getNameRu());
+            lot.setQuantity(d.getCount());
+            lot.setMaxCost(d.getAmount());
+            // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru
+            if (lot.getTechSpecStatus() != TechSpecStatus.OK) {
+                lot.setRequiredSpec(d.getDescriptionRu());
+            }
+            result.add(lot);
+        }
+        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        t.getLots().clear();
+        t.getLots().addAll(result);
     }
 
     /** Словарь /v2/refs/ref_buy_status: 210–245 «Опубликовано…», 250+ рассмотрение/итоги, 410/420/430 отказ/пауза/отмена. */

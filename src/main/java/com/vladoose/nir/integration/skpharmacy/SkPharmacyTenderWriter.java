@@ -7,7 +7,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Upsert объявления СК-Фармации в Tender (platform=SK_PHARMACY). Отдельный @Transactional-бин (сеть вне tx, §6). */
 @Component
@@ -65,21 +68,41 @@ public class SkPharmacyTenderWriter {
         if (region != null) t.setRegion(region);
     }
 
-    /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval), не repository.delete. */
+    /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval). Слияние по коду площадки —
+     *  переимпорт не должен стирать разобранное ТЗ и выбор оператора. */
     private void rebuildLots(Tender t, List<SkLot> lots) {
-        t.getLots().clear();
-        if (lots == null) return;
+        if (lots == null) { t.getLots().clear(); return; }
+
+        Map<String, TenderLot> existing = new LinkedHashMap<>();
+        for (TenderLot l : t.getLots()) {
+            if (l.getSourceLotCode() != null && !l.getSourceLotCode().isBlank()) {
+                existing.put(l.getSourceLotCode().toLowerCase(), l);
+            }
+        }
+
+        List<TenderLot> result = new ArrayList<>();
         int n = 1;
         for (SkLot l : lots) {
-            TenderLot lot = new TenderLot();
-            lot.setTender(t);
+            String code = trunc(l.code(), 50);
+            // remove, а не get: каждый существующий лот забирается ОДИН раз — иначе два лота с одинаковым
+            // кодом ссылались бы на одну сущность и в БД оставалась бы одна строка вместо двух.
+            TenderLot lot = code != null && !code.isBlank()
+                    ? existing.remove(code.toLowerCase()) : null;
+            if (lot == null) {
+                lot = new TenderLot();
+                lot.setTender(t);
+                lot.setTechSpecStatus(TechSpecStatus.PENDING);   // новый лот → в очередь на разбор ТЗ
+            }
             lot.setLotNumber(n++);
-            lot.setSourceLotCode(trunc(l.code(), 50));    // «1040409-Т1» — ключ связи с ТЗ-файлами
+            lot.setSourceLotCode(code);                   // «1040409-Т1» — ключ связи с ТЗ-файлами
             lot.setEquipName(trunc(l.name(), 255));
             lot.setQuantity(l.quantity());
             lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
-            t.getLots().add(lot);
+            result.add(lot);
         }
+        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        t.getLots().clear();
+        t.getLots().addAll(result);
     }
 
     /** «2026-07-27 10:00:00» → LocalDate; пусто/битое → null. */
