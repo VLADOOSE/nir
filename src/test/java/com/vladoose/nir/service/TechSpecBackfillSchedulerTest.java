@@ -24,15 +24,19 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,9 +64,11 @@ class TechSpecBackfillSchedulerTest {
 
     @Autowired TenderRepository tenderRepository;
     @Autowired TenderLotRepository lotRepository;
-    @Autowired TechSpecStatusWriter writer;
     @Autowired TechSpecBackfillScheduler scheduler;
     @PersistenceContext EntityManager em;
+
+    /** Шпион, а не мок: методы настоящие, но в одном тесте нужно заставить запись исхода упасть. */
+    @MockitoSpyBean TechSpecStatusWriter writer;
 
     @MockitoBean TechSpecService techSpecService;
     @MockitoBean GoszakupClient goszakupClient;
@@ -311,6 +317,94 @@ class TechSpecBackfillSchedulerTest {
     /** Стенд-ин для OOM из PDFBox: тот же catch(Error), но не убивает тестовый воркер. */
     private static class FatalPdfError extends Error {
         FatalPdfError() { super("PDF не поместился в кучу (стенд-ин OutOfMemoryError)"); }
+    }
+
+    /**
+     * SIGKILL (exit 137 от OOM-киллера контейнера) не даёт выполниться НИ ОДНОЙ строке Java —
+     * никакой catch тут не поможет. Поэтому попытка отмечается ДО разбора: проверяем, что в
+     * момент работы парсера в БД уже стоит отметка. Если бы контейнер убили ровно здесь, лот не
+     * выбрался бы после рестарта снова (иначе — крэш-луп: тот же лот, тот же PDF, каждый тик),
+     * а вернулся бы в очередь через requeueStaleErrors.
+     */
+    @Test
+    void attemptIsRecordedBeforeParseStarts() {
+        Tender t = tenderWithLot(TechSpecStatus.PENDING);
+        Long id = lotId(t);
+        lotRepository.flush();
+        AtomicReference<TechSpecStatus> duringParse = new AtomicReference<>();
+        when(techSpecService.parse(id)).thenAnswer(inv -> {
+            duringParse.set(reload(id).getTechSpecStatus());
+            return null;
+        });
+
+        runQueue();
+
+        assertThat(duringParse.get()).isEqualTo(TechSpecStatus.ERROR);   // попытка уже записана
+        assertThat(reload(id).getTechSpecStatus()).isEqualTo(TechSpecStatus.OK);  // успех перекрыл
+    }
+
+    /** Убитый на разборе лот не остаётся в очереди — но и не теряется: возврат его подберёт. */
+    @Test
+    void lotKilledMidParseLeavesQueueAndComesBackLater() {
+        Tender t = tenderWithLot(TechSpecStatus.PENDING);
+        Long id = lotId(t);
+        lotRepository.flush();
+        // Имитация SIGKILL: отметка «в работе» есть, исход записать не успели.
+        writer.markResult(id, TechSpecStatus.ERROR);
+        lotRepository.flush();
+
+        assertThat(lotRepository.findPendingTechSpec(Market.KZ, PageRequest.of(0, 50)))
+                .doesNotContain(id);          // сразу заново не выберется → крэш-лупа нет
+
+        em.createQuery("UPDATE TenderLot l SET l.techSpecAttemptedAt = :old WHERE l.id = :id")
+                .setParameter("old", OffsetDateTime.now().minusDays(30))
+                .setParameter("id", id).executeUpdate();
+        em.clear();
+        runQueue();
+
+        verify(techSpecService).parse(id);     // и не потерян: вернулся сам
+    }
+
+    /**
+     * Флаг прерывания не должен переживать пачку: поток у воркера свой и вечный, а throttle()
+     * флаг восстанавливает. Иначе каждая следующая пачка обрывалась бы на первом лоте, продолжая
+     * писать «взято N лотов» — очередь стоит, а по логам здорова.
+     */
+    @Test
+    void staleInterruptFlagDoesNotSilentlyStallQueue() {
+        Tender t = tenderWithLot(TechSpecStatus.PENDING);
+        lotRepository.flush();
+        try {
+            Thread.currentThread().interrupt();   // «остался от прошлой пачки»
+
+            runQueue();
+
+            verify(techSpecService).parse(lotId(t));
+            assertThat(Thread.currentThread().isInterrupted()).isFalse();
+        } finally {
+            Thread.interrupted();   // не тащим флаг в следующие тесты
+        }
+    }
+
+    /**
+     * Падение записи исхода не должно ПОДМЕНИТЬ собой уже случившийся Error: JPA save аллоцирует,
+     * то есть под настоящим исчерпанием кучи падает именно она, и наружу ушла бы ошибка записи —
+     * а исходный OutOfMemoryError потерялся бы.
+     */
+    @Test
+    void outcomeWriteFailureDoesNotMaskFatalError() {
+        Tender t = tenderWithLot(TechSpecStatus.PENDING);
+        Long id = lotId(t);
+        lotRepository.flush();
+        when(techSpecService.parse(id)).thenThrow(new FatalPdfError());
+        doCallRealMethod()                                        // предварительная отметка
+                .doThrow(new IllegalStateException("нет памяти на запись"))  // запись исхода
+                .when(writer).markResult(anyLong(), any());
+
+        assertThatThrownBy(scheduler::runOnce)
+                .isInstanceOf(FatalPdfError.class)
+                .hasSuppressedException(new IllegalStateException("нет памяти на запись"));
+        MarketContext.set(Market.KZ);
     }
 
     // ---------- C2: авария площадки не должна сжигать очередь ----------

@@ -110,6 +110,13 @@ public class TechSpecBackfillScheduler {
     public void runOnce() {
         try {
             MarketContext.set(Market.KZ);   // §6: фоновый поток, рынок ставим ЯВНО
+            // Флаг прерывания снимаем НА ВХОДЕ: поток у воркера свой и живёт вечно, а throttle()
+            // флаг восстанавливает. Оставленный флаг означал бы, что каждая следующая пачка
+            // обрывается на первом же лоте, продолжая писать «взято N лотов» — очередь молча
+            // стоит, а по логам выглядит здоровой. Прерывание ВНУТРИ пачки по-прежнему её рвёт.
+            if (Thread.interrupted()) {
+                log.warn("Фоновый разбор ТЗ: снят флаг прерывания, оставшийся от прошлой пачки");
+            }
             requeueStaleErrors();
             List<Long> lotIds = nextBatch();
             if (lotIds.isEmpty()) return;
@@ -168,6 +175,15 @@ public class TechSpecBackfillScheduler {
      * @return true, если лот не разобрался ИМЕННО из-за недоступности площадки (для предохранителя)
      */
     private boolean processOne(Long lotId) {
+        // ⚠ Отметка ДО разбора, а не только после. catch(Error) спасает от OutOfMemoryError
+        // ВНУТРИ JVM, но наблюдавшаяся на этом проекте форма — exit 137, SIGKILL от OOM-киллера
+        // контейнера (прод: -Xmx1g под mem_limit 1300m, §5/§16). Тогда не выполняется НИ ОДНА
+        // строка Java: без предварительной отметки лот остался бы PENDING, после рестарта был бы
+        // выбран первым же (запрос детерминированный, ORDER BY id DESC) и убивал бы контейнер
+        // каждый интервал. С отметкой он выпадает из очереди и вернётся сам — тем же
+        // requeueStaleErrors, что и лоты, сгоревшие на аварии площадки (нового состояния не надо).
+        writer.markResult(lotId, TechSpecStatus.ERROR);
+
         TechSpecStatus status;
         boolean outage = false;
         Error fatal = null;
@@ -197,7 +213,15 @@ public class TechSpecBackfillScheduler {
             status = TechSpecStatus.ERROR;
             fatal = e;
         }
-        writer.markResult(lotId, status);      // отдельный бин → есть привязанная сессия
+        // Запись исхода не должна подменить собой уже случившийся Error: JPA save аллоцирует, то
+        // есть под настоящим исчерпанием кучи падает именно она — и наружу ушла бы ошибка записи
+        // вместо исходного OutOfMemoryError, а лот остался бы с предварительной отметкой.
+        try {
+            writer.markResult(lotId, status);  // отдельный бин → есть привязанная сессия
+        } catch (Throwable writeFailure) {
+            if (fatal == null) throw writeFailure;
+            fatal.addSuppressed(writeFailure);
+        }
         // Исход записан — теперь можно отдать Error наружу: глушить обработку JVM мы не вправе.
         if (fatal != null) throw fatal;
         return outage;
