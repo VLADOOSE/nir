@@ -246,6 +246,7 @@ public class RegistryMatchService {
 
     private LotMatch computeLotMatch(TenderLot lot, int limit) {
         LotQuery query = LotQueryBuilder.build(lot.getEquipName(), lot.getRequiredSpec());
+        boolean specParsed = specParsed(lot, query.techSpecParsed());
 
         // Бренд задан оператором (частные заявки West-Med) — прежний бренд-путь, он не диагностирован как проблемный
         if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
@@ -254,12 +255,12 @@ public class RegistryMatchService {
             return new LotMatch(byBrand,
                     byBrand.isEmpty() ? MatchConfidence.CANNOT : MatchConfidence.CONFIDENT,
                     byBrand.isEmpty() ? CannotReason.NO_CANDIDATES : null,
-                    query.techSpecParsed());
+                    specParsed);
         }
 
         if (query.identity().isEmpty()) {
             return new LotMatch(List.of(), MatchConfidence.CANNOT,
-                    CannotReason.NO_CANDIDATES, query.techSpecParsed());
+                    CannotReason.NO_CANDIDATES, specParsed);
         }
 
         WeightedQuery wq = withIdfWeights(query.identity());
@@ -278,8 +279,42 @@ public class RegistryMatchService {
 
         MatchConfidence zone = confidenceOf(candidates, rivals, wq.cover());
         return new LotMatch(candidates, zone,
-                cannotReasonOf(zone, candidates, wq.cover(), lot, query.techSpecParsed()),
-                query.techSpecParsed());
+                cannotReasonOf(zone, candidates, wq.cover(), lot, specParsed),
+                specParsed);
+    }
+
+    /**
+     * «Техспека этого лота разобрана» — ПРОДУКТОВЫЙ признак, и он НЕ тот же самый вопрос,
+     * на который отвечает {@link LotQuery#techSpecParsed()}.
+     *
+     * <p>{@code LotQuery.techSpecParsed()} значит ровно «нашёлся якорь
+     * «характеристики закупаемых товаров», и закупочную шапку удалось отрезать» — это годится
+     * для выбора текста qualifier’а, но как признак «ТЗ есть» это <b>артефакт шаблона
+     * goszakup</b>. Замер на живой nirdb (лоты со {@code tech_spec_status='OK'}, якорь ищется
+     * так же, как в {@code characteristics()} — по нормализованным пробелам):
+     * <pre>
+     *   GOSZAKUP + legacy : 11 из 11 с якорем
+     *   SK_PHARMACY       :  0 из 39 с якорем   ← у каждого разобранное ТЗ ~9–24 тыс. символов
+     * </pre>
+     * СК-Фармация пишет свой заголовок («Техническая спецификация Лот … № п/п Критерии
+     * Описание»), якоря goszakup там нет и не будет.
+     *
+     * <p>Без этой поправки все 39 SK-лотов проваливались в {@code cannotReasonOf} мимо
+     * {@code WEAK_MATCH} к {@code NEED_TECH_SPEC}, и панель советовала «разберите
+     * техспецификацию» лоту, ТЗ которого уже разобрано фоновой очередью: оператор жмёт «ТЗ»,
+     * тот же PDF скачивается заново, тот же текст пишется заново, совет не меняется. Это
+     * прямо нарушало принцип, записанный тремя строками выше самого {@code cannotReasonOf},
+     * — не отправлять оператора за бесполезной работой. Побочно {@code WEAK_MATCH} был
+     * НЕДОСТИЖИМ для той единственной площадки, которую очередь реально обслуживает на проде
+     * (goszakup там блокирует IP, см. §16 CLAUDE.md), — живой свип показывал WEAK_MATCH = 0.
+     *
+     * <p>Поэтому персистентный {@code TechSpecStatus.OK} — равноправный источник признака.
+     * Он же уходит в DTO ({@code LotRegistryMatchResponse.techSpecParsed}) и гасит ту же
+     * подсказку в SHORTLIST-баннере панели: обе поверхности должны отвечать на один вопрос
+     * одинаково, иначе разъедутся при следующей правке.
+     */
+    private static boolean specParsed(TenderLot lot, boolean anchorFound) {
+        return anchorFound || lot.getTechSpecStatus() == TechSpecStatus.OK;
     }
 
     /** Взвешенный запрос + доля слов имени, которые вообще есть в реестре ({@code cover}). */
@@ -326,15 +361,16 @@ public class RegistryMatchService {
         return MatchConfidence.CANNOT;
     }
 
+    /** {@code specParsed} — ПРОДУКТОВЫЙ признак «ТЗ разобрано» (якорь ИЛИ статус OK), см. {@link #specParsed}. */
     private CannotReason cannotReasonOf(MatchConfidence zone,
                                         List<RegistryCandidateResponse> candidates,
-                                        double queryCover, TenderLot lot, boolean techSpecParsed) {
+                                        double queryCover, TenderLot lot, boolean specParsed) {
         if (zone != MatchConfidence.CANNOT) return null;
         if (candidates.isEmpty()) return CannotReason.NO_CANDIDATES;
         // проверяется РАНЬШЕ ТЗ: если слов лота нет в реестре, разбор техспеки этого не исправит —
         // предлагать «разберите ТЗ» значит отправить оператора за бесполезной работой
         if (queryCover < MIN_QUERY_COVER) return CannotReason.QUERY_NOT_IN_REGISTRY;
-        if (techSpecParsed) return CannotReason.WEAK_MATCH;
+        if (specParsed) return CannotReason.WEAK_MATCH;
         TechSpecStatus st = lot.getTechSpecStatus();
         if (st == TechSpecStatus.NO_FILE || st == TechSpecStatus.UNREADABLE || st == TechSpecStatus.ERROR) {
             return CannotReason.TECH_SPEC_FAILED;

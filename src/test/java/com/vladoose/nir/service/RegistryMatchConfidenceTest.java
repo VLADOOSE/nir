@@ -207,8 +207,9 @@ class RegistryMatchConfidenceTest {
      *
      * <p>⚠️ Гардом {@code MAX_RIVALS} этот тест НЕ является, хотя прошлая редакция это
      * утверждала: у лота {@code rivals = 0}, поэтому {@code rivals <= MAX_RIVALS} выполняется
-     * даже при {@code MAX_RIVALS = 0}. Живость гарда проверяет
-     * {@link #tokenPathStaysConfidentAndRivalsGuardIsLive()}.
+     * даже при {@code MAX_RIVALS = 0}. Живость гарда проверяют
+     * {@link #tokenPathStaysConfident_phacoRivals3()} и
+     * {@link #tokenPathStaysConfident_excavatorRivals1()} (единый метод был разбит надвое).
      */
     @Test
     void parsedSpecTurnsWeakBoxIntoConfident() {
@@ -266,9 +267,13 @@ class RegistryMatchConfidenceTest {
      * На ненайденном лоте (0 кандидатов) ветка {@code candidates.isEmpty()} возвращает
      * NO_CANDIDATES раньше, статус ТЗ не читается вовсе — и тест был бы дубликатом соседнего.
      *
-     * <p>Это единственное покрытие {@code TECH_SPEC_FAILED}. Значение поднимется в проде,
-     * когда Task 7 начнёт писать {@code TechSpecStatus}: сейчас его в {@code src/main}
-     * не пишет никто, так что ошибку в наборе статусов ловит только этот тест.
+     * <p>Это единственное покрытие {@code TECH_SPEC_FAILED}. <b>Формулировка исправлена
+     * (фикс-волна финального ревью): «сейчас его в src/main не пишет никто» устарело</b> —
+     * {@code TechSpecStatus} пишут {@code TechSpecWriter} (OK), {@code TechSpecStatusWriter}
+     * (исход фонового разбора + возврат сгоревших в очередь), оба импорт-райтера
+     * ({@code GoszakupTenderWriter}/{@code SkPharmacyTenderWriter} — PENDING новым лотам) и
+     * {@code TenderLotController.update} (ручное ТЗ → OK). Так что статус в проде реальный, и
+     * этот тест ловит уже не «мёртвый набор», а живую ветку.
      */
     @Test
     void weakMatchAfterFailedTechSpecSaysSo() {
@@ -279,5 +284,70 @@ class RegistryMatchConfidenceTest {
         assertThat(r.getCandidates()).isNotEmpty();
         assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
         assertThat(r.getCannotReason()).isEqualTo(CannotReason.TECH_SPEC_FAILED);
+    }
+
+    /**
+     * <b>Форма СК-Фармации: ТЗ разобрано, якоря goszakup нет.</b> Первое покрытие
+     * {@code WEAK_MATCH} — до фикс-волны финального ревью эта причина была НЕДОСТИЖИМА для
+     * той площадки, которую фоновая очередь реально обслуживает.
+     *
+     * <p>{@code LotQueryBuilder} выводит «ТЗ разобрано» из якоря
+     * «характеристики закупаемых товаров», а это артефакт шаблона goszakup. Замер на живой
+     * nirdb по лотам со {@code tech_spec_status='OK'} (якорь ищется как в
+     * {@code characteristics()} — по нормализованным пробелам):
+     * <pre>
+     *   GOSZAKUP + legacy : 11 из 11 с якорем
+     *   SK_PHARMACY       :  0 из 39 с якорем
+     * </pre>
+     * У всех 39 SK-лотов ТЗ на 9–24 тыс. символов уже разобрано очередью, но признак был
+     * {@code false}, и {@code cannotReasonOf} проваливался мимо {@code WEAK_MATCH} к
+     * {@code NEED_TECH_SPEC} — панель советовала «разберите техспецификацию» лоту, чья
+     * техспецификация разобрана. Совет замкнутый: оператор жмёт «ТЗ», качается тот же PDF,
+     * пишется тот же текст, совет не меняется.
+     *
+     * <p>Фикстура повторяет РЕАЛЬНОЕ начало SK-спеки из nirdb (лоты 9615–9620):
+     * «Техническая спецификация Лот … № п/п Критерии Описание». Тот же лот, что у
+     * {@link #weakMatchWithoutTechSpecAsksForIt()} и
+     * {@link #weakMatchAfterFailedTechSpecSaysSo()} — тройка отличается ровно состоянием ТЗ,
+     * поэтому тест доказывает, что причину выбирает состояние, а не скор.
+     *
+     * <p>⚠️ Фикстура намеренно НЕ содержит слов, различающих ламинарные боксы («II класс» и
+     * т. п.): с ними лот уходит в CONFIDENT (см. {@link #parsedSpecTurnsWeakBoxIntoConfident()}),
+     * и покрытие пропадёт. Шапка СК-Фармации инертна для отбора — ровно в этом и состоит
+     * замечание ревью, записанное в леджер Task 6.
+     */
+    @Test
+    void parsedSkSpecWithoutGoszakupAnchorGivesWeakMatch() {
+        TenderLot l = lot("Бокс микробиологической безопасности",
+                "Техническая спецификация Лот 4875083-Т1 № п/п Критерии Описание",
+                TechSpecStatus.OK);
+
+        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
+
+        assertThat(r.getCandidates()).isNotEmpty();
+        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CANNOT);
+        assertThat(r.getCannotReason())
+                .as("ТЗ разобрано (statusOK), якоря goszakup нет — «разберите ТЗ» было бы замкнутым советом")
+                .isEqualTo(CannotReason.WEAK_MATCH);
+        assertThat(r.isTechSpecParsed())
+                .as("тот же признак уходит в DTO и гасит подсказку «ТЗ» в SHORTLIST-баннере панели")
+                .isTrue();
+    }
+
+    /**
+     * Зеркало предыдущего: якоря нет и статуса нет → причина остаётся {@code NEED_TECH_SPEC}.
+     * Гард от «починили расширением до любого непустого requiredSpec»: одно лишь наличие текста
+     * описания разобранным ТЗ не является, иначе {@code NEED_TECH_SPEC} стала бы недостижимой
+     * для лотов с {@code description_ru} с площадки.
+     */
+    @Test
+    void unparsedSpecTextAloneStillAsksForTechSpec() {
+        TenderLot l = lot("Бокс микробиологической безопасности",
+                "Техническая спецификация Лот 4875083-Т1 № п/п Критерии Описание", null);
+
+        LotRegistryMatchResponse r = service.matchForLotUi(l.getId(), 5);
+
+        assertThat(r.getCannotReason()).isEqualTo(CannotReason.NEED_TECH_SPEC);
+        assertThat(r.isTechSpecParsed()).isFalse();
     }
 }

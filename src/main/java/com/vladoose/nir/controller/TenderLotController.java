@@ -175,6 +175,17 @@ public class TenderLotController {
     @PutMapping("/{id}")
     public TenderLotResponse update(@PathVariable Long id, @Valid @RequestBody TenderLotRequest request) {
         TenderLot existing = service.findById(id);
+        // Тот же гард, что у /proposed-equipment и /equipment-type: TenderLot НЕ market-scoped
+        // (@Filter на нём нет, рынок живёт на тендере), поэтому findById по client-supplied id
+        // достаёт и чужой рынок. Раньше дыра была «только» правкой полей, теперь через неё идёт
+        // ОДНОСТОРОННЯЯ запись techSpecStatus=OK ниже: она замораживает requiredSpec от обновления
+        // при переимпорте и навсегда убирает лот из фоновой очереди разбора ТЗ (та берёт
+        // IS NULL/PENDING). Роль здесь намеренно НЕ проверяется — форма лота доступна оператору,
+        // и @PreAuthorize('ADMIN') сломал бы её (асимметрия прав с /equipment-type — §16 CLAUDE.md).
+        if (existing.getTender().getMarket() != null
+                && existing.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + id);
+        }
         String specBefore = existing.getRequiredSpec();
         mapper.updateEntity(request, existing);
         // ТЗ, вписанное оператором руками, — такое же разобранное ТЗ: без отметки переимпорт

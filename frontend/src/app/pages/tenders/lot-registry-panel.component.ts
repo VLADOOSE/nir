@@ -26,6 +26,12 @@ import { NotificationService } from '../../services/notification.service';
       </div>
       <div *ngIf="zone() === 'SHORTLIST'" class="lrp-hint">
         {{ shortlistText() }}
+        <!-- techSpecParsed = ПРОДУКТОВЫЙ признак бэка (якорь goszakup ИЛИ персистентный
+             techSpecStatus=OK), а не «нашёлся якорь». Это одна из двух поверхностей, где совет
+             «разберите ТЗ» показывается, вторая — cannotText()/NEED_TECH_SPEC; обе обязаны
+             отвечать на вопрос одинаково. Пока признак был анкерным, все 39 SK-лотов с уже
+             разобранным ТЗ получали этот совет — жать «ТЗ» им бессмысленно, файл уже разобран
+             фоновой очередью (замер и обоснование — RegistryMatchService.specParsed). -->
         <span *ngIf="!registry?.techSpecParsed && imported"> Разбор техспецификации уточнит подбор — кнопка «ТЗ» в строке лота.</span>
       </div>
       <div *ngIf="registry?.loading" class="lrp-loading">Ищем похожие изделия в реестре…</div>
