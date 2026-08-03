@@ -163,20 +163,36 @@ class RegistryMatchConfidenceTest {
      * и «Система факоэмульсификационная» перестаёт быть CONFIDENT — на этом первая попытка
      * зафиксировать фикстуру и споткнулась.
      *
-     * <p><b>Мутация ПРОГНАНА, а не выведена</b> (2026-08-03): при {@code MAX_RIVALS = 0} этот тест
-     * краснеет; значение возвращено.
+     * <p><b>Мутация ПРОГНАНА, а не выведена</b> (2026-08-03): при {@code MAX_RIVALS = 0} тест
+     * ниже краснеет; значение возвращено.
+     *
+     * <p>⚠️ Фикстуры разнесены по ОТДЕЛЬНЫМ тестам намеренно. В одном методе JUnit падает на
+     * первом же ассерте, поэтому дрейф чувствительной фикстуры (у фако всего 0.017 запаса)
+     * не давал бы «Экскаватору» отработать вовсе — и его заявленная роль устойчивого дубля
+     * не выполнялась бы ровно тогда, когда она нужна.
      */
     @Test
-    void tokenPathStaysConfidentAndRivalsGuardIsLive() {
+    void tokenPathStaysConfident_phacoRivals3() {
         LotRegistryMatchResponse phaco = service.matchForLotUi(
                 lot("Система факоэмульсификационная", "для микрохирургии глаза", null).getId(), 5);
+
         assertThat(phaco.getConfidence())
                 .describedAs("rivals=3 — краснеет, если MAX_RIVALS затянуть до 2 и ниже")
                 .isEqualTo(MatchConfidence.CONFIDENT);
         assertThat(phaco.getCannotReason()).isNull();
+    }
 
+    /**
+     * Устойчивый дубль к {@link #tokenPathStaysConfident_phacoRivals3()}: тот же инвариант
+     * («токенный путь умеет говорить CONFIDENT»), но с запасом по скору 0.126 вместо 0.017,
+     * поэтому переживёт дрейф реестра, который сделает первую фикстуру хрупкой.
+     * {@code rivals = 1} → краснеет при {@code MAX_RIVALS = 0}.
+     */
+    @Test
+    void tokenPathStaysConfident_excavatorRivals1() {
         LotRegistryMatchResponse excavator = service.matchForLotUi(
                 lot("Экскаватор", "стоматологический", null).getId(), 5);
+
         assertThat(excavator.getConfidence())
                 .describedAs("rivals=1 — краснеет при MAX_RIVALS=0; запас по скору больше")
                 .isEqualTo(MatchConfidence.CONFIDENT);
