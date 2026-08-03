@@ -175,10 +175,17 @@ public class TenderLotController {
     @PutMapping("/{id}")
     public TenderLotResponse update(@PathVariable Long id, @Valid @RequestBody TenderLotRequest request) {
         TenderLot existing = service.findById(id);
+        String specBefore = existing.getRequiredSpec();
         mapper.updateEntity(request, existing);
         // ТЗ, вписанное оператором руками, — такое же разобранное ТЗ: без отметки переимпорт
         // затёр бы его описанием с площадки (та же дыра, что чинилась в TechSpecWriter).
-        if (request.getRequiredSpec() != null && !request.getRequiredSpec().isBlank()) {
+        // Сверяем с прежним значением, а НЕ просто с непустотой: форма редактирования лота
+        // присылает всю модель целиком (patchValue + submit), поэтому правка количества или цены
+        // тащит с собой неизменённое описание площадки. Без сверки любая такая правка помечала бы
+        // лот разобранным — описание переставало бы обновляться при переимпорте, а фоновая очередь
+        // разбора ТЗ (выбирает status IS NULL/PENDING) навсегда теряла бы этот лот из виду.
+        String incomingSpec = request.getRequiredSpec();
+        if (incomingSpec != null && !incomingSpec.isBlank() && !incomingSpec.equals(specBefore)) {
             existing.setTechSpecStatus(TechSpecStatus.OK);
         }
         if (request.getTenderId() != null) {

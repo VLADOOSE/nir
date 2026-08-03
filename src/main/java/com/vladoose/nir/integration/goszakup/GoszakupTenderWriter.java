@@ -110,9 +110,10 @@ public class GoszakupTenderWriter {
             return;
         }
 
-        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex)
+        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
+        // Имя обрезаем так же, как при записи в equipName — иначе длинное имя не совпадёт само с собой.
         List<TenderLot> matched = new LotMergeIndex(t.getLots())
-                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), LotDto::getNameRu);
+                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), d -> trunc(d.getNameRu(), 255));
 
         List<TenderLot> result = new ArrayList<>();
         for (int i = 0; i < lots.size(); i++) {
@@ -127,7 +128,7 @@ public class GoszakupTenderWriter {
             // поля площадки обновляем всегда
             lot.setSourceLotCode(code);                          // «87197521-ОИ2» — ключ слияния
             lot.setLotNumber(GoszakupParse.intOrNull(d.getLotNumber()));
-            lot.setEquipName(d.getNameRu());
+            lot.setEquipName(trunc(d.getNameRu(), 255));         // колонка VARCHAR(255): живое имя уже упирается в предел
             lot.setQuantity(d.getCount());
             lot.setMaxCost(d.getAmount());
             // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru

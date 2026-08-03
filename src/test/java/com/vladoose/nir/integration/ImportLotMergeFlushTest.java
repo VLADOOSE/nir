@@ -322,6 +322,57 @@ class ImportLotMergeFlushTest {
                 .as("ручное ТЗ не затёрто описанием площадки").contains("15000 об/мин");
     }
 
+    /**
+     * Правка НЕ-спецификационного поля не должна помечать лот разобранным.
+     *
+     * <p>Форма лота присылает всю модель целиком (patchValue + submit), поэтому вместе с новым
+     * количеством приезжает неизменённое описание площадки. На живой БД у 1438 лотов из 1490
+     * в {@code required_spec} лежит именно описание площадки со статусом NULL — если помечать их
+     * разобранными, описание перестанет обновляться, а фоновая очередь разбора ТЗ (выбирает
+     * status IS NULL/PENDING) навсегда потеряет эти лоты из виду.
+     */
+    @Test
+    void editingNonSpecFieldDoesNotStampParsed() {
+        String anno = "MERGE-EDITQTY-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("17300002-ОИ1", "Центрифуга", "короткое описание с площадки")));
+        em.flush();
+        TenderLot l = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        l.setTechSpecStatus(null);          // как у 1438 живых лотов: описание есть, разбора не было
+        em.flush();
+
+        // оператор меняет только количество; описание уезжает на сервер неизменным
+        TenderLotRequest req = new TenderLotRequest();
+        req.setEquipName("Центрифуга");
+        req.setQuantity(9);
+        req.setRequiredSpec(l.getRequiredSpec());
+        lotController.update(l.getId(), req);
+        em.flush();
+        em.clear();
+
+        TenderLot after = em.find(TenderLot.class, l.getId());
+        assertThat(after.getQuantity()).as("правка применилась").isEqualTo(9);
+        assertThat(after.getTechSpecStatus())
+                .as("описание площадки не выдаётся за разобранное ТЗ").isNull();
+    }
+
+    /** Имя лота с площадки длиннее колонки VARCHAR(255) не должно ронять весь upsert тендера. */
+    @Test
+    void overlongLotNameIsTruncatedNotFailed() {
+        String anno = "MERGE-LONGNAME-" + System.nanoTime();
+        String longName = "Набор реагентов ".repeat(30);           // 480 символов
+        assertThat(longName.length()).isGreaterThan(255);
+
+        goszakupWriter.upsertOne(trdBuy(anno), null,
+                List.of(lot("17300003-ОИ1", longName, "описание")));
+        em.flush();
+        em.clear();
+
+        TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
+        assertThat(kept.getEquipName()).hasSize(255);
+        assertThat(kept.getEquipName()).isEqualTo(longName.substring(0, 255));
+    }
+
     // ---------- СК-Фармация ----------
 
     private SkAnnounce announce(String anno) {
