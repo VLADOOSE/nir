@@ -17,7 +17,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Фоновый дозаполнитель техспек. Сам разбор реализован в {@link TechSpecService} — здесь только
@@ -38,17 +42,28 @@ public class TechSpecBackfillScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(TechSpecBackfillScheduler.class);
 
+    /** Столько отказов площадки подряд — и пачка обрывается (предохранитель). */
+    private static final int OUTAGES_TO_TRIP = 3;
+
     private final TenderLotRepository lotRepository;
     private final TechSpecService techSpecService;
     private final TechSpecStatusWriter writer;
     private final GoszakupClient goszakupClient;
 
-    @Value("${techspec.backfill.enabled:false}")    private boolean enabled;
-    @Value("${techspec.backfill.batch-size:10}")    private int batchSize;
-    @Value("${techspec.backfill.throttle-ms:2000}") private long throttleMs;
+    @Value("${techspec.backfill.enabled:false}")       private boolean enabled;
+    @Value("${techspec.backfill.batch-size:10}")       private int batchSize;
+    @Value("${techspec.backfill.throttle-ms:2000}")    private long throttleMs;
+    @Value("${techspec.backfill.retry-after-days:7}")  private int retryAfterDays;
 
     /** Про незаданный токен говорим один раз, а не каждые 10 минут. */
     private boolean noTokenLogged;
+
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "techspec-backfill");
+        t.setDaemon(true);
+        return t;
+    });
 
     public TechSpecBackfillScheduler(TenderLotRepository lotRepository,
                                      TechSpecService techSpecService,
@@ -60,12 +75,31 @@ public class TechSpecBackfillScheduler {
         this.goszakupClient = goszakupClient;
     }
 
-    /** Каждые 10 минут: небольшая пачка, чтобы не долбить площадку. */
+    /**
+     * Каждые 10 минут: небольшая пачка, чтобы не долбить площадку. Работа уходит на СВОЙ
+     * однопоточный экзекьютор (как у {@code GoszakupImportScheduler}), а не на общий
+     * {@code scheduling-1}: при DROP-блокировке пачка из 10 лотов — это 10 × (15 с connect ×
+     * 3 ретрая {@code GoszakupRetry}) ≈ 470 с при интервале 600 с, и приём почты (300 с)
+     * простаивал бы половину времени.
+     */
     @Scheduled(fixedDelayString = "${techspec.backfill.interval-ms:600000}")
     public void tick() {
-        if (enabled) {
-            runOnce();
+        if (!enabled) return;
+        if (!running.compareAndSet(false, true)) {
+            log.debug("Фоновый разбор ТЗ: предыдущая пачка ещё идёт — пропускаем тик");
+            return;
         }
+        // execute, а не submit: непойманный Error должен дойти до обработчика потока, а не
+        // осесть в Future, которую никто не читает (см. processOne — Error пробрасывается).
+        executor.execute(() -> {
+            try {
+                runOnce();
+            } catch (RuntimeException e) {
+                log.warn("Фоновый разбор ТЗ: пачка прервана: {}", e.toString());
+            } finally {
+                running.set(false);
+            }
+        });
     }
 
     /**
@@ -76,16 +110,38 @@ public class TechSpecBackfillScheduler {
     public void runOnce() {
         try {
             MarketContext.set(Market.KZ);   // §6: фоновый поток, рынок ставим ЯВНО
+            requeueStaleErrors();
             List<Long> lotIds = nextBatch();
             if (lotIds.isEmpty()) return;
             log.info("Фоновый разбор ТЗ: взято {} лотов", lotIds.size());
+            int outagesInARow = 0;
             for (Long lotId : lotIds) {
                 if (Thread.currentThread().isInterrupted()) break;   // остановка приложения
-                processOne(lotId);
+                if (processOne(lotId)) {
+                    // Предохранитель: площадка лежит — лоты не виноваты. Без обрыва пачки одна
+                    // внешняя авария (IP-блок прода) списала бы в ERROR всю очередь за сутки.
+                    if (++outagesInARow >= OUTAGES_TO_TRIP) {
+                        log.warn("Фоновый разбор ТЗ: {} отказа площадки подряд — пачка прервана,"
+                               + " остальные лоты остаются в очереди нетронутыми", outagesInARow);
+                        break;
+                    }
+                } else {
+                    outagesInARow = 0;
+                }
                 throttle();
             }
         } finally {
             MarketContext.clear();
+        }
+    }
+
+    /** Сгоревшие на аварии лоты возвращаются в очередь — иначе ERROR был бы приговором. */
+    private void requeueStaleErrors() {
+        if (retryAfterDays <= 0) return;   // 0 — выключить возврат
+        int n = writer.requeueStaleErrors(OffsetDateTime.now().minusDays(retryAfterDays));
+        if (n > 0) {
+            log.info("Фоновый разбор ТЗ: {} лотов вернулись в очередь (ошибка старше {} дней)",
+                    n, retryAfterDays);
         }
     }
 
@@ -106,9 +162,15 @@ public class TechSpecBackfillScheduler {
         return lotRepository.findPendingTechSpecByPlatform(Market.KZ, TenderPlatform.SK_PHARMACY, page);
     }
 
-    /** Один лот. Исход записывается ВСЕГДА — иначе очередь качала бы один и тот же PDF вечно. */
-    private void processOne(Long lotId) {
+    /**
+     * Один лот. Исход записывается ВСЕГДА — иначе очередь качала бы один и тот же PDF вечно.
+     *
+     * @return true, если лот не разобрался ИМЕННО из-за недоступности площадки (для предохранителя)
+     */
+    private boolean processOne(Long lotId) {
         TechSpecStatus status;
+        boolean outage = false;
+        Error fatal = null;
         try {
             techSpecService.parse(lotId);      // сеть + PDF, ВНЕ транзакции
             status = TechSpecStatus.OK;
@@ -122,11 +184,23 @@ public class TechSpecBackfillScheduler {
             status = TechSpecStatus.NO_FILE;
         } catch (UpstreamException e) {
             status = TechSpecStatus.ERROR;
+            outage = true;
         } catch (RuntimeException e) {
             log.warn("Разбор ТЗ лота {} упал неожиданно: {}", lotId, e.toString());
             status = TechSpecStatus.ERROR;
+        } catch (Error e) {
+            // ⚠ Не «на всякий случай»: OutOfMemoryError на этом самом пути (PDFBox грузит PDF в
+            // память) — наблюдавшееся состояние, §5/§16, прод живёт на -Xmx1g. Без этой ветки
+            // Error пролетал бы мимо markResult, лот остался бы PENDING, и следующий тик выбрал
+            // бы ТОТ ЖЕ лот (запрос детерминированный) — очередь встала бы навсегда на одном PDF.
+            log.error("Разбор ТЗ лота {} упал фатально: {}", lotId, e.toString());
+            status = TechSpecStatus.ERROR;
+            fatal = e;
         }
         writer.markResult(lotId, status);      // отдельный бин → есть привязанная сессия
+        // Исход записан — теперь можно отдать Error наружу: глушить обработку JVM мы не вправе.
+        if (fatal != null) throw fatal;
+        return outage;
     }
 
     private void throttle() {

@@ -24,9 +24,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,7 +49,11 @@ import static org.mockito.Mockito.when;
 @Transactional
 @TestPropertySource(properties = {
         "techspec.backfill.enabled=false",  // расписание не должно трогать реальную очередь nirdb
-        "techspec.backfill.batch-size=1",   // берём ровно свежесозданный лот (ORDER BY id DESC)
+        // ⚠ batch-size=1 НЕ ПОДНИМАТЬ: тесты опираются на то, что пачка = ровно свежесозданный
+        // лот (у него максимальный id, а запрос идёт ORDER BY id DESC). С большим размером в
+        // пачку попадут реальные лоты nirdb, и ассерты начнут зависеть от содержимого базы.
+        // Где нужна пачка побольше — точечный ReflectionTestUtils, см. outage-тест.
+        "techspec.backfill.batch-size=1",
         "techspec.backfill.throttle-ms=0"   // без пауз
 })
 class TechSpecBackfillSchedulerTest {
@@ -253,5 +262,150 @@ class TechSpecBackfillSchedulerTest {
         scheduler.tick();
 
         verify(techSpecService, never()).parse(anyLong());
+    }
+
+    // ---------- C1: Error не должен запирать очередь ----------
+
+    /**
+     * OutOfMemoryError на PDFBox — наблюдавшееся состояние этого проекта (§5/§16), а не выдумка.
+     * Он обязан (1) записать исход, иначе лот навсегда остался бы PENDING и следующий тик выбрал
+     * бы ТОТ ЖЕ лот с тем же PDF, и (2) всё равно уйти наружу — глушить Error мы не вправе.
+     */
+    @Test
+    void fatalErrorRecordsOutcomeAndStillPropagates() {
+        Tender t = tenderWithLot(TechSpecStatus.PENDING);
+        Long id = lotId(t);
+        lotRepository.flush();
+        when(techSpecService.parse(id)).thenThrow(new OutOfMemoryError("Java heap space"));
+
+        assertThatThrownBy(scheduler::runOnce).isInstanceOf(OutOfMemoryError.class);
+        MarketContext.set(Market.KZ);
+
+        assertThat(reload(id).getTechSpecStatus()).isEqualTo(TechSpecStatus.ERROR);
+        assertThat(lotRepository.findPendingTechSpec(Market.KZ, PageRequest.of(0, 50)))
+                .doesNotContain(id);
+    }
+
+    /**
+     * И главное: следующая пачка берёт СЛЕДУЮЩИЙ лот, а не спотыкается о тот же самый.
+     *
+     * <p>Здесь намеренно НЕ настоящий {@link OutOfMemoryError}, а свой подкласс Error: JUnit
+     * считает настоящий OOM неустранимым и убивает воркер, поэтому регрессия проявилась бы не
+     * читаемым падением теста, а обрывом всего прогона. Ветка кода проверяется та же — catch(Error).
+     */
+    @Test
+    void queueAdvancesToNextLotAfterFatalError() {
+        Tender earlier = tenderWithLot(TechSpecStatus.PENDING);
+        Tender exploding = tenderWithLot(TechSpecStatus.PENDING);   // id выше → берётся первым
+        lotRepository.flush();
+        when(techSpecService.parse(lotId(exploding))).thenThrow(new FatalPdfError());
+
+        assertThatThrownBy(scheduler::runOnce).isInstanceOf(FatalPdfError.class);
+        MarketContext.set(Market.KZ);
+        runQueue();   // второй тик
+
+        verify(techSpecService).parse(lotId(earlier));
+        assertThat(reload(lotId(earlier)).getTechSpecStatus()).isEqualTo(TechSpecStatus.OK);
+    }
+
+    /** Стенд-ин для OOM из PDFBox: тот же catch(Error), но не убивает тестовый воркер. */
+    private static class FatalPdfError extends Error {
+        FatalPdfError() { super("PDF не поместился в кучу (стенд-ин OutOfMemoryError)"); }
+    }
+
+    // ---------- C2: авария площадки не должна сжигать очередь ----------
+
+    /**
+     * Три отказа подряд — пачка обрывается, остальные лоты НЕ тронуты (остаются PENDING).
+     * Без предохранителя IP-блок прода списал бы в ERROR всю очередь за сутки.
+     */
+    @Test
+    void outageTripsBreakerAndLeavesRestOfBatchPending() {
+        ReflectionTestUtils.setField(scheduler, "batchSize", 5);
+        try {
+            Tender untouched = tenderWithLot(TechSpecStatus.PENDING);   // самый нижний id из четырёх
+            Tender third = tenderWithLot(TechSpecStatus.PENDING);
+            Tender second = tenderWithLot(TechSpecStatus.PENDING);
+            Tender first = tenderWithLot(TechSpecStatus.PENDING);       // самый верхний id
+            lotRepository.flush();
+            when(techSpecService.parse(anyLong())).thenThrow(new UpstreamException("Connection refused"));
+
+            runQueue();
+
+            for (Tender burnt : List.of(first, second, third)) {
+                assertThat(reload(lotId(burnt)).getTechSpecStatus()).isEqualTo(TechSpecStatus.ERROR);
+            }
+            verify(techSpecService, never()).parse(lotId(untouched));
+            assertThat(reload(lotId(untouched)).getTechSpecStatus()).isEqualTo(TechSpecStatus.PENDING);
+        } finally {
+            ReflectionTestUtils.setField(scheduler, "batchSize", 1);
+        }
+    }
+
+    /** Успех между отказами сбрасывает счётчик — предохранитель ловит АВАРИЮ, а не сумму бед. */
+    @Test
+    void successResetsOutageCounter() {
+        ReflectionTestUtils.setField(scheduler, "batchSize", 4);
+        try {
+            Tender last = tenderWithLot(TechSpecStatus.PENDING);
+            Tender good = tenderWithLot(TechSpecStatus.PENDING);
+            Tender bad2 = tenderWithLot(TechSpecStatus.PENDING);
+            Tender bad1 = tenderWithLot(TechSpecStatus.PENDING);
+            lotRepository.flush();
+            when(techSpecService.parse(lotId(bad1))).thenThrow(new UpstreamException("сеть"));
+            when(techSpecService.parse(lotId(bad2))).thenThrow(new UpstreamException("сеть"));
+            // good парсится успешно (мок по умолчанию), затем last
+
+            runQueue();
+
+            verify(techSpecService).parse(lotId(last));   // до конца пачки дошли
+            assertThat(reload(lotId(good)).getTechSpecStatus()).isEqualTo(TechSpecStatus.OK);
+        } finally {
+            ReflectionTestUtils.setField(scheduler, "batchSize", 1);
+        }
+    }
+
+    /**
+     * Сгоревший лот сам возвращается в очередь: иначе одна внешняя авария была бы приговором —
+     * восстановление требовало бы ручного SQL по боевой базе, и никакого сигнала об этом.
+     */
+    @Test
+    void staleErrorReturnsToQueue() {
+        Tender t = tenderWithLot(TechSpecStatus.ERROR);
+        Long id = lotId(t);
+        t.getLots().get(0).setTechSpecAttemptedAt(OffsetDateTime.now().minusDays(30));
+        lotRepository.flush();
+
+        runQueue();
+
+        verify(techSpecService).parse(id);   // лот снова взят в работу
+    }
+
+    /** А свежая ошибка — не возвращается: это ретрай по таймауту, а не бесконечный цикл. */
+    @Test
+    void freshErrorStaysOutOfQueue() {
+        Tender t = tenderWithLot(TechSpecStatus.ERROR);
+        t.getLots().get(0).setTechSpecAttemptedAt(OffsetDateTime.now());
+        lotRepository.flush();
+
+        runQueue();
+
+        verify(techSpecService, never()).parse(lotId(t));
+    }
+
+    // ---------- M1: работа оператора не затирается ----------
+
+    /**
+     * Оператор вписал ТЗ руками, пока лот был в работе (контроллер ставит OK) — фоновая неудача
+     * НЕ понижает его отметку. Иначе переимпорт (гард Task 7 ключуется на status == OK) затёр бы
+     * набранный текст описанием с площадки.
+     */
+    @Test
+    void manualSpecIsNotDowngradedByWorkerOutcome() {
+        Tender t = tenderWithLot(TechSpecStatus.OK);
+
+        writer.markResult(lotId(t), TechSpecStatus.ERROR);
+
+        assertThat(reload(lotId(t)).getTechSpecStatus()).isEqualTo(TechSpecStatus.OK);
     }
 }
