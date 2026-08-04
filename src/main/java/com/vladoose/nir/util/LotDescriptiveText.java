@@ -14,7 +14,8 @@ import java.util.stream.Collectors;
  * характеристики), а закупочный канцелярит (номера закупки/лота, места/сроки поставки, количество,
  * адреса) выбрасывается — иначе он раздувает знаменатель score и топит процент совпадения до нечитаемого.
  * Метки в ТЗ часто разорваны переносами PDF-извлечения, поэтому пробелы сперва схлопываются.
- * ТЗ без этих меток (ручной/иной формат) возвращается как есть — fallback без регресса.
+ * ТЗ СК-Фармации меток goszakup не содержит и режется по своей шапке (см. {@link #stripSkHeader}).
+ * ТЗ без тех и других (ручной/иной формат) возвращается как есть — fallback без регресса.
  */
 public final class LotDescriptiveText {
 
@@ -33,13 +34,36 @@ public final class LotDescriptiveText {
             Arrays.stream(LABELS).map(Pattern::quote).collect(Collectors.joining("|")),
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
+    // --- СК-Фармация -----------------------------------------------------------------------------
+    // ТЗ с fms.ecc.kz меток goszakup не несёт, поэтому старый fallback возвращал документ целиком —
+    // вместе с шапкой «Техническая спецификация / Лот <код площадки>». Код лота («4875083-Т1») —
+    // это прямой адрес объявления fms.ecc.kz/ru/announce/index/<id>, то есть ровно то раскрытие
+    // тендера, которое анти-лик §9 из письма убрал. Шапка устроена одинаково во всех живых ТЗ:
+    //   Техническая спецификация[*] / [Лот [№] <код>] / [№ п/п] / Критерии Описание / 1 <критерий> …
+    // Строка «Лот» и «№ п/п» опциональны (встречаются оба варианта), а заголовок таблицы
+    // «Критерии Описание» есть всегда и стоит в начале — он и служит границей шапки.
+    private static final Pattern SK_TITLE = Pattern.compile("Техническая\\s+спецификация",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern SK_TABLE_HEAD = Pattern.compile("Критерии\\s+Описание",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /** Границу ищем только в шапке: дальше по документу «Критерии Описание» — уже реальный текст. */
+    private static final int SK_HEAD_WINDOW = 400;
+    /**
+     * Код лота площадки: 6–9 цифр + «-Т<цифра>», с необязательной меткой «Лот»/«Лот №» перед ним.
+     * Пробелы вокруг дефиса реальны («Лот  4875003 -Т1»), номер бывает и без «№», и с ним.
+     */
+    private static final Pattern SK_LOT_CODE = Pattern.compile(
+            "(?:(?<!\\p{IsAlphabetic})Лот\\s*(?:№\\s*)?)?(?<!\\d)\\d{6,9}\\s*-\\s*[ТT]\\d+",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
     private LotDescriptiveText() {}
 
     /**
-     * Санитизированный текст ТЗ для тела письма поставщику: тех. характеристики без goszakup-канцелярита
-     * (номера закупки/лота, наименование закупки, места/сроки поставки, количество) — чтобы КП не
-     * раскрывало конкретный тендер. Та же сегментация, что у {@link #forMatching}, без имени/бренда.
-     * ТЗ без goszakup-меток (ручной/иной формат) возвращается как есть.
+     * Санитизированный текст ТЗ для тела письма поставщику: тех. характеристики без закупочного
+     * канцелярита (номера закупки/лота, наименование закупки, места/сроки поставки, количество) —
+     * чтобы КП не раскрывало конкретный тендер. Та же сегментация, что у {@link #forMatching}, без
+     * имени/бренда. goszakup режется по меткам, СК-Фармация — по шапке, и в любом случае из результата
+     * вычищается код лота площадки ({@link #scrubPlatformCodes}).
      */
     public static String requirementsForEmail(String requiredSpec) {
         return forMatching(null, null, requiredSpec);
@@ -62,7 +86,8 @@ public final class LotDescriptiveText {
             descriptive.add(DESCRIPTIVE.contains(canonical(m.group())));
             prevValueStart = m.end();
         }
-        if (bounds.isEmpty()) return (base + norm).trim(); // меток нет — иной формат ТЗ, без регресса
+        // goszakup-меток нет — пробуем шапку СК-Фармации, иначе берём текст как есть (без регресса)
+        if (bounds.isEmpty()) return finish(base + stripSkHeader(norm));
 
         StringBuilder out = new StringBuilder(base);
         boolean any = false;
@@ -71,7 +96,34 @@ public final class LotDescriptiveText {
             String val = norm.substring(bounds.get(i)[0], bounds.get(i)[1]).trim();
             if (!val.isBlank()) { out.append(val).append(' '); any = true; }
         }
-        return any ? out.toString().trim() : (base + norm).trim();
+        return finish(any ? out.toString() : base + norm);
+    }
+
+    /**
+     * Срезает шапку ТЗ СК-Фармации по заголовку таблицы требований («Критерии Описание»), оставляя
+     * сами требования. Без узнаваемого заголовка документа или без заголовка таблицы в пределах шапки
+     * текст не трогаем — код лота всё равно снимет {@link #scrubPlatformCodes}.
+     */
+    private static String stripSkHeader(String norm) {
+        Matcher title = SK_TITLE.matcher(norm);
+        if (!title.lookingAt()) return norm;
+        Matcher head = SK_TABLE_HEAD.matcher(norm);
+        if (!head.find() || head.end() > SK_HEAD_WINDOW) return norm;
+        String tail = norm.substring(head.end()).trim();
+        return tail.isBlank() ? norm : tail;
+    }
+
+    /**
+     * Гарантия анти-лика: в исходящем тексте не остаётся кода лота площадки, какой бы ни была шапка.
+     * Второй рубеж после сегментации — ловит и ТЗ с непривычной вёрсткой, и код, попавший в тело.
+     */
+    private static String scrubPlatformCodes(String s) {
+        Matcher m = SK_LOT_CODE.matcher(s);
+        return m.find() ? m.reset().replaceAll(" ") : s;
+    }
+
+    private static String finish(String s) {
+        return scrubPlatformCodes(s).replaceAll("\\s+", " ").trim();
     }
 
     private static String canonical(String matched) {
