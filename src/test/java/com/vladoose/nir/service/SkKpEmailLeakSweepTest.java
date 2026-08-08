@@ -6,6 +6,7 @@ import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
+import com.vladoose.nir.util.LotDescriptiveText;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
@@ -34,16 +35,25 @@ class SkKpEmailLeakSweepTest {
     /** Код лота площадки: 6–9 цифр + «-Т<цифра>», пробелы вокруг дефиса реальны («Лот 4875003 -Т1»). */
     private static final Pattern PLATFORM_CODE = Pattern.compile("(?<!\\d)\\d{6,9}\\s*-\\s*[ТT]\\d");
 
+    /** Место назначения поставки из коммерческого блока ТЗ (оно же адрес заказчика). */
+    private static final Pattern DELIVERY_MARKER = Pattern.compile(
+            "ИНКОТЕРМС|DDP\\s+пункт|пункт[а-я]*\\s+назначения|мест[а-я]*\\s+дислокации|Адрес\\s*:",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /**
+     * Орг-форма заказчика. «ТОО» сюда НЕ входит намеренно: {@code Market.KZ.companyShortName()} —
+     * «ТОО «West-Med»», то есть наша собственная подпись в каждом письме.
+     */
+    private static final Pattern CUSTOMER_MARKER = Pattern.compile(
+            "ГКП\\s+на\\s+ПХВ|КГП\\s+на\\s+ПХВ|ГККП|Некоммерческое\\s+акционерное"
+                    + "|Акционерное\\s+общество|Коммунальное\\s+государственное",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
     @PersistenceContext EntityManager em;
     @Autowired KpEmailComposer composer;
 
     @Test
     void everyParsedSkSpec_producesLetterWithoutPlatformIdentifier() {
-        List<TenderLot> lots = em.createQuery(
-                        "select l from TenderLot l join l.tender t "
-                                + "where t.platform = :p and l.requiredSpec is not null", TenderLot.class)
-                .setParameter("p", TenderPlatform.SK_PHARMACY)
-                .getResultList();
+        List<TenderLot> lots = parsedSkLots();
 
         List<String> leaks = new ArrayList<>();
         for (TenderLot lot : lots) {
@@ -63,6 +73,46 @@ class SkKpEmailLeakSweepTest {
         }
         assertThat(leaks).as("идентификаторы площадки в теле письма КП (проверено ТЗ: %d)", lots.size())
                 .isEmpty();
+    }
+
+    /**
+     * Тот же свип на второе раскрытие: имя и адрес заказчика из коммерческого блока ТЗ. Оно прямее
+     * кода лота — зная больницу и предмет закупки, поставщик находит объявление сам.
+     * <p>Проверяются ДВА текста: тело письма (сквозной путь) и ПОЛНЫЙ санитизированный текст ТЗ до
+     * обрезки {@code KpEmailComposer.SPEC_LIMIT}. Второй важнее: до среза хвоста заказчик не утекал
+     * лишь потому, что таблица требований длиннее лимита (запас 2459 против 1200) — свойство данных,
+     * а не кода. Утверждение на необрезанном тексте эквивалентно «лимит поднят до бесконечности»,
+     * поэтому поднять {@code SPEC_LIMIT} позже уже нельзя так, чтобы вернуть утечку.
+     */
+    @Test
+    void everyParsedSkSpec_producesLetterWithoutCustomerOrDeliveryPlace() {
+        List<TenderLot> lots = parsedSkLots();
+
+        List<String> leaks = new ArrayList<>();
+        for (TenderLot lot : lots) {
+            check(leaks, lot, "тело письма", letterBodyFor(lot));
+            check(leaks, lot, "ТЗ до обрезки SPEC_LIMIT",
+                    LotDescriptiveText.requirementsForEmail(lot.getRequiredSpec()));
+        }
+        assertThat(leaks).as("заказчик/адрес/место поставки в письме КП (проверено ТЗ: %d)", lots.size())
+                .isEmpty();
+    }
+
+    private void check(List<String> leaks, TenderLot lot, String where, String text) {
+        if (DELIVERY_MARKER.matcher(text).find()) {
+            leaks.add("лот " + lot.getId() + " (" + where + "): маркер места поставки");
+        }
+        if (CUSTOMER_MARKER.matcher(text).find()) {
+            leaks.add("лот " + lot.getId() + " (" + where + "): орг-форма заказчика");
+        }
+    }
+
+    private List<TenderLot> parsedSkLots() {
+        return em.createQuery(
+                        "select l from TenderLot l join l.tender t "
+                                + "where t.platform = :p and l.requiredSpec is not null", TenderLot.class)
+                .setParameter("p", TenderPlatform.SK_PHARMACY)
+                .getResultList();
     }
 
     /** Настоящее тело письма для лота без предложенной модели — тот случай, где рендерится «Требования:». */

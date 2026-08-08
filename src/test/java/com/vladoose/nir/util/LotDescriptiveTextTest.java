@@ -133,4 +133,100 @@ class LotDescriptiveTextTest {
         String t = LotDescriptiveText.requirementsForEmail("Позиционер для ангиографии, лот 4809231-Т1, 1 шт.");
         assertThat(t).doesNotContain("4809231").contains("Позиционер").contains("ангиографии");
     }
+
+    // --- СК-Фармация: анти-лик заказчика (коммерческий хвост) --------------------------------------
+    // Ниже требований таблица ТЗ продолжается условиями поставки и несёт ИМЯ И АДРЕС ЗАКАЗЧИКА.
+    // Заказчик раскрывает тендер прямее кода лота: зная больницу и предмет, поставщик находит
+    // объявление сам. Проверяем ПОЛНЫЙ санитизированный текст, а не обрезанный до SPEC_LIMIT, —
+    // гарантия должна держаться при любом лимите, иначе она снова станет свойством данных.
+
+    /** Маркеры коммерческого блока: место назначения поставки и организационная форма заказчика. */
+    private static final Pattern DELIVERY_MARKER = Pattern.compile(
+            "ИНКОТЕРМС|DDP\\s+пункт|пункт[а-я]*\\s+назначения|мест[а-я]*\\s+дислокации|Адрес\\s*:",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern CUSTOMER_MARKER = Pattern.compile(
+            "ГКП\\s+на\\s+ПХВ|КГП\\s+на\\s+ПХВ|ГККП|Некоммерческое\\s+акционерное"
+                    + "|Акционерное\\s+общество|Коммунальное\\s+государственное",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+            // фикстура,          фрагмент имени заказчика,        фрагмент его адреса
+            "lot-4875083-t1,      кардиологии и внутренних,        Айтеке би",
+            "lot-4872223-t1,      областной центр психического,    Габит Мусирепов",
+            "lot-4875003-t1,      Жалагашская районная,            Ныгмет Мырзалиев",
+            "lot-4854483-t1,      Павлодарская областная детская,  Каукена Кенжетаева",
+            "lot-1040829-t1,      Национальный центр детской,      Туран",
+            "lot-1040409-t1,      Панфиловский район,              Головацкий",
+    })
+    void skSpec_emailTextCarriesNoCustomerOrAddress(String fixture, String customerFragment,
+                                                    String addressFragment) throws IOException {
+        String email = LotDescriptiveText.requirementsForEmail(realSpec(fixture));
+
+        assertThat(email).as("имя заказчика в письме: %s", fixture).doesNotContain(customerFragment);
+        assertThat(email).as("адрес заказчика в письме: %s", fixture).doesNotContain(addressFragment);
+        assertThat(DELIVERY_MARKER.matcher(email).find())
+                .as("маркер места поставки в письме: %s", fixture).isFalse();
+        assertThat(CUSTOMER_MARKER.matcher(email).find())
+                .as("орг-форма заказчика в письме: %s", fixture).isFalse();
+    }
+
+    /**
+     * Матчинг комплектности работает по ПОЛНОМУ тексту и срезом не задет — срез живёт только в
+     * {@link LotDescriptiveText#requirementsForEmail}. Проверяем на самом длинном хвосте: там же
+     * видно, что разница между слоями реальна, а не случайна.
+     */
+    @Test
+    void commercialTail_cutForEmailOnly_matchingKeepsFullText() throws IOException {
+        String spec = realSpec("lot-4854483-t1");
+        assertThat(LotDescriptiveText.forMatching("МРТ", null, spec)).contains("Павлодарская областная детская");
+        assertThat(LotDescriptiveText.requirementsForEmail(spec)).doesNotContain("Павлодарская областная детская");
+    }
+
+    /**
+     * Ключевой случай: таблица требований КОРОТКАЯ, поэтому коммерческий блок попадает внутрь лимита
+     * обрезки письма — раньше заказчика удерживал только запас длины, то есть свойство данных.
+     * <p>Фикстура {@code lot-1040829-t1-short-table} — это РЕАЛЬНОЕ ТЗ {@code lot-1040829-t1}, у
+     * которого вырезан кусок строк таблицы комплектации (с «Максимально допустимая масса пациента»
+     * по «Расходные материалы…»); шапка, оставшиеся требования и весь коммерческий блок — verbatim.
+     * Ни одно из 39 живых ТЗ такой формы не имеет (самый ранний якорь там 2408 при лимите 1200),
+     * поэтому случай построен усечением настоящего ТЗ, а не выдуман.
+     * <p>{@code forMatching} здесь играет роль «как было бы без среза»: это тот же путь сегментации
+     * без него.
+     */
+    @Test
+    void shortRequirementsTable_customerWouldLandInsideLimit_butIsCutOut() throws IOException {
+        String spec = realSpec("lot-1040829-t1-short-table");
+
+        String withoutCut = LotDescriptiveText.forMatching(null, null, spec);
+        assertThat(withoutCut.indexOf("Некоммерческое акционерное"))
+                .as("без среза заказчик обязан попадать в обрезку письма — иначе случай не тот")
+                .isBetween(0, 1199);
+        assertThat(withoutCut.indexOf("Туран")).isBetween(0, 1199);
+
+        String email = LotDescriptiveText.requirementsForEmail(spec);
+        assertThat(email).doesNotContain("Некоммерческое акционерное").doesNotContain("Туран");
+        assertThat(DELIVERY_MARKER.matcher(email).find()).isFalse();
+        // требования остались целиком — срез снял только коммерческую часть
+        assertThat(email).contains("Система тренировки и оценки ходьбы")
+                .contains("3495 × 2141 × 2458 мм")
+                .contains("Не более 240 В");
+    }
+
+    /**
+     * goszakup-путь срез не трогает — и не должен: там порядок обратный, характеристики идут ПОСЛЕ
+     * условий поставки (живой лот 2865), и слепой срез по тем же якорям съел бы реальные требования.
+     * Гейт — заголовок документа «Техническая спецификация», которого у goszakup-ТЗ нет.
+     */
+    @Test
+    void goszakupSpec_commercialAnchorsDoNotTruncate() {
+        String goszakupTz = String.join("\n",
+                "Наименование лота: Устройство оцифровки рентген снимков",
+                "Условия поставки (в соответствии с ИНКОТЕРМС 2010)*: DDP",
+                "Место поставки*: Карагандинская область, г.Караганда",
+                "Описание требуемых характеристик закупаемого товара",
+                "Тип детектора: цифровой плоскопанельный, Вес: не более 4,0 кг");
+        String email = LotDescriptiveText.requirementsForEmail(goszakupTz);
+        assertThat(email).contains("Тип детектора").contains("не более 4,0 кг");
+    }
 }
