@@ -93,8 +93,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           </div>
           <!-- «пусто — не рисуем»: у большинства импортных лотов ни цены, ни вида МИ нет →
                лишнего разделителя быть не должно -->
-          <div class="lot-metrics">
-            {{ l.quantity }} шт<span *ngIf="l.maxCost"> · до {{ l.maxCost | money }}</span><span *ngIf="l.equipmentType?.name"> · {{ l.equipmentType.name }}</span>
+          <div class="lot-metrics" *ngIf="l.quantity || l.maxCost || l.equipmentType?.name">
+            <ng-container *ngIf="l.quantity">{{ l.quantity }} шт</ng-container><ng-container *ngIf="l.maxCost">{{ l.quantity ? ' · ' : '' }}до {{ l.maxCost | money }}</ng-container><ng-container *ngIf="l.equipmentType?.name">{{ (l.quantity || l.maxCost) ? ' · ' : '' }}{{ l.equipmentType.name }}</ng-container>
           </div>
           <div class="lot-proposed" *ngIf="l.proposedEquipment">
             <span class="badge-proposed">Предложено:</span>

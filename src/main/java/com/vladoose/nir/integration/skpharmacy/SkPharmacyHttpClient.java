@@ -31,8 +31,8 @@ public class SkPharmacyHttpClient implements SkPharmacyClient {
     }
 
     @Override
-    public String lotsPage(String announceId) {
-        return get(baseUrl + "/ru/announce/index/" + announceId + "?tab=lots");
+    public String lotsPage(String announceId, int page) {
+        return get(baseUrl + "/ru/announce/index/" + announceId + "?tab=lots" + (page > 1 ? "&page=" + page : ""));
     }
 
     @Override

@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="ci_csrf_token" content="ec6c0de86f2bee4b9954d5c67689cfd2">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" href="/images/favicon.ico" type="image/x-icon"/>
+
+    <title>Веб-портал закупок</title>
+    <script src="/js/jquery.js"></script>
+    <script src="/js/bootstrap.min.js"></script>
+    <script src="/js/timers.js"></script>
+    <script src="/js/confirmation.js"></script>
+    <script type='text/javascript' src='https://fms.ecc.kz/js/bootstrap.datepicker.js?0.96366100 1786445642' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.96366800 1786445642' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/announce.js?0.28385600 1786445643' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/helpers.js?0.28386100 1786445643' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.plugin.js?0.28420300 1786445643' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.countdown.js?0.28420600 1786445643' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/countdownplug/jquery.countdown-ru.js?0.28420700 1786445643' charset='utf-8'></script>
+<script type='text/javascript' src='https://fms.ecc.kz/js/announce/view.js?0.29763100 1786445643' charset='utf-8'></script>
+
+    <script src="/js/moment.js"></script>
+    <script src="/js/ru.js"></script>
+
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/style.css?v=4" rel="stylesheet">
+    <link href='https://fms.ecc.kz/css/datepicker.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/layout-styles.css' rel='stylesheet'>
+<link href='https://fms.ecc.kz/css/countdownplug/jquery.countdown.css' rel='stylesheet'>
+
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+    <script src="//oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+    <script src="//oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <script>
+        var user_id = 0;
+        window.lang_key = "ru";
+        window.current_controller_url = "https://fms.ecc.kz/ru/announce";
+            
+        window.current_directory = "";
+        window.current_controller = "announce";
+        window.current_method = "index";
+
+        window.url_params = ["522204"];
+        ;
+        (function() {
+            function readCookie(name) {
+                const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+                return v ? decodeURIComponent(v.pop()) : null;
+            }
+
+            function getCsrfToken() {
+                const fromCookie = readCookie('ci_csrf_token');
+                if (fromCookie) return fromCookie;
+
+                const m = document.querySelector('meta[name="ci_csrf_token"]');
+                return m ? m.content : '';
+            }
+
+            function ensureTokenField(form) {
+                if (!form) return;
+                if (form.classList.contains('form_upload')) return;
+                const action = form.getAttribute('action') || '';
+
+                let input = form.querySelector('input[name="ci_csrf_token"]');
+                const token = getCsrfToken();
+                if (!input) {
+                    input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'ci_csrf_token';
+                    form.appendChild(input);
+                }
+                input.value = token;
+            }
+
+            document.addEventListener(
+                'submit',
+                function(e) {
+                    const form = e.target;
+                    if (!form || form.tagName.toUpperCase() !== 'FORM') return;
+                    if ((form.method || '').toLowerCase() !== 'post') return;
+                    ensureTokenField(form);
+                },
+                true
+            );
+
+            (function() {
+                const origSubmit = HTMLFormElement.prototype.submit;
+                HTMLFormElement.prototype.submit = function() {
+                    try {
+                        ensureTokenField(this);
+                    } catch (err) {}
+                    return origSubmit.apply(this, arguments);
+                };
+            })();
+
+            (function() {
+                const realFetch = window.fetch;
+                window.fetch = function(resource, init) {
+                    init = init || {};
+                    const method = (init.method || 'GET').toUpperCase();
+
+                    if (method !== 'GET' && method !== 'HEAD') {
+                        const token = getCsrfToken();
+                        if (!init.credentials) init.credentials = 'same-origin';
+
+                        const body = init.body;
+
+                        if (!body) {
+                            init.body = new URLSearchParams({ ci_csrf_token: token });
+                            init.headers = init.headers || {};
+                            init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                        } else if (body instanceof FormData) {
+                            body.set('ci_csrf_token', token);
+                        } else if (body instanceof URLSearchParams) {
+                            body.set('ci_csrf_token', token);
+                        } else if (typeof body === 'string') {
+                            const isJson = (() => {
+                                try {
+                                    JSON.parse(body);
+                                    return true;
+                                } catch (e) {
+                                    return false;
+                                }
+                            })();
+                            if (isJson) {
+                                try {
+                                    const obj = JSON.parse(body);
+                                    obj.ci_csrf_token = token;
+                                    init.body = JSON.stringify(obj);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/json;charset=UTF-8';
+                                } catch (e) {
+                                    init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                    init.headers = init.headers || {};
+                                    init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                                }
+                            } else {
+                                init.body = body + (body.length ? '&' : '') + 'ci_csrf_token=' + encodeURIComponent(token);
+                                init.headers = init.headers || {};
+                                init.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+                            }
+                        }
+                    }
+
+                    return realFetch.call(this, resource, init);
+                };
+            })();
+
+            (function() {
+                const OrigXHR = window.XMLHttpRequest;
+                function XHWR() {
+                    const xhr = new OrigXHR();
+                    let method = null;
+                    let url = null;
+
+                    const origOpen = xhr.open;
+                    xhr.open = function(m, u) {
+                        method = (m || '').toUpperCase();
+                        url = u;
+                        return origOpen.apply(xhr, arguments);
+                    };
+
+                    const origSend = xhr.send;
+                    xhr.send = function(body) {
+                        if (method && method !== 'GET' && method !== 'HEAD') {
+                            const token = getCsrfToken();
+
+                            if (!body) {
+                                body = 'ci_csrf_token=' + encodeURIComponent(token);
+                                xhr.setRequestHeader &&
+                                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                            } else if (body instanceof FormData) {
+                                body.append('ci_csrf_token', token);
+                            } else if (typeof body === 'string') {
+                                const isJson = (() => {
+                                    try {
+                                        JSON.parse(body);
+                                        return true;
+                                    } catch (e) {
+                                        return false;
+                                    }
+                                })();
+                                if (isJson) {
+                                    try {
+                                        const obj = JSON.parse(body);
+                                        obj.ci_csrf_token = token;
+                                        body = JSON.stringify(obj);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+                                    } catch (e) {
+                                        body =
+                                            body +
+                                            (body.length ? '&' : '') +
+                                            'ci_csrf_token=' +
+                                            encodeURIComponent(token);
+                                        xhr.setRequestHeader &&
+                                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                    }
+                                } else {
+                                    body =
+                                        body +
+                                        (body.length ? '&' : '') +
+                                        'ci_csrf_token=' +
+                                        encodeURIComponent(token);
+                                    xhr.setRequestHeader &&
+                                    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+                                }
+                            }
+                        }
+                        return origSend.call(xhr, body);
+                    };
+
+                    return xhr;
+                }
+                XHWR.prototype = OrigXHR.prototype;
+                window.XMLHttpRequest = XHWR;
+            })();
+
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('form[method="post"]').forEach(ensureTokenField);
+            });
+        })();
+    </script>
+</head>
+<body>
+
+<!-- BEGIN WRAP -->
+<div class="wrap">
+    <!-- BEGIN NAVBAR -->
+    <div class="navbar navbar-default navbar-fixed-top" role="navigation"
+         style="background-color: #4B77BE">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#main-nav">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/ru">Веб-портал закупок</a>
+            </div>
+            <div class="navbar-collapse collapse" id="main-nav">
+                <ul class="nav navbar-nav"><li class="dropdown"><a data-id="404" href="#" class="dropdown-toggle" data-toggle="dropdown">Справка <b class="caret"></b> </a><ul class='dropdown-menu'><li class="dropdown-sub-menu"><a data-id="1101" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп ЛС и МИ</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/delivery_schedule_instruction.pdf">Инструкция по рассмотрению графиков поставки </a></li><li><a href="/uploads/template/culs_debts_instructions_for_suppliers.pdf">Инструкция отправки запроса по налоговой задолженности и участие в закупках при наличии задолженности</a></li><li><a href="/uploads/template/instruction_for_lowering_price_contract.pdf">Инструкция проведения переговоров по уменьшению цены</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_postavshika_konkurs.pdf">Инструкция поставщика по способу "Конкурс"</a></li><li><a href="http://sk-pharmacy.ecc.kz/uploads/template/instrukciya_org_konkurs.pdf">Инструкция организатора по способу "Конкурс"</a></li><li><a href="/uploads/template/dossier_instruction_for_ed.pdf">Инструкция ЕД по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/instruction_for_banks.pdf">Инструкция для банков</a></li><li><a href="/uploads/template/dossier_instruction_for_supplier.pdf">Инструкция Поставщика по работе "ДОСЬЕ ОТП"</a></li><li><a href="/uploads/template/registration_instructions.pdf">Инструкция пользователя по регистрации</a></li><li><a href="/uploads/template/investment_project_instruction_for_ed.pdf">Инструкция ЕД по реализации инвестиционного проекта</a></li><li><a href="/uploads/template/investment_project_instruction_for_supplier.pdf">Инструкция Поставщика по реализации инвестиционного проекта</a></li><li><a href="https://fms.ecc.kz/uploads/template/instrukciya_po_rabote_s_planom_zakupok.pdf">Инструкция по работе с планом закупок</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция организатора ИОИ.pdf">Инструкция организатора по способу "Из одного источника"</a></li><li><a href="/uploads/template/organizer_instruction_tender.pdf">Инструкция организатора по способу "Тендер"</a></li><li><a href="/uploads/template/supplier_instruction_tender.pdf">Инструкция поставщика по способу "Тендер"</a></li><li><a href="https://fms.ecc.kz/uploads/template/Инструкция поставщика _ИОИ_СКФ.pdf">Инструкция поставщика по способу "Из одного источника"</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_customer.pdf">Инструкция Заказчика по работе с договорами</a></li><li><a href="/uploads/template/customer_instruction_for_medicines_and_equipment.pdf">Инструкция организатора по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_supplier.pdf">Инструкция по работе с электронными актами Поставщика</a></li><li><a href="https://fms.ecc.kz/uploads/template/electronic_act_manual_customer.pdf">Инструкция по работе с электронными актами Заказчика</a></li><li><a href="https://fms.ecc.kz/uploads/template/contract_instruction_supplier.pdf">Инструкция Поставщика по работе с договорами</a></li><li><a href="/uploads/template/supplier_instruction_for_medicines_and_equipment.pdf">Инструкция поставщика по способу "Конкурс на заключение долгосрочных договоров поставки ЛС и МИ"</a></li><li><a href="https://fms.ecc.kz/uploads/template/ebg_instruction.pdf">Инструкция Поставщика по работе с ЭБГ и внесению обеспечения</a></li><li><a href="https://fms.ecc.kz/uploads/template/instructions_for_reports_3.pdf">Инструкция по работе и формированию отчетов</a></li><li><a href="/uploads/template/gbd_el_request_instruction.pdf">Инструкция поставщика по запросу разрешений/уведомлений на занятие фармацевтической деятельностью, а также данных по разрешительным документам GDP и GMP.</a></li><li><a href="https://fms.ecc.kz/uploads/template/Instrukciya_oshibki.pdf">Рекомендации по работе с ошибками</a></li><li><a href="/uploads/template/customer_instruction_for_equipment_admission.pdf">Инструкция организатора по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_for_equipment_admission.pdf">Инструкция поставщика по способу "Допуск по долгосрочному договору поставки ЛС и МИ"</a></li><li><a href="/uploads/template/supplier_instruction_gbd_el_fl.pdf">Инструкция проверка на аффилированность и близких родственниках потенциального поставщика</a></li><li><a href="/uploads/template/manual_gbd_rn.pdf">Инструкция по отправке запросов на получение документов «Справка о зарегистрированных правах на недвижимое имущество» и «Технический паспорт на аптечный склад"</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="1346" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.услуг</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instructions_for_working_with_the_database_of_healthcare_subjects.pdf">Инструкция по работе с базой данных субъектов здравоохранения</a></li><li><a href="/uploads/template/registration_instructions_medical_service.pdf">Инструкция по регистрации</a></li><li><a href="/uploads/template/new_supplier_instruction.pdf">Инструкция поставщика</a></li><li><a href="/uploads/template/new_agreement_of_accession.pdf">Договор присоединения</a></li><li><a href="/uploads/template/instrukciy_po_isklycheniy_iz_BD_kz_rus.pdf">Инструкции по исключению заявки из БД</a></li><li><a href="/uploads/template/VTMP_instrukcyia_postavshik kaz_rus.pdf">Инструкция Поставщика ВТМП</a></li><li><a href="/uploads/template/financial_stability_instruction_kaz_rus.pdf">Инструкция модуля Финансовая устойчивость</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2132" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед.техники для лизингодателя</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="https://fms.ecc.kz/uploads/template/instruction_banks_lessor.pdf">Инструкция для банков</a></li><li><a href="https://fms.ecc.kz/uploads/template/organizer_instruction_lessor.pdf">Инструкция для Организатора</a></li><li><a href="https://fms.ecc.kz/uploads/template/supplier_instruction_lessor.pdf">Инструкция для Поставщика</a></li></ul></li><li class="dropdown-sub-menu"><a data-id="2250" href="#" class="dropdown-toggle" data-toggle="dropdown">Закуп мед. техники</a><ul class='dropdown-menu dropdown-menu-scroll'><li><a href="/uploads/template/Instruction_Organizer_Tender_МТ.pdf">Инструкция Организатора закупа МТ (Тендер)</a></li><li><a href="/uploads/template/Instruction_MT_customer.pdf">Инструкция для Заказчика (Заявителя)</a></li><li><a href="/uploads/template/contract_instruction_supplier_MT.pdf">Инструкция для Поставщика</a></li></ul></li></ul></li><li class="dropdown"><a data-id="181" href="#" class="dropdown-toggle" data-toggle="dropdown">Реестры <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/register/supplierreg">Реестр участников</a></li><li><a href="https://fms.ecc.kz/ru/fsms/healthcare_subjects">База данных субъектов здравоохранения</a></li><li><a href="https://fms.ecc.kz/ru/fsms/services_registry">Реестр услуг/операций</a></li></ul></li><li class="dropdown"><a data-id="66" href="#" class="dropdown-toggle" data-toggle="dropdown">Закупки <b class="caret"></b> </a><ul class='dropdown-menu'><li><a href="https://fms.ecc.kz/ru/subpriceoffer">Поиск лотов</a></li><li><a href="https://fms.ecc.kz/ru/searchanno">Поиск объявлений</a></li></ul></li></ul>
+                <ul class="nav navbar-nav navbar-right">
+                    
+                </ul>
+
+                <ul class="nav navbar-nav navbar-right">
+                    
+            <li><a href="https://fms.ecc.kz/ru/announce/index/522204?tab=lots">Рус</a></li>
+            <li><a href="https://fms.ecc.kz/kz/announce/index/522204?tab=lots">Қаз</a></li>
+              <li>
+                       <a href="https://fms.ecc.kz/ru/user/login"> <span class="glyphicon glyphicon-user online" id="online-status"></span>&nbspВойти</a>
+                     </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <!-- END NAVBAR -->
+
+    <!-- BEGIN CONTAINER FULL -->
+    <div class="container-full">
+
+        <div class="alert alert-danger" id="offline-message">
+            <strong>Внимание!</strong> Соединение с приложением прервано. Дождитесь повторного подключения.
+        </div>
+        
+        <!-- BEGIN MAIN CONTENT -->
+        <div class="panel panel-default">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button data-toggle="collapse" class="navbar-toggle" type="button" data-target="#cabinet_nav">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="glyphicon glyphicon-arrow-down"></span>
+                    </button>
+                </div>
+                <div class="collapse navbar-collapse" id="cabinet_nav">
+                    <ul class="nav navbar-nav"></ul>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="alert alert-info"
+             style="display: none;">Подождите, идет загрузка данных</div>
+        
+        <div class="content-block">
+            
+<script>
+    $(function () {
+        var newYear = new Date('2026/08/18 10:00:00');
+        $('#asNeeded').countdown({until: newYear, layout: '{dn} {dl}, {hn} {hl}, {mn} {ml}, {sn} {sl}'});
+
+        $('#notice_create_contract').click(function (){
+            $.ajax({
+                type: "post",
+                url: site_url() + 'ajax_notice_create_contract/522204',
+                dataType: "json",
+                success: function (response) {
+                    alert(response.message);
+                    if (response.status === 'ok') {
+                        window.location.reload();
+                    }
+                },
+                error: function (xhr, status, error) {
+                    var errorMessage = xhr.status + ': ' + xhr.statusText;
+                    alert('Произошла ошибка: ' + errorMessage);
+                }
+            });
+        });
+    });
+</script>
+
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <div class="row">
+
+            
+                        <h4 style="text-align: center">Просмотр объявления № 522204-1</h4>
+                    </div>
+    </div>
+    <div class="panel-body">
+        <div class="alert alert-danger" role="alert" id="errors" style="display: none;"></div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Номер объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="522204-1" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Наименование объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="Повторный допуск КТП к закупу ЛС и МИ на 2027 год в рамках Долгосрочных договоров" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Статус объявления</label>
+
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="Опубликовано (прием заявок)" readonly/>
+                    </div>
+                </div>
+                <br/> &nbsp;
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Дата публикации объявления</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-08-03 11:58:01" readonly/>
+                    </div>
+                </div>
+                <br />&nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Срок начала приема заявок</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-08-04 09:00:00" readonly />
+                    </div>
+                </div>
+                <br/> &nbsp;
+                <div class="form-group">
+                    <label class="col-sm-4 control-label">Срок окончания приема заявок</label>
+                    <div class="col-sm-7">
+                        <input type='text' class="form-control" value="2026-08-18 10:00:00" readonly />
+                    </div>
+                </div>
+                <br/> &nbsp;
+                                                                    <div class="form-group">
+                        <label class="col-sm-4 control-label">Оставшееся время</label>
+                        <div class="col-sm-8">
+                            <table>
+                                <tr>
+                                    <td>
+                                        <div id="asNeeded"></div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    <br/> &nbsp;
+                                                </div>
+                    </div>
+    </div>
+</div>
+
+<div class="row">
+
+            <div class="col-md-6">
+            <p>
+                <label class="label label-info" style="font-size: 14px;">
+                    Кол-во поданных заявок: 0                </label>
+            </p>
+        </div>
+        </div>
+<div class="panel">
+    <div class="panel-body">
+        <div class="row">
+            <div role="tabpanel">
+                <ul class="nav nav-tabs" role="tablist">
+                                        <li role="presentation" >
+                        <a href="?tab=general">Общие сведения</a>
+                    </li>
+                                        <li role="presentation" class="active">
+                        <a href="?tab=lots">Лоты</a>
+                    </li>
+                                        <li role="presentation" >
+                        <a href="?tab=documents">Документация</a>
+                    </li>
+                                        <li role="presentation" >
+                        <a href="?tab=protocols">Протоколы</a>
+                    </li>
+                                    </ul>
+                <br/>
+                <div class="tab-content">
+                    <div role="tabpanel" class="tab-pane fade in active">
+                        <div class="col-md-12 col-lg-12 col-xs-12">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <b>Лоты </b>
+        </div>
+        <div class="panel-body">
+            
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <b>Поиск</b>
+    </div>
+    <div class="panel-body">
+        <form method="get" action="">
+            <input type="hidden" name="tab" value="lots">
+            <div class="row">
+                <div class="col-sm-1">Номер лота</div>
+                <div class="col-sm-2"><input type="text" name="number_lot" id="number_lot" value="" class="form-control"  /></div>
+                <div class="col-sm-1">Наименование лота</div>
+                <div class="col-sm-5"><input type="text" name="name_lot" id="name_lot" value="" class="form-control"  /></div>
+                <div class="col-sm-1">Цена за единицу</div>
+                <div class="col-sm-2"><input type="text" name="price_lot" id="price_lot" value="" class="form-control"  /></div>
+            </div>
+            <p></p>
+            <button class="btn btn-success" type="submit">Найти</button>
+        </form>
+    </div>
+</div>
+
+
+
+                            <table class="table table-bordered table-hover table-striped" style="margin-bottom: 0;border-top: 0;">
+                    <tr>
+                        <th>№ лота</th>
+                        <th>Код СПП</th>
+                        <th>Форма мед. помощи</th>
+                        <th>Тип позиции приказа ЕД</th>
+                        <th>Номер позиции приказа ЕД</th>
+                        <th>Номер приказа ЕД</th>
+                        <th>Дата приказа ЕД</th>
+                        <th>МНН</th>
+                        <th>Лекарственная форма</th>
+                        <th>Ед. изм.</th>
+                        <th>Предельная цена МЗ РК</th>
+                        <th>Цена ЕД для закупа</th>
+                        <th>Статус</th>
+                    </tr>
+                                                                            <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875223'> 4875223-Д_ЛС_МИ1 </a></td>
+                                <td>270016</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>682</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Шприцы инъекционные, безопасные, 3-х компонентные объемами 3 (мл), с иглами, стерильные, одноразового применения</td>
+                                <td>Шприц инъекционный состоит из 3-х компонентов: цилиндр, шток-поршень и уплотнитель. Изготавливаются из полимерного материала объемами 3 (мл). Шприцы укомплектованы иглами соответствующих размеров: 23G x 1¼” (0,6 мм х 30 мм). Иглы изготовлены из нержавеющей стали. Стерилизация изделия осуществляется газовым методом с использованием этиленоксида. Изделие поставляется в стерильном виде, в индивидуальной упаковке готовое к использованию.</td>
+                                <td>штука</td>
+                                <td>20.36</td>
+                                <td>18.93</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875224'> 4875224-Д_ЛС_МИ1 </a></td>
+                                <td>272294</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>709</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Экспресс тест Хеликобактер в сыворотке плазме и цельной крови Антитела ("Хелико АТ")</td>
+                                <td>Экспресс-тест "Хелико АТ" является качественным анализом для обнаружения антител к H. pylori. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.); 2. Одноразовая полиэтиленовая пипетка – (25 шт.); 3. Буферный раствор - (3 мл, 1 фл.) Чувствительность и специфичность теста составляет по чувствительности 99%, специфичности 99%.</td>
+                                <td>штука</td>
+                                <td>27645.56</td>
+                                <td>25710.4</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875225'> 4875225-Д_ЛС_МИ1 </a></td>
+                                <td>272132</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1735</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Комплект для тотального эндопротезирования тазобедренного сустава, стерильный, одноразового применения</td>
+                                <td>1. Простыня для стола (усиленная) 100 см х 137 см - 1 шт. 2. Простыня операционная с U – образным вырезом (усиленная) 220 см х 250 см - 1 шт. 3. Чулок для наложения гипса с эластичной фиксацией 30 см х 60 см - 1 шт. 4. Чехол для аспирации и диатермии 35 см х 45 см - 1 шт. 5. Трубка дренажная для соединения, длина трубки: 300 см - 1 шт.</td>
+                                <td>комплект</td>
+                                <td>6877.18</td>
+                                <td>6395.77</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875226'> 4875226-Д_ЛС_МИ1 </a></td>
+                                <td>270031</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>694</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Набор процедурный для катетеризации, стерильный, одноразового применения</td>
+                                <td>1. Салфетка двухслойная 50 см х 50 см - 1 шт. 2. Салфетка двухслойная с отверстием 5 см, 50 см х 50 см - 1 шт. 3. Клещи с кнопками-защелками, длина: 19 см - 1 шт. 4. Перчатки диагностические, смотровые, латексные, неопудренные, размер L - 1 пара</td>
+                                <td>комплект</td>
+                                <td>24266.64</td>
+                                <td>22568</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875227'> 4875227-Д_ЛС_МИ1 </a></td>
+                                <td>270757</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>530</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Тест-полоска</td>
+                                <td>Тест-полоска для полуколичественного и визуального определения содержания в моче билирубина, крови, глюкозы, кетонов, рН, белка, уробилиногена, флакон № 100</td>
+                                <td>туба</td>
+                                <td>10229.25</td>
+                                <td>9513.2</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875228'> 4875228-Д_ЛС_МИ1 </a></td>
+                                <td>271798</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>539</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Мочевая тест-полоска</td>
+                                <td>Тест-полоска для полуколичественного и визуального определения содержания в моче глюкозы, белка, флакон № 100</td>
+                                <td>туба</td>
+                                <td>3875.5</td>
+                                <td>3604.21</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875233'> 4875233-Д_ЛС_МИ1 </a></td>
+                                <td>271323</td>
+                                <td>
+                                    Стационар, АЛО                                </td>
+                                <td>ЛС</td>
+                                <td>873</td>
+                                <td>КР ДСМ-88</td>
+                                <td>2021</td>
+                                <td>Ламотриджин</td>
+                                <td>таблетка жевательная 100 мг</td>
+                                <td>таблетка</td>
+                                <td>111.16</td>
+                                <td>103.37</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875234'> 4875234-Д_ЛС_МИ1 </a></td>
+                                <td>270143</td>
+                                <td>
+                                    Стационар, АЛО                                </td>
+                                <td>ЛС</td>
+                                <td>796</td>
+                                <td>КР ДСМ-88</td>
+                                <td>2021</td>
+                                <td>Ибупрофен</td>
+                                <td>таблетка 400 мг</td>
+                                <td>таблетка</td>
+                                <td>46.17</td>
+                                <td>42.93</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875235'> 4875235-Д_ЛС_МИ1 </a></td>
+                                <td>272256</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>711</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Экспресс тест СРБ (для выявления С-реактивного белка в цельной крови, сыворотке или плазме человека)</td>
+                                <td>Экспресс-тест "СРБ" является качественным мембранным иммунохроматографическим анализом для определения С-реактивного белка. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.); 2. Одноразовая полиэтиленовая пипетка – (25 шт.); 3. Буферный раствор - (1 мл, 25 фл.) 4. Полиэтиленовый капилляр – (25 шт) Чувствительность и специфичность теста составляет по чувствительности 99%, специфичности 99%. Нижний предел обнаружения 10 мкг/мл.</td>
+                                <td>штука</td>
+                                <td>40722.82</td>
+                                <td>37872.2</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875236'> 4875236-Д_ЛС_МИ1 </a></td>
+                                <td>272258</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1729</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Комплект операционный на конечность - кисть, стопа, стерильный, одноразового применения</td>
+                                <td>1. Простыня для операции на конечности, размером 225 х 320 см, двухслойная с эластичным отверстием, диаметром 7 см, расположенным по центру со встроенными фиксаторами трубок, впитывающей зоной вокруг - 1 шт. 2. Простыня для операции на конечности, размером 100 х 175 см двухслойная с эластичным отверстием, диаметром 4 см, расположенным по центру - 1 шт.</td>
+                                <td>комплект</td>
+                                <td>2419.34</td>
+                                <td>2249.98</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875237'> 4875237-Д_ЛС_МИ1 </a></td>
+                                <td>272144</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1712</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Набор для определения аденовирусной инфекции в респираторных образцах человека</td>
+                                <td>Экспресс-тест является качественным иммунохроматографическим анализом для выявления антигена аденовируса. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.) 2. Буферный раствор для экстракции – (10 мл, 1 фл.) 3. Ватный тампон – (25 шт.) 4. Одноразовая пробирка для выделения – (25 шт.) 5. Пластиковый наконечник на пробирку для выделения – (25 шт.) 6. Штатив для пробирок – (1 шт.) Чувствительность и специфичность теста составляет по чувствительности 99%, специфичности 99%.</td>
+                                <td>упаковка</td>
+                                <td>108218.49</td>
+                                <td>101725</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875238'> 4875238-Д_ЛС_МИ1 </a></td>
+                                <td>272257</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>710</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Экспресс тест Хламидия (для качественного обнаружения Chlamydia в женских мазках из шейки матки, мужских уретральных мазках или мужских образцах мочи)</td>
+                                <td>Экспресс-тест "Хламидия" является качественным иммунохроматографическим анализом для выявления Chlamydia. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.); 2. Реагент для экстракции 1 – (10 мл, 1 фл.); 3. Реагент для экстракции 2 – (10 мл, 1 фл.); 4. Ватный тампон - (25 шт.); 5. Одноразовая пробирка для выделения – (25 шт.) 6. Пластиковый наконечник на пробирку для выделения – (25 шт.) 7. Штатив для пробирок – (1 шт.) Чувствительность и специфичность теста составляет по чувствительности 99%, специфичности 99%.</td>
+                                <td>штука</td>
+                                <td>30493.5</td>
+                                <td>28358.9</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875239'> 4875239-Д_ЛС_МИ1 </a></td>
+                                <td>270250</td>
+                                <td>
+                                    Стационар, АЛО                                </td>
+                                <td>ЛС</td>
+                                <td>406</td>
+                                <td>КР ДСМ-88</td>
+                                <td>2021</td>
+                                <td>Азитромицин</td>
+                                <td>таблетка/капсула 500 мг</td>
+                                <td>таблетка /капсула</td>
+                                <td>368.03</td>
+                                <td>342.26</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875242'> 4875242-Д_ЛС_МИ1 </a></td>
+                                <td>270758</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>531</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Тест-полоска</td>
+                                <td>Тест-полоска для полуколичественного и визуального определения содержания в моче глюкозы, рН, белка, крови, кетонов, флакон № 100</td>
+                                <td>туба</td>
+                                <td>8119</td>
+                                <td>7550.67</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875244'> 4875244-Д_ЛС_МИ1 </a></td>
+                                <td>270109</td>
+                                <td>
+                                    Стационар, АЛО                                </td>
+                                <td>МИ</td>
+                                <td>1491</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Тест-полоска для визуального определения содержания в моче Кетонов</td>
+                                <td>Tест-полоска для визуального определения содержания в моче Кетонов, флакон №100. Tест-полоска предназначена для использования в качестве диагностического средства in vitro с использованием образцов мочи. Тест-полоска содержит твердофазные участки реагента, прикрепленные к пластиковой подложке, и предоставляется в формате сухого реагента. Состав Содержания реагента на основе сухого веса для пропитки 100 полос: Кетоны Нитропруссид натрия 20.0 мг Сульфат магния 246.5 мг Комплектная упаковка Мочевые тест-полоски по 100 шт, в пластиковом флаконе. В каждый флакон вложен влагопоглощающий элемент – силикагель.</td>
+                                <td>флакон</td>
+                                <td>3264.77</td>
+                                <td>3036.23</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875248'> 4875248-Д_ЛС_МИ1 </a></td>
+                                <td>270012</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>713</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Экспресс тест "Креатинкиназа МВ" (для выявления креатинкиназы-МВ в цельной крови, сыворотке или плазме человека)</td>
+                                <td>Экспресс-тест "Креатинкиназа МВ" является качественным одноэтапным иммунохроматографическим методом для определения креатинкиназы. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.); 2. Одноразовая полиэтиленовая пипетка – (25 шт.); 3. Буферный раствор - (3 мл, 1 фл.). Чувствительность и специфичность теста составляет по чувствительности 99,9%, специфичности 99,9%. Нижний предел обнаружения 5 нг/мл</td>
+                                <td>штука</td>
+                                <td>44022</td>
+                                <td>40940.5</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875249'> 4875249-Д_ЛС_МИ1 </a></td>
+                                <td>270094</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1460</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Баллон для остановки маточного кровотечения стерильный одноразового применения</td>
+                                <td>Баллон для остановки маточного кровотечения стерильный одноразового применения (1)Пластиковый одноразовый шприц 60мл– 2шт; 2)Баллон, 50 мл – 1шт; 3)Удлинительная трубка, 55см – 1шт; 4)Двусторонний и трехсторонний запорный кран содносторонним клапаном – 1шт)</td>
+                                <td>штука</td>
+                                <td>144480</td>
+                                <td>137256</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875250'> 4875250-Д_ЛС_МИ1 </a></td>
+                                <td>272245</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1734</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Комплект для гемодиализа №1 стерильный, одноразового применения</td>
+                                <td>1. Перчатки диагностические, смотровые, латексные, неопудренные, размер М - 1 пара. 2. Маска медицинская трехслойная на резинках - 1 шт. 3. Салфетка хирургическая 75 см х 50 см - 1 шт. 4. Тампоны впитывающие, хирургические, размер: круглые диаметром 7 см - 5 шт. 5. Салфетки хирургические 7,5 см х 7,5 см - 5 шт. 6. Шприцы одноразовые, трехкомпонентные, объем: 5 мл - 2 шт. 7. Фиксирующая полоска с подушечкой 2,5 см х 12 см - 6 шт. 8. Гемостатический пластырь с подушечкой - 2 шт</td>
+                                <td>комплект</td>
+                                <td>44199.06</td>
+                                <td>41105.1</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875251'> 4875251-Д_ЛС_МИ1 </a></td>
+                                <td>272145</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>1727</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Набор процедурный для обработки ран, стерильный, одноразового применения</td>
+                                <td>1. Салфетка хирургическая 7,5 см х 7,5 см - 5 шт. 2. Пинцет пластиковый - 1 шт. 3. Тампоны хирургические, размер: круглые, диаметром 5 см - 5 шт.</td>
+                                <td>набор</td>
+                                <td>2870.11</td>
+                                <td>2669.2</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                                                <tr>
+                                <td><a href='#' class='btn-select-lot'  data-lot-id='4875254'> 4875254-Д_ЛС_МИ1 </a></td>
+                                <td>272240</td>
+                                <td>
+                                    Стационар                                </td>
+                                <td>МИ</td>
+                                <td>707</td>
+                                <td>ҚР ДСМ-88</td>
+                                <td>2025</td>
+                                <td>Экспресс тест Стрептококк В (для выявления антигена Стрептококка группы Б в урогенитальных образцах мазка человека)</td>
+                                <td>Экспресс-тест "Стрептококк В" является качественным мембранным иммунохроматографическим анализом для выявления антигена Стрептококка группы Б (СТРЕП Б) в урогенитальных образцах мазка человека. Комплектность: 1. Тест-кассета, упакованная в индивидуальную упаковку из алюминиевой фольги с осушителем – (25 шт.) 2. Ватный тампон – (25 шт.) 3. Одноразовая пробирка для выделения – (25 шт.) 4. Пластиковый наконечник на пробирку для выделения – (25 шт.) 5. Штатив для пробирок – (1 шт.) 6. Реагент №1 для выделения – (10 мл, 1 фл.) 7. Реагент №2 для выделения – (10 мл, 1 фл.) Чувствительность и специфичность теста составляет по чувствительности 99%, специфичности 99%.</td>
+                                <td>штука</td>
+                                <td>95304.83</td>
+                                <td>88633.5</td>
+                                <td>Опубликован (прием заявок)</td>
+                            </tr>
+                                                            </table>
+                        <ul class="pagination"><li class="active"><a>1</li></a><li><a href="https://fms.ecc.kz/ru/announce/index/522204?tab=lots&amp;page=2">2</a></li><li><a href="https://fms.ecc.kz/ru/announce/index/522204?tab=lots&amp;page=2">&gt;</a></li></ul>        </div>
+    </div>
+</div>
+
+<div class="modal fade in modal-lot" tabindex="-1" role="dialog" aria-hidden="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content modal-lot-content">
+            <div class="modal-body modal-body-lot">
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+        </div>
+        <!-- END MAIN CONTENT -->
+
+        <div class="clearfix"></div>
+
+        
+            </div>
+    <!-- END CONTAINER FULL -->
+
+</div>
+<!-- END WRAP -->
+
+<!-- BEGIN FOOTER -->
+<footer class="footer">
+    <div class="container">
+        <p class="pull-left">
+            Веб-портал закупок &copy; 2026        </p>
+        <p class="pull-right">
+            <span class="ecc">
+                <a href="https://www.ecc.kz">АО "Центр электронных финансов"</a>
+            </span>
+        </p>
+    </div>
+    <p class="text-center text-muted">
+        Техническая поддержка пользователей портала 24/7 (без выходных):<br><a href="tel:+77172735515">8 (7172) 73 55 15</a><br><a href="tel:+77059565388">+7 705 956 53 88</a><br><a href="mailto:fms_support@ecc.kz">fms_support@ecc.kz</a><br><a href="mailto:skf_support@ecc.kz">skf_support@ecc.kz</a>    </p>
+</footer>
+<!-- END FOOTER -->
+
+<!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+<!-- Include all compiled plugins (below), or include individual files as needed -->
+
+</body>
+</html>

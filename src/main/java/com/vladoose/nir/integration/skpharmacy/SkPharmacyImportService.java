@@ -6,7 +6,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Оркестрация импорта СК-Фармации (fms.ecc.kz), зеркалит GoszakupImportService, но HTML-скрейп.
@@ -20,15 +23,41 @@ public class SkPharmacyImportService {
     private final SkPharmacyClient client;
     private final SkPharmacyTenderWriter writer;
     private final int maxPages;
+    private final int maxLotPages;
     private final long throttleMs;
 
     public SkPharmacyImportService(SkPharmacyClient client, SkPharmacyTenderWriter writer,
                                    @Value("${skpharmacy.import.max-pages:30}") int maxPages,
+                                   @Value("${skpharmacy.import.max-lot-pages:20}") int maxLotPages,
                                    @Value("${skpharmacy.import.throttle-ms:300}") long throttleMs) {
         this.client = client;
         this.writer = writer;
         this.maxPages = maxPages;
+        this.maxLotPages = maxLotPages;
         this.throttleMs = throttleMs;
+    }
+
+    /**
+     * Лоты объявления со ВСЕХ страниц вкладки. Идём вперёд, пока пейджер даёт ссылку на следующую страницу,
+     * и обрываемся на странице без НОВЫХ кодов лотов: за последней страницей портал отдаёт контент последней
+     * (page=4 = page=3) и «вперёд» обещать не перестаёт, так что одного признака мало. Предел `max-lot-pages` —
+     * последний рубеж; троттлинг между страницами тот же, что между объявлениями (бан площадки).
+     */
+    private List<SkLot> fetchLots(String announceId) {
+        List<SkLot> all = new ArrayList<>();
+        Set<String> seenCodes = new HashSet<>();
+        for (int page = 1; page <= maxLotPages; page++) {
+            String html = client.lotsPage(announceId, page);
+            List<SkLot> pageLots = SkPharmacyHtmlParser.parseLots(html);
+            int added = 0;
+            for (SkLot l : pageLots) {
+                if (seenCodes.add(l.code())) { all.add(l); added++; }
+            }
+            if (added == 0) break;                                          // страница без новых лотов — пейджер зациклен
+            if (!SkPharmacyHtmlParser.hasNextLotsPage(html, page)) break;   // последняя страница
+            if (!throttle()) break;
+        }
+        return all;
     }
 
     /** Вкладка «Общие сведения» — доп. запрос к порталу; регион/контакт вторичны → сбой не валит тендер (пишем без них). */
@@ -71,7 +100,7 @@ public class SkPharmacyImportService {
                         sum.setSkipped(sum.getSkipped() + 1);
                         continue;
                     }
-                    List<SkLot> lots = SkPharmacyHtmlParser.parseLots(client.lotsPage(a.announceId()));
+                    List<SkLot> lots = fetchLots(a.announceId());
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
                     if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
                         sum.setSkipped(sum.getSkipped() + 1);
