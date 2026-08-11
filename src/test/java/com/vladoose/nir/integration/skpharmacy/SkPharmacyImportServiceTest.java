@@ -98,6 +98,27 @@ class SkPharmacyImportServiceTest {
     }
 
     /**
+     * Закупка медицинских УСЛУГ (ГОБМП/ОСМС) — не наш предмет: у неё нет колонки товара в принципе.
+     * Такие объявления пропускаются целиком, а не пишутся тендером с нулём лотов.
+     */
+    @Test
+    void import_skipsMedicalServicesAnnouncements() throws IOException {
+        MarketContext.set(Market.KZ);
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");
+        when(client.lotsPage(anyString(), anyInt())).thenReturn(fixture("lots-services.html"));
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getCreated()).isZero();
+        assertThat(sum.getSkipped()).isEqualTo(10);                      // все 10 объявлений фикстуры — услуги
+        assertThat(tenderRepository.findBySourceExtId("521464-1")).isEmpty();
+    }
+
+    /**
      * Портал за последней страницей отдаёт контент последней (page=4 = page=3) и пейджер продолжает обещать
      * «вперёд» — обход обязан остановиться на странице без НОВЫХ лотов, иначе импорт крутится до предела страниц.
      */

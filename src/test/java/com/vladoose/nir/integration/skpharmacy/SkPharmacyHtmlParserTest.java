@@ -140,6 +140,57 @@ class SkPharmacyHtmlParserTest {
         assertThat(SkPharmacyHtmlParser.hasNextLotsPage(fixture("lots-longterm.html"), 1)).isFalse();
     }
 
+    /**
+     * Объявления закупки медицинских УСЛУГ (ГОБМП/ОСМС): колонки товара нет в принципе, вместо неё
+     * «Форма/Вид медицинской помощи». Такие объявления импортировать не надо вовсе — в системе закупки
+     * оборудования им не место.
+     */
+    @Test
+    void isServicesLotsPage_trueOnlyForMedicalCareProcurement() throws IOException {
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots-services.html"))).isTrue();
+        assertThat(SkPharmacyHtmlParser.parseLots(fixture("lots-services.html"))).isEmpty();
+
+        // ⚠️ У вёрстки «приказ ЕД» ЕСТЬ колонка «Форма мед. помощи» — но это закупка ТОВАРА (наименование в МНН).
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots-ed-order.html"))).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots.html"))).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots-longterm.html"))).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots-price-limit.html"))).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(fixture("lots-with-customer-column.html"))).isFalse();
+    }
+
+    /**
+     * ⚠️ Решает ОТСУТСТВИЕ наименования товара, а не упоминание помощи: в товарной вёрстке «приказ ЕД» эта
+     * колонка называется «Форма мед. помощи», то есть от полной формы её отделяет одна правка на площадке.
+     * Если колонка товара есть — это закупка товара, чем бы ни была соседняя колонка.
+     */
+    @Test
+    void isServicesLotsPage_falseWhenProductNameColumnPresentAlongsideCareColumn() {
+        String html = """
+                <table><tr><th>№ лота</th><th>Форма медицинской помощи</th><th>МНН</th>
+                <th>Ед. изм.</th><th>Цена ЕД для закупа</th><th>Статус</th></tr>
+                <tr><td>4875223-Д1</td><td>Стационар</td><td>Шприцы инъекционные</td>
+                <td>штука</td><td>18.93</td><td>Опубликован</td></tr></table>
+                """;
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(html)).isFalse();
+        assertThat(SkPharmacyHtmlParser.parseLots(html)).singleElement()
+                .satisfies(l -> assertThat(l.name()).isEqualTo("Шприцы инъекционные"));
+    }
+
+    /**
+     * Неизвестная вёрстка услугами НЕ считается, даже если наименования товара в ней не нашлось:
+     * тендер запишется с нулём лотов и это будет ВИДНО, а молчаливый пропуск неотличим от «на площадке пусто».
+     */
+    @Test
+    void isServicesLotsPage_falseOnUnknownOrBrokenPage() {
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage(null)).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage("")).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage("<html><body>страница ошибки</body></html>")).isFalse();
+        assertThat(SkPharmacyHtmlParser.isServicesLotsPage("""
+                <table><tr><th>№ лота</th><th>Колонка Б</th><th>Колонка В</th></tr>
+                <tr><td>X-1</td><td>что-то</td><td>ещё</td></tr></table>
+                """)).isFalse();
+    }
+
     @Test
     void parse_empty_null_safe() {
         assertThat(SkPharmacyHtmlParser.parseSearch("")).isEmpty();

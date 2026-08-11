@@ -99,21 +99,35 @@ public final class SkPharmacyHtmlParser {
      * сошлись код и наименование — то есть проверяется он сам собой, а не доверием к вёрстке.
      */
     private static LotColumns resolveColumns(Element table) {
-        Element thRow = null, firstRow = null;
-        for (Element tr : table.select("tr")) {
-            if (firstRow == null) firstRow = tr;
-            if (tr.select("th").size() >= 2) { thRow = tr; break; }
+        for (Element row : headerCandidates(table)) {
+            LotColumns cols = columnsOf(row, row.select("th").size() >= 2 ? "th" : "td");
+            if (cols != null) return cols;
         }
-        LotColumns cols = thRow != null ? columnsOf(thRow, "th") : null;
-        if (cols == null && firstRow != null) cols = columnsOf(firstRow, "td");
-        return cols;
+        return null;
+    }
+
+    /** Строки, которые могут оказаться шапкой: первая с {@code th} и просто первая строка таблицы. */
+    private static List<Element> headerCandidates(Element table) {
+        List<Element> out = new ArrayList<>();
+        Element first = null, th = null;
+        for (Element tr : table.select("tr")) {
+            if (first == null) first = tr;
+            if (tr.select("th").size() >= 2) { th = tr; break; }
+        }
+        if (th != null) out.add(th);
+        if (first != null && first != th) out.add(first);
+        return out;
     }
 
     private static LotColumns columnsOf(Element row, String cellTag) {
-        List<String> labels = row.select(cellTag).stream().map(c -> norm(c.text())).toList();
+        List<String> labels = labels(row, cellTag);
         LotColumns cols = new LotColumns(indexOf(labels, CODE_LABELS), indexOf(labels, NAME_LABELS),
                 indexOf(labels, PRICE_LABELS), indexOf(labels, QTY_LABELS), indexOf(labels, DESC_LABELS), row);
         return cols.resolved() ? cols : null;
+    }
+
+    private static List<String> labels(Element row, String cellTag) {
+        return row.select(cellTag).stream().map(c -> norm(c.text())).toList();
     }
 
     /** Первая метка-кандидат (по приоритету), найденная среди заголовков; нет — -1. */
@@ -128,6 +142,35 @@ public final class SkPharmacyHtmlParser {
 
     private static String norm(String s) {
         return s == null ? "" : s.toLowerCase().replace('ё', 'е').replaceAll("\\s+", " ").trim();
+    }
+
+    /** Колонка, которой закупка УСЛУГ подменяет наименование товара. */
+    private static final String CARE_KIND_LABEL = "медицинской помощи";
+
+    /**
+     * Вкладка лотов — это закупка медицинских УСЛУГ (ГОБМП/ОСМС), а не товара: есть таблица лотов
+     * (колонка «№ лота»), колонки наименования товара НЕТ ни в каком виде, а вместо неё стоит
+     * «Форма/Вид медицинской помощи». Такие объявления импорт пропускает целиком.
+     *
+     * <p>⚠️ Проверяются ОБА признака, и это не перестраховка: у товарной вёрстки «приказ ЕД» тоже есть
+     * колонка «Форма мед. помощи», и по одному лишь упоминанию помощи мы выбросили бы закупку изделий.
+     * Решает именно ОТСУТСТВИЕ наименования товара.
+     *
+     * <p>Неизвестная/битая вёрстка услугами НЕ считается — её надо оставлять видимой (тендер запишется
+     * с нулём лотов), а не молча пропускать: молчаливый пропуск неотличим от «на площадке ничего нет».
+     */
+    public static boolean isServicesLotsPage(String html) {
+        if (html == null || html.isBlank()) return false;
+        for (Element table : Jsoup.parse(html).select("table")) {
+            for (Element row : headerCandidates(table)) {
+                List<String> labels = labels(row, row.select("th").size() >= 2 ? "th" : "td");
+                if (labels.size() < 2) continue;
+                if (indexOf(labels, CODE_LABELS) < 0) continue;              // не таблица лотов
+                if (indexOf(labels, NAME_LABELS) >= 0) return false;         // наименование товара есть → это закупка товара
+                if (labels.stream().anyMatch(l -> l.contains(CARE_KIND_LABEL))) return true;
+            }
+        }
+        return false;
     }
 
     private static final Pattern PAGE_PARAM = Pattern.compile("[?&]page=(\\d+)");

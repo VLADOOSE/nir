@@ -43,11 +43,19 @@ public class SkPharmacyImportService {
      * (page=4 = page=3) и «вперёд» обещать не перестаёт, так что одного признака мало. Предел `max-lot-pages` —
      * последний рубеж; троттлинг между страницами тот же, что между объявлениями (бан площадки).
      */
-    private List<SkLot> fetchLots(String announceId) {
+    /**
+     * Лоты объявления + признак «это закупка УСЛУГ». Признак снимается с ПЕРВОЙ страницы: услуги и товары
+     * в одном объявлении не смешиваются, вкладка целиком одной вёрстки.
+     */
+    private record FetchedLots(List<SkLot> lots, boolean services) {}
+
+    private FetchedLots fetchLots(String announceId) {
         List<SkLot> all = new ArrayList<>();
         Set<String> seenCodes = new HashSet<>();
+        boolean services = false;
         for (int page = 1; page <= maxLotPages; page++) {
             String html = client.lotsPage(announceId, page);
+            if (page == 1) services = SkPharmacyHtmlParser.isServicesLotsPage(html);
             List<SkLot> pageLots = SkPharmacyHtmlParser.parseLots(html);
             int added = 0;
             for (SkLot l : pageLots) {
@@ -57,7 +65,7 @@ public class SkPharmacyImportService {
             if (!SkPharmacyHtmlParser.hasNextLotsPage(html, page)) break;   // последняя страница
             if (!throttle()) break;
         }
-        return all;
+        return new FetchedLots(all, services);
     }
 
     /** Вкладка «Общие сведения» — доп. запрос к порталу; регион/контакт вторичны → сбой не валит тендер (пишем без них). */
@@ -100,7 +108,12 @@ public class SkPharmacyImportService {
                         sum.setSkipped(sum.getSkipped() + 1);
                         continue;
                     }
-                    List<SkLot> lots = fetchLots(a.announceId());
+                    FetchedLots fetched = fetchLots(a.announceId());
+                    if (fetched.services()) {          // закупка медпомощи ГОБМП/ОСМС — не наш предмет вовсе
+                        sum.setSkipped(sum.getSkipped() + 1);
+                        continue;
+                    }
+                    List<SkLot> lots = fetched.lots();
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
                     if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
                         sum.setSkipped(sum.getSkipped() + 1);
