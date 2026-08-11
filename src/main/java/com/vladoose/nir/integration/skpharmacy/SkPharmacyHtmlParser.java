@@ -41,10 +41,13 @@ public final class SkPharmacyHtmlParser {
 
     /**
      * Метки колонок lots-таблицы по ролям, В ПОРЯДКЕ ПРИОРИТЕТА (нормализованные, матч подстрокой).
-     * У портала минимум три вёрстки этой вкладки, и позиции колонок в них не совпадают вообще:
+     * У портала ПЯТЬ вёрсток этой вкладки, и позиции колонок не совпадают ни в одной паре:
      * «закуп медтехники» (№ п/п · № лота · Наименование лота · Цена выделенная · Количество),
+     * тот же вид с ДОПОЛНИТЕЛЬНЫМИ «Заказчик»/«Характеристика» (объявление 521024 — позиционный разбор писал
+     * оттуда имя заказчика в наименование лота, а имя товара в цену),
      * «приказ ЕД» (№ лота · Код СПП · … · МНН · … · Предельная цена МЗ РК · Цена ЕД для закупа, колонки «Количество» НЕТ),
-     * «долгосрочные договоры» (№ лота · … · наименование по МНН · наименование поставщика · … · Количество · Цена для закупа).
+     * «долгосрочные договоры» (№ лота · … · наименование по МНН · наименование поставщика · … · Количество · Цена для закупа),
+     * «предельные цены» (522744 — шапка на обычных td, тега th на странице нет ни одного).
      * Отсюда ключуемся по ЗАГОЛОВКАМ, а не по индексам.
      */
     private static final List<String> CODE_LABELS = List.of("№ лота", "номер лота");
@@ -54,11 +57,13 @@ public final class SkPharmacyHtmlParser {
     /** «предельная цена МЗ РК» — потолок министерства, а не цена закупа: общей метки «цена» нет намеренно. */
     private static final List<String> PRICE_LABELS = List.of("цена ед для закупа", "цена для закупа", "цена выделенная");
     private static final List<String> QTY_LABELS = List.of("количество");
+    /** Колонка-описание: у объявлений этих вёрсток PDF техспеки нет вовсе, и это единственные характеристики. */
+    private static final List<String> DESC_LABELS = List.of("характеристика", "лекарственная форма");
 
     /** Индексы колонок одной lots-таблицы + строка-шапка (её нельзя принять за лот); code+name обязательны, price/qty могут отсутствовать (-1). */
-    private record LotColumns(int code, int name, int price, int qty, Element headerRow) {
+    private record LotColumns(int code, int name, int price, int qty, int desc, Element headerRow) {
         boolean resolved() { return code >= 0 && name >= 0; }
-        int width() { return Math.max(Math.max(code, name), Math.max(price, qty)) + 1; }
+        int width() { return Math.max(Math.max(Math.max(code, name), Math.max(price, qty)), desc) + 1; }
     }
 
     /**
@@ -80,7 +85,7 @@ public final class SkPharmacyHtmlParser {
                 String code = txt(tds, cols.code());
                 String name = txt(tds, cols.name());
                 if (code.isBlank() || name.isBlank()) continue;
-                out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), intOrNull(tds, cols.qty())));
+                out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), intOrNull(tds, cols.qty()), txt(tds, cols.desc())));
             }
             if (!out.isEmpty()) return out;                      // первая таблица с лотами — она и есть
         }
@@ -107,7 +112,7 @@ public final class SkPharmacyHtmlParser {
     private static LotColumns columnsOf(Element row, String cellTag) {
         List<String> labels = row.select(cellTag).stream().map(c -> norm(c.text())).toList();
         LotColumns cols = new LotColumns(indexOf(labels, CODE_LABELS), indexOf(labels, NAME_LABELS),
-                indexOf(labels, PRICE_LABELS), indexOf(labels, QTY_LABELS), row);
+                indexOf(labels, PRICE_LABELS), indexOf(labels, QTY_LABELS), indexOf(labels, DESC_LABELS), row);
         return cols.resolved() ? cols : null;
     }
 

@@ -94,6 +94,42 @@ class SkPharmacyHtmlParserTest {
         assertThat(first.quantity()).isEqualTo(22740);                  // «Количество к закупу»
     }
 
+    /**
+     * Пятая вёрстка (объявление 521024): те же колонки, что в вёрстке медтехники, плюс ДОПОЛНИТЕЛЬНЫЕ
+     * «Заказчик» и «Характеристика». Позиционный разбор писал сюда имя заказчика КАК НАИМЕНОВАНИЕ ЛОТА,
+     * а название товара — в цену: молчаливая порча, которую видно только глазами в карточке.
+     */
+    @Test
+    void parseLots_extraColumns_nameIsProductNotCustomer() throws IOException {
+        List<SkLot> lots = SkPharmacyHtmlParser.parseLots(fixture("lots-with-customer-column.html"));
+        assertThat(lots).isNotEmpty();
+        assertThat(lots).noneSatisfy(l -> assertThat(l.name().toUpperCase()).contains("ТОВАРИЩЕСТВО"));
+        SkLot first = lots.get(0);
+        assertThat(first.code()).isEqualTo("4872164-Т1");
+        assertThat(first.name()).isEqualTo("Метопролол");
+        assertThat(first.quantity()).isEqualTo(107588800);
+        assertThat(first.unitPrice()).isEqualByComparingTo("13.02");
+    }
+
+    /**
+     * Колонка-описание («Характеристика» / «Лекарственная форма») — единственный источник характеристик
+     * у объявлений, где PDF техспеки нет вообще. Пусто, когда колонки нет (вёрстка медтехники).
+     */
+    @Test
+    void parseLots_descriptionColumnCaptured() throws IOException {
+        SkLot edOrder = SkPharmacyHtmlParser.parseLots(fixture("lots-ed-order.html")).get(0);
+        assertThat(edOrder.description()).startsWith("Шприц инъекционный состоит из 3-х компонентов");
+
+        SkLot longTerm = SkPharmacyHtmlParser.parseLots(fixture("lots-longterm.html")).get(0);
+        assertThat(longTerm.description()).contains("Халат хирургический");     // состав набора построчно
+
+        SkLot extraCols = SkPharmacyHtmlParser.parseLots(fixture("lots-with-customer-column.html")).get(0);
+        assertThat(extraCols.description()).isEqualTo("таблетка 50 мг");
+
+        SkLot devices = SkPharmacyHtmlParser.parseLots(fixture("lots.html")).get(0);
+        assertThat(devices.description()).isEmpty();                            // колонки в этой вёрстке нет
+    }
+
     /** Пагинация lots-вкладки: идём дальше, только пока в пейджере есть ссылка на СЛЕДУЮЩУЮ страницу. */
     @Test
     void hasNextLotsPage_trueWhileNextLinkExists_falseOnLastPage() throws IOException {

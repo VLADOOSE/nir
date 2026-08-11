@@ -99,6 +99,7 @@ public class SkPharmacyTenderWriter {
             lot.setLotNumber(n++);
             lot.setSourceLotCode(code);                   // «1040409-Т1» — ключ связи с ТЗ-файлами
             lot.setEquipName(trunc(l.name(), 255));
+            applyPortalDescription(lot, l.description());
             lot.setQuantity(l.quantity());
             lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
             result.add(lot);
@@ -106,6 +107,19 @@ public class SkPharmacyTenderWriter {
         // всё, чего больше нет на площадке, уходит через orphanRemoval
         t.getLots().clear();
         t.getLots().addAll(result);
+    }
+
+    /**
+     * Колонка-описание таблицы лотов («Характеристика» / «Лекарственная форма») → {@code requiredSpec}.
+     * У объявлений этих вёрсток PDF техспеки нет вообще (на вкладке documents лежит только форма объявления),
+     * поэтому иначе лот остаётся с одним названием и подбору нечем различать записи реестра.
+     * ⚠️ Пишем ТОЛЬКО в пустое поле: переимпорт идёт регулярно, а очередь разбора ТЗ отрабатывает по лоту
+     * один раз — затирать разобранный PDF (десятки тысяч символов) описанием с площадки нельзя.
+     */
+    private static void applyPortalDescription(TenderLot lot, String description) {
+        if (description == null || description.isBlank()) return;
+        if (lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) return;
+        lot.setRequiredSpec(description);
     }
 
     /** «2026-07-27 10:00:00» → LocalDate; пусто/битое → null. */
