@@ -107,7 +107,9 @@ class SkPharmacyHtmlParserTest {
         SkLot first = lots.get(0);
         assertThat(first.code()).isEqualTo("4872164-Т1");
         assertThat(first.name()).isEqualTo("Метопролол");
-        assertThat(first.quantity()).isEqualTo(107588800);
+        // на площадке «Количество 1 075 888.00», и это подтверждается её же колонкой «Сумма»:
+        // 1 075 888 × 13.02 = 14 008 061.76. Прежнее ожидание 107 588 800 закрепляло ошибку разбора.
+        assertThat(first.quantity()).isEqualTo(1075888);
         assertThat(first.unitPrice()).isEqualByComparingTo("13.02");
     }
 
@@ -128,6 +130,20 @@ class SkPharmacyHtmlParserTest {
 
         SkLot devices = SkPharmacyHtmlParser.parseLots(fixture("lots.html")).get(0);
         assertThat(devices.description()).isEmpty();                            // колонки в этой вёрстке нет
+    }
+
+    /**
+     * ⚠️ Площадка печатает количество с дробной частью («1.00»), а выбрасывание всех нецифр склеивало её
+     * с целой и давало 100 вместо 1 — стократное завышение, которое уезжает в письмо КП и в расчёт победителя.
+     * Живой случай: лот «Аппарат для неинвазивного определения степени фиброза печени» (объявление 522104,
+     * на площадке «Количество 1.00, Сумма 75 147 276.75» — то есть штука ровно одна).
+     */
+    @Test
+    void parseLots_decimalQuantity_readAsWholeUnits() throws IOException {
+        SkLot lot = SkPharmacyHtmlParser.parseLots(fixture("lots-equipment-decimal-qty.html")).get(0);
+        assertThat(lot.name()).startsWith("Аппарат для неинвазивного определения");
+        assertThat(lot.quantity()).isEqualTo(1);                        // «1.00», а не 100
+        assertThat(lot.unitPrice()).isEqualByComparingTo("75147276.75");
     }
 
     /** Пагинация lots-вкладки: идём дальше, только пока в пейджере есть ссылка на СЛЕДУЮЩУЮ страницу. */

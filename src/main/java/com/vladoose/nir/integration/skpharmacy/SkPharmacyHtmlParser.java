@@ -227,9 +227,17 @@ public final class SkPharmacyHtmlParser {
     /** i < 0 — колонки нет в этой вёрстке (напр. «Количество» в вёрстке приказа ЕД). */
     private static String txt(Elements tds, int i) { return i >= 0 && i < tds.size() ? tds.get(i).text().trim() : ""; }
 
+    /**
+     * Количество: площадка печатает его и целым («487»), и с дробной частью («1.00»).
+     * ⚠️ Дробную часть надо ОТРЕЗАТЬ, а не вычищать вместе с точкой: выбрасывание всех нецифр склеивало
+     * «1.00» в «100» — стократное завышение, которое уезжает в письмо КП и в расчёт победителя.
+     * Разделитель тысяч (пробел/неразрывный пробел) при этом убирается, как и раньше.
+     */
     private static Integer intOrNull(Elements tds, int i) {
-        String s = txt(tds, i).replaceAll("[^0-9]", "");
-        try { return s.isBlank() ? null : Integer.parseInt(s); } catch (NumberFormatException e) { return null; }
+        String raw = txt(tds, i);
+        int dot = raw.indexOf('.') >= 0 ? raw.indexOf('.') : raw.indexOf(',');
+        String whole = (dot >= 0 ? raw.substring(0, dot) : raw).replaceAll("[^0-9]", "");
+        try { return whole.isBlank() ? null : Integer.parseInt(whole); } catch (NumberFormatException e) { return null; }
     }
 
     /** fms формат: пробелы-тысячи + точка-десятичная («15 085 999 992.00»). */
