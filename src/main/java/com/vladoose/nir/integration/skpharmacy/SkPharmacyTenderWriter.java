@@ -1,12 +1,14 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.LotMergeIndex;
 import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Upsert объявления СК-Фармации в Tender (platform=SK_PHARMACY). Отдельный @Transactional-бин (сеть вне tx, §6). */
@@ -65,21 +67,59 @@ public class SkPharmacyTenderWriter {
         if (region != null) t.setRegion(region);
     }
 
-    /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval), не repository.delete. */
+    /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval). Слияние по коду площадки —
+     *  переимпорт не должен стирать разобранное ТЗ и выбор оператора. */
     private void rebuildLots(Tender t, List<SkLot> lots) {
-        t.getLots().clear();
-        if (lots == null) return;
+        if (lots == null || lots.isEmpty()) {
+            // Пустой разбор lots-таблицы = смена вёрстки ЦЭФ / страница ошибки / троттлинг, а не «лотов больше нет».
+            // Исключение ловит импорт-сервис: +1 к ошибкам прогона, лоты и работа оператора целы.
+            if (!t.getLots().isEmpty()) {
+                throw new IllegalStateException("СК-Фармация вернула 0 лотов для тендера " + t.getSourceExtId()
+                        + ", у которого их " + t.getLots().size() + " — считаем сбоем получения, лоты не трогаем");
+            }
+            return;
+        }
+
+        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
+        // Имя обрезаем так же, как при записи в equipName — иначе длинные имена не совпадут сами с собой.
+        List<TenderLot> matched = new LotMergeIndex(t.getLots())
+                .matchAll(lots, l -> trunc(l.code(), 50), l -> trunc(l.name(), 255));
+
+        List<TenderLot> result = new ArrayList<>();
         int n = 1;
-        for (SkLot l : lots) {
-            TenderLot lot = new TenderLot();
-            lot.setTender(t);
+        for (int i = 0; i < lots.size(); i++) {
+            SkLot l = lots.get(i);
+            String code = trunc(l.code(), 50);
+            TenderLot lot = matched.get(i);
+            if (lot == null) {
+                lot = new TenderLot();
+                lot.setTender(t);
+                lot.setTechSpecStatus(TechSpecStatus.PENDING);   // новый лот → в очередь на разбор ТЗ
+            }
             lot.setLotNumber(n++);
-            lot.setSourceLotCode(trunc(l.code(), 50));    // «1040409-Т1» — ключ связи с ТЗ-файлами
+            lot.setSourceLotCode(code);                   // «1040409-Т1» — ключ связи с ТЗ-файлами
             lot.setEquipName(trunc(l.name(), 255));
+            applyPortalDescription(lot, l.description());
             lot.setQuantity(l.quantity());
             lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
-            t.getLots().add(lot);
+            result.add(lot);
         }
+        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        t.getLots().clear();
+        t.getLots().addAll(result);
+    }
+
+    /**
+     * Колонка-описание таблицы лотов («Характеристика» / «Лекарственная форма») → {@code requiredSpec}.
+     * У объявлений этих вёрсток PDF техспеки нет вообще (на вкладке documents лежит только форма объявления),
+     * поэтому иначе лот остаётся с одним названием и подбору нечем различать записи реестра.
+     * ⚠️ Пишем ТОЛЬКО в пустое поле: переимпорт идёт регулярно, а очередь разбора ТЗ отрабатывает по лоту
+     * один раз — затирать разобранный PDF (десятки тысяч символов) описанием с площадки нельзя.
+     */
+    private static void applyPortalDescription(TenderLot lot, String description) {
+        if (description == null || description.isBlank()) return;
+        if (lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) return;
+        lot.setRequiredSpec(description);
     }
 
     /** «2026-07-27 10:00:00» → LocalDate; пусто/битое → null. */

@@ -4,10 +4,14 @@ import lombok.Data;
 
 import java.util.List;
 
-/** Ответ панели «Реестр» у лота: кандидаты + метаданные достоверности матча. */
+/** Ответ панели «Подбор» у лота: кандидаты + честная оценка того, можно ли им верить. */
 @Data
 public class LotRegistryMatchResponse {
     private List<RegistryCandidateResponse> candidates;
-    private boolean distinctive;    // есть чем различать записи (≥2 значимых токена или задан бренд); иначе % врёт
-    private boolean techSpecParsed; // ТЗ разобрано (в requiredSpec есть блок характеристик)
+    /** Зона честности; заменила прежний distinctive (тот мерил запрос, а не результат). */
+    private MatchConfidence confidence;
+    /** Заполнено только при confidence == CANNOT. */
+    private CannotReason cannotReason;
+    /** ТЗ разобрано (в requiredSpec есть блок характеристик). */
+    private boolean techSpecParsed;
 }

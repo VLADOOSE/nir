@@ -38,3 +38,6 @@ out/
 
 # секреты прода — НЕ коммитить
 .env
+
+# SDD scratch (ledger, briefs, review packages) — не версионируется
+.superpowers/

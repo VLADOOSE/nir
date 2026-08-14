@@ -11,6 +11,7 @@ import com.vladoose.nir.dto.response.ParseTechSpecResponse;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.entity.EquipmentType;
 import com.vladoose.nir.entity.MedEquipment;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
@@ -174,7 +175,30 @@ public class TenderLotController {
     @PutMapping("/{id}")
     public TenderLotResponse update(@PathVariable Long id, @Valid @RequestBody TenderLotRequest request) {
         TenderLot existing = service.findById(id);
+        // Тот же гард, что у /proposed-equipment и /equipment-type: TenderLot НЕ market-scoped
+        // (@Filter на нём нет, рынок живёт на тендере), поэтому findById по client-supplied id
+        // достаёт и чужой рынок. Раньше дыра была «только» правкой полей, теперь через неё идёт
+        // ОДНОСТОРОННЯЯ запись techSpecStatus=OK ниже: она замораживает requiredSpec от обновления
+        // при переимпорте и навсегда убирает лот из фоновой очереди разбора ТЗ (та берёт
+        // IS NULL/PENDING). Роль здесь намеренно НЕ проверяется — форма лота доступна оператору,
+        // и @PreAuthorize('ADMIN') сломал бы её (асимметрия прав с /equipment-type — §16 CLAUDE.md).
+        if (existing.getTender().getMarket() != null
+                && existing.getTender().getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Лот не найден: id=" + id);
+        }
+        String specBefore = existing.getRequiredSpec();
         mapper.updateEntity(request, existing);
+        // ТЗ, вписанное оператором руками, — такое же разобранное ТЗ: без отметки переимпорт
+        // затёр бы его описанием с площадки (та же дыра, что чинилась в TechSpecWriter).
+        // Сверяем с прежним значением, а НЕ просто с непустотой: форма редактирования лота
+        // присылает всю модель целиком (patchValue + submit), поэтому правка количества или цены
+        // тащит с собой неизменённое описание площадки. Без сверки любая такая правка помечала бы
+        // лот разобранным — описание переставало бы обновляться при переимпорте, а фоновая очередь
+        // разбора ТЗ (выбирает status IS NULL/PENDING) навсегда теряла бы этот лот из виду.
+        String incomingSpec = request.getRequiredSpec();
+        if (incomingSpec != null && !incomingSpec.isBlank() && !incomingSpec.equals(specBefore)) {
+            existing.setTechSpecStatus(TechSpecStatus.OK);
+        }
         if (request.getTenderId() != null) {
             // Replace the stub reference with the managed entity
             Tender tender = tenderService.findById(request.getTenderId());

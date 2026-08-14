@@ -92,6 +92,50 @@ class ComplectServiceTest {
         assertThat(componentRepository.findByRegNumberOrderByPartNumber("ZZ-РК МИ (МТ)-COMPLECT-1")).hasSize(2);
     }
 
+    /**
+     * <b>Перенесено сюда из {@code RegistryLotMatchTest} (Task 6, fix-round 1).</b> Лот
+     * «Электрод» + ТЗ «резиновые пластинки для аппарата электрофореза "Элэскулап"» —
+     * аксессуарный: реестр-подбор его не решает, потому что <b>ранжирует</b> плохо, и
+     * обслуживать такой лот должен путь комплектности. Тест живёт там, где живёт механизм.
+     *
+     * <p>Здесь НАСТОЯЩИЕ данные реестра (без синтетического бренда соседних тестов): проверяем,
+     * что связка {@code ComplectTermExtractor} → {@code BrandTransliterator} →
+     * {@code findApparatusByTerm} действительно доводит до записи аппарата
+     * {@code РК МИ (МТ)-0№027673}, чьим РУ и покрыты его электроды. Сеть заглушена: комплектность
+     * тут не проверяется, её проверяют соседние тесты.
+     *
+     * <p><b>Почему прежняя редакция была вредна.</b> Она ассертила «топ-1 реестра содержит
+     * "электрод"» и «зона не CONFIDENT», то есть ЛОМАЛАСЬ БЫ ОТ УЛУЧШЕНИЯ: в названии верной
+     * записи («Аппарат стимуляции и электротерапии … ЭЛЭСКУЛАП-Мед ТеКо») подстроки «электрод»
+     * нет, поэтому подъём верного ответа на первое место уронил бы оба ассерта.
+     *
+     * <p>Заодно снята формулировка «аксессуарные лоты реестр-подбором не решаются В ПРИНЦИПЕ» —
+     * она сильнее доказанного. Верная запись ЕСТЬ в кандидатском наборе (ранг 96 из 437), и
+     * правдоподобная аксессуарная («Одноразовые электрохирургические пластины») на ранге 10:
+     * это недоработка РАНЖИРОВАНИЯ, а не отсутствие данных. Доказано отсутствие данных только
+     * для УЗ-датчика («Отдельных записей УЗ-датчиков в реестре 0» — шапка golden-lots.tsv).
+     */
+    @Test
+    void accessoryElectrodeLot_isServedByComplectPath_notByRegistryRanking() {
+        Tender t = new Tender();
+        t.setTenderNumber("ZZ-ELECTRODE-" + System.nanoTime());
+        t.setStatus("ACTIVE");
+        TenderLot l = new TenderLot();
+        l.setTender(t);
+        l.setEquipName("Электрод");
+        l.setRequiredSpec("Резиновые пластинки для аппарата электрофореза \"Элэскулап\", размеры 55*80 мм");
+        t.getLots().add(l);
+        tenderRepository.saveAndFlush(t);
+        when(nddaClient.resolveId(anyString())).thenReturn(null);
+
+        ComplectSearchResponse r = service.search(t.getLots().get(0).getId(), null);
+
+        assertThat(r.getTerm()).containsIgnoringCase("элэскулап");
+        assertThat(r.getApparatuses()).extracting(a -> a.getRegNumber())
+                .describedAs("родительский аппарат, чьим РУ покрыты его электроды")
+                .contains("РК МИ (МТ)-0№027673");
+    }
+
     @Test
     void search_secondCall_servedFromCache_withoutFetch() {
         when(nddaClient.resolveId(anyString())).thenReturn(178624L);

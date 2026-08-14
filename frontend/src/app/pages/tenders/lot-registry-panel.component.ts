@@ -20,23 +20,48 @@ import { NotificationService } from '../../services/notification.service';
       </div>
       <div class="lrp-note">Реестр НЦЭЛС — допуск (№ РУ); габариты/вес здесь не хранятся, соответствие — по совпадению наименования.</div>
 
-      <div *ngIf="registry && !registry.loading && !registry.error && !registry.distinctive && !registry.techSpecParsed && imported" class="lrp-hint">
-        ⚠ Совпадение только по названию — модели в реестре неразличимы. Нажмите «ТЗ», чтобы разбор техспецификации уточнил подбор.
+      <div *ngIf="zone() === 'CANNOT'" class="lrp-cannot">
+        <strong>Определить модель по этому лоту нельзя</strong>
+        <div>{{ cannotText() }}</div>
+      </div>
+      <div *ngIf="zone() === 'SHORTLIST'" class="lrp-hint">
+        {{ shortlistText() }}
+        <!-- techSpecParsed = ПРОДУКТОВЫЙ признак бэка (якорь goszakup ИЛИ персистентный
+             techSpecStatus=OK), а не «нашёлся якорь». Это одна из двух поверхностей, где совет
+             «разберите ТЗ» показывается, вторая — cannotText()/NEED_TECH_SPEC; обе обязаны
+             отвечать на вопрос одинаково. Пока признак был анкерным, все 39 SK-лотов с уже
+             разобранным ТЗ получали этот совет — жать «ТЗ» им бессмысленно, файл уже разобран
+             фоновой очередью (замер и обоснование — RegistryMatchService.specParsed). -->
+        <span *ngIf="!registry?.techSpecParsed && imported"> Разбор техспецификации уточнит подбор — кнопка «ТЗ» в строке лота.</span>
       </div>
       <div *ngIf="registry?.loading" class="lrp-loading">Ищем похожие изделия в реестре…</div>
       <div *ngIf="registry?.error && !registry?.loading" class="lrp-error">
         Реестр недоступен: {{ registry?.error }} — закройте и откройте панель «Подбор», чтобы повторить.
       </div>
-      <div *ngIf="registry && !registry.loading && !registry.error && !registry.items.length" class="lrp-empty">
+      <!-- страховка на случай ответа без зоны: пустой список сам по себе = CANNOT/NO_CANDIDATES, у него свой текст выше -->
+      <div *ngIf="zone() && zone() !== 'CANNOT' && !registry?.items?.length" class="lrp-empty">
         Похожих записей в реестре не найдено — вероятно, это не медизделие (услуга/расходник) или нужен другой запрос
       </div>
 
+      <!-- в зоне CANNOT список свёрнут: показывать отобранное как ответ было бы ложью.
+           Но и выбрасывать его нельзя (прятать верный ответ — тяжелее, чем показать лишний) → раскрывается по кнопке. -->
+      <button class="zero-toggle" *ngIf="zone() === 'CANNOT' && registry?.items?.length"
+              (click)="showWeak = !showWeak">
+        {{ showWeak ? '▴ скрыть отобранные записи'
+                    : '▾ всё равно показать отобранное (' + registry?.items?.length + ') — ненадёжно' }}
+      </button>
+
+      <ng-container *ngIf="candidatesVisible()">
       <div class="cand" *ngFor="let c of registry?.items || []">
         <div class="cand-main" (click)="toggleRegistryDetail(c)"
              [title]="registry?.openReg === c.regNumber ? 'Свернуть описание' : 'Показать описание из карточки НЦЭЛС'">
           <div class="cand-row1">
-            <span *ngIf="registry?.distinctive" class="score-badge" [class.score-good]="c.score >= 0.35">{{ scorePct(c) }}%</span>
-            <span *ngIf="!registry?.distinctive" class="score-badge score-name" title="Совпало наименование; для различения моделей разберите ТЗ">✓ по названию</span>
+            <span *ngIf="zone() === 'CONFIDENT'" class="score-badge" [class.score-good]="c.score >= confidentMin"
+                  title="Данных лота хватило, чтобы измерить совпадение">{{ scorePct(c) }}%</span>
+            <span *ngIf="zone() === 'SHORTLIST'" class="score-badge score-name"
+                  title="Кандидаты неразличимы по данным лота — процент вводил бы в заблуждение">похожее</span>
+            <span *ngIf="zone() === 'CANNOT'" class="score-badge"
+                  title="Отобрано поиском, но данных лота не хватает, чтобы этому верить">ненадёжно</span>
             <span class="cand-name">{{ c.name }}</span>
             <span class="cand-chev">{{ registry?.openReg === c.regNumber ? '▴' : '▾' }}</span>
           </div>
@@ -45,8 +70,11 @@ import { NotificationService } from '../../services/notification.service';
             {{ c.unlimited ? 'бессрочно' : (c.expirationDate ? 'до ' + formatDate(c.expirationDate) : '—') }}
           </div>
         </div>
+        <!-- в CANNOT кнопка приглушена (паттерн 0%-компонентов комплектности ниже): adopt не косметика —
+             он ставит предложенную модель лота, и она уезжает поставщику в письме КП -->
         <div class="cand-actions">
-          <button class="btn btn-adopt" [disabled]="adoptBusy" (click)="adoptFromRegistry(c)"
+          <button class="btn" [class.btn-adopt]="zone() !== 'CANNOT'" [class.btn-adopt-muted]="zone() === 'CANNOT'"
+                  [disabled]="adoptBusy" (click)="adoptFromRegistry(c)"
                   title="Создать модель каталога из этого РУ и предложить лоту">Взять в работу</button>
         </div>
 
@@ -78,6 +106,7 @@ import { NotificationService } from '../../services/notification.service';
           </div>
         </div>
       </div>
+      </ng-container>
 
       <div class="complect-cta" *ngIf="!complect">
         <button class="btn btn-registry" (click)="openComplect()"
@@ -143,6 +172,12 @@ import { NotificationService } from '../../services/notification.service';
     .lrp-hint { background: color-mix(in srgb, var(--warn) 15%, transparent); border-left: 3px solid var(--warn);
                 padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; color: var(--warn-text); }
     .lrp-error { color: var(--danger-text); font-size: 14px; padding: 8px 0; }
+    /* подсветка ОБЛАСТИ (не чип): формула 8%, var(--surface) + семантический border — НЕ --surface-2,
+       иначе блок сольётся с фоном панели .lrp и предупреждение перестанет читаться как предупреждение */
+    .lrp-cannot { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); border: 1px solid var(--warn);
+                  border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px;
+                  color: var(--text); line-height: 1.5; }
+    .lrp-cannot strong { display: block; margin-bottom: 4px; color: var(--warn-text); }
     .cand { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; padding: 10px 12px; }
     .cand-main { cursor: pointer; }
     .cand-row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -197,10 +232,16 @@ export class LotRegistryPanelComponent implements OnChanges {
   @Output() adopted = new EventEmitter<any>();
   @Output() close = new EventEmitter<void>();
 
-  registry: { loading: boolean; items: any[]; distinctive?: boolean; techSpecParsed?: boolean; error?: string | null;
+  registry: { loading: boolean; items: any[]; confidence?: string; cannotReason?: string | null;
+              techSpecParsed?: boolean; error?: string | null;
               openReg?: string | null; detail?: any; detailLoading?: boolean; detailError?: string | null } | null = null;
   complect: { term: string; loading: boolean; searched: boolean; apparatuses: any[] } | null = null;
   adoptBusy = false;
+  /** Оператор раскрыл отобранное в зоне CANNOT (по умолчанию свёрнуто). */
+  showWeak = false;
+  /** Порог «зелёного» процента = CONFIDENT_MIN бэка (RegistryMatchService, 0.55). Здесь жил 0.35 —
+   *  число из прежней шкалы бренд-скоринга, к нынешней оно отношения не имеет. */
+  readonly confidentMin = 0.55;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
 
@@ -215,14 +256,17 @@ export class LotRegistryPanelComponent implements OnChanges {
   loadRegistry() {
     const l = this.lot;
     if (!l) return;
-    this.registry = { loading: true, items: [], distinctive: true, techSpecParsed: true };
+    this.showWeak = false;   // раскрытие ненадёжного не переезжает на следующий лот
+    this.registry = { loading: true, items: [], confidence: 'CONFIDENT', techSpecParsed: true };
     this.cdr.detectChanges();
     this.api.getLotRegistryCandidates(l.id).subscribe({
       next: (r: any) => {
         this.registry = {
           loading: false,
           items: r?.candidates || [],
-          distinctive: !!r?.distinctive,
+          // без зоны от бэка честнее скромная SHORTLIST (список без процентов), чем выдуманная уверенность
+          confidence: r?.confidence || 'SHORTLIST',
+          cannotReason: r?.cannotReason || null,
           techSpecParsed: !!r?.techSpecParsed,
         };
         this.cdr.detectChanges();
@@ -268,6 +312,61 @@ export class LotRegistryPanelComponent implements OnChanges {
       });
     }
     this.cdr.detectChanges();
+  }
+
+  /**
+   * Зона честности ответа — но только когда панели есть что показывать: во время загрузки и при
+   * ошибке любая зона была бы ложью (ответа ещё/уже нет), поэтому там она null и все три блока молчат.
+   */
+  zone(): string | null {
+    const r = this.registry;
+    return !r || r.loading || r.error ? null : (r.confidence || null);
+  }
+
+  /** В CANNOT список свёрнут, пока оператор сам его не раскрыл. */
+  candidatesVisible(): boolean {
+    const z = this.zone();
+    return !!z && (z !== 'CANNOT' || this.showWeak);
+  }
+
+  /**
+   * У SHORTLIST две причины, и они требуют РАЗНЫХ слов (бэк, confidenceOf): либо равноправных
+   * записей много (родовой лот), либо кандидат ровно один, но скор не дотянул до уверенности —
+   * именно ради него порог SHORTLIST_MIN опускали 0.55 → 0.30. Общий текст «кандидаты похожи
+   * между собой, выберите один» на одном кандидате противоречит экрану: выбирать не из чего.
+   */
+  shortlistText(): string {
+    return this.registry?.items?.length === 1
+      ? 'Один правдоподобный кандидат, но данных лота не хватило, чтобы за него поручиться, — проверьте сами.'
+      : 'Кандидаты похожи между собой — лот описан слишком общо, чтобы выбрать один. Проверьте глазами и выберите сами.';
+  }
+
+  /** Причина «нельзя» человеческим языком + действие, которое из неё следует. */
+  cannotText(): string {
+    switch (this.registry?.cannotReason) {
+      case 'NO_CANDIDATES':
+        return 'В реестре НЦЭЛС не нашлось ни одной похожей записи. Если лот — принадлежность к аппарату '
+             + '(электрод, датчик, пластина), допуск может быть в комплектности аппарата — кнопка ниже.';
+      case 'NEED_TECH_SPEC':
+        // кнопка «ТЗ» есть только у импортных тендеров (*ngIf="isImportedTender()" у родителя);
+        // на ручном KZ-тендере отправлять оператора к несуществующей кнопке нельзя
+        return 'Данных лота не хватает, чтобы отличить модели друг от друга. '
+             + (this.imported
+                 ? 'Разберите техспецификацию — кнопка «ТЗ» в строке лота — и откройте «Подбор» снова.'
+                 : 'Заполните «Требования к спецификации» в форме лота («✎ Редактировать» в меню «⋯») '
+                   + 'и откройте «Подбор» снова.');
+      case 'TECH_SPEC_FAILED':
+        return 'Техспецификацию получить не удалось: файла нет на площадке или площадка недоступна. '
+             + 'Уточните запрос вручную или ищите изделие по названию в реестре.';
+      case 'WEAK_MATCH':
+        return 'Техспецификация разобрана, но подходящего в реестре не нашлось — вероятно, изделие '
+             + 'не зарегистрировано в НЦЭЛС.';
+      case 'QUERY_NOT_IN_REGISTRY':
+        return 'Слов из названия лота в реестре нет — поиск шёл по обрывку названия, поэтому найденному '
+             + 'верить нельзя. Проверьте название лота или поищите изделие вручную.';
+      default:
+        return 'Определить по этому лоту нельзя.';
+    }
   }
 
   registryDetailEmpty(d: any): boolean {

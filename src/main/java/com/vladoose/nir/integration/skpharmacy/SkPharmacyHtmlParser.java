@@ -39,20 +39,155 @@ public final class SkPharmacyHtmlParser {
         return out;
     }
 
-    /** Вкладка lots: строки лотов по ≥6 td; Jsoup-индексы: [0]№ [1]код [2]наименование [3]цена-ед [4]кол-во. */
+    /**
+     * Метки колонок lots-таблицы по ролям, В ПОРЯДКЕ ПРИОРИТЕТА (нормализованные, матч подстрокой).
+     * У портала ПЯТЬ вёрсток этой вкладки, и позиции колонок не совпадают ни в одной паре:
+     * «закуп медтехники» (№ п/п · № лота · Наименование лота · Цена выделенная · Количество),
+     * тот же вид с ДОПОЛНИТЕЛЬНЫМИ «Заказчик»/«Характеристика» (объявление 521024 — позиционный разбор писал
+     * оттуда имя заказчика в наименование лота, а имя товара в цену),
+     * «приказ ЕД» (№ лота · Код СПП · … · МНН · … · Предельная цена МЗ РК · Цена ЕД для закупа, колонки «Количество» НЕТ),
+     * «долгосрочные договоры» (№ лота · … · наименование по МНН · наименование поставщика · … · Количество · Цена для закупа),
+     * «предельные цены» (522744 — шапка на обычных td, тега th на странице нет ни одного).
+     * Отсюда ключуемся по ЗАГОЛОВКАМ, а не по индексам.
+     */
+    private static final List<String> CODE_LABELS = List.of("№ лота", "номер лота");
+    /** В вёрстке долгосрочных договоров «наименование» носят ТРИ колонки (по МНН, поставщика, по торговому);
+     *  берём первую по порядку — это МНН, то есть то же, что «МНН» во второй вёрстке и «наименование лота» в первой. */
+    private static final List<String> NAME_LABELS = List.of("наименование лота", "мнн", "наименование");
+    /** «предельная цена МЗ РК» — потолок министерства, а не цена закупа: общей метки «цена» нет намеренно. */
+    private static final List<String> PRICE_LABELS = List.of("цена ед для закупа", "цена для закупа", "цена выделенная");
+    private static final List<String> QTY_LABELS = List.of("количество");
+    /** Колонка-описание: у объявлений этих вёрсток PDF техспеки нет вовсе, и это единственные характеристики. */
+    private static final List<String> DESC_LABELS = List.of("характеристика", "лекарственная форма");
+
+    /** Индексы колонок одной lots-таблицы + строка-шапка (её нельзя принять за лот); code+name обязательны, price/qty могут отсутствовать (-1). */
+    private record LotColumns(int code, int name, int price, int qty, int desc, Element headerRow) {
+        boolean resolved() { return code >= 0 && name >= 0; }
+        int width() { return Math.max(Math.max(Math.max(code, name), Math.max(price, qty)), desc) + 1; }
+    }
+
+    /**
+     * Вкладка lots: колонки ищем по заголовкам (см. {@link #CODE_LABELS}), строку берём, если в ней есть
+     * непустые код и наименование. Неизвестная вёрстка (code/name не нашлись) → пусто: разложить строки
+     * по угаданным позициям хуже, чем не разобрать — пустой результат ловит writer и лоты остаются целы (§7).
+     */
     public static List<SkLot> parseLots(String html) {
         List<SkLot> out = new ArrayList<>();
         if (html == null || html.isBlank()) return out;
         Document doc = Jsoup.parse(html);
-        for (Element tr : doc.select("table tr")) {
-            Elements tds = tr.select("td");
-            if (tds.size() < 6) continue;
-            if (!txt(tds, 0).matches("\\d+")) continue;          // строка лота начинается с номера
-            String name = txt(tds, 2);
-            if (name.isBlank()) continue;
-            out.add(new SkLot(txt(tds, 1), name, moneyOrNull(tds, 3), intOrNull(tds, 4)));
+        for (Element table : doc.select("table")) {
+            LotColumns cols = resolveColumns(table);
+            if (cols == null) continue;
+            for (Element tr : table.select("tr")) {
+                if (tr == cols.headerRow()) continue;            // шапка бывает свёрстана обычными td — в лоты её не берём
+                Elements tds = tr.select("td");
+                if (tds.size() < cols.width()) continue;         // заголовок (th) / «итого» через colspan / чужая строка
+                String code = txt(tds, cols.code());
+                String name = txt(tds, cols.name());
+                if (code.isBlank() || name.isBlank()) continue;
+                out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), intOrNull(tds, cols.qty()), txt(tds, cols.desc())));
+            }
+            if (!out.isEmpty()) return out;                      // первая таблица с лотами — она и есть
         }
         return out;
+    }
+
+    /**
+     * Заголовки таблицы → индексы колонок; не lots-таблица (нет колонок кода и наименования) → null.
+     * Шапка бывает и на {@code th}, и на обычных {@code td} (объявление 522744 — тега {@code th} на странице нет
+     * вообще): пробуем th-строку, иначе ПЕРВУЮ строку таблицы. Вариант с td принимается, только если по нему
+     * сошлись код и наименование — то есть проверяется он сам собой, а не доверием к вёрстке.
+     */
+    private static LotColumns resolveColumns(Element table) {
+        for (Element row : headerCandidates(table)) {
+            LotColumns cols = columnsOf(row, row.select("th").size() >= 2 ? "th" : "td");
+            if (cols != null) return cols;
+        }
+        return null;
+    }
+
+    /** Строки, которые могут оказаться шапкой: первая с {@code th} и просто первая строка таблицы. */
+    private static List<Element> headerCandidates(Element table) {
+        List<Element> out = new ArrayList<>();
+        Element first = null, th = null;
+        for (Element tr : table.select("tr")) {
+            if (first == null) first = tr;
+            if (tr.select("th").size() >= 2) { th = tr; break; }
+        }
+        if (th != null) out.add(th);
+        if (first != null && first != th) out.add(first);
+        return out;
+    }
+
+    private static LotColumns columnsOf(Element row, String cellTag) {
+        List<String> labels = labels(row, cellTag);
+        LotColumns cols = new LotColumns(indexOf(labels, CODE_LABELS), indexOf(labels, NAME_LABELS),
+                indexOf(labels, PRICE_LABELS), indexOf(labels, QTY_LABELS), indexOf(labels, DESC_LABELS), row);
+        return cols.resolved() ? cols : null;
+    }
+
+    private static List<String> labels(Element row, String cellTag) {
+        return row.select(cellTag).stream().map(c -> norm(c.text())).toList();
+    }
+
+    /** Первая метка-кандидат (по приоритету), найденная среди заголовков; нет — -1. */
+    private static int indexOf(List<String> labels, List<String> candidates) {
+        for (String candidate : candidates) {
+            for (int i = 0; i < labels.size(); i++) {
+                if (labels.get(i).contains(candidate)) return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String norm(String s) {
+        return s == null ? "" : s.toLowerCase().replace('ё', 'е').replaceAll("\\s+", " ").trim();
+    }
+
+    /** Колонка, которой закупка УСЛУГ подменяет наименование товара. */
+    private static final String CARE_KIND_LABEL = "медицинской помощи";
+
+    /**
+     * Вкладка лотов — это закупка медицинских УСЛУГ (ГОБМП/ОСМС), а не товара: есть таблица лотов
+     * (колонка «№ лота»), колонки наименования товара НЕТ ни в каком виде, а вместо неё стоит
+     * «Форма/Вид медицинской помощи». Такие объявления импорт пропускает целиком.
+     *
+     * <p>⚠️ Проверяются ОБА признака, и это не перестраховка: у товарной вёрстки «приказ ЕД» тоже есть
+     * колонка «Форма мед. помощи», и по одному лишь упоминанию помощи мы выбросили бы закупку изделий.
+     * Решает именно ОТСУТСТВИЕ наименования товара.
+     *
+     * <p>Неизвестная/битая вёрстка услугами НЕ считается — её надо оставлять видимой (тендер запишется
+     * с нулём лотов), а не молча пропускать: молчаливый пропуск неотличим от «на площадке ничего нет».
+     */
+    public static boolean isServicesLotsPage(String html) {
+        if (html == null || html.isBlank()) return false;
+        for (Element table : Jsoup.parse(html).select("table")) {
+            for (Element row : headerCandidates(table)) {
+                List<String> labels = labels(row, row.select("th").size() >= 2 ? "th" : "td");
+                if (labels.size() < 2) continue;
+                if (indexOf(labels, CODE_LABELS) < 0) continue;              // не таблица лотов
+                if (indexOf(labels, NAME_LABELS) >= 0) return false;         // наименование товара есть → это закупка товара
+                if (labels.stream().anyMatch(l -> l.contains(CARE_KIND_LABEL))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static final Pattern PAGE_PARAM = Pattern.compile("[?&]page=(\\d+)");
+
+    /**
+     * Есть ли в пейджере ссылка на СЛЕДУЮЩУЮ страницу лотов. Именно «есть ссылка вперёд», а не «номер меньше
+     * последнего»: на первой странице портал показывает окно пейджера без последнего номера (у 522204 со стр. 1
+     * видно только «2», хотя страниц 3), а за последней страницей отдаёт контент последней (page=4 = page=3),
+     * то есть счёт по номерам либо оборвал бы импорт, либо зациклил.
+     */
+    public static boolean hasNextLotsPage(String html, int currentPage) {
+        if (html == null || html.isBlank()) return false;
+        for (Element a : Jsoup.parse(html).select(".pagination a[href]")) {
+            Matcher m = PAGE_PARAM.matcher(a.attr("href"));
+            if (m.find() && Integer.parseInt(m.group(1)) == currentPage + 1) return true;
+        }
+        return false;
     }
 
     private static final Pattern BIN = Pattern.compile("^(\\d{12})\\b");
@@ -89,11 +224,20 @@ public final class SkPharmacyHtmlParser {
         return new SkGeneral(bin, address, kato, email, contact);
     }
 
-    private static String txt(Elements tds, int i) { return i < tds.size() ? tds.get(i).text().trim() : ""; }
+    /** i < 0 — колонки нет в этой вёрстке (напр. «Количество» в вёрстке приказа ЕД). */
+    private static String txt(Elements tds, int i) { return i >= 0 && i < tds.size() ? tds.get(i).text().trim() : ""; }
 
+    /**
+     * Количество: площадка печатает его и целым («487»), и с дробной частью («1.00»).
+     * ⚠️ Дробную часть надо ОТРЕЗАТЬ, а не вычищать вместе с точкой: выбрасывание всех нецифр склеивало
+     * «1.00» в «100» — стократное завышение, которое уезжает в письмо КП и в расчёт победителя.
+     * Разделитель тысяч (пробел/неразрывный пробел) при этом убирается, как и раньше.
+     */
     private static Integer intOrNull(Elements tds, int i) {
-        String s = txt(tds, i).replaceAll("[^0-9]", "");
-        try { return s.isBlank() ? null : Integer.parseInt(s); } catch (NumberFormatException e) { return null; }
+        String raw = txt(tds, i);
+        int dot = raw.indexOf('.') >= 0 ? raw.indexOf('.') : raw.indexOf(',');
+        String whole = (dot >= 0 ? raw.substring(0, dot) : raw).replaceAll("[^0-9]", "");
+        try { return whole.isBlank() ? null : Integer.parseInt(whole); } catch (NumberFormatException e) { return null; }
     }
 
     /** fms формат: пробелы-тысячи + точка-десятичная («15 085 999 992.00»). */

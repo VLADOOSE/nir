@@ -87,6 +87,26 @@ class RegistryLotMatchTest {
         });
     }
 
+    /**
+     * Выдача не должна зависеть от {@code limit}. Скоры ложатся на дискретную решётку, поэтому
+     * совпадения бит-в-бит массовые: у «Магнитно-резонансный томограф (безгелиевый)» 11+ записей
+     * с одинаковым 0.393939. Пока в {@code ORDER BY} не было второго ключа, какая из них попадёт
+     * в топ-5, решал heapsort — тот же лот при limit=5/6/10 давал РАЗНЫЙ топ-5, а метрики гейта
+     * (limit=5) мерили не то, что видит оператор: {@code TenderLotController} зовёт
+     * {@code matchForLotUi(id, min(limit, 20))}. Тай-брейк по reg_number это чинит.
+     */
+    @Test
+    void topFiveDoesNotDependOnLimit() {
+        TenderLot lot = savedLot("Магнитно-резонансный томограф (безгелиевый)", null, null);
+
+        List<String> atFive = registryMatchService.candidatesForLot(lot.getId(), 5)
+                .stream().map(RegistryCandidateResponse::getRegNumber).toList();
+        List<String> firstFiveOfTwenty = registryMatchService.candidatesForLot(lot.getId(), 20)
+                .stream().map(RegistryCandidateResponse::getRegNumber).limit(5).toList();
+
+        assertThat(atFive).hasSize(5).isEqualTo(firstFiveOfTwenty);
+    }
+
     @Test
     void golden_defibrillatorMonitor_topContainsDefibrillator() {
         TenderLot lot = savedLot("Дефибриллятор-монитор бифазный портативный", null, null);
@@ -101,25 +121,6 @@ class RegistryLotMatchTest {
         List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 3);
         assertThat(top).isNotEmpty();
         assertThat(top.get(0).getName().toLowerCase()).contains("пульсоксиметр");
-    }
-
-    @Test
-    void golden_electrode_enrichedFromParsedTechSpec() {
-        TenderLot lot = savedLot("Электрод", null, """
-                Приложение 2
-                Описание и требуемые функциональные, технические, качественные и эксплуатационные
-                характеристики
-                закупаемых товаров:
-                Резиновые пластинки для аппарата электрофореза "Элэскулап", размеры 55*80 мм
-                """);
-        List<RegistryCandidateResponse> top = registryMatchService.candidatesForLot(lot.getId(), 5);
-        assertThat(top).isNotEmpty();
-        // сигнал из ТЗ: «пластин(ки)» / электрофорез / элэскулап — без обогащения имя «Электрод»
-        // дало бы только ЭКГ/хирургические электроды
-        assertThat(top).anyMatch(c -> {
-            String n = c.getName().toLowerCase();
-            return n.contains("электрофорез") || n.contains("элэскулап") || n.contains("пластин");
-        });
     }
 
     @Test

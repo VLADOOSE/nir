@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "tender_lot")
@@ -58,6 +59,14 @@ public class TenderLot {
 
     @Column(name = "required_spec", columnDefinition = "TEXT")
     private String requiredSpec;
+
+    /** Исход последней попытки фонового разбора техспеки; NULL — в очередь не ставился. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tech_spec_status", length = 20)
+    private TechSpecStatus techSpecStatus;
+
+    @Column(name = "tech_spec_attempted_at")
+    private OffsetDateTime techSpecAttemptedAt;
 
     /** Предложенная (одобренная) модель каталога; подставляется в запрос КП по лоту. */
     @ManyToOne(fetch = FetchType.EAGER)

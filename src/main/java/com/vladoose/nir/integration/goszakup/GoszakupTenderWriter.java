@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
@@ -12,6 +13,9 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.vladoose.nir.integration.LotMergeIndex;
+
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -82,20 +86,66 @@ public class GoszakupTenderWriter {
         t.setRegion(regionResolver.resolve(customerName, address)); // null допустим
     }
 
+    /**
+     * Слияние лотов вместо пересоздания. §7/§14: работаем ТОЛЬКО через коллекцию (orphanRemoval),
+     * не через repository.delete.
+     *
+     * <p>Раньше здесь был {@code clear()} + создание заново — переимпорт стирал разобранное ТЗ,
+     * предложенную модель, вид МИ и габариты. То есть вся работа оператора и фонового разбора
+     * жила до следующего обновления тендера.
+     *
+     * <p><b>Ключ слияния — сырой номер лота площадки в {@code source_lot_code}, не разобранный int.</b>
+     * Живые номера goszakup имеют вид «87197521-ОИ2» ({@code GoszakupDtoJsonTest}), в {@code Integer}
+     * не разбираются, и слияние по {@code lotNumber} не срабатывало бы никогда. {@code lotNumber}
+     * остаётся отображаемым полем — заполняется, только когда номер действительно числовой.
+     */
     private void rebuildLots(Tender t, List<LotDto> lots) {
-        // §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval), не repository.delete
-        t.getLots().clear();
-        if (lots == null) return;
-        for (LotDto l : lots) {
-            TenderLot lot = new TenderLot();
-            lot.setTender(t);
-            lot.setLotNumber(GoszakupParse.intOrNull(l.getLotNumber()));
-            lot.setEquipName(l.getNameRu());
-            lot.setRequiredSpec(l.getDescriptionRu());
-            lot.setQuantity(l.getCount());
-            lot.setMaxCost(l.getAmount());
-            t.getLots().add(lot);
+        if (lots == null || lots.isEmpty()) {
+            // «ноль лотов» у тендера, где они были — это сбой получения (пустой/битый ответ /lots),
+            // а не команда всё удалить. Исключение ловит importOne: +1 к ошибкам прогона, лоты целы.
+            if (!t.getLots().isEmpty()) {
+                throw new IllegalStateException("goszakup вернул 0 лотов для тендера " + t.getSourceExtId()
+                        + ", у которого их " + t.getLots().size() + " — считаем сбоем получения, лоты не трогаем");
+            }
+            return;
         }
+
+        // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
+        // Имя обрезаем так же, как при записи в equipName — иначе длинное имя не совпадёт само с собой.
+        List<TenderLot> matched = new LotMergeIndex(t.getLots())
+                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), d -> trunc(d.getNameRu(), 255));
+
+        List<TenderLot> result = new ArrayList<>();
+        for (int i = 0; i < lots.size(); i++) {
+            LotDto d = lots.get(i);
+            String code = trunc(d.getLotNumber(), 50);
+            TenderLot lot = matched.get(i);
+            if (lot == null) {
+                lot = new TenderLot();
+                lot.setTender(t);
+                lot.setTechSpecStatus(TechSpecStatus.PENDING);   // новый лот → в очередь на разбор ТЗ
+            }
+            // поля площадки обновляем всегда
+            lot.setSourceLotCode(code);                          // «87197521-ОИ2» — ключ слияния
+            lot.setLotNumber(GoszakupParse.intOrNull(d.getLotNumber()));
+            lot.setEquipName(trunc(d.getNameRu(), 255));         // колонка VARCHAR(255): живое имя уже упирается в предел
+            lot.setQuantity(d.getCount());
+            lot.setMaxCost(d.getAmount());
+            // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru
+            if (lot.getTechSpecStatus() != TechSpecStatus.OK) {
+                lot.setRequiredSpec(d.getDescriptionRu());
+            }
+            result.add(lot);
+        }
+        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        t.getLots().clear();
+        t.getLots().addAll(result);
+    }
+
+    private static String trunc(String s, int max) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.length() <= max ? t : t.substring(0, max);
     }
 
     /** Словарь /v2/refs/ref_buy_status: 210–245 «Опубликовано…», 250+ рассмотрение/итоги, 410/420/430 отказ/пауза/отмена. */

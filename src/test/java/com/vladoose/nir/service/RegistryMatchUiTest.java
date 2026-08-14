@@ -2,6 +2,7 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
+import com.vladoose.nir.dto.response.MatchConfidence;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.TenderRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -42,22 +43,22 @@ class RegistryMatchUiTest {
     }
 
     @Test
-    void oneWordLot_notDistinctive_noTechSpec() {
+    void oneWordLot_hasCandidates_noTechSpecFlag() {
         LotRegistryMatchResponse r = service.matchForLotUi(lot("Центрифуга", null, null), 5);
         assertThat(r.getCandidates()).isNotEmpty();
-        assertThat(r.isDistinctive()).isFalse();       // 1 токен → % врёт
+        assertThat(r.getConfidence()).isNotNull();     // зона заполнена всегда
         assertThat(r.isTechSpecParsed()).isFalse();
     }
 
     @Test
-    void multiWordLot_distinctive() {
+    void multiWordLot_hasCandidates() {
         LotRegistryMatchResponse r = service.matchForLotUi(lot("Дефибриллятор монитор бифазный", null, null), 5);
         assertThat(r.getCandidates()).isNotEmpty();
-        assertThat(r.isDistinctive()).isTrue();          // ≥2 токена
+        assertThat(r.getConfidence()).isNotNull();
     }
 
     @Test
-    void parsedTechSpec_distinctiveAndFlagged() {
+    void parsedTechSpec_flagged() {
         Long id = lot("Центрифуга", null, """
                 Приложение 2
                 характеристики
@@ -66,12 +67,14 @@ class RegistryMatchUiTest {
                 """);
         LotRegistryMatchResponse r = service.matchForLotUi(id, 5);
         assertThat(r.isTechSpecParsed()).isTrue();        // characteristics != null
-        assertThat(r.isDistinctive()).isTrue();           // имя(1) + токены ТЗ ≥2
     }
 
     @Test
-    void brandSet_distinctive() {
+    void brandSet_isConfident() {
         LotRegistryMatchResponse r = service.matchForLotUi(lot("Монитор", "Mindray", null), 5);
-        assertThat(r.isDistinctive()).isTrue();           // бренд-путь
+        assertThat(r.getCandidates()).isNotEmpty();
+        // бренд-путь: оператор сам назвал производителя — это уверенная зона, причины CANNOT нет
+        assertThat(r.getConfidence()).isEqualTo(MatchConfidence.CONFIDENT);
+        assertThat(r.getCannotReason()).isNull();
     }
 }

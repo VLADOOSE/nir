@@ -94,3 +94,15 @@ skpharmacy:
 ndda:
   api:
     base-url: ${NDDA_BASE_URL:https://oldregister.ndda.kz/register-backend}
+
+# Фоновый дозаполнитель техспек лотов (очередь вокруг разбора «ТЗ»), выкл по умолчанию —
+# как и остальные импорты. Пачка маленькая + пауза между лотами: площадки банят за долбёжку.
+techspec:
+  backfill:
+    enabled: ${TECHSPEC_BACKFILL_ENABLED:false}
+    batch-size: ${TECHSPEC_BACKFILL_BATCH_SIZE:10}
+    throttle-ms: ${TECHSPEC_BACKFILL_THROTTLE_MS:2000}
+    interval-ms: ${TECHSPEC_BACKFILL_INTERVAL_MS:600000}   # 10 минут
+    # ERROR — авария внешнего мира (IP-блок, обрыв сети), а не свойство лота: через столько
+    # дней сгоревшие лоты возвращаются в очередь сами. 0 — выключить возврат.
+    retry-after-days: ${TECHSPEC_BACKFILL_RETRY_AFTER_DAYS:7}
