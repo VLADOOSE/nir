@@ -7,6 +7,7 @@ import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
+import { LeadCardComponent } from './lead-card.component';
 
 /**
  * «Обращения» — вход коммерческой воронки West-Med: заявки с сайта westmed.kz (фоновый опрос сайта),
@@ -15,7 +16,7 @@ import { LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, RouterLink],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, LeadCardComponent],
   template: `
     <div class="page-head">
       <div>
@@ -71,6 +72,8 @@ import { LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
         </div>
       </article>
     </div>
+
+    <app-lead-card [leadId]="cardId" (close)="closeCard()" (changed)="load(true)" (openLead)="open($event)"></app-lead-card>
   `,
   styles: [`
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
@@ -191,6 +194,10 @@ export class LeadsComponent implements OnDestroy {
 
   open(id: number) {
     this.router.navigate([], { relativeTo: this.route, queryParams: { openId: id }, queryParamsHandling: 'merge' });
+  }
+
+  closeCard() {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge' });
   }
 
   syncText(): string {
