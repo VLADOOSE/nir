@@ -138,7 +138,7 @@ CREATE INDEX idx_lead_private_request   ON lead (private_request_id) WHERE priva
 CREATE TABLE lead_item (
     id           BIGSERIAL PRIMARY KEY,
     lead_id      BIGINT NOT NULL REFERENCES lead(id) ON DELETE CASCADE,
-    position     INT    NOT NULL,
+    line_no      INT    NOT NULL,
     name         VARCHAR(500) NOT NULL,
     brand        VARCHAR(255),
     quantity     INT    NOT NULL DEFAULT 1,
@@ -149,7 +149,7 @@ CREATE INDEX idx_lead_item_lead ON lead_item (lead_id);
 CREATE TABLE lead_event (
     id           BIGSERIAL PRIMARY KEY,
     lead_id      BIGINT NOT NULL REFERENCES lead(id) ON DELETE CASCADE,
-    at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     type         VARCHAR(20) NOT NULL,    -- RECEIVED / NOTE / CALL / MESSAGE / STATUS / SYNC
     direction    VARCHAR(3),              -- IN / OUT — звонки и сообщения
     channel      VARCHAR(20),             -- канал события
@@ -157,13 +157,14 @@ CREATE TABLE lead_event (
     body         TEXT,
     external_id  VARCHAR(100)             -- id сообщения/звонка у провайдера (будущие каналы)
 );
-CREATE INDEX idx_lead_event_lead ON lead_event (lead_id, at);
+CREATE INDEX idx_lead_event_lead ON lead_event (lead_id, occurred_at);
 CREATE UNIQUE INDEX uq_lead_event_ext ON lead_event (channel, external_id) WHERE external_id IS NOT NULL;
 ```
 
 Замечания:
 
 - `lead` в PostgreSQL не зарезервирован (это только имя оконной функции) — кавычки не нужны.
+- Колонки названы `line_no` и `occurred_at`, а не `position` и `at`: `position` — функция HQL, `at` — ключевое слово части диалектов, и разбор `@OrderBy` по ним ненадёжен.
 - `MESSAGE` и `external_id` у событий в этом этапе не используются — это задел §12. Уникальный индекс заведён сразу: доставка вебхуков «хотя бы один раз», повтор не должен плодить события.
 - `phone_norm` пишется при создании обращения. Правки контакта в этом этапе нет (не согласовывалась) — если появится, пересчитывать и `phone_norm`.
 - `updated_at` обновляет `@PreUpdate` сущности.
@@ -249,11 +250,13 @@ leads:
   westmed:
     enabled: ${WESTMED_LEADS_ENABLED:false}          # выкл по умолчанию, как все импорты
     base-url: ${WESTMED_BASE_URL:https://westmed.kz}
+    site-url: ${WESTMED_SITE_URL:https://westmed.kz}     # для ссылок «на сайте ↗» у позиций
     username: ${WESTMED_USERNAME:}
     password: ${WESTMED_PASSWORD:}
     write-status: ${WESTMED_WRITE_STATUS:false}      # локально НЕ пишем в боевой сайт
     market: ${WESTMED_MARKET:KZ}
     poll-ms: ${WESTMED_POLL_MS:90000}
+    initial-delay-ms: ${WESTMED_INITIAL_DELAY_MS:30000}
     page-size: 50
     auth-backoff-ms: 600000
     notification-from: ${WESTMED_NOTIFICATION_FROM:info@westmed.kz}
