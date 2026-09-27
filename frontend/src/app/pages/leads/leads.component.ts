@@ -8,6 +8,7 @@ import { NotificationService } from '../../services/notification.service';
 import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
 import { LeadCardComponent } from './lead-card.component';
+import { LeadFormComponent } from './lead-form.component';
 
 /**
  * «Обращения» — вход коммерческой воронки West-Med: заявки с сайта westmed.kz (фоновый опрос сайта),
@@ -16,7 +17,7 @@ import { LeadCardComponent } from './lead-card.component';
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, RouterLink, LeadCardComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, LeadCardComponent, LeadFormComponent],
   template: `
     <div class="page-head">
       <div>
@@ -27,6 +28,7 @@ import { LeadCardComponent } from './lead-card.component';
         <button type="button" class="btn btn-line" *ngIf="sync?.enabled" [disabled]="syncing" (click)="runSync()">
           {{ syncing ? 'Проверяю…' : 'Проверить сейчас' }}
         </button>
+        <button type="button" class="btn btn-primary" (click)="formOpen = true">+ Обращение</button>
       </div>
     </div>
 
@@ -74,6 +76,7 @@ import { LeadCardComponent } from './lead-card.component';
     </div>
 
     <app-lead-card [leadId]="cardId" (close)="closeCard()" (changed)="load(true)" (openLead)="open($event)"></app-lead-card>
+    <app-lead-form *ngIf="formOpen" (close)="formOpen = false" (created)="onCreated($event)"></app-lead-form>
   `,
   styles: [`
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
@@ -127,6 +130,7 @@ export class LeadsComponent implements OnDestroy {
   channel = '';
   q = '';
   cardId: number | null = null;
+  formOpen = false;
   readonly statusFilters = [
     { key: 'NEW,IN_WORK', label: 'Активные' },
     { key: 'NEW', label: 'Новые' },
@@ -198,6 +202,12 @@ export class LeadsComponent implements OnDestroy {
 
   closeCard() {
     this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge' });
+  }
+
+  onCreated(lead: any) {
+    this.formOpen = false;
+    this.load();
+    this.open(lead.id);
   }
 
   syncText(): string {

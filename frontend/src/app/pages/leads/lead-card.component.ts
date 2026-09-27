@@ -1,13 +1,14 @@
 import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_CLOSE_REASONS, LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
+import { LeadConvertDialogComponent } from './lead-convert-dialog.component';
 
 type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 
@@ -15,7 +16,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 @Component({
   selector: 'app-lead-card',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RouterLink],
+  imports: [NgIf, NgFor, FormsModule, RouterLink, LeadConvertDialogComponent],
   template: `
     <div *ngIf="leadId !== null" class="overlay" (click)="close.emit()">
       <aside class="drawer" (click)="$event.stopPropagation()" aria-label="Карточка обращения">
@@ -43,6 +44,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
             <div class="actions">
               <ng-container *ngIf="auth.isAdmin()">
                 <button type="button" class="btn btn-primary" *ngIf="lead.status === 'NEW'" [disabled]="busy" (click)="take()">Взять в работу</button>
+                <button type="button" class="btn btn-primary" *ngIf="lead.status === 'NEW' || lead.status === 'IN_WORK'" [disabled]="busy" (click)="convertOpen = true">Создать частную заявку</button>
                 <button type="button" class="btn btn-line" *ngIf="lead.status === 'CLOSED'" [disabled]="busy" (click)="reopen()">Вернуть в работу</button>
               </ng-container>
               <a class="btn btn-line" *ngIf="lead.privateRequestId" [routerLink]="['/private-requests']"
@@ -160,6 +162,8 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
         </div>
       </aside>
     </div>
+    <app-lead-convert-dialog *ngIf="convertOpen && lead" [lead]="lead"
+                             (close)="convertOpen = false" (converted)="onConverted($event)"></app-lead-convert-dialog>
   `,
   styles: [`
     /* rgba-вуаль НЕ токенизируется: затемнение под дровером уместно в обеих темах (самое частое значение в приложении) */
@@ -242,10 +246,11 @@ export class LeadCardComponent implements OnChanges {
   closeReason = '';
   closeComment = '';
   editItems: any[] = [];
+  convertOpen = false;
   readonly reasons = LEAD_CLOSE_REASONS;
 
   constructor(private api: ApiService, public auth: AuthService, private notify: NotificationService,
-              private cdr: ChangeDetectorRef) {}
+              private cdr: ChangeDetectorRef, private router: Router) {}
 
   ngOnChanges(ch: SimpleChanges) {
     if (ch['leadId']) {
@@ -257,7 +262,7 @@ export class LeadCardComponent implements OnChanges {
 
   @HostListener('document:keydown.escape')
   onEscape() {
-    if (this.leadId !== null) this.close.emit();
+    if (this.leadId !== null && !this.convertOpen) this.close.emit();   // открыт диалог — Esc закрывает только его
   }
 
   load(id: number) {
@@ -314,6 +319,13 @@ export class LeadCardComponent implements OnChanges {
         productUrl: i.productUrl || null,
       }));
     this.apply(this.api.updateLeadItems(this.lead.id, items), 'Позиции сохранены');
+  }
+
+  onConverted(r: { privateRequestId: number; number: string }) {
+    this.convertOpen = false;
+    this.notify.success('Частная заявка ' + r.number + ' создана');
+    this.changed.emit();
+    this.router.navigate(['/private-requests'], { queryParams: { openId: r.privateRequestId } });
   }
 
   togglePanel(p: Panel) {

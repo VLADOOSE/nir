@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+import { RouterLink } from '@angular/router';
+import { fullDateTime } from '../../shared/relative-time';
 
 @Component({
   selector: 'app-private-request-card',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, MarketMoneyPipe],
+  imports: [NgIf, NgFor, FormsModule, MarketMoneyPipe, RouterLink],
   template: `
     <div *ngIf="requestId !== null" class="overlay" (click)="onClose()">
       <aside class="sidebar" (click)="$event.stopPropagation()">
@@ -19,6 +21,10 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
               <span>{{ request?.client?.name || '—' }}</span>
               <span class="dot" *ngIf="request?.status">·</span>
               <span class="type-pill" *ngIf="request?.status">{{ request?.status }}</span>
+            </div>
+            <div class="from-lead" *ngIf="request?.lead as ld">
+              Из обращения:
+              <a [routerLink]="['/leads']" [queryParams]="{ openId: ld.id }">{{ ld.subject }} · {{ leadSource(ld.source) }} · {{ leadDate(ld.receivedAt) }}</a>
             </div>
           </div>
           <button class="close-btn" type="button" (click)="onClose()" aria-label="Закрыть">&times;</button>
@@ -192,6 +198,8 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
        сигнал ховера в насыщенности; приглушённо-тёмный глиф читался бы как
        «неактивно». То же решение, что у крестика equipment-detail-modal. */
     .close-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+    .from-lead { margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+    .from-lead a { color: var(--accent); text-decoration: none; }
 
     .body { flex: 1; overflow-y: auto; padding: 24px 32px 32px; }
     .section { margin-bottom: 28px; }
@@ -421,6 +429,9 @@ export class PrivateRequestCardComponent implements OnChanges {
   saving = false;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
+
+  leadSource(source: string): string { return source === 'manual' ? 'внесено вручную' : source; }
+  leadDate(iso: string): string { return fullDateTime(iso); }
 
   startEdit() {
     this.editLines = this.lines.map((l: any) => ({
