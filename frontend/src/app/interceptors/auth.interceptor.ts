@@ -12,6 +12,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(cloned).pipe(
     catchError((err: HttpErrorResponse) => {
+      // калитка ais.westmed.kz: устройство отозвано или выпало — на страницу калитки полной навигацией.
+      // logout не зовём: он тоже упёрся бы в калитку. Прочие 401 — «сессия истекла», как раньше.
+      if (err.status === 401 && err.headers?.get('X-AIS-Gate') === 'device') {
+        window.location.assign('/gate/');
+        return throwError(() => err);
+      }
       if (err.status === 401 && !req.url.includes('/api/auth/')) {
         auth.logout().subscribe();
         router.navigate(['/login']);

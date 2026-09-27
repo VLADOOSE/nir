@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Служебный вход</title>
+<!-- встроенная иконка: иначе браузер сам попросит /favicon.ico, а этот запрос идёт через проверку устройства -->
+<link rel="icon" href="data:,">
+<script>
+  // тема как в приложении: выбор пользователя из localStorage (тот же origin), иначе системная
+  try { var t = localStorage.getItem('ais.theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+<style>
+  :root { --app-bg:#f7f7f8; --surface:#ffffff; --border:#e5e7eb; --text:#111827; --text-muted:#6b7280;
+          --accent:#1a56db; --accent-hover:#1e40af; --accent-contrast:#ffffff; --danger-text:#991b1b;
+          --shadow:0 2px 8px rgba(0,0,0,.08); color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --app-bg:#1f1e1d; --surface:#292827; --border:rgba(255,255,255,.11);
+      --text:#f4f2ee; --text-muted:#a8a29a; --accent:#6b93ff; --accent-hover:#8aa9ff; --accent-contrast:#ffffff;
+      --danger-text:#f87171; --shadow:0 2px 10px rgba(0,0,0,.45); color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --app-bg:#1f1e1d; --surface:#292827; --border:rgba(255,255,255,.11);
+      --text:#f4f2ee; --text-muted:#a8a29a; --accent:#6b93ff; --accent-hover:#8aa9ff; --accent-contrast:#ffffff;
+      --danger-text:#f87171; --shadow:0 2px 10px rgba(0,0,0,.45); color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--app-bg); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+  .box { width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+         box-shadow: var(--shadow); padding: 28px 24px; }
+  h1 { margin: 0 0 8px; font-size: 20px; }
+  p { margin: 0 0 14px; }
+  .muted { color: var(--text-muted); font-size: 14px; }
+  label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+  input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+          background: var(--surface); color: var(--text); font: inherit; font-size: 16px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { width: 100%; min-height: 44px; margin-top: 12px; border: 0; border-radius: 8px; background: var(--accent);
+           color: var(--accent-contrast); font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: .6; cursor: default; }
+  .code { font: 700 34px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 3px;
+          text-align: center; padding: 14px 0; margin: 6px 0 14px; border: 1px dashed var(--border); border-radius: 10px; }
+  .err { color: var(--danger-text); font-size: 14px; margin: 10px 0 0; }
+  .small { font-size: 13px; }
+</style>
+</head>
+<body>
+<main class="box">
+  <h1>Служебный вход</h1>
+
+  <section id="s-form">
+    <p class="muted">Это устройство ещё не допущено. Представьтесь и запросите доступ — администратор подтвердит.</p>
+    <form id="f" novalidate>
+      <label for="name">Как вас зовут</label>
+      <input id="name" maxlength="60" autocomplete="name" required>
+      <button type="submit" id="btn">Запросить доступ</button>
+    </form>
+    <p class="err" id="err" hidden></p>
+  </section>
+
+  <section id="s-wait" hidden aria-live="polite">
+    <p class="muted">Сообщите этот код администратору:</p>
+    <div class="code" id="code">—</div>
+    <p class="muted">Страница откроется сама, когда доступ подтвердят. Код действует 15 минут.</p>
+    <p class="muted small" id="net" hidden>Нет связи — повторяю…</p>
+  </section>
+
+  <section id="s-end" hidden aria-live="polite">
+    <p id="end-text"></p>
+    <button type="button" id="again">Запросить снова</button>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var timer = null;
+
+  function show(id) { ['s-form', 's-wait', 's-end'].forEach(function (s) { $(s).hidden = s !== id; }); }
+  function err(msg) { $('err').textContent = msg || ''; $('err').hidden = !msg; }
+  function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+  function schedule() { stop(); timer = setTimeout(poll, 3000); }
+  function end(text) { stop(); $('end-text').textContent = text; show('s-end'); }
+
+  function apply(st) {
+    if (st.state === 'TRUSTED') { stop(); location.replace('/'); return; }
+    if (st.state === 'PENDING') { $('code').textContent = st.code; show('s-wait'); schedule(); return; }
+    if (st.state === 'REJECTED') { end('Запрос отклонён.'); return; }
+    if (st.state === 'EXPIRED') { end('Запрос истёк — его не подтвердили за 15 минут.'); return; }
+    if (st.state === 'REVOKED') { end('Доступ с этого устройства отозван.'); return; }
+    stop(); show('s-form');
+  }
+
+  function poll() {
+    fetch('/api/gate/status', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (st) { $('net').hidden = true; apply(st); })
+      .catch(function () { $('net').hidden = false; schedule(); });
+  }
+
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('name').value.trim();
+    if (!name) { err('Введите имя'); return; }
+    err('');
+    $('btn').disabled = true;
+    fetch('/api/gate/request', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name })
+    })
+      .then(function (r) {
+        if (r.status === 429) throw new Error('Слишком много запросов — попробуйте через несколько минут.');
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; })
+            .then(function (b) { throw new Error(b.message || 'Не удалось отправить запрос. Попробуйте ещё раз.'); });
+        }
+        return r.json();
+      })
+      .then(apply)
+      .catch(function (x) { err(x.message || 'Нет связи. Попробуйте ещё раз.'); })
+      .then(function () { $('btn').disabled = false; });
+  });
+
+  $('again').addEventListener('click', function () { show('s-form'); $('name').focus(); });
+
+  // при открытии: уже допущено — сразу в систему; есть ожидающий запрос — сразу его код
+  fetch('/api/gate/status', { cache: 'no-store', credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : { state: 'NONE' }; })
+    .then(apply)
+    .catch(function () { show('s-form'); });
+})();
+</script>
+</body>
+</html>
