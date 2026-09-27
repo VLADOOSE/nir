@@ -118,6 +118,11 @@ import { LeadFormComponent } from './lead-form.component';
       .filters-right { width: 100%; }
       .filters-right select, .filters-right input { flex: 1; min-width: 0; font-size: 16px; }
       .lead-card { padding: 12px; }
+      /* карточка не должна расти в «простыню» (порог ~140px, §12): тема не ломается между чипами,
+         контакт и время — одной строкой, контакт обрезается многоточием (полностью — в карточке) */
+      .subj { font-size: 14px; }
+      .lc-bottom { flex-wrap: nowrap; }
+      .who { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     }
   `]
 })
@@ -144,9 +149,10 @@ export class LeadsComponent implements OnDestroy {
 
   constructor(private api: ApiService, public auth: AuthService, private notify: NotificationService,
               private route: ActivatedRoute, private router: Router, private cdr: ChangeDetectorRef) {
+    // Без detectChanges: первое значение приходит синхронно ещё в конструкторе, до создания вида
+    // (dev-режим падает «Should be run in update mode»); смену ?openId отрисует обычный цикл роутера.
     this.route.queryParams.subscribe(p => {
       this.cardId = p['openId'] ? +p['openId'] : null;
-      this.cdr.detectChanges();
     });
     this.load();
     this.loadSync();

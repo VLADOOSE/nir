@@ -98,7 +98,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
                   <a class="btn btn-line btn-sm" *ngIf="waLink()" [href]="waLink()" target="_blank" rel="noopener">Написать в WhatsApp</a>
                 </div>
                 <div class="c-row" *ngIf="lead.contactEmail"><a [href]="'mailto:' + lead.contactEmail">{{ lead.contactEmail }}</a></div>
-                <div class="c-row muted">Клиент: {{ lead.facilityName || 'не определён — выберете при создании заявки' }}</div>
+                <div class="c-row muted">Клиент: {{ lead.facilityName || 'не определён — выберите при создании заявки' }}</div>
                 <div class="c-same" *ngIf="lead.samePhone?.length">
                   <span>Этот номер уже обращался:</span>
                   <button type="button" class="linklike" *ngFor="let s of lead.samePhone" (click)="openLead.emit(s.id)">
