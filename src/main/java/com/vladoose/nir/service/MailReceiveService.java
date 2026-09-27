@@ -40,6 +40,8 @@ public class MailReceiveService {
     private final long sinceMinutes;
     /** Наш адрес отправки КП (spring.mail.username) — письмо с этим From считаем «своим» эхом. */
     private final String sendFrom;
+    /** От кого сайт westmed.kz шлёт уведомления о заявках — их пропускаем (заявки берём через API сайта). */
+    private final String siteNotificationFrom;
 
     public MailReceiveService(PriceRequestRepository priceRequestRepository,
                               InboundEmailRepository inboundEmailRepository,
@@ -51,7 +53,8 @@ public class MailReceiveService {
                               @Value("${mail.imap.protocol:imap}") String protocol,
                               @Value("${mail.imap.market:KZ}") String market,
                               @Value("${mail.imap.since-minutes:60}") long sinceMinutes,
-                              @Value("${spring.mail.username:}") String sendFrom) {
+                              @Value("${spring.mail.username:}") String sendFrom,
+                              @Value("${leads.westmed.notification-from:info@westmed.kz}") String siteNotificationFrom) {
         this.priceRequestRepository = priceRequestRepository;
         this.inboundEmailRepository = inboundEmailRepository;
         this.enabled = enabled;
@@ -63,6 +66,7 @@ public class MailReceiveService {
         this.mailboxMarket = Market.fromHeader(market);
         this.sinceMinutes = sinceMinutes;
         this.sendFrom = sendFrom == null ? "" : sendFrom.trim().toLowerCase();
+        this.siteNotificationFrom = siteNotificationFrom == null ? "" : siteNotificationFrom.trim().toLowerCase();
     }
 
     public Market getMailboxMarket() {
@@ -98,12 +102,19 @@ public class MailReceiveService {
                     skippedOld++;   // старое непрочитанное письмо — не трогаем (не помечаем SEEN, не ингестим)
                     continue;
                 }
+                if (isSiteNotification(msg)) {
+                    msg.setFlag(Flags.Flag.SEEN, true);
+                    result.setSkippedSiteNotifications(result.getSkippedSiteNotifications() + 1);
+                    continue;
+                }
                 handle(msg, result);
                 msg.setFlag(Flags.Flag.SEEN, true);
                 result.setFetched(result.getFetched() + 1);
             }
             result.setMessage("Обработано свежих писем (за " + sinceMinutes + " мин): " + result.getFetched()
-                    + (skippedOld > 0 ? "; пропущено старых: " + skippedOld : ""));
+                    + (skippedOld > 0 ? "; пропущено старых: " + skippedOld : "")
+                    + (result.getSkippedSiteNotifications() > 0
+                        ? "; уведомлений сайта о заявках пропущено: " + result.getSkippedSiteNotifications() : ""));
         } catch (Exception e) {
             log.warn("Ошибка приёма почты: {}", e.getMessage());
             result.setMessage("Ошибка подключения к почте: " + e.getMessage());
@@ -112,6 +123,17 @@ public class MailReceiveService {
             try { if (store != null) store.close(); } catch (Exception ignored) {}
         }
         return result;
+    }
+
+    /**
+     * Письмо-уведомление westmed.kz о заявке с сайта («Новая заявка…», «Запрос КП…», «WhatsApp-обращение…
+     * — westmed.kz»). Заявки АИС получает через API сайта (спека обращений §11) — письмо было бы дублем.
+     */
+    private boolean isSiteNotification(Message msg) throws MessagingException {
+        if (siteNotificationFrom.isBlank()) return false;
+        String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? decode(msg.getFrom()[0].toString()) : "";
+        String subject = msg.getSubject() == null ? "" : msg.getSubject().strip();
+        return addressPart(from).equalsIgnoreCase(siteNotificationFrom) && subject.endsWith("— westmed.kz");
     }
 
     private void handle(Message msg, PollResultResponse result) throws Exception {

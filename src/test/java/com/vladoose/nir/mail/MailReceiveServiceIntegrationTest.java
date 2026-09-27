@@ -4,6 +4,7 @@ import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.MailReceiveService;
@@ -246,5 +247,26 @@ class MailReceiveServiceIntegrationTest {
         assertThat(client.getAttachmentName().toLowerCase()).endsWith(".xlsx");
         assertThat(client.getAttachmentName()).contains("Список");            // MIME-имя декодировано
         assertThat(client.getExcerpt()).contains("Прошу выставить КП");       // вложенный text/plain собран
+    }
+
+    /** Уведомления westmed.kz о заявках — дубли того, что приходит через API сайта (обращения). */
+    @Test
+    void poll_skipsWestmedSiteNotifications_butKeepsClientMail() throws Exception {
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        String tag = "ZZSITE-" + System.nanoTime();
+        user.deliver(message("WestMed.kz <info@westmed.kz>", "Запрос КП (2 поз.) — westmed.kz",
+                "Запрос коммерческого предложения " + tag, null, null));
+        user.deliver(message("clinic@x.kz", "Нужен облучатель " + tag, "Добрый день, нужен облучатель", null, null));
+
+        MarketContext.set(Market.KZ);
+        long before = inboundEmailRepository.count();
+        PollResultResponse res = mailReceiveService.poll();
+
+        assertThat(res.getSkippedSiteNotifications()).isEqualTo(1);
+        assertThat(inboundEmailRepository.count()).isEqualTo(before + 1);   // сохранено только письмо клиники
+        assertThat(inboundEmailRepository.findAll())
+                .anyMatch(e -> ("Нужен облучатель " + tag).equals(e.getSubject()))
+                .noneMatch(e -> e.getExcerpt() != null && e.getExcerpt().contains(tag)
+                        && e.getSubject() != null && e.getSubject().endsWith("— westmed.kz"));
     }
 }
