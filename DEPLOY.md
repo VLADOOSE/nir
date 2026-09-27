@@ -108,8 +108,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090   # 200
 ## 4. Эксплуатация
 - **Бэкап БД** (там живые заявки/письма) — cron:
   ```bash
-  0 3 * * * docker exec ais-postgres pg_dump -U nir nirdb | gzip > /srv/ais/backup/nirdb-$(date +\%F).sql.gz
+  0 3 * * * cd /srv/ais && docker compose exec -T ais-postgres sh -c 'pg_dump -U "$POSTGRES_USER" nirdb' | gzip > /srv/ais/backup/nirdb-$(date +\%F).sql.gz
   ```
+  ⚠️ Контейнеры на сервере называются с префиксом compose-проекта — `ais-ais-postgres-1`, `ais-ais-backend-1`, — поэтому голый `docker exec ais-postgres …` падает «No such container». Через `docker compose` (из `/srv/ais`) работают имена сервисов.
 - **Логи:** `docker compose logs -f ais-backend`
 - **Рестарт:** `docker compose restart ais-backend`
 - **Память:** после первого разбора ТЗ глянь `free -h` / `docker stats`. Если бэкенд упирается в
