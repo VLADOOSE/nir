@@ -119,8 +119,39 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090   # 200
 ---
 
 ## 5. 🔴 Хардинг перед боевым использованием
-- **Сменить `admin/admin` и `operator/operator`** (дефолт — дыра №1).
+- ~~Сменить `admin/admin` и `operator/operator`~~ ✔ **2026-09-27** — штатным `PUT /api/users/{id}`; новые пароли у оператора в `~/.config/ais/ais-admin.pass` / `ais-operator.pass` (см. §6).
 - **Перевыпустить** пароли приложений mail.ru и токен goszakup (светились в переписке).
 - Демо-сид Flyway `V2` — при желании почистить (или добавить `V13` с очисткой демо-строк).
 - Позже: увести SSH за Tailscale и закрыть :22 в ufw (сейчас 22 публичен) — тогда доступ к серверу
   тоже только по VPN.
+
+---
+
+## 6. Доступ по `https://ais.westmed.kz` (без Tailscale)
+Шаг 1 блока «доступ без Tailscale», 2026-09-27. Адрес Tailscale продолжает работать параллельно.
+- **DNS:** A-запись `ais` → `185.125.46.26` в панели unihost.kz (NS домена — `ns1/ns2.unihost.kz`).
+- **nginx хоста:** конфиг — `deploy/nginx/zz-ais.westmed.kz.conf` из репо → `/etc/nginx/sites-available/zz-ais.westmed.kz`
+  + симлинк в `sites-enabled`. 80-й порт — только ACME и редирект; 443 — пароль на входе и прокси на `127.0.0.1:8090`.
+  ⚠️ **Префикс `zz-` обязателен:** `default_server` на сервере не задан, и неизвестные запросы (голый IP, TLS без SNI)
+  получает первый загруженный по алфавиту конфиг — файл `ais.…` сделал бы АИС ответом на любой запрос к IP.
+  Обновить конфиг:
+  ```bash
+  scp deploy/nginx/zz-ais.westmed.kz.conf root@185.125.46.26:/etc/nginx/sites-available/zz-ais.westmed.kz
+  ssh root@185.125.46.26 'nginx -t && systemctl reload nginx'
+  ```
+  ⚠️ Если `nginx -t` падает — сразу вернуть прежний файл: битый конфиг сорвёт и следующий reload из хука certbot,
+  то есть продление сертификатов всех трёх сайтов.
+- **Сертификат:** Let's Encrypt через webroot `/var/www/certbot`, как у соседних сайтов; продлевает `certbot.timer`.
+  Хук `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` перечитывает сертификаты после продления. До 2026-09-27
+  хука не было: продлённый сертификат nginx не видел до перезапуска и отдавал старый из памяти — у всех трёх сайтов.
+- **Пароль на входе (basic auth):** пользователь `westmed`, хеш в `/etc/nginx/.htpasswd-ais` (`640 root:www-data`).
+  Сменить (reload не нужен — nginx читает файл на каждый запрос):
+  ```bash
+  ssh root@185.125.46.26 'H=$(openssl passwd -6 -stdin); printf "westmed:%s\n" "$H" > /etc/nginx/.htpasswd-ais' < новый-пароль.txt
+  ```
+- **Пароли** лежат на Mac оператора в `~/.config/ais/` (права 600): `ais-gate.pass` — вход nginx, `ais-admin.pass`
+  и `ais-operator.pass` — логины АИС. Скопировать в буфер, не показывая на экране: `pbcopy < ~/.config/ais/ais-gate.pass`.
+- **Ограничения:** 10 запросов/с на IP (запас 100), вход в АИС — 10 попыток в минуту на IP; `robots.txt` запрещает
+  индексацию, плюс `X-Robots-Tag: noindex`; cookie сессии получает `Secure; SameSite=Lax` на уровне nginx
+  (nginx 1.18 не знает `proxy_cookie_flags` — через `proxy_cookie_path`).
+- **Шаг 2 (следующий):** «калитка» по коду устройства вместо общего пароля nginx.
