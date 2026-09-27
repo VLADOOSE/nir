@@ -19,6 +19,7 @@ import { PrivateRequestsComponent } from './pages/private-requests/private-reque
 import { InboundComponent } from './pages/inbound/inbound.component';
 import { LeadsComponent } from './pages/leads/leads.component';
 import { EmailTemplateComponent } from './pages/email-template/email-template.component';
+import { DevicesComponent } from './pages/devices/devices.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -43,6 +44,7 @@ export const routes: Routes = [
       { path: 'private-requests', component: PrivateRequestsComponent },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
+      { path: 'devices', component: DevicesComponent, canActivate: [adminGuard] },
       { path: 'about', component: AboutComponent },
     ]
   }

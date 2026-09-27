@@ -397,6 +397,23 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/leads/sync`, {});
   }
 
+  // === Калитка ais.westmed.kz: устройства (только ADMIN) ===
+  getDevices(): Observable<any> {
+    return this.http.get<any>(`${this.base}/devices`);
+  }
+  getDevicePendingCount(): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(`${this.base}/devices/pending-count`);
+  }
+  approveDevice(id: number, label: string | null): Observable<any> {
+    return this.http.post<any>(`${this.base}/devices/${id}/approve`, { label });
+  }
+  rejectDevice(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/devices/${id}/reject`, {});
+  }
+  revokeDevice(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/devices/${id}/revoke`, {});
+  }
+
   // === Шаблон письма КП ===
   getEmailTemplate(): Observable<any> {
     return this.http.get<any>(`${this.base}/email-template`);

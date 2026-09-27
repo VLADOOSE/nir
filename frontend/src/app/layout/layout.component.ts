@@ -138,6 +138,10 @@ import { filter } from 'rxjs/operators';
             <a *ngIf="auth.isAdmin()" routerLink="/email-template" routerLinkActive="active">
               <svg lucideIcon="mail" [size]="16"></svg> Шаблон письма КП
             </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/devices" routerLinkActive="active">
+              <svg lucideIcon="monitor-smartphone" [size]="16"></svg> Устройства
+              <span class="nav-count" *ngIf="pendingDevices > 0" [attr.aria-label]="pendingDevices + ' ждут допуска'">{{ pendingDevices }}</span>
+            </a>
             <a routerLink="/about" routerLinkActive="active">
               <svg lucideIcon="circle-check" [size]="16"></svg> О системе
             </a>
@@ -270,6 +274,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   searchResults: SearchResult[] = [];
   showResults = false;
   newLeads = 0;                   // новые обращения текущего рынка — счётчик в меню
+  pendingDevices = 0;             // запросы доступа с калитки ais.westmed.kz — счётчик в меню (только ADMIN)
   private leadsTimer: any = null;
   private navSub?: Subscription;
 
@@ -281,9 +286,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
   constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService, public theme: ThemeService, private api: ApiService) {}
 
   ngOnInit() {
-    this.refreshLeadCount();
-    this.leadsTimer = setInterval(() => this.refreshLeadCount(), 60000);
-    this.navSub = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => this.refreshLeadCount());
+    this.refreshCounts();
+    this.leadsTimer = setInterval(() => this.refreshCounts(), 60000);
+    this.navSub = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => this.refreshCounts());
   }
 
   ngOnDestroy() {
@@ -291,13 +296,23 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.navSub?.unsubscribe();
   }
 
-  /** Заявки с сайта приходят фоном — счётчик живёт без перезагрузки страницы. */
-  refreshLeadCount() {
+  /** Действие на странице (допуск, отказ, отзыв…) поменяло счётчики — не ждать минуты или навигации. */
+  @HostListener('window:ais-counts-changed')
+  onCountsChanged() { this.refreshCounts(); }
+
+  /** Заявки с сайта и запросы доступа приходят фоном — счётчики живут без перезагрузки страницы. */
+  refreshCounts() {
     if (!this.auth.isLoggedIn()) return;
     this.api.getLeadCount('NEW').subscribe({
       next: r => { this.newLeads = r.count; this.cdr.detectChanges(); },
       error: () => {},
     });
+    if (this.auth.isAdmin()) {
+      this.api.getDevicePendingCount().subscribe({
+        next: r => { this.pendingDevices = r.count; this.cdr.detectChanges(); },
+        error: () => {},
+      });
+    }
   }
 
   onSearch() {
