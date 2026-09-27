@@ -9,6 +9,8 @@ import com.vladoose.nir.dto.response.PrivateRequestResponse;
 import com.vladoose.nir.dto.response.SourcingPreviewResponse;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.mapper.FacilityMapper;
+import com.vladoose.nir.mapper.LeadResponseMapper;
+import com.vladoose.nir.service.LeadService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
@@ -33,14 +35,19 @@ public class PrivateRequestController {
     private final FacilityMapper facilityMapper;
     private final PrivateRequestSourcingService sourcingService;
     private final PrivateRequestImportService importService;
+    private final LeadService leadService;
+    private final LeadResponseMapper leadResponseMapper;
 
     public PrivateRequestController(PrivateRequestService service, FacilityMapper facilityMapper,
                                     PrivateRequestSourcingService sourcingService,
-                                    PrivateRequestImportService importService) {
+                                    PrivateRequestImportService importService,
+                                    LeadService leadService, LeadResponseMapper leadResponseMapper) {
         this.service = service;
         this.facilityMapper = facilityMapper;
         this.sourcingService = sourcingService;
         this.importService = importService;
+        this.leadService = leadService;
+        this.leadResponseMapper = leadResponseMapper;
     }
 
     @GetMapping
@@ -62,6 +69,7 @@ public class PrivateRequestController {
         List<PrivateRequestLineResponse> lines = service.linesWithRegistration(id);
         applyCounts(r, lines);
         r.setLines(lines);
+        attachLead(r, t.getId());
         return r;
     }
 
@@ -105,7 +113,12 @@ public class PrivateRequestController {
         List<PrivateRequestLineResponse> lines = service.linesWithRegistration(t.getId());
         applyCounts(r, lines);
         r.setLines(lines);
+        attachLead(r, t.getId());
         return r;
+    }
+
+    private void attachLead(PrivateRequestResponse r, Long tenderId) {
+        leadService.findByPrivateRequest(tenderId).map(leadResponseMapper::toRef).ifPresent(r::setLead);
     }
 
     private PrivateRequestResponse toShort(Tender t) {

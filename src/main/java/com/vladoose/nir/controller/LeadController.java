@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.LeadCardResponse;
+import com.vladoose.nir.dto.response.LeadConvertResponse;
 import com.vladoose.nir.dto.response.LeadListItemResponse;
 import com.vladoose.nir.entity.Lead;
 import com.vladoose.nir.entity.LeadChannel;
@@ -81,6 +82,12 @@ public class LeadController {
     @PreAuthorize("hasRole('ADMIN')")
     public LeadCardResponse addEvent(@PathVariable Long id, @Valid @RequestBody LeadEventCreate req) {
         return card(service.addEvent(id, req.getType(), req.getDirection(), req.getBody(), currentUser()));
+    }
+
+    @PostMapping("/{id}/convert")
+    @PreAuthorize("hasRole('ADMIN')")
+    public LeadConvertResponse convert(@PathVariable Long id, @Valid @RequestBody LeadConvertRequest req) {
+        return service.convert(id, req, currentUser());
     }
 
     private LeadCardResponse card(Lead lead) {

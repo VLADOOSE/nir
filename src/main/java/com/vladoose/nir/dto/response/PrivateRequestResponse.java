@@ -15,4 +15,6 @@ public class PrivateRequestResponse {
     private int lineCount;
     private int registeredCount;
     private List<PrivateRequestLineResponse> lines;
+    /** Из какого обращения собрана заявка (null — заведена вручную или импортом). */
+    private LeadRefResponse lead;
 }

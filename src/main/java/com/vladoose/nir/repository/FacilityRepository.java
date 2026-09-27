@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface FacilityRepository extends JpaRepository<Facility, Long> {
     List<Facility> findByMarketAndMonitorTendersTrue(Market market);
@@ -21,4 +22,10 @@ public interface FacilityRepository extends JpaRepository<Facility, Long> {
     List<Facility> findByMarketAndPhoneLast10(@Param("market") String market, @Param("last10") String last10);
 
     List<Facility> findByMarketAndEmailIgnoreCase(Market market, String email);
+
+    /** У facility.name глобальный UNIQUE — проверяем по всем рынкам (нативный SQL фильтром не режется). */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM facility WHERE name = :name)", nativeQuery = true)
+    boolean existsByNameAnyMarket(@Param("name") String name);
+
+    Optional<Facility> findByName(String name);
 }

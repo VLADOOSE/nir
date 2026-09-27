@@ -1,13 +1,17 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.LeadConvertRequest;
 import com.vladoose.nir.dto.request.LeadCreateRequest;
 import com.vladoose.nir.dto.request.LeadItemDto;
+import com.vladoose.nir.dto.request.PrivateRequestCreate;
+import com.vladoose.nir.dto.response.LeadConvertResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.integration.lead.IncomingLead;
 import com.vladoose.nir.integration.lead.LeadSources;
+import com.vladoose.nir.repository.FacilityRepository;
 import com.vladoose.nir.repository.LeadRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,10 +38,15 @@ public class LeadService {
 
     private final LeadRepository leadRepository;
     private final LeadIntakeService intake;
+    private final FacilityRepository facilityRepository;
+    private final PrivateRequestService privateRequestService;
 
-    public LeadService(LeadRepository leadRepository, LeadIntakeService intake) {
+    public LeadService(LeadRepository leadRepository, LeadIntakeService intake,
+                       FacilityRepository facilityRepository, PrivateRequestService privateRequestService) {
         this.leadRepository = leadRepository;
         this.intake = intake;
+        this.facilityRepository = facilityRepository;
+        this.privateRequestService = privateRequestService;
     }
 
     /** Новые сверху, не больше LIST_LIMIT; поиск — по имени, компании, email, теме, тексту, телефону, позициям. */
@@ -164,6 +173,81 @@ public class LeadService {
         lead.addEvent(LeadEventType.NOTE, author, "Позиции обновлены: " + lead.getItems().size() + " поз.");
         lead.setUpdatedAt(OffsetDateTime.now());
         return lead;
+    }
+
+    /**
+     * Частная заявка из обращения — одна транзакция (спека §9): любая ошибка откатывает всё,
+     * ни клиента-сироты, ни заявки без обращения. Проверки идут ДО создания чего-либо.
+     */
+    @Transactional
+    public LeadConvertResponse convert(Long id, LeadConvertRequest req, String author) {
+        Lead lead = get(id);
+        require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK), "создать частную заявку");
+        boolean existing = req.getClientFacilityId() != null;
+        boolean fresh = req.getNewClient() != null;
+        if (existing == fresh) {
+            throw new BadRequestException("Выберите клиента из списка или создайте нового");
+        }
+        List<PrivateRequestCreate.Line> lines = cleanLines(req.getLines());
+        if (lines.isEmpty()) {
+            throw new BadRequestException("Нужна хотя бы одна строка с наименованием");
+        }
+        Facility client = existing ? existingClient(req.getClientFacilityId()) : createClient(req.getNewClient());
+
+        PrivateRequestCreate dto = new PrivateRequestCreate();
+        dto.setClientFacilityId(client.getId());
+        dto.setNote(blankToNull(req.getNote()));
+        dto.setLines(lines);
+        Tender request = privateRequestService.createFromLines(dto);
+        request.setContactPhone(lead.getContactPhone());
+        request.setContactEmail(lead.getContactEmail());
+
+        lead.setFacility(client);
+        lead.setPrivateRequest(request);
+        transition(lead, LeadStatus.CONVERTED, author, "создана частная заявка " + request.getTenderNumber());
+        return new LeadConvertResponse(request.getId(), request.getTenderNumber());
+    }
+
+    private Facility existingClient(Long facilityId) {
+        Facility f = facilityRepository.findById(facilityId)
+                .orElseThrow(() -> new NotFoundException("Клиент не найден: id=" + facilityId));
+        if (f.getMarket() != null && f.getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Клиент не найден: id=" + facilityId);
+        }
+        return f;
+    }
+
+    private Facility createClient(LeadConvertRequest.NewClient nc) {
+        String name = nc.getName() == null ? "" : nc.getName().trim();
+        if (name.isEmpty()) throw new BadRequestException("Введите название клиента");
+        if (facilityRepository.existsByNameAnyMarket(name)) {
+            throw new BadRequestException(facilityRepository.findByName(name).isPresent()
+                    ? "Клиент «" + name + "» уже есть — выберите его в списке"
+                    : "Название «" + name + "» уже занято клиентом другого рынка — уточните название");
+        }
+        return facilityRepository.save(Facility.builder()
+                .name(trunc(name, 255))
+                .phone(trunc(blankToNull(nc.getPhone()), 50))
+                .email(trunc(blankToNull(nc.getEmail()), 255))
+                .lastName(trunc(blankToNull(nc.getLastName()), 100))
+                .firstName(trunc(blankToNull(nc.getFirstName()), 100))
+                .middleName(trunc(blankToNull(nc.getMiddleName()), 100))
+                .market(MarketContext.get())
+                .build());
+    }
+
+    private static List<PrivateRequestCreate.Line> cleanLines(List<PrivateRequestCreate.Line> raw) {
+        if (raw == null) return List.of();
+        List<PrivateRequestCreate.Line> out = new ArrayList<>();
+        for (PrivateRequestCreate.Line l : raw) {
+            if (l == null || isBlank(l.getName())) continue;
+            PrivateRequestCreate.Line c = new PrivateRequestCreate.Line();
+            c.setName(l.getName().trim());
+            c.setManufact(blankToNull(l.getManufact()));
+            c.setQuantity(l.getQuantity() != null && l.getQuantity() > 0 ? l.getQuantity() : 1);
+            out.add(c);
+        }
+        return out;
     }
 
     void require(Lead lead, Set<LeadStatus> from, String action) {
