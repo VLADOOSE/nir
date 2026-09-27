@@ -34,6 +34,8 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // калитка ais.westmed.kz: её зовут nginx (auth_request) и недопущенное устройство — до входа в АИС
+                        .requestMatchers("/api/gate/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )
