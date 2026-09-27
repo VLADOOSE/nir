@@ -4,10 +4,12 @@ import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.LeadCardResponse;
 import com.vladoose.nir.dto.response.LeadConvertResponse;
 import com.vladoose.nir.dto.response.LeadListItemResponse;
+import com.vladoose.nir.dto.response.LeadSyncStatusResponse;
 import com.vladoose.nir.entity.Lead;
 import com.vladoose.nir.entity.LeadChannel;
 import com.vladoose.nir.entity.LeadStatus;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.integration.westmed.WestmedLeadScheduler;
 import com.vladoose.nir.mapper.LeadResponseMapper;
 import com.vladoose.nir.service.LeadService;
 import jakarta.validation.Valid;
@@ -25,10 +27,12 @@ public class LeadController {
 
     private final LeadService service;
     private final LeadResponseMapper mapper;
+    private final WestmedLeadScheduler westmedScheduler;
 
-    public LeadController(LeadService service, LeadResponseMapper mapper) {
+    public LeadController(LeadService service, LeadResponseMapper mapper, WestmedLeadScheduler westmedScheduler) {
         this.service = service;
         this.mapper = mapper;
+        this.westmedScheduler = westmedScheduler;
     }
 
     @GetMapping
@@ -88,6 +92,17 @@ public class LeadController {
     @PreAuthorize("hasRole('ADMIN')")
     public LeadConvertResponse convert(@PathVariable Long id, @Valid @RequestBody LeadConvertRequest req) {
         return service.convert(id, req, currentUser());
+    }
+
+    @GetMapping("/sync-status")
+    public LeadSyncStatusResponse syncStatus() {
+        return westmedScheduler.status();
+    }
+
+    @PostMapping("/sync")
+    @PreAuthorize("hasRole('ADMIN')")
+    public LeadSyncStatusResponse sync() {
+        return westmedScheduler.runNow();
     }
 
     private LeadCardResponse card(Lead lead) {

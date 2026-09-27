@@ -106,3 +106,21 @@ techspec:
     # ERROR — авария внешнего мира (IP-блок, обрыв сети), а не свойство лота: через столько
     # дней сгоревшие лоты возвращаются в очередь сами. 0 — выключить возврат.
     retry-after-days: ${TECHSPEC_BACKFILL_RETRY_AFTER_DAYS:7}
+
+# Обращения: приём заявок с сайта westmed.kz через API его админки (код сайта не меняется).
+# Спека: docs/superpowers/specs/2026-09-27-leads-westmed-intake-design.md. Выкл по умолчанию, как все импорты.
+leads:
+  westmed:
+    enabled: ${WESTMED_LEADS_ENABLED:false}
+    base-url: ${WESTMED_BASE_URL:https://westmed.kz}
+    site-url: ${WESTMED_SITE_URL:https://westmed.kz}     # для ссылок «на сайте ↗» у позиций
+    username: ${WESTMED_USERNAME:}
+    password: ${WESTMED_PASSWORD:}
+    write-status: ${WESTMED_WRITE_STATUS:false}        # локально НЕ пишем статусы в боевой сайт
+    market: ${WESTMED_MARKET:KZ}
+    poll-ms: ${WESTMED_POLL_MS:90000}
+    initial-delay-ms: ${WESTMED_INITIAL_DELAY_MS:30000}
+    page-size: 50
+    auth-backoff-ms: 600000                            # сайт пускает 5 входов за 5 мин с IP
+    # от кого сайт шлёт письма-уведомления о заявках — приём почты их пропускает (спека §11)
+    notification-from: ${WESTMED_NOTIFICATION_FROM:info@westmed.kz}

@@ -5,6 +5,7 @@ import com.vladoose.nir.controller.LeadController;
 import com.vladoose.nir.dto.response.LeadCardResponse;
 import com.vladoose.nir.dto.response.LeadListItemResponse;
 import com.vladoose.nir.dto.response.LeadRefResponse;
+import com.vladoose.nir.dto.response.LeadSyncStatusResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.integration.lead.IncomingLead;
@@ -90,6 +91,14 @@ class LeadControllerTest {
 
         assertThat(controller.get(second.getId()).getSamePhone())
                 .extracting(LeadRefResponse::getId).containsExactly(first.getId());
+    }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void syncStatusIsReadableByEveryone() {
+        LeadSyncStatusResponse s = controller.syncStatus();
+        assertThat(s).isNotNull();
+        assertThatThrownBy(() -> controller.sync()).isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
