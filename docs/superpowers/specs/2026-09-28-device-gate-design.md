@@ -73,7 +73,7 @@ Tailscale / SSH-туннель ──▶ 127.0.0.1:8090 напрямую — к�
 ```sql
 CREATE TABLE trusted_device (
     id              BIGSERIAL PRIMARY KEY,
-    token_hash      CHAR(64)     NOT NULL UNIQUE,   -- SHA-256 (hex) ключа устройства; сам ключ не хранится
+    token_hash      VARCHAR(64)  NOT NULL UNIQUE,   -- SHA-256 (hex) ключа устройства; сам ключ не хранится
     status          VARCHAR(10)  NOT NULL,          -- PENDING / TRUSTED / REJECTED / REVOKED / EXPIRED
     code            VARCHAR(6)   NOT NULL,          -- код запроса без дефиса (показ — «7K4-QM2»)
     requester_name  VARCHAR(60)  NOT NULL,          -- что ввели на калитке; НЕ доверенное
@@ -133,29 +133,30 @@ REJECTED, REVOKED и EXPIRED — конечные. Новый запрос с т
 
 - `current: true` — у устройства, чей ключ пришёл в cookie этого же запроса (админ видит «это устройство»). Через туннель и Tailscale cookie калитки нет — пометки тоже.
 - `device` — `UserAgentSummary` из `user_agent`: «iPhone · Safari», «Android · Chrome», «Mac · Chrome», «Windows · Edge» и т. п.; нераспознанное — «Браузер».
-- IP — первый адрес из `X-Forwarded-For` (его ставит nginx хоста; фронт-контейнер дописывает свой шаг в конец), иначе адрес соединения.
-- Реестр в памяти обновляется **после коммита** транзакции (`TransactionSynchronization.afterCommit`): допуск и отзыв действуют со следующего же запроса, а откат транзакции реестр не трогает.
+- IP — **предпоследний** адрес `X-Forwarded-For`: nginx хоста *дописывает* реальный адрес клиента к тому, что клиент прислал сам (первый адрес подделывается), а фронт-контейнер дописывает свой шаг последним. Адрес один — берётся он; заголовка нет — адрес соединения. IP справочный: чтобы узнать устройство, а не чтобы что-то решать.
+- Реестр в памяти обновляется **после коммита**: изменения БД делает отдельный бин `TrustedDeviceWriter` (своя транзакция на метод, приём проекта, CLAUDE.md §6), и сервис трогает реестр только после возврата из него. Допуск и отзыв действуют со следующего же запроса, провалившийся коммит реестр не меняет. Колбэк `TransactionSynchronization.afterCommit` не годится: `@Transactional`-тесты не коммитят — тесты не увидели бы допуска.
 
 ## 8. Реестр в памяти и фоновые задачи
 
 - `DeviceRegistry` — `ConcurrentHashMap<хеш, запись>` допущенных устройств. Заполняется из БД при старте (`ApplicationReadyEvent`) — перезапуск и деплой допуски не сбрасывают; пополняется при допуске, чистится при отзыве и истечении.
 - `/api/gate/check` смотрит только в реестр и помечает визит **в памяти** — БД на каждый запрос не трогается.
-- `DeviceGateScheduler`, раз в минуту: ожидающие старше 15 минут → EXPIRED; допущенные без визитов 90 дней → EXPIRED (и вон из реестра); раз в 5 минут — накопленные отметки визитов одной пачкой пишутся в `last_seen_at`. Задачи короткие — общий пул `@Scheduled` подходит (в отличие от очереди разбора ТЗ, CLAUDE.md §8).
+- `DeviceGateScheduler` — одна задача раз в 5 минут, по порядку: накопленные отметки визитов одной пачкой в `last_seen_at` → ожидающие старше 15 минут → EXPIRED → допущенные без визитов 90 дней → EXPIRED (и вон из реестра). Визиты пишутся **первыми**: иначе устройство, заходившее минуту назад, выпало бы по старой отметке в БД. Чаще не нужно: свежесть запроса проверяется на лету при каждом чтении (статус, счётчик, список, лимит), а задача лишь фиксирует её в БД. Задача короткая — общий пул `@Scheduled` подходит (в отличие от очереди разбора ТЗ, CLAUDE.md §8).
 - Бэкенд один — реестр в памяти и есть источник правды для проверки; БД — для хранения и истории.
 
 ## 9. nginx хоста — `deploy/nginx/zz-ais.westmed.kz.conf`
 
-Итоговое состояние (сервер 443; блок 80 и SSL/заголовки — без изменений):
+Итоговое состояние сервера 443 (блок 80, SSL и заголовки безопасности — без изменений):
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=ais_gate:1m rate=3r/m;      # новая зона — запросы доступа
 
     # (было: auth_basic "AIS"; auth_basic_user_file /etc/nginx/.htpasswd-ais;)
+    # калитка: по умолчанию каждая локация сперва спрашивает АИС, допущено ли устройство
     auth_request /__gate_check;
-    error_page 401 = @gate;
 
     location = /__gate_check {
         internal;
+        auth_request off;
         proxy_pass http://127.0.0.1:8090/api/gate/check;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
@@ -173,21 +174,36 @@ limit_req_zone $binary_remote_addr zone=ais_gate:1m rate=3r/m;      # новая
         return 302 /gate/;
     }
 
-    location /gate/                { auth_request off; expires -1; proxy_pass http://127.0.0.1:8090; }
-    location = /api/gate/status    { auth_request off; proxy_pass http://127.0.0.1:8090; }
-    location = /api/gate/request   { auth_request off; limit_req zone=ais_gate burst=2 nodelay; proxy_pass http://127.0.0.1:8090; }
-    location = /api/gate/check     { return 404; }   # снаружи не нужен
-    location = /robots.txt         { auth_request off; …как сейчас… }
-    location = /api/auth/login     { …как сейчас… }
-    location /                     { …как сейчас… }
+    location /gate/ {                  # калитка
+        auth_request off;
+        expires -1;
+        proxy_pass http://127.0.0.1:8090;
+    }
+    location = /api/gate/status {      # калитка
+        auth_request off;
+        proxy_pass http://127.0.0.1:8090;
+    }
+    location = /api/gate/request {     # калитка
+        auth_request off;
+        limit_req zone=ais_gate burst=2 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+    location = /api/gate/check { auth_request off; return 404; }   # снаружи не нужен
+    location = /robots.txt     { auth_request off; …как сейчас… }
+
+    location = /api/auth/login { error_page 401 = @gate; …как сейчас… }
+    location /                 { error_page 401 = @gate; …как сейчас… }
 ```
 
 (в каждой `proxy_pass`-локации — те же `proxy_set_header` и `proxy_cookie_path`, что сейчас.)
 
-- `error_page 401 = @gate` ловит только 401, который **сгенерировал сам nginx** (`auth_request`). Собственный 401 АИС («сессия истекла») проходит к приложению как есть — `proxy_intercept_errors` выключен.
+- `error_page 401 = @gate` стоит **только в проксирующих локациях под калиткой** и ловит лишь 401, **сгенерированный самим nginx** (`auth_request`). Собственный 401 АИС («сессия истекла») проходит к приложению как есть — `proxy_intercept_errors` выключен.
+- `/__gate_check` сам проверке не подлежит — `auth_request off`, иначе подзапрос проверки спрашивал бы сам себя.
 - В `/gate/` — `expires -1`, а не `add_header`: собственный `add_header` в локации отключил бы унаследованные серверные заголовки (HSTS, `X-Robots-Tag`…).
-- **Переходное состояние** (шаг 3 раскатки): в трёх локациях калитки (`/gate/`, `/api/gate/status`, `/api/gate/request`) добавлены `auth_basic` и собственный `error_page` — он разрывает наследование серверного `error_page 401 = @gate`, иначе 401 от basic auth увёл бы на калитку вместо окна пароля.
-- **Всё это проверяется на репетиции** (§14) на nginx 1.18 — ту же версию, что на сервере: связка `auth_request` + `error_page` + именованная локация + `if` + наследование `add_header`/`error_page` — место, где nginx легко понять неправильно.
+- **Переходное состояние** (шаг 3 раскатки) получается из итогового одной командой — в три локации с пометкой `# калитка` дописывается пароль:
+  `perl -pe 's{(# калитка)$}{$1\n        auth_basic "AIS"; auth_basic_user_file /etc/nginx/.htpasswd-ais;}'` (perl, а не `sed … a\`: однострочная форма `a\` в BSD sed на Mac не работает).
+  Своего `error_page` в этих локациях нет, поэтому 401 от basic auth уходит браузеру как есть — с окном пароля, а не редиректом на калитку. Источник правды один — файл в репо.
+- **Всё это проверяется на репетиции** (§14) на nginx 1.18 — той же версии, что на сервере: связка `auth_request` + `error_page` + именованная локация + `if` + наследование `add_header` — место, где nginx легко понять неправильно.
 
 ## 10. Калитка — `frontend/public/gate/index.html`
 
