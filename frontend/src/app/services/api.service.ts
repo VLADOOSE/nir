@@ -355,6 +355,48 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/inbound/${id}/processed`, {});
   }
 
+  // === Обращения (заявки с сайтов, звонки, WhatsApp) ===
+  getLeads(params: { status?: string; channel?: string; q?: string } = {}): Observable<any[]> {
+    const p: any = {};
+    if (params.status) p.status = params.status;
+    if (params.channel) p.channel = params.channel;
+    if (params.q) p.q = params.q;
+    return this.http.get<any[]>(`${this.base}/leads`, { params: p });
+  }
+  getLead(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/leads/${id}`);
+  }
+  getLeadCount(status = 'NEW'): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(`${this.base}/leads/count`, { params: { status } });
+  }
+  createLead(body: any): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads`, body);
+  }
+  updateLeadItems(id: number, items: any[]): Observable<any> {
+    return this.http.put<any>(`${this.base}/leads/${id}/items`, { items });
+  }
+  takeLead(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${id}/take`, {});
+  }
+  closeLead(id: number, reason: string, comment: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${id}/close`, { reason, comment });
+  }
+  reopenLead(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${id}/reopen`, {});
+  }
+  addLeadEvent(id: number, body: { type: 'NOTE' | 'CALL'; direction?: 'IN' | 'OUT'; body: string }): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${id}/events`, body);
+  }
+  convertLead(id: number, body: any): Observable<{ privateRequestId: number; number: string }> {
+    return this.http.post<{ privateRequestId: number; number: string }>(`${this.base}/leads/${id}/convert`, body);
+  }
+  getLeadSyncStatus(): Observable<any> {
+    return this.http.get<any>(`${this.base}/leads/sync-status`);
+  }
+  runLeadSync(): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/sync`, {});
+  }
+
   // === Шаблон письма КП ===
   getEmailTemplate(): Observable<any> {
     return this.http.get<any>(`${this.base}/email-template`);

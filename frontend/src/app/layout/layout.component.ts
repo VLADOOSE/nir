@@ -1,5 +1,5 @@
-import { Component, HostListener, ChangeDetectorRef } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { Component, HostListener, ChangeDetectorRef, OnInit, OnDestroy } from '@angular/core';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { NgFor, NgIf, AsyncPipe } from '@angular/common';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -9,6 +9,9 @@ import { NotificationComponent } from '../components/notification/notification.c
 import { ConfirmComponent } from '../components/confirm/confirm.component';
 import { MarketService, Market, APP_NAME } from '../services/market.service';
 import { ThemeService } from '../services/theme.service';
+import { ApiService } from '../services/api.service';
+import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-layout',
@@ -110,6 +113,10 @@ import { ThemeService } from '../services/theme.service';
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Заявки</span>
+            <a routerLink="/leads" routerLinkActive="active">
+              <svg lucideIcon="inbox" [size]="16"></svg> Обращения
+              <span class="nav-count" *ngIf="newLeads > 0" [attr.aria-label]="newLeads + ' новых'">{{ newLeads }}</span>
+            </a>
             <a routerLink="/applies" routerLinkActive="active">
               <svg lucideIcon="clipboard-list" [size]="16"></svg> Заявки на участие
             </a>
@@ -206,6 +213,10 @@ import { ThemeService } from '../services/theme.service';
       background: var(--accent); color: var(--accent-contrast); border-left-color: var(--accent-contrast); font-weight: 500;
     }
     .sidebar a.active svg { opacity: 1; }
+    /* Счётчик новых обращений — формула ЧИПА (15% тинт + текстовый токен), читается в обеих темах.
+       На активном пункте (заливка --accent) — «таблетка» цвета поверхности с обычным текстом. */
+    .nav-count { margin-left: auto; min-width: 20px; padding: 0 7px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .sidebar a.active .nav-count { background: var(--surface); color: var(--text); }
     .icon-user { opacity: 0.9; }
     .btn-logout svg { vertical-align: middle; margin-right: 4px; }
     .content { flex: 1; padding: 24px 32px; overflow-y: auto; background: var(--surface); }
@@ -252,19 +263,42 @@ import { ThemeService } from '../services/theme.service';
     }
   `]
 })
-export class LayoutComponent {
+export class LayoutComponent implements OnInit, OnDestroy {
   readonly appName = APP_NAME;
   sidebarOpen = false;            // мобильный drawer; на десктопе игнорируется
   searchQuery = '';
   searchResults: SearchResult[] = [];
   showResults = false;
+  newLeads = 0;                   // новые обращения текущего рынка — счётчик в меню
+  private leadsTimer: any = null;
+  private navSub?: Subscription;
 
   /** закрыть drawer при клике по пункту меню */
   onNavClick(e: Event) {
     if ((e.target as HTMLElement).closest('a')) this.sidebarOpen = false;
   }
 
-  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService, public theme: ThemeService) {}
+  constructor(private searchService: SearchService, private router: Router, private cdr: ChangeDetectorRef, public auth: AuthService, public market: MarketService, public theme: ThemeService, private api: ApiService) {}
+
+  ngOnInit() {
+    this.refreshLeadCount();
+    this.leadsTimer = setInterval(() => this.refreshLeadCount(), 60000);
+    this.navSub = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => this.refreshLeadCount());
+  }
+
+  ngOnDestroy() {
+    clearInterval(this.leadsTimer);
+    this.navSub?.unsubscribe();
+  }
+
+  /** Заявки с сайта приходят фоном — счётчик живёт без перезагрузки страницы. */
+  refreshLeadCount() {
+    if (!this.auth.isLoggedIn()) return;
+    this.api.getLeadCount('NEW').subscribe({
+      next: r => { this.newLeads = r.count; this.cdr.detectChanges(); },
+      error: () => {},
+    });
+  }
 
   onSearch() {
     this.searchService.search(this.searchQuery).subscribe(results => {
