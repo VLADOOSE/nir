@@ -8,23 +8,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * HTTP к Green-API (спека whatsapp-chats §2, §10). ⚠️ Токен стоит В ПУТИ URL
@@ -161,29 +152,7 @@ public class GreenApiHttpClient implements GreenApiClient {
 
     /** Обмен целиком (заголовки И тело) — не дольше deadline; висящий запрос отменяется. */
     private <T> HttpResponse<T> exchange(HttpRequest req, HttpResponse.BodyHandler<T> handler, Duration deadline, String what) {
-        CompletableFuture<HttpResponse<T>> f;
-        try {
-            f = http.sendAsync(req, handler);
-        } catch (RuntimeException e) {
-            throw new GatewayException(0, "Green-API: запрос не отправлен при " + what + ": " + e.getClass().getSimpleName());
-        }
-        try {
-            return f.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            f.cancel(true);
-            throw new GatewayException(0, "Green-API не ответил за " + deadline.toSeconds() + " с при " + what);
-        } catch (ExecutionException e) {
-            for (Throwable c = e.getCause(); c != null; c = c.getCause()) {
-                if (c instanceof FileTooLargeException tooLarge) throw tooLarge;
-            }
-            // только класс исключения: текст части исключений JDK содержит адрес
-            Throwable c = e.getCause() == null ? e : e.getCause();
-            throw new GatewayException(0, "Green-API недоступен при " + what + ": " + c.getClass().getSimpleName());
-        } catch (InterruptedException e) {
-            f.cancel(true);
-            Thread.currentThread().interrupt();
-            throw new GatewayException(0, "Green-API: запрос прерван при " + what);
-        }
+        return GatewayHttp.exchange(http, req, handler, deadline, "Green-API", what);
     }
 
     private JsonNode parse(String body, String what) {
@@ -206,49 +175,5 @@ public class GreenApiHttpClient implements GreenApiClient {
 
     private static boolean yes(JsonNode n) {
         return "yes".equalsIgnoreCase(n.asText(""));
-    }
-
-    /** Байты тела с обрывом на пределе — внутри обмена, чтобы дедлайн покрывал и чтение тела. */
-    private static final class LimitedBytes implements HttpResponse.BodySubscriber<byte[]> {
-        private final long maxBytes;
-        private final CompletableFuture<byte[]> result = new CompletableFuture<>();
-        private final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        private Flow.Subscription subscription;
-        private long total;
-
-        LimitedBytes(long maxBytes) { this.maxBytes = maxBytes; }
-
-        @Override
-        public CompletionStage<byte[]> getBody() { return result; }
-
-        @Override
-        public void onSubscribe(Flow.Subscription s) {
-            subscription = s;
-            s.request(Long.MAX_VALUE);
-        }
-
-        @Override
-        public void onNext(List<ByteBuffer> items) {
-            if (result.isDone()) return;
-            for (ByteBuffer b : items) {
-                total += b.remaining();
-                if (total > maxBytes) {
-                    // сперва исход, потом отмена: onError от отмены не должен успеть превратить «больше предела»
-                    // в «не скачался» (тогда были бы три лишних скачивания и DOWNLOAD_FAILED вместо TOO_LARGE)
-                    result.completeExceptionally(new FileTooLargeException(maxBytes));
-                    subscription.cancel();
-                    return;
-                }
-                byte[] chunk = new byte[b.remaining()];
-                b.get(chunk);
-                out.write(chunk, 0, chunk.length);
-            }
-        }
-
-        @Override
-        public void onError(Throwable t) { result.completeExceptionally(t); }
-
-        @Override
-        public void onComplete() { result.complete(out.toByteArray()); }
     }
 }
