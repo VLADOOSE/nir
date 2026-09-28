@@ -65,6 +65,7 @@ public class LeadResponseMapper {
         r.setExtStatus(l.getExtStatus());
         r.setExtStatusPending(l.getExtStatusPending());
         r.setExtSyncError(l.getExtSyncError());
+        r.setChatId(l.getChat() == null ? null : l.getChat().getId());
         r.setItems(l.getItems().stream().map(LeadResponseMapper::toItem).toList());
         r.setEvents(l.getEvents().stream()
                 .sorted(Comparator.comparing(LeadEvent::getOccurredAt, Comparator.nullsLast(Comparator.naturalOrder()))

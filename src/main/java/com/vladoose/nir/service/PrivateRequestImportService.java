@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -35,16 +36,21 @@ public class PrivateRequestImportService {
 
     @Transactional
     public Tender commit(ImportCommitRequest dto) {
-        if (dto.getMappings() != null) {
-            for (ColumnMapping m : dto.getMappings()) {
-                saveSynonym(m.getHeader(), m.getField());
-            }
-        }
+        learn(dto.getMappings());
         PrivateRequestCreate create = new PrivateRequestCreate();
         create.setClientFacilityId(dto.getClientFacilityId());
         create.setNote(dto.getNote());
         create.setLines(dto.getLines());
         return privateRequestService.createFromLines(create);
+    }
+
+    /** Разметка колонок оператора учит словарь заголовков: и при импорте заявки, и при разборе Excel в обращение. */
+    @Transactional
+    public void learn(List<ColumnMapping> mappings) {
+        if (mappings == null) return;
+        for (ColumnMapping m : mappings) {
+            saveSynonym(m.getHeader(), m.getField());
+        }
     }
 
     private void saveSynonym(String header, LineField field) {

@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.*;
+import com.vladoose.nir.dto.response.ChatMessageResponse;
 import com.vladoose.nir.dto.response.LeadCardResponse;
 import com.vladoose.nir.dto.response.LeadConvertResponse;
 import com.vladoose.nir.dto.response.LeadListItemResponse;
@@ -11,6 +12,7 @@ import com.vladoose.nir.entity.LeadStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.integration.westmed.WestmedLeadScheduler;
 import com.vladoose.nir.mapper.LeadResponseMapper;
+import com.vladoose.nir.service.ChatService;
 import com.vladoose.nir.service.LeadService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,11 +30,14 @@ public class LeadController {
     private final LeadService service;
     private final LeadResponseMapper mapper;
     private final WestmedLeadScheduler westmedScheduler;
+    private final ChatService chatService;
 
-    public LeadController(LeadService service, LeadResponseMapper mapper, WestmedLeadScheduler westmedScheduler) {
+    public LeadController(LeadService service, LeadResponseMapper mapper, WestmedLeadScheduler westmedScheduler,
+                          ChatService chatService) {
         this.service = service;
         this.mapper = mapper;
         this.westmedScheduler = westmedScheduler;
+        this.chatService = chatService;
     }
 
     @GetMapping
@@ -62,6 +67,25 @@ public class LeadController {
     @PreAuthorize("hasRole('ADMIN')")
     public LeadCardResponse updateItems(@PathVariable Long id, @Valid @RequestBody LeadItemsUpdate req) {
         return card(service.updateItems(id, req.getItems(), currentUser()));
+    }
+
+    @GetMapping("/{id}/chat-messages")
+    public List<ChatMessageResponse> chatMessages(@PathVariable Long id) {
+        return chatService.messagesForLead(id);
+    }
+
+    @PostMapping("/{id}/items/import")
+    @PreAuthorize("hasRole('ADMIN')")
+    public LeadCardResponse importItems(@PathVariable Long id, @Valid @RequestBody LeadItemsImportRequest req) {
+        return card(service.importItems(id, req.getMappings(), req.getItems(), parseMode(req.getMode()), currentUser()));
+    }
+
+    /** «REPLACE» → заменить (true), «APPEND» → добавить (false), иное → 400. */
+    static boolean parseMode(String raw) {
+        String m = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+        if (m.equals("REPLACE")) return true;
+        if (m.equals("APPEND")) return false;
+        throw new BadRequestException("Неизвестный режим: " + raw + " (нужно REPLACE или APPEND)");
     }
 
     @PostMapping("/{id}/take")

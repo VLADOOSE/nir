@@ -1,6 +1,7 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.ColumnMapping;
 import com.vladoose.nir.dto.request.LeadConvertRequest;
 import com.vladoose.nir.dto.request.LeadCreateRequest;
 import com.vladoose.nir.dto.request.LeadItemDto;
@@ -40,13 +41,16 @@ public class LeadService {
     private final LeadIntakeService intake;
     private final FacilityRepository facilityRepository;
     private final PrivateRequestService privateRequestService;
+    private final PrivateRequestImportService importService;
 
     public LeadService(LeadRepository leadRepository, LeadIntakeService intake,
-                       FacilityRepository facilityRepository, PrivateRequestService privateRequestService) {
+                       FacilityRepository facilityRepository, PrivateRequestService privateRequestService,
+                       PrivateRequestImportService importService) {
         this.leadRepository = leadRepository;
         this.intake = intake;
         this.facilityRepository = facilityRepository;
         this.privateRequestService = privateRequestService;
+        this.importService = importService;
     }
 
     /** Новые сверху, не больше LIST_LIMIT; поиск — по имени, компании, email, теме, тексту, телефону, позициям. */
@@ -181,6 +185,29 @@ public class LeadService {
                     i.getQuantity() != null ? i.getQuantity() : 1, trunc(blankToNull(i.getProductUrl()), 500));
         }
         lead.addEvent(LeadEventType.NOTE, author, "Позиции обновлены: " + lead.getItems().size() + " поз.");
+        lead.setUpdatedAt(OffsetDateTime.now());
+        return lead;
+    }
+
+    /**
+     * Позиции из Excel-файла чата (спека whatsapp-chats §9.4): replace — заменить, иначе добавить в конец.
+     * Разметка колонок учит словарь заголовков — как при импорте письма клиники.
+     */
+    @Transactional
+    public Lead importItems(Long id, List<ColumnMapping> mappings, List<LeadItemDto> items, boolean replace, String author) {
+        Lead lead = get(id);
+        require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK), "править позиции");
+        List<LeadItemDto> clean = items == null ? List.of()
+                : items.stream().filter(i -> i != null && !isBlank(i.getName())).toList();
+        if (clean.isEmpty()) throw new BadRequestException("В файле нет строк с наименованием");
+        importService.learn(mappings);
+        if (replace) lead.getItems().clear();   // через коллекцию — orphanRemoval (§7)
+        for (LeadItemDto i : clean) {
+            lead.addItem(trunc(i.getName().trim(), 500), trunc(blankToNull(i.getBrand()), 255),
+                    i.getQuantity() != null ? i.getQuantity() : 1, null);
+        }
+        lead.addEvent(LeadEventType.NOTE, author,
+                "Позиции из Excel: " + clean.size() + " поз. (" + (replace ? "заменены" : "добавлены") + ")");
         lead.setUpdatedAt(OffsetDateTime.now());
         return lead;
     }

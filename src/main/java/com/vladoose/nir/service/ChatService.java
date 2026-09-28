@@ -30,6 +30,7 @@ public class ChatService {
 
     public static final int LIST_LIMIT = 300;
     public static final int PAGE_MAX = 100;
+    public static final int LEAD_MESSAGES = 200;
     private static final Set<LeadStatus> OPEN = EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK, LeadStatus.CONVERTED);
     private static final Set<String> FILTERS = Set.of("ALL", "WITH_LEAD", "WITHOUT_LEAD", "GROUPS");
     private static final Set<String> INLINE_IMAGES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
@@ -42,10 +43,12 @@ public class ChatService {
     private final ChatLeadRules rules;
     private final LeadIntakeService intake;
     private final PrivateRequestImportService importService;
+    private final LeadService leadService;
 
     public ChatService(ChatRepository chatRepository, ChatMessageRepository messageRepository,
                        ChatAttachmentRepository attachmentRepository, LeadRepository leadRepository,
-                       ChatLeadRules rules, LeadIntakeService intake, PrivateRequestImportService importService) {
+                       ChatLeadRules rules, LeadIntakeService intake, PrivateRequestImportService importService,
+                       LeadService leadService) {
         this.chatRepository = chatRepository;
         this.messageRepository = messageRepository;
         this.attachmentRepository = attachmentRepository;
@@ -53,6 +56,7 @@ public class ChatService {
         this.rules = rules;
         this.intake = intake;
         this.importService = importService;
+        this.leadService = leadService;
     }
 
     /** До LIST_LIMIT свежих чатов; q — по имени, номеру (от 4 цифр) и тексту сообщений. */
@@ -88,6 +92,15 @@ public class ChatService {
                 .filter(m -> m.getChat().getId().equals(c.getId()))
                 .orElseThrow(() -> new NotFoundException("Сообщение не найдено: id=" + beforeId));
         return toResponses(messageRepository.findBefore(c.getId(), before.getSentAt(), before.getId(), page));
+    }
+
+    /** Переписка чата обращения с момента обращения (спека §9.3); у обращения без чата — пусто. */
+    @Transactional(readOnly = true)
+    public List<ChatMessageResponse> messagesForLead(Long leadId) {
+        Lead lead = leadService.get(leadId);   // гард рынка — там
+        if (lead.getChat() == null) return List.of();
+        return toResponses(messageRepository.findSince(lead.getChat().getId(), lead.getReceivedAt(),
+                PageRequest.of(0, LEAD_MESSAGES)));
     }
 
     /** Файл с байтами — только через свой чат текущего рынка. */
