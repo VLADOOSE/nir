@@ -18,7 +18,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         window.location.assign('/gate/');
         return throwError(() => err);
       }
-      if (err.status === 401 && !req.url.includes('/api/auth/')) {
+      // /login/webauthn: 401 — «ключ не принят», а не «сессия истекла»; страница входа сама скажет, что случилось
+      if (err.status === 401 && !req.url.includes('/api/auth/') && !req.url.includes('/login/webauthn')) {
         auth.logout().subscribe();
         router.navigate(['/login']);
       }

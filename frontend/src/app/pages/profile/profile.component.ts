@@ -72,7 +72,7 @@ import { fullDateTime, relativeTime } from '../../shared/relative-time';
     .hint { margin-top: 14px; }
     @media (max-width: 900px) {
       .add { flex-direction: column; align-items: stretch; }
-      .add input { max-width: none; font-size: 16px; }
+      .add input { flex: none; max-width: none; font-size: 16px; }   /* в колонке flex-basis 220px стал бы ВЫСОТОЙ поля */
       .key .btn { width: 100%; }
     }
   `]
