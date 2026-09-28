@@ -78,6 +78,11 @@ public class Lead implements MarketScoped {
     @JoinColumn(name = "private_request_id")
     private Tender privateRequest;
 
+    /** Чат WhatsApp обращения (спека whatsapp-chats §4). У одного чата со временем может быть несколько обращений. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chat_id")
+    private Chat chat;
+
     @Column(name = "received_at", nullable = false)
     private OffsetDateTime receivedAt;
 

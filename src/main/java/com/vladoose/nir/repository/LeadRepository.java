@@ -29,4 +29,10 @@ public interface LeadRepository extends JpaRepository<Lead, Long> {
     List<Lead> findBySourceAndExtStatusPendingIsNotNull(String source);
 
     Optional<Lead> findFirstByPrivateRequestId(Long privateRequestId);
+
+    List<Lead> findByChatIdAndStatusIn(Long chatId, Collection<LeadStatus> statuses);
+
+    List<Lead> findByPhoneNormAndStatusIn(String phoneNorm, Collection<LeadStatus> statuses);
+
+    List<Lead> findByChatIdIn(Collection<Long> chatIds);
 }
