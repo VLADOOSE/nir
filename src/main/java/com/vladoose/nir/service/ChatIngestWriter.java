@@ -1,0 +1,143 @@
+package com.vladoose.nir.service;
+
+import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.greenapi.ChatKind;
+import com.vladoose.nir.integration.greenapi.IncomingFile;
+import com.vladoose.nir.integration.greenapi.ParsedNotification;
+import com.vladoose.nir.integration.lead.IncomingLead;
+import com.vladoose.nir.integration.lead.LeadSources;
+import com.vladoose.nir.repository.ChatAttachmentRepository;
+import com.vladoose.nir.repository.ChatMessageRepository;
+import com.vladoose.nir.repository.ChatRepository;
+import com.vladoose.nir.util.PhoneNormalizer;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+
+import static com.vladoose.nir.util.LeadText.trunc;
+
+/**
+ * Запись уведомления WhatsApp — одна транзакция на сообщение (спека whatsapp-chats §5, §6). Сеть (файл, бренды
+ * корзины) делает вызывающий ДО транзакции. Дубль проверяется ЯВНО: очередь читает один поток, «гонки вставок»
+ * нет, поэтому DataIntegrityViolationException здесь не глотается (урок разбора 2026-09-28).
+ */
+@Service
+public class ChatIngestWriter {
+
+    static final String AUTO_TAKE_NOTE = "ответ клиенту в WhatsApp с телефона";
+    private static final int PREVIEW_MAX = 300;
+
+    private final ChatRepository chatRepository;
+    private final ChatMessageRepository messageRepository;
+    private final ChatAttachmentRepository attachmentRepository;
+    private final ChatLeadRules rules;
+    private final LeadIntakeService intake;
+    private final LeadService leadService;
+
+    public ChatIngestWriter(ChatRepository chatRepository, ChatMessageRepository messageRepository,
+                            ChatAttachmentRepository attachmentRepository, ChatLeadRules rules,
+                            LeadIntakeService intake, LeadService leadService) {
+        this.chatRepository = chatRepository;
+        this.messageRepository = messageRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.rules = rules;
+        this.intake = intake;
+        this.leadService = leadService;
+    }
+
+    /** duplicate — такое сообщение уже записано; createdLeadId — создано новое обращение. */
+    public record Outcome(boolean duplicate, Long chatId, Long messageId, Long createdLeadId) {}
+
+    @Transactional
+    public Outcome write(ParsedNotification.Message m, IncomingFile file, List<IncomingLead.Item> cartItems) {
+        Chat chat = upsertChat(m);
+        if (m.isEdit()) {
+            Optional<ChatMessage> original = messageRepository.findByChatIdAndExternalId(chat.getId(), m.editOf());
+            if (original.isPresent()) {
+                original.get().setBody(m.body());
+                original.get().setEdited(true);
+                return new Outcome(false, chat.getId(), original.get().getId(), null);
+            }
+            // исходного нет (пришло до подключения) — сохраняем правку как новое сообщение с пометкой
+        }
+        if (messageRepository.existsByChatIdAndExternalId(chat.getId(), m.idMessage())) {
+            return new Outcome(true, chat.getId(), null, null);
+        }
+        ChatMessage msg = messageRepository.save(ChatMessage.builder()
+                .chat(chat).externalId(m.idMessage()).direction(m.direction())
+                .senderName(trunc(m.senderName(), 255)).type(m.type()).body(m.body())
+                .sentAt(m.sentAt()).edited(m.isEdit()).build());
+        if (file != null) {
+            attachmentRepository.save(ChatAttachment.builder().message(msg)
+                    .fileName(trunc(file.fileName(), 255)).mimeType(trunc(file.mimeType(), 100))
+                    .sizeBytes(file.content() == null ? null : (long) file.content().length)
+                    .content(file.content()).notStoredReason(file.notStoredReason()).build());
+        }
+        // правила — ДО сдвига lastMessageAt: активность обращения меряется по ПРОШЛЫМ сообщениям (спека §5.1)
+        Long createdLeadId = m.isEdit() ? null : applyLeadRules(chat, m, cartItems);
+        if (chat.getLastMessageAt() == null || !m.sentAt().isBefore(chat.getLastMessageAt())) {
+            chat.setLastMessageAt(m.sentAt());
+            chat.setLastMessagePreview(trunc(m.displayText().strip(), PREVIEW_MAX));
+        }
+        return new Outcome(false, chat.getId(), msg.getId(), createdLeadId);
+    }
+
+    /** «Удалено отправителем»: пометка, текст сохраняется. Неизвестное сообщение — пропускаем. */
+    @Transactional
+    public void applyDelete(ParsedNotification.Delete d) {
+        chatRepository.findByChannelAndAccountAndExternalChatId(LeadChannel.WHATSAPP, d.account(), d.chatId())
+                .flatMap(c -> messageRepository.findByChatIdAndExternalId(c.getId(), d.deletedId()))
+                .ifPresent(msg -> msg.setDeleted(true));
+    }
+
+    private Chat upsertChat(ParsedNotification.Message m) {
+        Optional<Chat> found = chatRepository.findByChannelAndAccountAndExternalChatId(LeadChannel.WHATSAPP, m.account(), m.chatId());
+        if (found.isEmpty()) {
+            return chatRepository.save(Chat.builder()
+                    .market(MarketContext.get())   // пред-штамп (defense-in-depth к листенеру)
+                    .channel(LeadChannel.WHATSAPP).account(m.account()).externalChatId(m.chatId())
+                    .group(m.kind() == ChatKind.GROUP).phoneNorm(phoneNorm(m.phone()))
+                    .title(m.chatName() != null ? trunc(m.chatName().strip(), 255) : m.phone())
+                    .build());
+        }
+        Chat chat = found.get();
+        String name = m.chatName();
+        // имя — из входящих (несут имя из контактов телефона); из исходящих — только если имени ещё нет
+        if (name != null && !name.isBlank() && (m.direction() == LeadDirection.IN || chat.getTitle() == null)
+                && !name.strip().equals(chat.getTitle())) {
+            chat.setTitle(trunc(name.strip(), 255));
+        }
+        return chat;
+    }
+
+    /** Спека §5.2: группы и «не клиент» — без обращений; открытое — продолжаем; нет — входящее создаёт новое. */
+    private Long applyLeadRules(Chat chat, ParsedNotification.Message m, List<IncomingLead.Item> cartItems) {
+        if (chat.isGroup() || chat.isNotClient()) return null;
+        Optional<Lead> open = rules.findOpenLead(chat, m.sentAt());
+        if (open.isPresent()) {
+            Lead lead = open.get();
+            if (lead.getChat() == null) lead.setChat(chat);
+            if (m.direction() == LeadDirection.OUT) leadService.takeAutomatically(lead, AUTO_TAKE_NOTE);
+            return null;
+        }
+        if (m.direction() != LeadDirection.IN) return null;   // написали первыми мы — обращение не создаём
+        boolean cart = cartItems != null && !cartItems.isEmpty();
+        IncomingLead in = new IncomingLead(LeadSources.WHATSAPP, "wa:" + m.idMessage(), LeadChannel.WHATSAPP,
+                cart ? "Запрос КП" : "WhatsApp", m.sentAt(), m.chatName(), m.phone(), null, null,
+                m.displayText(), cart ? cartItems : List.of(), LeadStatus.NEW, null, null);
+        return intake.ingest(in).map(lead -> {
+            lead.setChat(chat);
+            return lead.getId();
+        }).orElse(null);
+    }
+
+    /** «+77011234567» → нормализованный +7; иностранный номер — как есть (он уже международный). */
+    static String phoneNorm(String phone) {
+        if (phone == null) return null;
+        String n = PhoneNormalizer.normalize(phone);
+        return n != null ? n : trunc(phone, 20);
+    }
+}

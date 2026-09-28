@@ -119,6 +119,16 @@ public class LeadService {
         return lead;
     }
 
+    /**
+     * «Взять в работу» без человека — ответ клиенту в WhatsApp с телефона (спека whatsapp-chats §5.2 п.3).
+     * Тот же переход, что у кнопки: событие STATUS и запись статуса на сайт для заявок westmed.kz.
+     */
+    @Transactional
+    public void takeAutomatically(Lead lead, String note) {
+        if (lead.getStatus() != LeadStatus.NEW) return;
+        transition(lead, LeadStatus.IN_WORK, null, note);
+    }
+
     @Transactional
     public Lead close(Long id, LeadCloseReason reason, String comment, String author) {
         if (reason == null) throw new BadRequestException("Укажите причину закрытия");

@@ -7,12 +7,18 @@ public final class LeadSources {
 
     public static final String WESTMED = "westmed.kz";
     public static final String MANUAL = "manual";
+    public static final String WHATSAPP = "whatsapp";
 
     private LeadSources() {}
 
     /** Источники, куда АИС пишет статус обратно. Сейчас — только westmed.kz. */
     public static boolean writesBack(String source) {
         return WESTMED.equals(source);
+    }
+
+    /** Подпись источника в ленте обращения: «westmed.kz», «WhatsApp»… (у ручного ввода своя подпись). */
+    public static String label(String source) {
+        return WHATSAPP.equals(source) ? "WhatsApp" : source;
     }
 
     /** Статус обращения → статус заявки на сайте (NEW / PROCESSED / CLOSED). */
