@@ -68,8 +68,8 @@ class WahaIntakeTest {
     /** Предел файла — 1 МБ; задержка «отлёживания» — 0, события в прошлом. */
     private WhatsappChatSync sync(ChatIngestWriter w) {
         WahaInboxSource source = new WahaInboxSource(repository, inbox, fake, new WahaSessionManager(fake, "westmed", "KZ"),
-                new WahaChatNames(fake), objectMapper, "test-hmac-key", 0, 60_000);
-        return new WhatsappChatSync(source, w, new FakeWestmedClient(), status, "https://westmed.kz", 1);
+                new WahaChatNames(fake), new WahaCatchUp(fake, inbox, messageRepository, objectMapper, 10), objectMapper,
+                "test-hmac-key", 0, 60_000, 600_000, 7, 30);        return new WhatsappChatSync(source, w, new FakeWestmedClient(), status, "https://westmed.kz", 1);
     }
 
     private WhatsappChatSync sync() { return sync(writer); }

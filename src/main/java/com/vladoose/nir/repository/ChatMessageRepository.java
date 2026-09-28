@@ -1,6 +1,7 @@
 package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.ChatMessage;
+import com.vladoose.nir.entity.LeadChannel;
 import com.vladoose.nir.entity.LeadDirection;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -42,4 +43,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     /** Чаты, где текст встречается в сообщениях. Без рыночного фильтра — вызывающий пересекает с чатами своего рынка. */
     @Query("select distinct m.chat.id from ChatMessage m where lower(m.body) like lower(concat('%', :q, '%'))")
     List<Long> findChatIdsByBody(@Param("q") String q);
+
+    /** Самое позднее сообщение номера — отметка догонки WAHA (спека whatsapp-waha §5.3). Зовётся в потоке приёма с его рынком. */
+    @Query("select max(m.sentAt) from ChatMessage m where m.chat.channel = :channel and m.chat.account = :account")
+    OffsetDateTime findLatestSentAt(@Param("channel") LeadChannel channel, @Param("account") String account);
 }

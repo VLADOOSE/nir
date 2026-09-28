@@ -20,6 +20,7 @@ public class WhatsappStatusHolder {
     public static final String OUTGOING_PHONE_OFF = "OUTGOING_PHONE_OFF";
     public static final String QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
     public static final String MESSAGE_DROPPED = "MESSAGE_DROPPED";
+    public static final String CATCH_UP_FAILED = "CATCH_UP_FAILED";
 
     /** Лимит тарифа и пропущенное сообщение показываем сутки: оба — события, а не состояние. */
     private static final Duration RECENT = Duration.ofHours(24);

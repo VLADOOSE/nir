@@ -14,45 +14,63 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Objects;
 
 /**
  * WAHA как источник (спека whatsapp-waha §3, §5): очередь — таблица whatsapp_inbox, которую наполняет вебхук.
  * Событие берётся, «отлежавшись» settle-ms (правка, пришедшая чуть раньше оригинала, встанет после него), и
- * подтверждается как DONE или DROPPED с причиной. Раз в минуту — статус сессии; WAHA не отвечает — красная строка,
- * но уже принятое разбирается дальше. Все методы, кроме name/isConfigured, зовёт поток приёма.
+ * подтверждается как DONE или DROPPED с причиной. Обслуживание: раз в минуту — статус сессии; при старте, при переходе
+ * в WORKING и раз в 10 мин — догонка по истории; раз в сутки — уборка очереди. WAHA не отвечает — красная строка, но
+ * уже принятое разбирается дальше. Все методы, кроме name/isConfigured, зовёт поток приёма.
  */
 @Component
 public class WahaInboxSource implements WhatsappSource {
 
     private static final Logger log = LoggerFactory.getLogger(WahaInboxSource.class);
+    static final long CLEANUP_EVERY_MS = 24 * 3600_000L;
 
     private final WhatsappInboxRepository repository;
     private final WahaInboxWriter inbox;
     private final WahaClient client;
     private final WahaSessionManager sessions;
     private final WahaChatNames names;
+    private final WahaCatchUp catchUp;
     private final ObjectMapper objectMapper;
     private final String hmacKey;
     private final long settleMs;
     private final long statusRefreshMs;
+    private final long catchUpMs;
+    private final int doneDays;
+    private final int droppedDays;
     private long nextStatusCheck;
+    private long nextCatchUp;
+    private long nextCleanup;
+    private boolean catchUpDue;
+    private boolean catchUpFailed;
     private String loggedSourceError;
 
     public WahaInboxSource(WhatsappInboxRepository repository, WahaInboxWriter inbox, WahaClient client,
-                           WahaSessionManager sessions, WahaChatNames names, ObjectMapper objectMapper,
+                           WahaSessionManager sessions, WahaChatNames names, WahaCatchUp catchUp, ObjectMapper objectMapper,
                            @Value("${chats.whatsapp.waha.hmac-key:}") String hmacKey,
                            @Value("${chats.whatsapp.waha.settle-ms:3000}") long settleMs,
-                           @Value("${chats.whatsapp.waha.status-refresh-ms:60000}") long statusRefreshMs) {
+                           @Value("${chats.whatsapp.waha.status-refresh-ms:60000}") long statusRefreshMs,
+                           @Value("${chats.whatsapp.waha.catch-up-ms:600000}") long catchUpMs,
+                           @Value("${chats.whatsapp.waha.inbox-done-days:7}") int doneDays,
+                           @Value("${chats.whatsapp.waha.inbox-dropped-days:30}") int droppedDays) {
         this.repository = repository;
         this.inbox = inbox;
         this.client = client;
         this.sessions = sessions;
         this.names = names;
+        this.catchUp = catchUp;
         this.objectMapper = objectMapper;
         this.hmacKey = hmacKey;
         this.settleMs = settleMs;
         this.statusRefreshMs = statusRefreshMs;
+        this.catchUpMs = catchUpMs;
+        this.doneDays = doneDays;
+        this.droppedDays = droppedDays;
     }
 
     @Override public String name() { return WhatsappProviders.WAHA; }
@@ -68,14 +86,26 @@ public class WahaInboxSource implements WhatsappSource {
     @Override
     public void housekeeping(WhatsappStatusHolder status) {
         long now = System.currentTimeMillis();
-        if (now < nextStatusCheck) return;
-        nextStatusCheck = now + statusRefreshMs;
-        refreshSession(status);
+        if (now >= nextStatusCheck) {
+            nextStatusCheck = now + statusRefreshMs;
+            refreshSession(status);
+        }
+        if ((catchUpDue || now >= nextCatchUp) && WahaSessionManager.WORKING.equals(status.state())) {
+            catchUpDue = false;
+            nextCatchUp = now + catchUpMs;
+            runCatchUp(status);
+        }
+        if (now >= nextCleanup) {
+            nextCleanup = now + CLEANUP_EVERY_MS;
+            OffsetDateTime t = OffsetDateTime.now();
+            int removed = inbox.cleanup(t.minusDays(doneDays), t.minusDays(droppedDays));
+            if (removed > 0) log.info("WhatsApp: из очереди убрано {} разобранных событий", removed);
+        }
     }
 
     private void refreshSession(WhatsappStatusHolder status) {
         try {
-            sessions.refresh(status);
+            if (sessions.refresh(status)) catchUpDue = true;
             status.setSourceError(null);
             loggedSourceError = null;
         } catch (GatewayException e) {
@@ -85,6 +115,22 @@ public class WahaInboxSource implements WhatsappSource {
                 log.warn("WhatsApp: {}", e.getMessage());
                 loggedSourceError = e.getMessage();
             }
+        }
+    }
+
+    private void runCatchUp(WhatsappStatusHolder status) {
+        try {
+            int added = catchUp.run(sessions.session(), sessions.account());
+            if (added > 0) log.info("WhatsApp: догонка положила в очередь {} сообщений", added);
+            if (catchUpFailed) {
+                status.setSourceWarnings(List.of());
+                catchUpFailed = false;
+            }
+        } catch (GatewayException e) {
+            // приём вебхуков догонка не останавливает (спека §5.3): предупреждение и повтор в следующий раз
+            status.setSourceWarnings(List.of(WhatsappStatusHolder.CATCH_UP_FAILED));
+            if (!catchUpFailed) log.warn("WhatsApp: догонка не удалась — {}", e.getMessage());
+            catchUpFailed = true;
         }
     }
 
@@ -107,6 +153,7 @@ public class WahaInboxSource implements WhatsappSource {
     @Override
     public ParsedNotification parse(WhatsappNotification n) {
         ParsedNotification p = WahaEventParser.parse(n.body(), sessions.account());
+        if (p instanceof ParsedNotification.State s && WahaSessionManager.WORKING.equals(s.state())) catchUpDue = true;
         if (p instanceof ParsedNotification.Message m) return names.enrich(sessions.session(), m);
         return p;
     }

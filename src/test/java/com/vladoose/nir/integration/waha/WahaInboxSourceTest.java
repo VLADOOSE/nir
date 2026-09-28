@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.entity.WhatsappInboxEvent;
 import com.vladoose.nir.entity.WhatsappInboxStatus;
 import com.vladoose.nir.integration.whatsapp.*;
+import com.vladoose.nir.repository.ChatMessageRepository;
 import com.vladoose.nir.repository.WhatsappInboxRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -27,6 +29,7 @@ class WahaInboxSourceTest {
     @Autowired WahaInboxWriter inbox;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbc;
+    @Autowired ChatMessageRepository messages;
 
     FakeWahaClient fake;
     WahaSessionManager sessions;
@@ -40,9 +43,26 @@ class WahaInboxSourceTest {
         sessions = new WahaSessionManager(fake, "westmed", "KZ");
     }
 
-    WahaInboxSource source(long settleMs) {
-        return new WahaInboxSource(repository, inbox, fake, sessions, new WahaChatNames(fake), objectMapper,
-                "test-hmac-key", settleMs, 60_000);
+    WahaInboxSource source(long settleMs) { return source(settleMs, new CountingCatchUp()); }
+
+    WahaInboxSource source(long settleMs, WahaCatchUp catchUp) {
+        return new WahaInboxSource(repository, inbox, fake, sessions, new WahaChatNames(fake), catchUp, objectMapper,
+                "test-hmac-key", settleMs, 60_000, 600_000, 7, 30);
+    }
+
+    /** Догонка-счётчик: сама история проверена в WahaCatchUpTest, здесь — когда её зовут. */
+    class CountingCatchUp extends WahaCatchUp {
+        int runs;
+        RuntimeException failWith;
+
+        CountingCatchUp() { super(fake, inbox, messages, objectMapper, 10); }
+
+        @Override
+        public int run(String session, String account) {
+            runs++;
+            if (failWith != null) throw failWith;
+            return 0;
+        }
     }
 
     long queue(ObjectNode env) {
@@ -175,5 +195,83 @@ class WahaInboxSourceTest {
         source(0).housekeeping(status);
 
         assertThat(status.snapshot(true, true).getLastError()).contains("WAHA недоступен").contains("принятые сообщения разбираются");
+    }
+
+    @Test
+    void workingSessionIsCaughtUpOnceUntilInterval() {
+        fake.session = new WahaSession("westmed", "WORKING", WahaJson.ME, "West-Med");
+        CountingCatchUp catchUp = new CountingCatchUp();
+        WahaInboxSource s = source(0, catchUp);
+        WhatsappStatusHolder status = new WhatsappStatusHolder();
+
+        s.housekeeping(status);
+        s.housekeeping(status);
+
+        assertThat(catchUp.runs).isEqualTo(1);
+    }
+
+    /** Пока номер не привязан, истории нет — догонку не зовём. */
+    @Test
+    void notWorkingSessionIsNotCaughtUp() {
+        fake.session = new WahaSession("westmed", "SCAN_QR_CODE", null, null);
+        CountingCatchUp catchUp = new CountingCatchUp();
+
+        source(0, catchUp).housekeeping(new WhatsappStatusHolder());
+
+        assertThat(catchUp.runs).isZero();
+    }
+
+    /** Сессия снова WORKING (событие session.status) — догоняем сразу, не дожидаясь 10 мин. */
+    @Test
+    void workingEventTriggersCatchUpAgain() {
+        fake.session = new WahaSession("westmed", "WORKING", WahaJson.ME, "West-Med");
+        CountingCatchUp catchUp = new CountingCatchUp();
+        WahaInboxSource s = source(0, catchUp);
+        WhatsappStatusHolder status = new WhatsappStatusHolder();
+        s.housekeeping(status);
+
+        s.parse(note(WahaJson.sessionStatus("WORKING")));
+        s.housekeeping(status);
+
+        assertThat(catchUp.runs).isEqualTo(2);
+    }
+
+    /** Догонка упала — предупреждение в строке, приём идёт; удалась — предупреждение снято. */
+    @Test
+    void catchUpFailureIsWarningNotStop() {
+        fake.session = new WahaSession("westmed", "WORKING", WahaJson.ME, "West-Med");
+        CountingCatchUp catchUp = new CountingCatchUp();
+        catchUp.failWith = new GatewayException(0, "WAHA не ответил за 90 с при догонке по истории");
+        WahaInboxSource s = source(0, catchUp);
+        WhatsappStatusHolder status = new WhatsappStatusHolder();
+
+        assertThatCode(() -> s.housekeeping(status)).doesNotThrowAnyException();
+        assertThat(status.snapshot(true, true).getWarnings()).contains(WhatsappStatusHolder.CATCH_UP_FAILED);
+
+        catchUp.failWith = null;
+        s.parse(note(WahaJson.sessionStatus("WORKING")));
+        s.housekeeping(status);
+        assertThat(status.snapshot(true, true).getWarnings()).doesNotContain(WhatsappStatusHolder.CATCH_UP_FAILED);
+    }
+
+    /** Уборка (спека §5.4): DONE старше 7 дней, DROPPED старше 30; PENDING — никогда. */
+    @Test
+    void cleanupRemovesOnlyOldProcessedEvents() {
+        long doneOld = queue(WahaJson.sessionStatus("WORKING"));
+        long doneNew = queue(WahaJson.sessionStatus("WORKING"));
+        long droppedOld = queue(WahaJson.sessionStatus("WORKING"));
+        long droppedNew = queue(WahaJson.sessionStatus("WORKING"));
+        long pendingOld = queue(WahaJson.sessionStatus("WORKING"));
+        String set = "UPDATE whatsapp_inbox SET status = ?, processed_at = now() - make_interval(days => ?) WHERE id = ?";
+        jdbc.update(set, "DONE", 8, doneOld);
+        jdbc.update(set, "DONE", 1, doneNew);
+        jdbc.update(set, "DROPPED", 31, droppedOld);
+        jdbc.update(set, "DROPPED", 8, droppedNew);
+        jdbc.update("UPDATE whatsapp_inbox SET received_at = now() - interval '40 days' WHERE id = ?", pendingOld);
+
+        source(0).housekeeping(new WhatsappStatusHolder());
+
+        assertThat(repository.findAllById(List.of(doneOld, doneNew, droppedOld, droppedNew, pendingOld)))
+                .extracting(WhatsappInboxEvent::getId).containsExactlyInAnyOrder(doneNew, droppedNew, pendingOld);
     }
 }
