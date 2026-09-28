@@ -9,6 +9,8 @@ import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
 import { LeadCardComponent } from './lead-card.component';
 import { LeadFormComponent } from './lead-form.component';
+import { WhatsappStatusLineComponent } from '../../shared/whatsapp-status-line.component';
+import { WhatsappStatus } from '../../shared/whatsapp-status';
 
 /**
  * «Обращения» — вход коммерческой воронки West-Med: заявки с сайта westmed.kz (фоновый опрос сайта),
@@ -17,7 +19,7 @@ import { LeadFormComponent } from './lead-form.component';
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, RouterLink, LeadCardComponent, LeadFormComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, LeadCardComponent, LeadFormComponent, WhatsappStatusLineComponent],
   template: `
     <div class="page-head">
       <div>
@@ -33,6 +35,7 @@ import { LeadFormComponent } from './lead-form.component';
     </div>
 
     <div class="sync-plate" *ngIf="sync" [class.is-error]="sync.enabled && sync.lastError">{{ syncText() }}</div>
+    <app-whatsapp-status-line *ngIf="waStatus?.enabled" [status]="waStatus"></app-whatsapp-status-line>
 
     <div class="filters">
       <div class="chips" role="group" aria-label="Статус">
@@ -130,6 +133,7 @@ export class LeadsComponent implements OnDestroy {
   leads: any[] = [];
   loading = false;
   sync: any = null;
+  waStatus: WhatsappStatus | null = null;
   syncing = false;
   statusKey = 'NEW,IN_WORK';
   channel = '';
@@ -179,6 +183,7 @@ export class LeadsComponent implements OnDestroy {
 
   loadSync() {
     this.api.getLeadSyncStatus().subscribe({ next: s => { this.sync = s; this.cdr.detectChanges(); }, error: () => {} });
+    this.api.getWhatsappStatus().subscribe({ next: s => { this.waStatus = s; this.cdr.detectChanges(); }, error: () => {} });
   }
 
   runSync() {

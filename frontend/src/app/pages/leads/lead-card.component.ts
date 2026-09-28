@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -9,6 +9,8 @@ import { NotificationService } from '../../services/notification.service';
 import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_CLOSE_REASONS, LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
 import { LeadConvertDialogComponent } from './lead-convert-dialog.component';
+import { ChatMessageComponent } from '../../shared/chat-message.component';
+import { LeadItemsImportComponent } from '../../shared/lead-items-import.component';
 
 type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 
@@ -16,7 +18,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 @Component({
   selector: 'app-lead-card',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RouterLink, LeadConvertDialogComponent],
+  imports: [NgIf, NgFor, FormsModule, RouterLink, LeadConvertDialogComponent, ChatMessageComponent, LeadItemsImportComponent],
   template: `
     <div *ngIf="leadId !== null" class="overlay" (click)="close.emit()">
       <aside class="drawer" (click)="$event.stopPropagation()" aria-label="Карточка обращения">
@@ -138,6 +140,9 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
                   <button type="button" class="btn btn-cancel" (click)="panel = 'none'">Отмена</button>
                 </div>
               </div>
+              <app-lead-items-import *ngIf="parseAttachment && lead.chatId" [chatId]="lead.chatId" [attachment]="parseAttachment"
+                                     [leadId]="lead.id" [existingItems]="lead.items.length"
+                                     (done)="onItemsImported($event)" (cancel)="parseAttachment = null"></app-lead-items-import>
             </section>
 
             <section class="section" *ngIf="lead.message">
@@ -146,16 +151,25 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
             </section>
 
             <section class="section">
-              <h3 class="section-title">Лента</h3>
+              <div class="section-head">
+                <h3 class="section-title">{{ lead.chatId ? 'Лента и переписка' : 'Лента' }}</h3>
+                <a class="btn btn-line btn-sm" *ngIf="lead.chatId" [routerLink]="['/chats']" [queryParams]="{ chatId: lead.chatId }">Открыть весь чат</a>
+              </div>
               <ol class="timeline">
-                <li *ngFor="let e of lead.events" [attr.data-type]="e.type">
-                  <div class="t-head">
-                    <span class="t-type">{{ eventLabel(e) }}</span>
-                    <time [attr.title]="full(e.at)">{{ ago(e.at) }}</time>
-                    <span *ngIf="e.author">{{ e.author }}</span>
-                  </div>
-                  <div class="t-body" *ngIf="e.body">{{ e.body }}</div>
-                </li>
+                <ng-container *ngFor="let t of timeline; trackBy: trackTimeline">
+                  <li *ngIf="t.kind === 'event'" [attr.data-type]="t.e.type">
+                    <div class="t-head">
+                      <span class="t-type">{{ eventLabel(t.e) }}</span>
+                      <time [attr.title]="full(t.e.at)">{{ ago(t.e.at) }}</time>
+                      <span *ngIf="t.e.author">{{ t.e.author }}</span>
+                    </div>
+                    <div class="t-body" *ngIf="t.e.body">{{ t.e.body }}</div>
+                  </li>
+                  <li *ngIf="t.kind === 'msg'" class="msg">
+                    <app-chat-message [m]="t.m" [chatId]="lead.chatId" [canParse]="auth.isAdmin() && canEditItems()"
+                                      (parse)="startParse($event)"></app-chat-message>
+                  </li>
+                </ng-container>
               </ol>
             </section>
           </ng-container>
@@ -213,6 +227,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
     .timeline li[data-type="STATUS"] { border-left-color: var(--accent); }
     .timeline li[data-type="CALL"], .timeline li[data-type="MESSAGE"] { border-left-color: var(--success); }
     .timeline li[data-type="SYNC"] { border-left-color: var(--warn); }
+    .timeline li.msg { border-left: none; padding-left: 0; }
     .t-head { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
     .t-type { font-weight: 600; color: var(--text); }
     .t-body { font-size: 14px; white-space: pre-wrap; margin-top: 2px; }
@@ -248,6 +263,11 @@ export class LeadCardComponent implements OnChanges {
   editItems: any[] = [];
   convertOpen = false;
   readonly reasons = LEAD_CLOSE_REASONS;
+  /** Переписка чата обращения (спека whatsapp-chats §9.3) и лента вперемешку с ней. */
+  chatMessages: any[] = [];
+  timeline: any[] = [];
+  parseAttachment: any = null;
+  @ViewChild(LeadItemsImportComponent, { read: ElementRef }) importRef?: ElementRef<HTMLElement>;
 
   constructor(private api: ApiService, public auth: AuthService, private notify: NotificationService,
               private cdr: ChangeDetectorRef, private router: Router) {}
@@ -255,6 +275,9 @@ export class LeadCardComponent implements OnChanges {
   ngOnChanges(ch: SimpleChanges) {
     if (ch['leadId']) {
       this.panel = 'none';
+      this.parseAttachment = null;
+      this.chatMessages = [];
+      this.timeline = [];
       if (this.leadId != null) this.load(this.leadId);
       else this.lead = null;
     }
@@ -270,7 +293,13 @@ export class LeadCardComponent implements OnChanges {
     this.lead = null;
     this.cdr.detectChanges();
     this.api.getLead(id).subscribe({
-      next: d => { this.lead = d; this.loading = false; this.cdr.detectChanges(); },
+      next: d => {
+        this.lead = d;
+        this.loading = false;
+        this.rebuildTimeline();
+        this.loadChatMessages();
+        this.cdr.detectChanges();
+      },
       error: e => {
         this.loading = false;
         this.notify.error('Обращение не открылось: ' + (e.error?.message || e.message));
@@ -285,6 +314,7 @@ export class LeadCardComponent implements OnChanges {
     req.subscribe({
       next: d => {
         this.lead = d;
+        this.rebuildTimeline();
         this.busy = false;
         this.panel = 'none';
         this.notify.success(ok);
@@ -319,6 +349,47 @@ export class LeadCardComponent implements OnChanges {
         productUrl: i.productUrl || null,
       }));
     this.apply(this.api.updateLeadItems(this.lead.id, items), 'Позиции сохранены');
+  }
+
+  /** Переписка чата обращения — с момента обращения (спека whatsapp-chats §9.3). */
+  private loadChatMessages() {
+    const lead = this.lead;
+    if (!lead?.chatId) return;
+    this.api.getLeadChatMessages(lead.id).subscribe({
+      next: msgs => {
+        if (this.lead?.id !== lead.id) return;
+        this.chatMessages = msgs;
+        this.rebuildTimeline();
+        this.cdr.detectChanges();
+      },
+      error: () => {},
+    });
+  }
+
+  /** Лента и сообщения по времени; сортировка стабильная — при равном времени событие раньше сообщения. */
+  private rebuildTimeline() {
+    const time = (iso: string) => new Date(iso).getTime();
+    const events = (this.lead?.events || []).map((e: any) => ({ kind: 'event', at: e.at, e }));
+    const msgs = this.chatMessages.map((m: any) => ({ kind: 'msg', at: m.sentAt, m }));
+    this.timeline = [...events, ...msgs].sort((a, b) => time(a.at) - time(b.at));
+  }
+
+  trackTimeline(_: number, t: any) { return t.kind + ':' + (t.kind === 'event' ? t.e.id : t.m.id); }
+
+  startParse(attachment: any) {
+    this.parseAttachment = attachment;
+    this.panel = 'none';
+    this.cdr.detectChanges();
+    setTimeout(() => this.importRef?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
+  onItemsImported(card: any) {
+    this.lead = card;
+    this.parseAttachment = null;
+    this.rebuildTimeline();
+    this.notify.success('Позиции обновлены: ' + (card.items?.length || 0) + ' поз.');
+    this.changed.emit();
+    this.cdr.detectChanges();
   }
 
   onConverted(r: { privateRequestId: number; number: string }) {
