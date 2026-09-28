@@ -7,7 +7,8 @@
 //            WHATSAPP_API_TOKEN=dev-token WHATSAPP_INITIAL_DELAY_MS=3000 ./gradlew bootRun
 // Сценарий:  curl -s -X POST localhost:7707/__scenario/basic      — корзина сайта, Excel, фото, ответ с телефона,
 //                                                                     PDF, HTML, правка, группа, удаление
-// Своё:      curl -s localhost:7707/__enqueue -H 'Content-Type: application/json' -d @notification.json
+//            curl -s -X POST localhost:7707/__scenario/excel      — два Excel подряд, один на 45 строк
+// Своё:     curl -s localhost:7707/__enqueue -H 'Content-Type: application/json' -d @notification.json
 // Состояние: curl -s -X POST localhost:7707/__state/notAuthorized  (authorized / blocked / sleepMode / suspended …)
 // Настройки: curl -s localhost:7707/__settings -d '{"outgoingMessageWebhook":"no"}'
 // Очередь:   curl -s localhost:7707/__queue
@@ -155,9 +156,15 @@ if (process.argv[2] === '--write-xlsx') {
   process.exit(0);
 }
 
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+// длинная смета: проверка, что кнопки разбора не уходят под край (ревью 2026-09-28)
+const BIG_ROWS = [['№', 'Наименование', 'Производитель', 'Кол-во'],
+  ...Array.from({ length: 45 }, (_, i) => [String(i + 1), `Позиция сметы ${i + 1}`, i % 2 ? 'Mindray' : 'Dräger', String(1 + (i % 3))])];
+
 const FILES = {
   'аппарат.png': { mime: 'image/png', data: png(320, 200) },
-  'Заявка клиники.xlsx': { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: xlsx(XLSX_ROWS) },
+  'Заявка клиники.xlsx': { mime: XLSX_MIME, data: xlsx(XLSX_ROWS) },
+  'Смета 45 строк.xlsx': { mime: XLSX_MIME, data: xlsx(BIG_ROWS) },
   'ТЗ.pdf': { mime: 'application/pdf', data: Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n'
     + '2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>> endobj\n'
     + 'trailer <</Root 1 0 R>>\n%%EOF\n', 'latin1') },
@@ -220,6 +227,19 @@ function basicScenario() {
   return q.length;
 }
 
+/** Два Excel подряд у одной клиентки: длинная смета (45 строк) и короткая заявка — разбор в позиции. */
+function excelScenario() {
+  const saule = '77051112233@c.us';
+  const s = 'Сауле (тест)';
+  const q = [
+    incoming(saule, s, text('Добрый день! Нужна смета на оснащение кабинета.')),
+    incoming(saule, s, file('documentMessage', 'Смета 45 строк.xlsx', 'Смета целиком')),
+    incoming(saule, s, file('documentMessage', 'Заявка клиники.xlsx', 'И отдельно срочное')),
+  ];
+  q.forEach(enqueue);
+  return q.length;
+}
+
 // ---------- сервер ----------
 
 const server = http.createServer(async (req, res) => {
@@ -233,6 +253,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && url.pathname === '/__enqueue') return send(200, { receiptId: enqueue(JSON.parse(await readBody())) });
   if (req.method === 'POST' && url.pathname === '/__scenario/basic') return send(200, { enqueued: basicScenario() });
+  if (req.method === 'POST' && url.pathname === '/__scenario/excel') return send(200, { enqueued: excelScenario() });
   if (req.method === 'POST' && url.pathname.startsWith('/__state/')) {
     state = decodeURIComponent(url.pathname.slice('/__state/'.length));
     enqueue({ typeWebhook: 'stateInstanceChanged', instanceData: instance(), timestamp: now(), stateInstance: state });
@@ -267,4 +288,4 @@ const server = http.createServer(async (req, res) => {
   return send(404, '');
 });
 
-server.listen(PORT, () => console.log(`Стаб Green-API: ${BASE} (idInstance любой, токен ${TOKEN === 'dev-token' ? 'dev-token' : 'из STUB_TOKEN'})`));
+server.listen(PORT, '127.0.0.1', () => console.log(`Стаб Green-API: ${BASE} (idInstance любой, токен ${TOKEN === 'dev-token' ? 'dev-token' : 'из STUB_TOKEN'})`));

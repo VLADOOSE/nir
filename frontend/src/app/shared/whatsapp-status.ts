@@ -9,6 +9,10 @@ export interface WhatsappStatus {
   lastMessageAt: string | null;
   warnings: string[] | null;
   lastError: string | null;
+  /** Сколько сообщений за сутки пропущено как «ядовитые». */
+  droppedCount: number;
+  /** Рынок, в который пишет зеркало (KZ/RF). */
+  market: string | null;
 }
 
 export interface StatusLine { text: string; error: boolean; }
@@ -18,8 +22,16 @@ const WARNING_TEXT: Record<string, string> = {
   INCOMING_OFF: 'не включены уведомления о входящих',
   OUTGOING_PHONE_OFF: 'не включены уведомления об ответах с телефона — ваши ответы не попадут в АИС',
   QUOTA_EXCEEDED: 'исчерпан лимит бесплатного тарифа — сообщения из новых чатов не приходят',
-  MESSAGE_DROPPED: 'одно сообщение не удалось принять — посмотрите его в телефоне',
 };
+
+/** Подписи — как в селекторе рынка слева вверху. */
+const MARKET_LABEL: Record<string, string> = { KZ: 'West-Med (KZ)', RF: 'Регион-Мед (РФ)' };
+
+function droppedText(n: number): string {
+  return n > 1
+    ? `не удалось принять сообщений: ${n} — посмотрите их в телефоне`
+    : 'одно сообщение не удалось принять — посмотрите его в телефоне';
+}
 
 const STATE_TEXT: Record<string, StatusLine> = {
   notAuthorized: { text: 'WhatsApp: номер не подключён — отсканируйте QR-код в кабинете Green-API', error: true },
@@ -39,10 +51,20 @@ export function whatsappStatusLine(s: WhatsappStatus | null): StatusLine | null 
   if (s.state !== 'authorized') {
     return STATE_TEXT[s.state] || { text: 'WhatsApp: состояние инстанса — ' + s.state, error: true };
   }
-  const warnings = (s.warnings || []).map(w => WARNING_TEXT[w] || w);
+  const warnings = (s.warnings || []).map(w => w === 'MESSAGE_DROPPED' ? droppedText(s.droppedCount) : WARNING_TEXT[w] || w);
   if (warnings.length) return { text: 'WhatsApp: ' + warnings.join('; '), error: true };
   const last = s.lastMessageAt ? ' · последнее сообщение ' + relativeTime(s.lastMessageAt) : '';
   return { text: 'WhatsApp' + (s.number ? ' ' + formatPhone(s.number) : '') + ' · подключён' + last, error: false };
+}
+
+/**
+ * Чаты живут на рынке зеркала; на другом рынке список пуст, хотя строка говорит «подключён». Ловушка «не видно
+ * данных»: новый браузер и иконка iPhone открываются на РФ (CLAUDE.md §14).
+ */
+export function marketHint(s: WhatsappStatus | null, current: string): string | null {
+  if (!s?.enabled || !s.market || s.market === current) return null;
+  return `Чаты WhatsApp ведутся на рынке ${MARKET_LABEL[s.market] || s.market}, а сейчас выбран `
+    + `${MARKET_LABEL[current] || current} — переключите рынок слева вверху.`;
 }
 
 /** «77000000001» / «+77000000001» → «+7 700 000 00 01». */

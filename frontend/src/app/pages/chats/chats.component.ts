@@ -129,6 +129,9 @@ const PAGE = 50;
     .nc { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
     .back { display: none; }
     .thread { flex: 1; overflow-y: auto; padding: 10px 12px; }
+    /* панель разбора Excel делит высоту с лентой: длинная смета прокручивается внутри, кнопки остаются на виду
+       (ревью 2026-09-28: несжимаемая панель в колонке с overflow:hidden уводила «Заменить/Добавить» под край) */
+    app-lead-items-import { flex: 0 1 auto; min-height: 0; max-height: 65%; margin: 0 12px; }
     .more { display: flex; justify-content: center; margin-bottom: 8px; }
     .thread-empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
     @media (max-width: 900px) {
@@ -183,6 +186,8 @@ export class ChatsComponent implements OnDestroy {
   ];
   private readonly refreshTimer: any;
   private searchTimer: any = null;
+  /** Номер последнего запроса списка: ответ со старым фильтром/поиском не перетирает свежий. */
+  private listSeq = 0;
   /** Лента у нижнего края; ушёл читать выше — не дёргаем. */
   private pinned = true;
   private resizeObserver?: ResizeObserver;
@@ -212,9 +217,16 @@ export class ChatsComponent implements OnDestroy {
 
   loadList(silent = false) {
     if (!silent) this.loadingList = true;
+    const seq = ++this.listSeq;
     this.api.getChats({ filter: this.filter, q: this.q.trim() || undefined }).subscribe({
-      next: d => { this.chats = d; this.loadingList = false; this.cdr.detectChanges(); },
+      next: d => {
+        if (seq !== this.listSeq) return;
+        this.chats = d;
+        this.loadingList = false;
+        this.cdr.detectChanges();
+      },
       error: e => {
+        if (seq !== this.listSeq) return;
         this.loadingList = false;
         if (!silent) this.notify.error('Чаты не загрузились: ' + (e.error?.message || e.message));
         this.cdr.detectChanges();
@@ -265,7 +277,7 @@ export class ChatsComponent implements OnDestroy {
     this.busy = true;
     this.api.createChatLead(this.chat.id).subscribe({
       next: c => {
-        this.chat = c;
+        if (c.id === this.openId) this.chat = c;   // пока ждали, могли открыть другой чат
         this.busy = false;
         this.notify.success('Обращение создано');
         this.loadList(true);
@@ -279,10 +291,11 @@ export class ChatsComponent implements OnDestroy {
     if (!this.chat) return;
     const box = ev.target as HTMLInputElement;
     const value = box.checked;
+    const id = this.chat.id;
     this.busy = true;
-    this.api.setChatNotClient(this.chat.id, value).subscribe({
+    this.api.setChatNotClient(id, value).subscribe({
       next: c => {
-        this.chat = c;
+        if (c.id === this.openId) this.chat = c;
         this.busy = false;
         this.notify.success(value ? 'Чат помечен «не клиент» — обращения из него не создаются' : 'Отметка «не клиент» снята');
         this.loadList(true);
@@ -290,7 +303,7 @@ export class ChatsComponent implements OnDestroy {
       },
       error: e => {
         this.busy = false;
-        box.checked = !value;
+        if (id === this.openId) box.checked = !value;
         this.notify.error(e.error?.message || 'Не получилось');
         this.cdr.detectChanges();
       },
@@ -299,8 +312,10 @@ export class ChatsComponent implements OnDestroy {
 
   startParse(attachment: any) {
     if (!this.chat?.lead) return;
+    const chatId = this.openId;
     this.api.getLead(this.chat.lead.id).subscribe({
       next: card => {
+        if (chatId !== this.openId) return;
         this.parseLeadItems = card.items?.length || 0;
         this.parseAttachment = attachment;
         this.cdr.detectChanges();

@@ -1,5 +1,6 @@
-import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, OnChanges, OnDestroy, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, ViewChild } from '@angular/core';
 import { NgIf } from '@angular/common';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../services/api.service';
 import { NotificationService } from '../services/notification.service';
 import { fullDateTime } from './relative-time';
@@ -24,9 +25,9 @@ const NOT_STORED: Record<string, string> = {
       <div class="bubble" [class.out]="m.direction === 'OUT'" [class.deleted]="m.deleted">
         <div class="author" *ngIf="showAuthor && m.direction === 'IN' && m.senderName">{{ m.senderName }}</div>
         <ng-container *ngIf="m.attachment as a">
-          <button type="button" class="thumb" *ngIf="a.image" (click)="zoomed = true" [attr.aria-label]="'Открыть ' + (a.fileName || 'фото')">
+          <button type="button" class="thumb" *ngIf="a.image" (click)="onThumb()" [attr.aria-label]="'Открыть ' + (a.fileName || 'фото')">
             <img *ngIf="imageUrl" [src]="imageUrl" [alt]="a.fileName || 'фото'" />
-            <span *ngIf="!imageUrl" class="thumb-ph">фото загружается…</span>
+            <span *ngIf="!imageUrl" class="thumb-ph">{{ imageFailed ? 'фото не загрузилось — нажмите, чтобы повторить' : 'фото загружается…' }}</span>
           </button>
           <div class="file" *ngIf="a.stored && !a.image">
             <button type="button" class="linklike" (click)="download(a)">📎 {{ a.fileName || 'файл' }}<span class="size" *ngIf="a.sizeBytes"> · {{ size(a.sizeBytes) }}</span></button>
@@ -41,7 +42,9 @@ const NOT_STORED: Record<string, string> = {
         </div>
       </div>
     </div>
-    <div class="zoom" *ngIf="zoomed && imageUrl" (click)="zoomed = false" role="dialog" aria-label="Фото целиком">
+    <!-- Esc ловит сам оверлей (он в фокусе) и дальше не пускает: иначе карточка обращения закрылась бы вместе с фото -->
+    <div class="zoom" #zoomEl *ngIf="zoomed && imageUrl" tabindex="-1" (click)="zoomed = false"
+         (keydown.escape)="closeZoom($event)" role="dialog" aria-modal="true" aria-label="Фото целиком">
       <img [src]="imageUrl" [alt]="m.attachment?.fileName || 'фото'" />
     </div>
   `,
@@ -64,7 +67,7 @@ const NOT_STORED: Record<string, string> = {
     .size { color: var(--text-muted); }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
     /* вуаль — самое частое значение приложения; пятое не заводить (§16 CLAUDE.md) */
-    .zoom { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1100; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+    .zoom { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1100; display: flex; align-items: center; justify-content: center; cursor: zoom-out; outline: none; }
     .zoom img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
     @media (max-width: 900px) {
       .bubble { max-width: 88%; }
@@ -80,8 +83,13 @@ export class ChatMessageComponent implements OnChanges, OnDestroy {
   @Output() parse = new EventEmitter<any>();
 
   imageUrl: string | null = null;
+  imageFailed = false;
   zoomed = false;
   private loadedFor: number | null = null;
+  private imageSub?: Subscription;
+
+  /** Оверлей появился — забираем фокус, чтобы Esc пришёл к нему, а не к карточке под ним. */
+  @ViewChild('zoomEl') set zoomEl(el: ElementRef<HTMLElement> | undefined) { el?.nativeElement.focus(); }
 
   constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef) {}
 
@@ -89,18 +97,33 @@ export class ChatMessageComponent implements OnChanges, OnDestroy {
     const a = this.m?.attachment;
     if (a?.image && this.loadedFor !== a.id) {
       this.loadedFor = a.id;
-      this.api.getChatAttachment(this.chatId, a.id).subscribe({
-        next: blob => { this.revoke(); this.imageUrl = URL.createObjectURL(blob); this.cdr.detectChanges(); },
-        error: () => {},
-      });
+      this.loadImage(a.id);
     }
   }
 
-  ngOnDestroy() { this.revoke(); }
+  /** Запрос отменяется вместе с видом: иначе ответ создал бы blob-адрес, который уже некому отозвать. */
+  ngOnDestroy() {
+    this.imageSub?.unsubscribe();
+    this.revoke();
+  }
 
-  @HostListener('document:keydown.escape')
-  onEscape() {
-    if (this.zoomed) { this.zoomed = false; this.cdr.detectChanges(); }
+  onThumb() {
+    if (this.imageUrl) this.zoomed = true;
+    else if (this.imageFailed && this.loadedFor !== null) this.loadImage(this.loadedFor);
+  }
+
+  closeZoom(ev: Event) {
+    ev.stopPropagation();
+    this.zoomed = false;
+  }
+
+  private loadImage(attachmentId: number) {
+    this.imageSub?.unsubscribe();
+    this.imageFailed = false;
+    this.imageSub = this.api.getChatAttachment(this.chatId, attachmentId).subscribe({
+      next: blob => { this.revoke(); this.imageUrl = URL.createObjectURL(blob); this.cdr.detectChanges(); },
+      error: () => { this.imageFailed = true; this.cdr.detectChanges(); },
+    });
   }
 
   download(a: any) {
