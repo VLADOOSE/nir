@@ -3,11 +3,13 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
+import { ImportGridComponent } from '../../shared/import-grid.component';
+import { buildImportLines } from '../../shared/import-lines';
 
 @Component({
   selector: 'app-inbound',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule],
+  imports: [NgFor, NgIf, FormsModule, ImportGridComponent],
   template: `
   <div class="page">
     <div class="head">
@@ -79,25 +81,7 @@ import { NotificationService } from '../../services/notification.service';
                  placeholder="Название клиента/клиники из письма" />
           <span class="hint-sm">Создастся новое учреждение и привяжется к заявке.</span>
         </div>
-        <div class="grid-wrap">
-          <table class="import-grid">
-            <thead>
-              <tr>
-                <th *ngFor="let c of importPreview.columns">
-                  <div class="ih">{{ c.header || '—' }}</div>
-                  <select [(ngModel)]="c.field" [ngModelOptions]="{standalone:true}">
-                    <option *ngFor="let o of fieldOptions" [ngValue]="o.v">{{ o.l }}</option>
-                  </select>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let row of importPreview.rows">
-                <td *ngFor="let cell of row">{{ cell }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <app-import-grid [preview]="importPreview"></app-import-grid>
         <div class="err" *ngIf="importError">{{ importError }}</div>
         <div class="import-actions">
           <button class="btn-primary" [disabled]="importing" (click)="createFromImport()">Создать заявку</button>
@@ -142,16 +126,6 @@ import { NotificationService } from '../../services/notification.service';
        вернулось в styles.scss последней задачей волны): объявление несёт ещё и
        геометрию, поэтому описывает селект целиком и не зависит от глобального слоя. */
     .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
-    .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-    .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
-    /* Цвет текста НЕ приглушённый из kit: в шапке грида импорта стоят заголовки
-       ИЗ ФАЙЛА пользователя — это данные, которые он глазами сверяет с разметкой
-       колонок, а не служебная подпись. Тот же грид и то же правило живут в
-       private-requests — держать их одинаковыми. */
-    .import-grid th { background: var(--surface-2); color: var(--text); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
-    .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
-    .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
-    .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
     .err { color: var(--danger-text); font-size: 13px; margin: 8px 0; }
     /* .btn-line-solid — контурная кнопка, которой в kit нет: цвет живёт здесь.
@@ -252,12 +226,6 @@ export class InboundComponent {
   messageExpanded = false;
   newClientMode = false;
   newClientName = '';
-  fieldOptions = [
-    { v: 'NAME', l: 'Наименование' },
-    { v: 'MANUFACT', l: 'Бренд' },
-    { v: 'QUANTITY', l: 'Кол-во' },
-    { v: 'IGNORE', l: 'Игнорировать' },
-  ];
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService) {
@@ -348,22 +316,9 @@ export class InboundComponent {
 
   createFromImport() {
     if (this.importEmailId === null) return;
-    const cols = this.importPreview?.columns || [];
-    const nameCol = cols.find((c: any) => c.field === 'NAME');
-    if (!nameCol) { this.importError = 'Отметьте колонку с наименованием'; return; }
-    const manuCol = cols.find((c: any) => c.field === 'MANUFACT');
-    const qtyCol = cols.find((c: any) => c.field === 'QUANTITY');
-    const lines = (this.importPreview.rows || [])
-      .map((row: string[]) => ({
-        name: row[nameCol.index],
-        manufact: manuCol ? row[manuCol.index] : null,
-        quantity: qtyCol ? (parseInt(row[qtyCol.index], 10) || 1) : 1,
-      }))
-      .filter((l: any) => l.name && String(l.name).trim());
-    if (!lines.length) { this.importError = 'Нет строк с наименованием'; return; }
-    const mappings = cols
-      .filter((c: any) => c.field && c.field !== 'IGNORE')
-      .map((c: any) => ({ header: c.header, field: c.field }));
+    const built = buildImportLines(this.importPreview);
+    if (built.error) { this.importError = built.error; return; }
+    const { lines, mappings } = built;
 
     if (this.newClientMode) {
       const name = this.newClientName.trim();

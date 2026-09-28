@@ -6,11 +6,13 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketService } from '../../services/market.service';
 import { PrivateRequestCardComponent } from './private-request-card.component';
+import { ImportGridComponent } from '../../shared/import-grid.component';
+import { buildImportLines } from '../../shared/import-lines';
 
 @Component({
   selector: 'app-private-requests',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, PrivateRequestCardComponent],
+  imports: [NgFor, NgIf, FormsModule, PrivateRequestCardComponent, ImportGridComponent],
   template: `
     <div class="page">
       <header class="head">
@@ -40,25 +42,7 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
             <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
           </select>
 
-          <div class="grid-wrap">
-            <table class="import-grid">
-              <thead>
-                <tr>
-                  <th *ngFor="let c of importPreview.columns">
-                    <div class="ih">{{ c.header || '—' }}</div>
-                    <select [(ngModel)]="c.field" [ngModelOptions]="{standalone:true}">
-                      <option *ngFor="let o of fieldOptions" [ngValue]="o.v">{{ o.l }}</option>
-                    </select>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let row of importPreview.rows">
-                  <td *ngFor="let cell of row">{{ cell }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <app-import-grid [preview]="importPreview"></app-import-grid>
 
           <div class="err" *ngIf="importError">{{ importError }}</div>
           <div class="import-actions">
@@ -188,15 +172,6 @@ import { PrivateRequestCardComponent } from './private-request-card.component';
     .import-panel .hint { color: var(--text-muted); font-size: 12px; margin: 6px 0 12px; }
     .import-panel .lbl { display: block; font-size: 12px; color: var(--text); margin-bottom: 4px; }
     .client-sel { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; min-width: 260px; background: var(--surface); color: var(--text); }
-    .grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-    .import-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
-    /* Цвет текста НЕ приглушённый из kit: в шапке грида импорта стоят заголовки
-       ИЗ ФАЙЛА пользователя — это данные, которые он глазами сверяет с разметкой
-       колонок, а не служебная подпись. Фон шапки приходит из kit. */
-    .import-grid th { color: var(--text); padding: 8px; border: 1px solid var(--border); vertical-align: top; }
-    .import-grid th .ih { font-weight: 600; margin-bottom: 4px; }
-    .import-grid th select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
-    .import-grid td { padding: 6px 8px; border: 1px solid var(--border); white-space: nowrap; }
     .import-actions { display: flex; gap: 8px; margin-top: 12px; }
 
     /* ============================================================
@@ -263,12 +238,6 @@ export class PrivateRequestsComponent {
   importClientId: number | null = null;
   importError = '';
   importing = false;
-  fieldOptions = [
-    { v: 'NAME', l: 'Наименование' },
-    { v: 'MANUFACT', l: 'Бренд' },
-    { v: 'QUANTITY', l: 'Кол-во' },
-    { v: 'IGNORE', l: 'Игнорировать' },
-  ];
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private route: ActivatedRoute, private notify: NotificationService,
@@ -321,22 +290,9 @@ export class PrivateRequestsComponent {
 
   createFromImport() {
     if (!this.importClientId) { this.importError = 'Выберите клиента'; return; }
-    const cols = this.importPreview?.columns || [];
-    const nameCol = cols.find((c: any) => c.field === 'NAME');
-    if (!nameCol) { this.importError = 'Отметьте колонку с наименованием'; return; }
-    const manuCol = cols.find((c: any) => c.field === 'MANUFACT');
-    const qtyCol = cols.find((c: any) => c.field === 'QUANTITY');
-    const lines = (this.importPreview.rows || [])
-      .map((row: string[]) => ({
-        name: row[nameCol.index],
-        manufact: manuCol ? row[manuCol.index] : null,
-        quantity: qtyCol ? (parseInt(row[qtyCol.index], 10) || 1) : 1,
-      }))
-      .filter((l: any) => l.name && String(l.name).trim());
-    if (!lines.length) { this.importError = 'Нет строк с наименованием'; return; }
-    const mappings = cols
-      .filter((c: any) => c.field && c.field !== 'IGNORE')
-      .map((c: any) => ({ header: c.header, field: c.field }));
+    const built = buildImportLines(this.importPreview);
+    if (built.error) { this.importError = built.error; return; }
+    const { lines, mappings } = built;
     this.importing = true;
     this.api.commitImport({ clientFacilityId: this.importClientId, mappings, lines }).subscribe({
       next: (created: any) => {
