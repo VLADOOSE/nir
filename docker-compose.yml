@@ -1,6 +1,7 @@
 # АИС Регион-Мед / West-Med — прод-стек, изолирован от westmed.kz и vital-spb.kz.
 # Образы тянутся из GHCR (собирает GitHub Actions). Наружу торчит ТОЛЬКО фронт на 127.0.0.1:8090,
 # который отдаётся в tailnet через `tailscale serve` — публичных портов ноль.
+# WhatsApp: шлюз ais-waha (WAHA) — только во внутренней сети, запускается профилем whatsapp (COMPOSE_PROFILES в .env).
 name: ais
 
 services:
@@ -47,6 +48,37 @@ services:
       - "127.0.0.1:8090:80"             # ТОЛЬКО localhost! далее — tailscale serve
     networks: [ais-net]
 
+  # Шлюз WhatsApp (спека docs/superpowers/specs/2026-09-28-whatsapp-waha-design.md §11). Наружу НЕ публикуется:
+  # вебхук идёт ais-waha → ais-backend:8080 по ais-net, API WAHA зовёт только бэкенд. Панель и Swagger выключены.
+  ais-waha:
+    image: devlikeapro/waha:gows-2026.9.1
+    profiles: ["whatsapp"]               # обычный деплой WAHA не запускает, пока в .env нет COMPOSE_PROFILES=whatsapp
+    restart: unless-stopped
+    mem_limit: 700m                      # WAHA держит скачиваемый файл целиком в памяти; ~200 МБ в покое
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_API_KEY: ${WHATSAPP_WAHA_API_KEY}          # без него WAHA генерирует ключ сама и печатает в лог
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_PRINT_QR: "False"
+      WAHA_PRESENCE_AUTO_ONLINE: "False"              # иначе телефон перестаёт получать push (активное «устройство»)
+      WAHA_BASE_URL: http://ais-waha:3000             # из него WAHA собирает media.url — бэкенд качает только отсюда
+      WHATSAPP_HOOK_URL: http://ais-backend:8080/api/whatsapp/waha/webhook
+      WHATSAPP_HOOK_EVENTS: message.any,message.edited,message.revoked,session.status,call.received,call.accepted,call.rejected
+      WHATSAPP_HOOK_HMAC_KEY: ${WHATSAPP_WAHA_HMAC_KEY}
+      WHATSAPP_HOOK_RETRIES_POLICY: exponential
+      WHATSAPP_HOOK_RETRIES_DELAY_SECONDS: "2"
+      WHATSAPP_HOOK_RETRIES_ATTEMPTS: "12"
+      WAHA_EVENTS_DOWNLOAD_MEDIA: "false"            # файлы — по требованию АИС (спека §6)
+      WHATSAPP_FILES_FOLDER: /app/.media
+      WHATSAPP_FILES_LIFETIME: "600"
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: "7"
+      WAHA_LOG_FORMAT: JSON
+    volumes:
+      - ais-waha-sessions:/app/.sessions   # ⚠️ = доступ к рабочему WhatsApp: не выкладывать, в бэкапы — только осознанно
+      - ais-waha-media:/app/.media
+    networks: [ais-net]
+
 networks:
   ais-net:
     name: ais-net
@@ -54,3 +86,7 @@ networks:
 volumes:
   ais-pgdata:
     name: ais-pgdata
+  ais-waha-sessions:
+    name: ais-waha-sessions
+  ais-waha-media:
+    name: ais-waha-media
