@@ -30,7 +30,10 @@ public class WhatsappStatusHolder {
     private volatile String lastError;
     private volatile OffsetDateTime quotaExceededAt;
     private volatile OffsetDateTime droppedAt;
+    private volatile int droppedCount;
     private volatile List<String> settingsWarnings = List.of();
+    /** Когда проход приёма в последний раз продвинулся (ответ Green-API, записанное уведомление). */
+    private volatile long progressAt = System.currentTimeMillis();
 
     public void setState(String s) { state = s == null || s.isBlank() ? null : s; }
 
@@ -52,11 +55,21 @@ public class WhatsappStatusHolder {
 
     public void quotaExceeded() { quotaExceededAt = OffsetDateTime.now(); }
 
-    public void messageDropped() { droppedAt = OffsetDateTime.now(); }
+    /** Пишет один поток приёма — счёт без гонок; через сутки тишины начинается заново. */
+    public void messageDropped() {
+        OffsetDateTime now = OffsetDateTime.now();
+        if (droppedAt == null || droppedAt.isBefore(now.minus(RECENT))) droppedCount = 0;
+        droppedCount++;
+        droppedAt = now;
+    }
 
     public void setLastError(String e) { lastError = e; }
 
     public String lastError() { return lastError; }
+
+    public void progress() { progressAt = System.currentTimeMillis(); }
+
+    public long sinceProgressMs() { return System.currentTimeMillis() - progressAt; }
 
     public WhatsappStatusResponse snapshot(boolean enabled, boolean configured) {
         WhatsappStatusResponse r = new WhatsappStatusResponse();
@@ -69,7 +82,10 @@ public class WhatsappStatusHolder {
         List<String> w = new ArrayList<>(settingsWarnings);
         OffsetDateTime cutoff = OffsetDateTime.now().minus(RECENT);
         if (quotaExceededAt != null && quotaExceededAt.isAfter(cutoff)) w.add(QUOTA_EXCEEDED);
-        if (droppedAt != null && droppedAt.isAfter(cutoff)) w.add(MESSAGE_DROPPED);
+        if (droppedAt != null && droppedAt.isAfter(cutoff)) {
+            w.add(MESSAGE_DROPPED);
+            r.setDroppedCount(droppedCount);
+        }
         r.setWarnings(w);
         return r;
     }

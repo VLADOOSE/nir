@@ -11,11 +11,19 @@ import com.vladoose.nir.util.SiteCartMessageParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.RecoverableDataAccessException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.CannotCreateTransactionException;
 
+import java.sql.SQLException;
+import java.sql.SQLRecoverableException;
+import java.sql.SQLTransientException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -29,6 +37,13 @@ public class WhatsappChatSync {
 
     private static final Logger log = LoggerFactory.getLogger(WhatsappChatSync.class);
     static final int MAX_ATTEMPTS = 3;
+    /**
+     * Столько «ядовитых» ПОДРЯД — это уже не битое уведомление, а поломка (регрессия, ломающая каждую запись):
+     * дальше не удаляем, стоим с красной строкой — новые сообщения ждут в очереди Green-API (сутки).
+     */
+    static final int DROP_FUSE = 3;
+    /** Классы SQLSTATE: 08 соединение, 40 откат (deadlock), 53 ресурсы (диск/память), 57 вмешательство, 58 система. */
+    private static final Set<String> INFRA_SQLSTATE_CLASSES = Set.of("08", "40", "53", "57", "58");
 
     private final GreenApiClient client;
     private final ChatIngestWriter writer;
@@ -39,6 +54,8 @@ public class WhatsappChatSync {
     private final int receiveTimeoutSec;
     /** receiptId → сколько раз подряд не приняли. В памяти: после рестарта счёт с нуля — это ≤ 2 лишние попытки. */
     private final Map<Long, Integer> failures = new ConcurrentHashMap<>();
+    /** «Ядовитых» пропущено подряд; сбрасывает успешная запись. Пишет один поток приёма. */
+    private int droppedInRow;
 
     public WhatsappChatSync(GreenApiClient client, ChatIngestWriter writer, WestmedClient westmedClient,
                             WhatsappStatusHolder status,
@@ -58,34 +75,79 @@ public class WhatsappChatSync {
     public boolean drain(int maxNotifications) {
         for (int i = 0; i < maxNotifications; i++) {
             GreenApiReceived r = client.receive(receiveTimeoutSec);
+            status.progress();
             if (r == null) return true;
             if (!process(r)) return false;
+            status.progress();
         }
         return true;
     }
 
-    /** Одно уведомление. false — не принято и оставлено в очереди (Green-API отдаст его снова — голову очереди). */
+    /**
+     * Одно уведомление. false — не принято и оставлено в очереди (Green-API отдаст его снова — голову очереди).
+     * Сбой базы/диска — не вина уведомления: попытку не считаем. «Ядовитое» (упало MAX_ATTEMPTS раз) удаляем,
+     * чтобы оно не забило голову очереди навсегда, — но не больше DROP_FUSE подряд.
+     */
     boolean process(GreenApiReceived r) {
         int attempt = failures.getOrDefault(r.receiptId(), 0) + 1;
         try {
             handle(GreenApiNotificationParser.parse(r.body()), attempt);
-        } catch (GreenApiAuthException | GreenApiQuotaException e) {
-            throw e;   // беда инстанса, а не уведомления: паузу ставит планировщик, попытку не считаем
+            droppedInRow = 0;
         } catch (RuntimeException e) {
-            String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            if (isInfrastructureFailure(e)) {
+                status.setLastError("приём приостановлен: база данных недоступна (" + e.getClass().getSimpleName()
+                        + ") — сообщения ждут в очереди Green-API");
+                log.warn("WhatsApp: база данных недоступна — уведомление {} ждёт в очереди", r.receiptId(), e);
+                return false;
+            }
+            String reason = reason(e);
             if (attempt < MAX_ATTEMPTS) {
                 failures.put(r.receiptId(), attempt);
                 status.setLastError("сообщение не принято (попытка " + attempt + " из " + MAX_ATTEMPTS + "): " + reason);
+                log.warn("WhatsApp: уведомление {} не принято (попытка {} из {})", r.receiptId(), attempt, MAX_ATTEMPTS, e);
                 return false;
             }
-            // «ядовитое» уведомление не должно навсегда забить голову очереди
+            if (droppedInRow >= DROP_FUSE) {
+                failures.put(r.receiptId(), attempt);
+                status.setLastError("приём остановлен: " + DROP_FUSE + " сообщения подряд не записались — нужна проверка"
+                        + " (новые ждут в очереди Green-API до суток): " + reason);
+                log.error("WhatsApp: {} уведомления подряд не записались — приём остановлен, {} оставлено в очереди",
+                        DROP_FUSE, r.receiptId(), e);
+                return false;
+            }
+            droppedInRow++;
             status.messageDropped();
             status.setLastError("сообщение пропущено после " + MAX_ATTEMPTS + " попыток: " + reason);
-            log.warn("WhatsApp: уведомление {} не принято {} раз подряд — удалено из очереди: {}", r.receiptId(), attempt, reason);
+            log.warn("WhatsApp: уведомление {} не принято {} раз подряд — удалено из очереди", r.receiptId(), attempt, e);
         }
         failures.remove(r.receiptId());
         client.delete(r.receiptId());
         return true;
+    }
+
+    /**
+     * Текст для строки состояния, которую видит любой вошедший: свои сообщения Green-API — как есть (собраны без
+     * адреса), чужие исключения — только класс: в их тексте бывают SQL, значения и адреса.
+     */
+    static String reason(Throwable e) {
+        if (e instanceof GreenApiException) return e.getMessage();
+        return "внутренняя ошибка (" + e.getClass().getSimpleName() + ") — подробности в логе сервера";
+    }
+
+    /** Сбой инфраструктуры (база, диск, соединение), а не битое уведомление — по всей цепочке причин. */
+    static boolean isInfrastructureFailure(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof DataAccessResourceFailureException || t instanceof CannotCreateTransactionException
+                    || t instanceof TransientDataAccessException || t instanceof RecoverableDataAccessException
+                    || t instanceof SQLTransientException || t instanceof SQLRecoverableException) {
+                return true;
+            }
+            if (t instanceof SQLException sql && sql.getSQLState() != null && sql.getSQLState().length() >= 2
+                    && INFRA_SQLSTATE_CLASSES.contains(sql.getSQLState().substring(0, 2))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void handle(ParsedNotification p, int attempt) {

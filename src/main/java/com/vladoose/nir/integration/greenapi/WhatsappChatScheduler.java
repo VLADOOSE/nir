@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -30,11 +31,15 @@ public class WhatsappChatScheduler {
     private final GreenApiClient client;
     private final WhatsappStatusHolder status;
     private final boolean enabled;
+    /** null — WHATSAPP_MARKET не распознан: приём стоит (раньше опечатка молча превращалась в RF). */
     private final Market market;
+    private final String marketRaw;
     private final long authBackoffMs;
     private final long errorBackoffMs;
     private final long stateRefreshMs;
     private final long settingsRefreshMs;
+    /** Проход без продвижения дольше этого — строка состояния говорит «приём не продвигается». */
+    private final long stallMs;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "whatsapp-chats");
@@ -46,6 +51,7 @@ public class WhatsappChatScheduler {
     private volatile long nextStateCheck;
     private volatile long nextSettingsCheck;
     private volatile boolean credentialsWarned;
+    private volatile boolean marketWarned;
 
     public WhatsappChatScheduler(WhatsappChatSync sync, GreenApiClient client, WhatsappStatusHolder status,
                                  @Value("${chats.whatsapp.enabled:false}") boolean enabled,
@@ -53,16 +59,28 @@ public class WhatsappChatScheduler {
                                  @Value("${chats.whatsapp.auth-backoff-ms:600000}") long authBackoffMs,
                                  @Value("${chats.whatsapp.error-backoff-ms:30000}") long errorBackoffMs,
                                  @Value("${chats.whatsapp.state-refresh-ms:300000}") long stateRefreshMs,
-                                 @Value("${chats.whatsapp.settings-refresh-ms:3600000}") long settingsRefreshMs) {
+                                 @Value("${chats.whatsapp.settings-refresh-ms:3600000}") long settingsRefreshMs,
+                                 @Value("${chats.whatsapp.stall-ms:300000}") long stallMs) {
         this.sync = sync;
         this.client = client;
         this.status = status;
         this.enabled = enabled;
-        this.market = Market.fromHeader(market);
+        this.market = parseMarket(market);
+        this.marketRaw = market;
         this.authBackoffMs = authBackoffMs;
         this.errorBackoffMs = errorBackoffMs;
         this.stateRefreshMs = stateRefreshMs;
         this.settingsRefreshMs = settingsRefreshMs;
+        this.stallMs = stallMs;
+    }
+
+    static Market parseMarket(String raw) {
+        if (raw == null) return null;
+        try {
+            return Market.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Scheduled(fixedDelayString = "${chats.whatsapp.tick-ms:1000}",
@@ -84,6 +102,15 @@ public class WhatsappChatScheduler {
 
     /** Один проход. Пакетная видимость — ради тестов (зовётся напрямую, в транзакции теста). */
     void cycle() {
+        status.progress();
+        if (market == null) {
+            status.setLastError("WHATSAPP_MARKET: неизвестный рынок «" + marketRaw + "» — приём остановлен (нужно KZ или RF)");
+            if (!marketWarned) {
+                log.error("WhatsApp: {}", status.lastError());
+                marketWarned = true;
+            }
+            return;
+        }
         if (!client.isConfigured()) {
             status.setLastError("не заданы учётные данные Green-API (WHATSAPP_API_URL / WHATSAPP_ID_INSTANCE / WHATSAPP_API_TOKEN)");
             if (!credentialsWarned) {
@@ -118,16 +145,29 @@ public class WhatsappChatScheduler {
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
             status.setLastError(e.getMessage());
         } catch (RuntimeException e) {
+            // в строку состояния (её видит любой вошедший) — только свой текст или класс, подробности — в лог
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
-            status.setLastError(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
-            log.warn("WhatsApp: проход приёма не удался: {}", status.lastError());
+            status.setLastError(WhatsappChatSync.reason(e));
+            log.warn("WhatsApp: проход приёма не удался — пауза {} с", errorBackoffMs / 1000, e);
+        } catch (Error e) {
+            // нехватка памяти и т.п.: без паузы та же голова очереди повторялась бы раз в секунду, молча
+            pausedUntil = System.currentTimeMillis() + errorBackoffMs;
+            status.setLastError(WhatsappChatSync.reason(e));
+            log.error("WhatsApp: проход приёма упал ({}) — пауза {} с", e.getClass().getSimpleName(), errorBackoffMs / 1000, e);
         } finally {
             MarketContext.clear();
         }
     }
 
     public WhatsappStatusResponse status() {
-        return status.snapshot(enabled, client.isConfigured());
+        WhatsappStatusResponse r = status.snapshot(enabled, client.isConfigured());
+        r.setMarket(market == null ? null : market.name());
+        long idleMs = status.sinceProgressMs();
+        if (running.get() && idleMs > stallMs) {
+            r.setLastError("приём не продвигается " + Math.max(1, idleMs / 60_000) + " мин — перезапустите бэкенд"
+                    + " (docker compose restart ais-backend), подробности в логе сервера");
+        }
+        return r;
     }
 
     @PreDestroy

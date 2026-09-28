@@ -20,10 +20,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -91,25 +95,75 @@ class WhatsappChatSyncTest {
         assertThat(status.snapshot(true, true).getLastMessageAt()).isNotNull();
     }
 
-    @Test
-    void failedWriteLeavesNotificationInQueueAndThirdFailureDropsIt() {
-        ChatIngestWriter broken = new ChatIngestWriter(chatRepository, messageRepository, attachmentRepository, rules, intake, leadService) {
+    private ChatIngestWriter writerThrowing(RuntimeException e) {
+        return new ChatIngestWriter(chatRepository, messageRepository, attachmentRepository, rules, intake, leadService) {
             @Override
             public Outcome write(ParsedNotification.Message m, IncomingFile file, List<IncomingLead.Item> cart) {
-                throw new IllegalStateException("сбой записи");
+                throw e;
             }
         };
+    }
+
+    @Test
+    void failedWriteLeavesNotificationInQueueAndThirdFailureDropsIt() {
         long r = fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x")));
-        WhatsappChatSync s = sync(broken);
+        WhatsappChatSync s = sync(writerThrowing(new IllegalStateException("значение 'Айгерим' не влезло")));
 
         assertThat(s.drain(10)).isFalse();
         assertThat(s.drain(10)).isFalse();
         assertThat(fake.deleted).isEmpty();                       // не записано — ждёт в очереди
-        assertThat(status.lastError()).contains("сбой записи");
+        // строку состояния видит любой вошедший — только класс, без сырого текста (там бывают SQL и значения)
+        assertThat(status.lastError()).contains("IllegalStateException").doesNotContain("Айгерим");
 
         assertThat(s.drain(10)).isTrue();                          // третья неудача — «ядовитое», удаляем
         assertThat(fake.deleted).containsExactly(r);
-        assertThat(status.snapshot(true, true).getWarnings()).contains(WhatsappStatusHolder.MESSAGE_DROPPED);
+        WhatsappStatusResponse st = status.snapshot(true, true);
+        assertThat(st.getWarnings()).contains(WhatsappStatusHolder.MESSAGE_DROPPED);
+        assertThat(st.getDroppedCount()).isEqualTo(1);
+    }
+
+    /**
+     * Ревью 2026-09-28: сбой базы считался «ядовитым» уведомлением — при паузе 30 с голова очереди удалялась раз в
+     * 1–2 минуты простоя, то есть сгорал ровно тот суточный буфер Green-API, ради которого выбирали опрос.
+     */
+    @Test
+    void databaseOutageNeverDropsNotifications() {
+        long r = fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x")));
+        WhatsappChatSync s = sync(writerThrowing(new CannotCreateTransactionException("Could not open JPA EntityManager")));
+
+        for (int i = 0; i < 6; i++) assertThat(s.drain(10)).isFalse();
+
+        assertThat(fake.deleted).isEmpty();
+        assertThat(fake.queue.peekFirst().receiptId()).isEqualTo(r);
+        assertThat(status.snapshot(true, true).getWarnings()).doesNotContain(WhatsappStatusHolder.MESSAGE_DROPPED);
+        assertThat(status.lastError()).contains("база данных");
+    }
+
+    @Test
+    void infrastructureFailuresAreRecognisedThroughCauses() {
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new DataAccessResourceFailureException("нет соединения"))).isTrue();
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new RuntimeException(new SQLException("could not extend file", "53100")))).isTrue();
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new RuntimeException(new SQLException("terminating connection", "57P01")))).isTrue();
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new RuntimeException(new SQLException("connection refused", "08001")))).isTrue();
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new IllegalStateException("ошибка в коде"))).isFalse();
+        assertThat(WhatsappChatSync.isInfrastructureFailure(new RuntimeException(new SQLException("value too long", "22001")))).isFalse();
+    }
+
+    /** Регрессия, ломающая КАЖДУЮ запись, не должна по одному выкидывать всю очередь: после серии — стоп и красная строка. */
+    @Test
+    void repeatedPoisonTripsFuseInsteadOfEmptyingQueue() {
+        List<Long> receipts = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            receipts.add(fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x" + i))));
+        }
+        WhatsappChatSync s = sync(writerThrowing(new IllegalStateException("регрессия записи")));
+
+        for (int i = 0; i < 30; i++) s.drain(10);
+
+        assertThat(fake.deleted).containsExactlyElementsOf(receipts.subList(0, WhatsappChatSync.DROP_FUSE));
+        assertThat(fake.queue.peekFirst().receiptId()).isEqualTo(receipts.get(WhatsappChatSync.DROP_FUSE));
+        assertThat(status.snapshot(true, true).getDroppedCount()).isEqualTo(WhatsappChatSync.DROP_FUSE);
+        assertThat(status.lastError()).contains("приём остановлен");
     }
 
     @Test
@@ -193,8 +247,9 @@ class WhatsappChatSyncTest {
                 .singleElement().extracting(ChatAttachmentMeta::notStoredReason).isEqualTo(AttachmentNotStoredReason.DOWNLOAD_FAILED);
     }
 
+    /** Отказ ключа приходит из receive() — уходит наверх (паузу ставит планировщик), очередь не трогаем. */
     @Test
-    void rejectedKeyIsNotCountedAsBrokenNotification() {
+    void receiveFailurePropagatesWithQueueUntouched() {
         fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x")));
         fake.failReceiveWith = new GreenApiAuthException(401, "Green-API отклонил ключ (HTTP 401) при приёме сообщений");
 

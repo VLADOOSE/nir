@@ -11,8 +11,10 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -27,14 +29,26 @@ class GreenApiHttpClientTest {
     static volatile int status;
     static volatile String body;
     static volatile byte[] file;
+    /** Заголовки и начало тела — и тишина: соединение не рвётся, тело не приходит. */
+    static volatile boolean stall;
 
     @BeforeAll
     static void start() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.setExecutor(Executors.newCachedThreadPool());   // «зависший» ответ не держит остальные тесты
         server.createContext("/", ex -> {
             String path = ex.getRequestURI().getRawPath();
             String query = ex.getRequestURI().getRawQuery();
             calls.add(ex.getRequestMethod() + " " + path + (query != null ? "?" + query : ""));
+            if (stall) {
+                ex.sendResponseHeaders(200, 100);
+                OutputStream os = ex.getResponseBody();
+                os.write("{\"rec".getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                try { Thread.sleep(8000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+                ex.close();
+                return;
+            }
             byte[] b = path.startsWith("/files/") ? file : body.getBytes(StandardCharsets.UTF_8);
             ex.sendResponseHeaders(status, b.length == 0 ? -1 : b.length);
             if (b.length > 0) {
@@ -55,6 +69,7 @@ class GreenApiHttpClientTest {
         status = 200;
         body = "null";
         file = new byte[0];
+        stall = false;
     }
 
     static GreenApiHttpClient client() {
@@ -162,6 +177,51 @@ class GreenApiHttpClientTest {
         assertThatThrownBy(() -> c.download("http://localhost:" + port + "/files/a.pdf", 10))
                 .isInstanceOf(GreenApiException.class).hasMessageContaining("https");
         assertThat(calls).isEmpty();
+    }
+
+    /**
+     * Ревью 2026-09-28: при опечатке в настройках JDK кладёт в текст IllegalArgumentException ВЕСЬ адрес — с токеном,
+     * а текст уходил в лог и в строку состояния, которую видит любой вошедший.
+     */
+    @Test
+    void malformedSettingsNeverPutTokenIntoErrorText() {
+        GreenApiHttpClient oneSlash = new GreenApiHttpClient(new ObjectMapper(), "https:/7105.api.greenapi.com", "1101", TOKEN);
+        GreenApiHttpClient spaced = new GreenApiHttpClient(new ObjectMapper(), "http://localhost:" + port, "1101", "tok secret\"123");
+
+        for (GreenApiHttpClient c : List.of(oneSlash, spaced)) {
+            assertThatThrownBy(() -> c.receive(5))
+                    .isInstanceOf(GreenApiAuthException.class)
+                    .hasMessageContaining("WHATSAPP_API_URL")
+                    .hasMessageNotContaining(TOKEN)
+                    .hasMessageNotContaining("secret")
+                    .hasMessageNotContaining("waInstance");
+        }
+        assertThat(calls).isEmpty();
+    }
+
+    /** Ссылка без хоста проходит URI.create, но не HttpRequest — это сбой скачивания, а не «ядовитое» уведомление. */
+    @Test
+    void badFileLinkIsDownloadFailure() {
+        assertThatThrownBy(() -> client().download("https:/files.example/a.pdf", 10))
+                .isInstanceOf(GreenApiException.class);
+    }
+
+    /**
+     * Таймаут HttpRequest в JDK 17 снимается на заголовках: тело, которое встало посередине, держало единственный поток
+     * приёма вечно. Дедлайн — на весь обмен, включая тело.
+     */
+    @Test
+    void stalledBodyIsCutOffByDeadline() {
+        stall = true;
+        GreenApiHttpClient c = new GreenApiHttpClient(new ObjectMapper(), "http://localhost:" + port, "1101", TOKEN,
+                Duration.ofSeconds(2), Duration.ofSeconds(1));
+        long t0 = System.nanoTime();
+
+        assertThatThrownBy(() -> c.receive(1)).isInstanceOf(GreenApiException.class).hasMessageNotContaining(TOKEN);
+        assertThatThrownBy(() -> c.download("http://localhost:" + port + "/files/a.pdf", 1000))
+                .isInstanceOf(GreenApiException.class);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(7));
     }
 
     @Test

@@ -156,4 +156,5 @@ chats:
     error-backoff-ms: 30000
     state-refresh-ms: 300000
     settings-refresh-ms: 3600000
+    stall-ms: 300000                               # проход без продвижения дольше — «приём не продвигается» в строке
     lead-converted-days: 30

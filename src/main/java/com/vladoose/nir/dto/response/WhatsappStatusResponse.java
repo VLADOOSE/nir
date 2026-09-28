@@ -15,4 +15,8 @@ public class WhatsappStatusResponse {
     private OffsetDateTime lastMessageAt;
     private List<String> warnings;
     private String lastError;
+    /** Сколько сообщений за сутки пропущено как «ядовитые» (их надо посмотреть в телефоне). */
+    private int droppedCount;
+    /** Рынок зеркала — экран подскажет переключиться, если выбран другой (ловушка «не видно данных»). */
+    private String market;
 }

@@ -16,7 +16,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -39,9 +41,14 @@ class WhatsappChatSchedulerTest {
 
     @AfterEach void tearDown() { MarketContext.clear(); }
 
-    private WhatsappChatScheduler scheduler(boolean enabled) {
-        WhatsappChatSync sync = new WhatsappChatSync(fake, writer, new FakeWestmedClient(), status, "https://westmed.kz", 25, 5);
-        return new WhatsappChatScheduler(sync, fake, status, enabled, "KZ", 600_000, 30_000, 300_000, 3_600_000);
+    private WhatsappChatSync sync() {
+        return new WhatsappChatSync(fake, writer, new FakeWestmedClient(), status, "https://westmed.kz", 25, 5);
+    }
+
+    private WhatsappChatScheduler scheduler(boolean enabled) { return scheduler(enabled, 300_000); }
+
+    private WhatsappChatScheduler scheduler(boolean enabled, long stallMs) {
+        return new WhatsappChatScheduler(sync(), fake, status, enabled, "KZ", 600_000, 30_000, 300_000, 3_600_000, stallMs);
     }
 
     @Test
@@ -105,5 +112,77 @@ class WhatsappChatSchedulerTest {
     @Test
     void disabledSchedulerStillReportsStatus() {
         assertThat(scheduler(false).status().isEnabled()).isFalse();
+    }
+
+    /** Строку состояния видит любой вошедший: чужой текст исключения (бывает с адресом и токеном) туда не попадает. */
+    @Test
+    void foreignExceptionTextNeverReachesStatusLine() {
+        fake.failReceiveWith = new IllegalStateException("https://api.example/waInstance1101/receiveNotification/tok-secret");
+        WhatsappChatScheduler s = scheduler(true);
+
+        s.cycle();
+
+        assertThat(s.status().getLastError()).contains("IllegalStateException")
+                .doesNotContain("tok-secret").doesNotContain("waInstance");
+    }
+
+    /** Error (нехватка памяти на большом файле) не должен крутить голову очереди раз в секунду молча. */
+    @Test
+    void errorInsideCycleIsReportedAndPaused() {
+        fake.failReceiveWithError = new CycleTestError();
+        WhatsappChatScheduler s = scheduler(true);
+
+        s.cycle();
+        assertThat(s.status().getLastError()).contains("CycleTestError");
+        int calls = fake.receiveCalls;
+
+        fake.failReceiveWithError = null;
+        s.cycle();
+        assertThat(fake.receiveCalls).isEqualTo(calls);   // пауза
+    }
+
+    static class CycleTestError extends Error {}
+
+    /** Опечатка в WHATSAPP_MARKET молча превращалась в RF — чаты уходили на рынок, где их никто не ищет. */
+    @Test
+    void unknownMarketStopsIntakeInsteadOfWritingToRf() {
+        WhatsappChatScheduler s = new WhatsappChatScheduler(sync(), fake, status, true, "KZZ",
+                600_000, 30_000, 300_000, 3_600_000, 300_000);
+
+        s.cycle();
+
+        assertThat(s.status().getLastError()).contains("WHATSAPP_MARKET").contains("KZZ");
+        assertThat(fake.receiveCalls).isZero();
+    }
+
+    @Test
+    void statusTellsWhichMarketTheMirrorWritesTo() {
+        assertThat(scheduler(true).status().getMarket()).isEqualTo("KZ");
+    }
+
+    /** Ревью 2026-09-28: застрявший проход держал «подключён» без ошибки — со стороны неотличимо от тишины в чатах. */
+    @Test
+    void stalledCycleIsVisibleInStatus() throws Exception {
+        CountDownLatch inside = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        fake.onReceive = () -> {
+            inside.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        WhatsappChatScheduler s = scheduler(true, 100);
+        try {
+            s.tick();
+            assertThat(inside.await(5, TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(300);
+
+            assertThat(s.status().getLastError()).contains("не продвигается");
+        } finally {
+            release.countDown();
+            s.shutdown();
+        }
     }
 }

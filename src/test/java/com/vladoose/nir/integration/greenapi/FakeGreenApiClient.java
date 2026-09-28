@@ -17,6 +17,10 @@ public class FakeGreenApiClient implements GreenApiClient {
     public String state = "authorized";
     public GreenApiSettings settings = new GreenApiSettings(GreenApiJson.WID, "", true, true);
     public RuntimeException failReceiveWith;
+    /** Error (не Exception) из receive — как нехватка памяти внутри прохода. */
+    public Error failReceiveWithError;
+    /** Выполняется в начале receive — например, «зависнуть» на защёлке. */
+    public Runnable onReceive;
     public int receiveCalls;
     private long nextReceipt = 1;
 
@@ -32,7 +36,9 @@ public class FakeGreenApiClient implements GreenApiClient {
     @Override
     public GreenApiReceived receive(int receiveTimeoutSec) {
         receiveCalls++;
+        if (onReceive != null) onReceive.run();
         if (failReceiveWith != null) throw failReceiveWith;
+        if (failReceiveWithError != null) throw failReceiveWithError;
         return queue.peekFirst();
     }
 
