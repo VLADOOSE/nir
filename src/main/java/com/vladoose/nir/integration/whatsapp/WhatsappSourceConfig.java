@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.integration.greenapi.GreenApiSource;
+import com.vladoose.nir.integration.waha.WahaInboxSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,13 +18,15 @@ public class WhatsappSourceConfig {
     /** destroyMethod = "": бин — тот же объект, что источник-компонент, закрывать его вторым именем незачем. */
     @Bean(destroyMethod = "")
     @Primary
-    public WhatsappSource whatsappSource(@Value("${chats.whatsapp.provider:greenapi}") String provider,
-                                         GreenApiSource greenApi) {
-        return select(provider, greenApi);
+    public WhatsappSource whatsappSource(@Value("${chats.whatsapp.provider:waha}") String provider,
+                                         GreenApiSource greenApi, WahaInboxSource waha) {
+        return select(provider, greenApi, waha);
     }
 
-    static WhatsappSource select(String provider, GreenApiSource greenApi) {
-        if (WhatsappProviders.GREENAPI.equals(WhatsappProviders.normalize(provider))) return greenApi;
+    static WhatsappSource select(String provider, GreenApiSource greenApi, WahaInboxSource waha) {
+        String p = WhatsappProviders.normalize(provider);
+        if (p.equals(WhatsappProviders.WAHA)) return waha;
+        if (p.equals(WhatsappProviders.GREENAPI)) return greenApi;
         return new UnknownProviderSource(provider);
     }
 

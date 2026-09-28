@@ -30,6 +30,12 @@ public sealed interface ParsedNotification {
         }
 
         public boolean isEdit() { return editOf != null && !editOf.isBlank(); }
+
+        /** Копия с именем чата и телефоном из справочников шлюза (WAHA: контакты, группы, скрытые номера). */
+        public Message withContact(String newChatName, String newPhone) {
+            return new Message(account, chatId, kind, newPhone, newChatName, senderName, direction, idMessage, sentAt,
+                    type, body, file, editOf, viaApi);
+        }
     }
 
     record Delete(String account, String chatId, String deletedId) implements ParsedNotification {}

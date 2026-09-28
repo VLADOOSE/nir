@@ -28,6 +28,8 @@ public class WhatsappStatusHolder {
     private volatile String number;
     private volatile OffsetDateTime lastMessageAt;
     private volatile String lastError;
+    /** Беда источника, не мешающая разбирать уже принятое (WAHA не отвечает): видна, пока нет ошибки самого цикла. */
+    private volatile String sourceError;
     private volatile OffsetDateTime quotaExceededAt;
     private volatile OffsetDateTime droppedAt;
     private volatile int droppedCount;
@@ -37,6 +39,12 @@ public class WhatsappStatusHolder {
     private volatile long progressAt = System.currentTimeMillis();
 
     public void setState(String s) { state = s == null || s.isBlank() ? null : s; }
+
+    public String state() { return state; }
+
+    public String number() { return number; }
+
+    public void setSourceError(String e) { sourceError = e; }
 
     /** «77000000001@c.us» / «77000000001:12@s.whatsapp.net» / «77000000001» → «77000000001»; пусто → null. */
     public void setNumber(String wid) {
@@ -85,7 +93,7 @@ public class WhatsappStatusHolder {
         r.setState(state);
         r.setNumber(number);
         r.setLastMessageAt(lastMessageAt);
-        r.setLastError(lastError);
+        r.setLastError(lastError != null ? lastError : sourceError);
         List<String> w = new ArrayList<>(sourceWarnings);
         OffsetDateTime cutoff = OffsetDateTime.now().minus(RECENT);
         if (quotaExceededAt != null && quotaExceededAt.isAfter(cutoff)) w.add(QUOTA_EXCEEDED);

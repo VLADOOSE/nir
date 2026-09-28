@@ -144,7 +144,7 @@ leads:
 chats:
   whatsapp:
     enabled: ${WHATSAPP_ENABLED:false}
-    provider: ${WHATSAPP_PROVIDER:greenapi}        # greenapi | waha
+    provider: ${WHATSAPP_PROVIDER:waha}            # waha | greenapi (запасной, спека whatsapp-waha §1)
     api-url: ${WHATSAPP_API_URL:}                  # «apiUrl» из кабинета Green-API, напр. https://7105.api.greenapi.com
     id-instance: ${WHATSAPP_ID_INSTANCE:}
     api-token: ${WHATSAPP_API_TOKEN:}              # секрет: только env; стоит в пути URL — URL нигде не печатаются
