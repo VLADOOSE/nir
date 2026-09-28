@@ -137,3 +137,23 @@ leads:
     auth-backoff-ms: 600000                            # сайт пускает 5 входов за 5 мин с IP
     # от кого сайт шлёт письма-уведомления о заявках — приём почты их пропускает (спека §11)
     notification-from: ${WESTMED_NOTIFICATION_FROM:info@westmed.kz}
+
+# Чаты рабочего номера WhatsApp через Green-API (спека docs/superpowers/specs/2026-09-28-whatsapp-chats-green-api-design.md).
+# Выкл по умолчанию, как все интеграции. ⚠️ Очередь инстанса читает ОДИН потребитель: локальная АИС и прод —
+# на РАЗНЫХ инстансах, иначе они забирают сообщения друг у друга.
+chats:
+  whatsapp:
+    enabled: ${WHATSAPP_ENABLED:false}
+    api-url: ${WHATSAPP_API_URL:}                  # «apiUrl» из кабинета Green-API, напр. https://7105.api.greenapi.com
+    id-instance: ${WHATSAPP_ID_INSTANCE:}
+    api-token: ${WHATSAPP_API_TOKEN:}              # секрет: только env; стоит в пути URL — URL нигде не печатаются
+    market: ${WHATSAPP_MARKET:KZ}
+    max-file-mb: ${WHATSAPP_MAX_FILE_MB:25}
+    receive-timeout-s: 20
+    tick-ms: 1000
+    initial-delay-ms: ${WHATSAPP_INITIAL_DELAY_MS:20000}
+    auth-backoff-ms: 600000
+    error-backoff-ms: 30000
+    state-refresh-ms: 300000
+    settings-refresh-ms: 3600000
+    lead-converted-days: 30
