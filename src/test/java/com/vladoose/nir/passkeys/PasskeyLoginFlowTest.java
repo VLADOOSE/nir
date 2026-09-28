@@ -106,6 +106,27 @@ class PasskeyLoginFlowTest {
         loginWithKey(s, body).andExpect(status().isUnauthorized());   // вызов одноразовый: параметры уже сняты с сессии
     }
 
+    @Test
+    void passwordLoginChangesSessionId() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        String before = session.getId();
+        mvc.perform(post("/api/auth/login").session(session).contentType(APPLICATION_JSON).content(PASSWORD_JSON))
+                .andExpect(status().isOk());
+        assertThat(session.getId()).as("id сессии после входа паролем").isNotEqualTo(before);
+        mvc.perform(get("/api/auth/me").session(session)).andExpect(status().isOk());
+    }
+
+    @Test
+    void keyLoginChangesSessionId() throws Exception {
+        VirtualPasskey key = registerKey(loginWithPassword(), "iPhone · Safari");
+        MockHttpSession session = new MockHttpSession();
+        String options = loginOptions(session);                 // сессия открыта ещё до входа — её и подменяют
+        String before = session.getId();
+        loginWithKey(session, key.assertionBody(options, VirtualPasskey.ORIGIN)).andExpect(status().isOk());
+        assertThat(session.getId()).as("id сессии после входа ключом").isNotEqualTo(before);
+        mvc.perform(get("/api/auth/me").session(session)).andExpect(status().isOk());
+    }
+
     // --- помощники (ими пользуется и Task 3) ---
 
     MockHttpSession loginWithPassword() throws Exception {

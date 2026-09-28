@@ -39,6 +39,11 @@ public class AuthController {
                     new UsernamePasswordAuthenticationToken(body.username(), body.password());
             Authentication auth = authenticationManager.authenticate(token);
 
+            // сессия, открытая до входа, могла быть подсунута — после входа её id ничего не стоит (спека passkeys-login §5.3)
+            if (request.getSession(false) != null) {
+                request.changeSessionId();
+            }
+
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(auth);
             SecurityContextHolder.setContext(context);

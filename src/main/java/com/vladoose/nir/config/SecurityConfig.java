@@ -1,5 +1,6 @@
 package com.vladoose.nir.config;
 
+import com.vladoose.nir.security.SessionIdRotationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -55,6 +57,9 @@ public class SecurityConfig {
                         .rpId(passkeyRpId)
                         .allowedOrigins(passkeyOrigins)
                         .disableDefaultRegistrationPage(true))
+                // смена id сессии перед входом по ключу; место фильтра формы входа (она выключена) — раньше
+                // фильтра Spring для /login/webauthn, который стоит перед BasicAuthenticationFilter
+                .addFilterBefore(new SessionIdRotationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                 )
