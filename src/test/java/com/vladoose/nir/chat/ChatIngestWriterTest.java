@@ -6,6 +6,7 @@ import com.vladoose.nir.dto.response.ChatAttachmentMeta;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.greenapi.GreenApiJson;
 import com.vladoose.nir.integration.greenapi.GreenApiNotificationParser;
+import com.vladoose.nir.integration.whatsapp.ChatKind;
 import com.vladoose.nir.integration.whatsapp.IncomingFile;
 import com.vladoose.nir.integration.whatsapp.ParsedNotification;
 import com.vladoose.nir.integration.lead.IncomingLead;
@@ -28,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -68,6 +70,19 @@ class ChatIngestWriterTest {
     }
     private ChatIngestWriter.Outcome write(ParsedNotification.Message m) { return writer.write(m, null, List.of()); }
     private List<Lead> leadsOf(ChatIngestWriter.Outcome o) { return leadRepository.findByChatIdIn(List.of(o.chatId())); }
+
+    /** Звонок WAHA (спека whatsapp-waha §8): outcome — null у call.received, « — принят»/« — отклонён» у исхода. */
+    private ParsedNotification.Message call(String chat, String callId, String outcome) {
+        String externalId = "call:" + callId;
+        ChatKind kind = ChatKind.of(chat);
+        return new ParsedNotification.Message(GreenApiJson.ACCOUNT, chat, kind,
+                kind == ChatKind.PERSONAL ? "+" + chat.substring(0, chat.indexOf('@')) : null, null, null,
+                LeadDirection.IN, externalId, OffsetDateTime.ofInstant(Instant.ofEpochSecond(clock += 60), ZoneOffset.UTC),
+                ChatMessageType.CALL, "📞 Входящий звонок" + (outcome == null ? "" : outcome), null,
+                outcome == null ? null : externalId, false);
+    }
+
+    private List<ChatMessage> messagesOf(Long chatId) { return messageRepository.findLatest(chatId, PageRequest.of(0, 20)); }
 
     @Test
     void firstMessageOfPersonalChatCreatesChatAndNewLead() {
@@ -314,5 +329,70 @@ class ChatIngestWriterTest {
 
         assertThat(leadRepository.findById(first.createdLeadId()).orElseThrow().getContactPhone()).isNull();
         assertThat(second.createdLeadId()).isNull();
+    }
+
+    @Test
+    void incomingCallIsServiceLineAndStartsCallLead() {
+        ChatIngestWriter.Outcome o = write(call(personal(), "C1", null));
+
+        ChatMessage m = messageRepository.findById(o.messageId()).orElseThrow();
+        assertThat(m.getType()).isEqualTo(ChatMessageType.CALL);
+        assertThat(m.getBody()).isEqualTo("📞 Входящий звонок");
+        assertThat(m.isEdited()).isFalse();
+        Lead l = leadRepository.findById(o.createdLeadId()).orElseThrow();
+        assertThat(l.getSubject()).isEqualTo("Звонок в WhatsApp");
+        assertThat(l.getStatus()).isEqualTo(LeadStatus.NEW);
+        assertThat(l.getMessage()).isEqualTo("📞 Входящий звонок");
+        // тема уже называет канал — без хвоста «— WhatsApp»
+        assertThat(l.getEvents()).extracting(LeadEvent::getBody).containsExactly("Звонок в WhatsApp");
+    }
+
+    /** Исход дописывается к той же строке и не делает её «изменённой»: это не правка текста человеком. */
+    @Test
+    void callOutcomeCompletesTheSameLine() {
+        String chat = personal();
+        ChatIngestWriter.Outcome first = write(call(chat, "C2", null));
+        ChatIngestWriter.Outcome outcome = write(call(chat, "C2", " — принят"));
+
+        assertThat(outcome.createdLeadId()).isNull();
+        assertThat(messagesOf(first.chatId())).singleElement().satisfies(m -> {
+            assertThat(m.getBody()).isEqualTo("📞 Входящий звонок — принят");
+            assertThat(m.isEdited()).isFalse();
+        });
+        assertThat(chatRepository.findById(first.chatId()).orElseThrow().getLastMessagePreview())
+                .isEqualTo("📞 Входящий звонок — принят");
+        assertThat(leadsOf(first)).hasSize(1);
+    }
+
+    /** Звонок при открытом обращении — просто в его ленте; в «В работе» не переводит (это не ответ с телефона). */
+    @Test
+    void callDuringOpenLeadDoesNotStartNewOneOrTakeItIntoWork() {
+        String chat = personal();
+        ChatIngestWriter.Outcome first = write(in(chat, "Здравствуйте, нужен облучатель"));
+        ChatIngestWriter.Outcome c = write(call(chat, "C3", null));
+
+        assertThat(c.createdLeadId()).isNull();
+        assertThat(leadsOf(first)).singleElement().extracting(Lead::getStatus).isEqualTo(LeadStatus.NEW);
+    }
+
+    @Test
+    void groupCallIsStoredWithoutLead() {
+        ChatIngestWriter.Outcome o = write(call(group(), "C4", null));
+
+        assertThat(o.createdLeadId()).isNull();
+        assertThat(leadsOf(o)).isEmpty();
+        assertThat(messageRepository.findById(o.messageId()).orElseThrow().getType()).isEqualTo(ChatMessageType.CALL);
+    }
+
+    /** call.received потерялся — исход становится строкой звонка сам, без пометки «изменено». */
+    @Test
+    void outcomeWithoutReceivedCallBecomesCallLine() {
+        ChatIngestWriter.Outcome o = write(call(personal(), "C5", " — отклонён"));
+
+        ChatMessage m = messageRepository.findById(o.messageId()).orElseThrow();
+        assertThat(m.getBody()).isEqualTo("📞 Входящий звонок — отклонён");
+        assertThat(m.getExternalId()).isEqualTo("call:C5");
+        assertThat(m.isEdited()).isFalse();
+        assertThat(o.createdLeadId()).isNull();
     }
 }

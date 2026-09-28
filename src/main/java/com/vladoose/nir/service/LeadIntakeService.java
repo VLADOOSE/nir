@@ -80,7 +80,8 @@ public class LeadIntakeService {
         String base = in.subject() + (itemCount > 0 ? ", " + itemCount + " поз." : "");
         if (LeadSources.MANUAL.equals(in.source())) return base + " — внесено вручную";
         String label = LeadSources.label(in.source());
-        // тема «WhatsApp» от источника «WhatsApp» дала бы «WhatsApp — WhatsApp»
-        return base.equals(label) ? "Сообщение в " + label : base + " — " + label;
+        // тема «WhatsApp» от источника «WhatsApp» дала бы «WhatsApp — WhatsApp», тема «Звонок в WhatsApp» — «… — WhatsApp»
+        if (base.equals(label)) return "Сообщение в " + label;
+        return base.contains(label) ? base : base + " — " + label;
     }
 }

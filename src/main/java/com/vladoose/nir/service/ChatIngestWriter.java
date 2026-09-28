@@ -29,6 +29,8 @@ import static com.vladoose.nir.util.LeadText.trunc;
 public class ChatIngestWriter {
 
     static final String AUTO_TAKE_NOTE = "ответ клиенту в WhatsApp с телефона";
+    /** Тема обращения, начатого входящим звонком (спека whatsapp-waha §8). */
+    static final String CALL_SUBJECT = "Звонок в WhatsApp";
     private static final int PREVIEW_MAX = 300;
 
     private final ChatRepository chatRepository;
@@ -61,7 +63,8 @@ public class ChatIngestWriter {
                 ChatMessage edited = original.get();
                 // правка без текста (форма, скажем, правки подписи к файлу не проверена) прежний текст не стирает
                 if (m.body() != null) edited.setBody(m.body());
-                edited.setEdited(true);
+                // исход звонка («— принят») дописывается к строке звонка — это не правка текста человеком
+                if (m.type() != ChatMessageType.CALL) edited.setEdited(true);
                 // превью — текст ПОСЛЕДНЕГО сообщения (спека §6.6): правка последнего его меняет, правка старого — нет
                 if (m.body() != null && !m.body().isBlank() && isLatest(chat, edited)) {
                     chat.setLastMessagePreview(trunc(m.body().strip(), PREVIEW_MAX));
@@ -76,7 +79,7 @@ public class ChatIngestWriter {
         ChatMessage msg = messageRepository.save(ChatMessage.builder()
                 .chat(chat).externalId(m.idMessage()).direction(m.direction())
                 .senderName(trunc(m.senderName(), 255)).type(m.type()).body(m.body())
-                .sentAt(m.sentAt()).edited(m.isEdit()).build());
+                .sentAt(m.sentAt()).edited(m.isEdit() && m.type() != ChatMessageType.CALL).build());
         if (file != null) {
             attachmentRepository.save(ChatAttachment.builder().message(msg)
                     .fileName(trunc(file.fileName(), 255)).mimeType(trunc(file.mimeType(), 100))
@@ -139,8 +142,9 @@ public class ChatIngestWriter {
         }
         if (m.direction() != LeadDirection.IN) return null;   // написали первыми мы — обращение не создаём
         boolean cart = cartItems != null && !cartItems.isEmpty();
+        String subject = cart ? "Запрос КП" : m.type() == ChatMessageType.CALL ? CALL_SUBJECT : "WhatsApp";
         IncomingLead in = new IncomingLead(LeadSources.WHATSAPP, "wa:" + m.idMessage(), LeadChannel.WHATSAPP,
-                cart ? "Запрос КП" : "WhatsApp", m.sentAt(), m.chatName(), m.phone(), null, null,
+                subject, m.sentAt(), m.chatName(), m.phone(), null, null,
                 m.displayText(), cart ? cartItems : List.of(), LeadStatus.NEW, null, null);
         return intake.ingest(in).map(lead -> {
             lead.setChat(chat);
