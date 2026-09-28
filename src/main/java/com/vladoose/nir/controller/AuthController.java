@@ -1,11 +1,13 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.response.PasskeyConfigResponse;
 import com.vladoose.nir.entity.UserAccount;
 import com.vladoose.nir.repository.UserAccountRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,11 +27,14 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final UserAccountRepository userRepository;
+    private final String passkeyRpId;
     private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
-    public AuthController(AuthenticationManager authenticationManager, UserAccountRepository userRepository) {
+    public AuthController(AuthenticationManager authenticationManager, UserAccountRepository userRepository,
+                          @Value("${passkeys.rp-id}") String passkeyRpId) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
+        this.passkeyRpId = passkeyRpId;
     }
 
     @PostMapping("/login")
@@ -70,6 +75,12 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("message", "Не авторизован"));
         }
         return ResponseEntity.ok(buildUserInfo(auth.getName()));
+    }
+
+    /** Домен ключей входа: кнопка «Войти с Face ID» показывается только на нём (спека passkeys-login §6). */
+    @GetMapping("/passkey-config")
+    public PasskeyConfigResponse passkeyConfig() {
+        return new PasskeyConfigResponse(passkeyRpId);
     }
 
     private Map<String, Object> buildUserInfo(String username) {
