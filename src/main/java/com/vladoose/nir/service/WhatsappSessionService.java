@@ -47,6 +47,7 @@ public class WhatsappSessionService {
             r.setName(s == null ? null : s.mePushName());
             r.setQrAvailable(s != null && WahaSessionManager.SCAN_QR_CODE.equals(s.status()));
         } catch (GatewayException e) {
+            r.setStatus(null);                  // прошлое «подключён» при неответившей WAHA было бы враньём
             r.setError(e.getMessage());
         }
         return r;

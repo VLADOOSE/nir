@@ -45,21 +45,21 @@ public class WahaSessionManager {
     }
 
     /**
-     * Из потока приёма, раз в минуту. Первый успешный вызов после старта АИС создаёт сессию (её нет) или запускает
-     * (остановлена). true — сессия только что стала WORKING: повод догнать пропущенное (спека §5.3).
+     * Из потока приёма, раз в минуту. Сессии нет — создаёт её в любой момент (первый старт или WAHA потеряла
+     * хранилище: без сессии нет ни приёма, ни QR, а исправить это со страницы нечем). Остановленную запускает только
+     * при первом успешном вызове после старта АИС: позже остановку мог сделать человек. true — сессия только что стала
+     * WORKING: повод догнать пропущенное (спека §5.3).
      */
     public boolean refresh(WhatsappStatusHolder status) {
         WahaSession s = client.session(session);
-        if (!ensured) {
-            if (s == null) {
-                client.createSession(session, market);
-                s = client.session(session);
-            } else if (STOPPED.equals(s.status())) {
-                client.startSession(session);
-                s = client.session(session);
-            }
-            ensured = true;
+        if (s == null) {
+            client.createSession(session, market);
+            s = client.session(session);
+        } else if (!ensured && STOPPED.equals(s.status())) {
+            client.startSession(session);
+            s = client.session(session);
         }
+        ensured = true;
         boolean wasWorking = last != null && WORKING.equals(last.status());
         last = s;
         status.setState(s == null ? null : s.status());

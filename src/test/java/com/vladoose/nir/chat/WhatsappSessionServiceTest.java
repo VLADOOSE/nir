@@ -57,12 +57,16 @@ class WhatsappSessionServiceTest {
         assertThat(r.isQrAvailable()).isFalse();
     }
 
-    /** WAHA не ответила — страница показывает причину, а не падает. */
+    /** WAHA не ответила — страница показывает причину, а не падает и не рисует прошлое «подключён» (поймано живьём). */
     @Test
     void unreachableWahaIsErrorTextNotFailure() {
+        status.setState("WORKING");
         fake.failWith = new GatewayException(0, "WAHA недоступен при запросе состояния сессии: ConnectException");
 
-        assertThat(service(waha, true).info().getError()).contains("WAHA недоступен");
+        WhatsappSessionResponse r = service(waha, true).info();
+
+        assertThat(r.getError()).contains("WAHA недоступен");
+        assertThat(r.getStatus()).isNull();
     }
 
     @Test

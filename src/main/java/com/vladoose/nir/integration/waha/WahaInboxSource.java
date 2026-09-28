@@ -99,7 +99,7 @@ public class WahaInboxSource implements WhatsappSource {
             nextCleanup = now + CLEANUP_EVERY_MS;
             OffsetDateTime t = OffsetDateTime.now();
             int removed = inbox.cleanup(t.minusDays(doneDays), t.minusDays(droppedDays));
-            if (removed > 0) log.info("WhatsApp: из очереди убрано {} разобранных событий", removed);
+            if (removed > 0) log.info("WhatsApp: из очереди убрано разобранных событий: {}", removed);
         }
     }
 
@@ -121,7 +121,7 @@ public class WahaInboxSource implements WhatsappSource {
     private void runCatchUp(WhatsappStatusHolder status) {
         try {
             int added = catchUp.run(sessions.session(), sessions.account());
-            if (added > 0) log.info("WhatsApp: догонка положила в очередь {} сообщений", added);
+            if (added > 0) log.info("WhatsApp: догонка добавила в очередь сообщений: {}", added);
             if (catchUpFailed) {
                 status.setSourceWarnings(List.of());
                 catchUpFailed = false;

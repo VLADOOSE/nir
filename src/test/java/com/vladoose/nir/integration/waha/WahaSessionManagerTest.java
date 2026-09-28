@@ -68,6 +68,22 @@ class WahaSessionManagerTest {
         assertThat(sessions.account()).isNull();
     }
 
+    /**
+     * WAHA потеряла сессию (новый том, удалили руками) — создаём заново в любой момент, а не только при старте АИС:
+     * иначе статус навсегда пустой, QR нет, и администратору нечем это исправить (поймано живьём на стабе).
+     */
+    @Test
+    void sessionLostByWahaIsCreatedAgain() {
+        fake.session = working();
+        sessions.refresh(status);
+        fake.session = null;
+
+        sessions.refresh(status);
+
+        assertThat(fake.calls).contains("create westmed KZ");
+        assertThat(status.snapshot(true, true).getState()).isEqualTo("SCAN_QR_CODE");
+    }
+
     /** WAHA поднялась позже АИС: сессия создаётся при первом успешном обращении, а не теряется. */
     @Test
     void unreachableWahaPropagatesAndCreationIsRetried() {
