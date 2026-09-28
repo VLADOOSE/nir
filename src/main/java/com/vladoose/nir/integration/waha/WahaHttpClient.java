@@ -37,6 +37,9 @@ public class WahaHttpClient implements WahaClient {
     private static final int QR_MAX_BYTES = 1024 * 1024;
 
     private final HttpClient http = HttpClient.newBuilder()
+            // по умолчанию HttpClient на http:// просит «Upgrade: h2c», а WAHA такой запрос рвёт без ответа (её обработчик
+            // WebSocket) — приём стоял бы с «WAHA недоступен». Найдено на живой WAHA 2026.9.1
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER)     // ключ не должен уйти за перенаправлением
             .build();

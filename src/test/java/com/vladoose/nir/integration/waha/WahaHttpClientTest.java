@@ -39,6 +39,8 @@ class WahaHttpClientTest {
     static final Map<String, Resp> routes = new ConcurrentHashMap<>();
     /** Заголовки и начало тела — и тишина. */
     static volatile boolean stall;
+    /** Запросы с заголовком Upgrade — настоящая WAHA рвёт их без ответа. */
+    static final List<String> upgrades = new CopyOnWriteArrayList<>();
 
     record Resp(int status, String contentType, byte[] body) {
         static Resp json(int status, String json) {
@@ -52,6 +54,12 @@ class WahaHttpClientTest {
         server.setExecutor(Executors.newCachedThreadPool());   // «зависший» ответ не держит остальные тесты
         server.createContext("/", ex -> {
             String path = ex.getRequestURI().getRawPath();
+            // как настоящая WAHA 2026.9.1: запрос с Upgrade её обработчик WebSocket закрывает без ответа («Empty reply»)
+            if (ex.getRequestHeaders().containsKey("Upgrade")) {
+                upgrades.add(ex.getRequestMethod() + " " + path);
+                ex.close();
+                return;
+            }
             String query = ex.getRequestURI().getRawQuery();
             calls.add(ex.getRequestMethod() + " " + path + (query != null ? "?" + query : ""));
             keys.add(String.valueOf(ex.getRequestHeaders().getFirst("X-Api-Key")));
@@ -86,6 +94,7 @@ class WahaHttpClientTest {
         keys.clear();
         bodies.clear();
         routes.clear();
+        upgrades.clear();
         stall = false;
     }
 
@@ -101,6 +110,18 @@ class WahaHttpClientTest {
         assertThat(client().session("westmed")).isEqualTo(new WahaSession("westmed", "WORKING", "77000000001@c.us", "West-Med"));
         assertThat(keys).containsExactly(KEY);
         assertThat(calls).singleElement().asString().doesNotContain(KEY);
+    }
+
+    /**
+     * HttpClient по умолчанию просит HTTP/2 и на http:// шлёт «Upgrade: h2c» — живая WAHA рвёт такое соединение без ответа,
+     * и приём стоял с «WAHA недоступен» (найдено на настоящей WAHA, задача 13; стаб на Node заголовок игнорировал).
+     */
+    @Test
+    void speaksPlainHttp11BecauseWahaDropsUpgradeRequests() {
+        routes.put("GET /api/sessions/westmed", Resp.json(200, "{\"name\":\"westmed\",\"status\":\"WORKING\"}"));
+
+        assertThat(client().session("westmed")).isNotNull();
+        assertThat(upgrades).isEmpty();
     }
 
     @Test
