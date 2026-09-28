@@ -53,7 +53,7 @@ import { filter } from 'rxjs/operators';
             <svg *ngIf="theme.theme() === 'dark'" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           </button>
           <svg lucideIcon="user" [size]="16" class="icon-user"></svg>
-          <span class="user-name">{{ user.fullName || user.username }}</span>
+          <a class="user-name" routerLink="/profile" title="Мой профиль">{{ user.fullName || user.username }}</a>
           <span class="role-badge" [class.role-admin]="user.role === 'ROLE_ADMIN'">
             {{ user.role === 'ROLE_ADMIN' ? 'Админ' : 'Оператор' }}
           </span>
@@ -142,6 +142,9 @@ import { filter } from 'rxjs/operators';
               <svg lucideIcon="monitor-smartphone" [size]="16"></svg> Устройства
               <span class="nav-count" *ngIf="pendingDevices > 0" [attr.aria-label]="pendingDevices + ' ждут допуска'">{{ pendingDevices }}</span>
             </a>
+            <a routerLink="/profile" routerLinkActive="active">
+              <svg lucideIcon="user" [size]="16"></svg> Мой профиль
+            </a>
             <a routerLink="/about" routerLinkActive="active">
               <svg lucideIcon="circle-check" [size]="16"></svg> О системе
             </a>
@@ -169,7 +172,8 @@ import { filter } from 'rxjs/operators';
     .market-select { margin-left: 10px; background: rgba(255,255,255,0.2); color: var(--header-text); border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
     .market-select option { color: var(--text); background: var(--surface); }
     .header-right { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: 0.95; }
-    .user-name { font-weight: 500; }
+    .user-name { font-weight: 500; color: inherit; text-decoration: none; }
+    .user-name:hover { text-decoration: underline; }
     .role-badge { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     /* Хексы намеренные (та же логика, что у фикс-цветных кнопок, ограничение 5 плана):
        бейдж лежит НЕ на поверхности карточки, а на шапке, которая тёмная в обеих темах

@@ -20,6 +20,7 @@ import { InboundComponent } from './pages/inbound/inbound.component';
 import { LeadsComponent } from './pages/leads/leads.component';
 import { EmailTemplateComponent } from './pages/email-template/email-template.component';
 import { DevicesComponent } from './pages/devices/devices.component';
+import { ProfileComponent } from './pages/profile/profile.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -45,6 +46,7 @@ export const routes: Routes = [
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'devices', component: DevicesComponent, canActivate: [adminGuard] },
+      { path: 'profile', component: ProfileComponent },
       { path: 'about', component: AboutComponent },
     ]
   }

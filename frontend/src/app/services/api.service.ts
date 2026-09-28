@@ -414,6 +414,17 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/devices/${id}/revoke`, {});
   }
 
+  // === Вход по ключу (passkeys): свои ключи — «Мой профиль»; домен ключей — для кнопки входа ===
+  getPasskeys(): Observable<{ keys: any[]; suggestedLabel: string }> {
+    return this.http.get<{ keys: any[]; suggestedLabel: string }>(`${this.base}/passkeys`);
+  }
+  deletePasskey(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/passkeys/${encodeURIComponent(id)}`);
+  }
+  getPasskeyConfig(): Observable<{ rpId: string }> {
+    return this.http.get<{ rpId: string }>(`${this.base}/auth/passkey-config`);
+  }
+
   // === Шаблон письма КП ===
   getEmailTemplate(): Observable<any> {
     return this.http.get<any>(`${this.base}/email-template`);
