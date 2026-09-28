@@ -55,12 +55,13 @@ public class ChatController {
     @GetMapping("/{id}/attachments/{attachmentId}")
     public ResponseEntity<byte[]> attachment(@PathVariable Long id, @PathVariable Long attachmentId) {
         ChatAttachment a = service.attachment(id, attachmentId);
-        boolean inline = ChatService.isSafeImage(a.getMimeType());
+        String imageType = ChatService.safeImageType(a.getMimeType());
+        boolean inline = imageType != null;
         String name = a.getFileName() == null || a.getFileName().isBlank() ? "file" : a.getFileName();
         ContentDisposition cd = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
                 .filename(name, StandardCharsets.UTF_8).build();
         return ResponseEntity.ok()
-                .contentType(inline ? MediaType.parseMediaType(a.getMimeType()) : MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(inline ? MediaType.parseMediaType(imageType) : MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
                 .header("X-Content-Type-Options", "nosniff")
                 .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())

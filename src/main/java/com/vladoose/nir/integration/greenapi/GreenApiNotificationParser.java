@@ -22,10 +22,11 @@ public final class GreenApiNotificationParser {
         String type = body == null ? "" : body.path("typeWebhook").asText("");
         switch (type) {
             case "incomingMessageReceived":
-                return message(body, LeadDirection.IN);
+                return message(body, LeadDirection.IN, false);
             case "outgoingMessageReceived":
+                return message(body, LeadDirection.OUT, false);
             case "outgoingAPIMessageReceived":
-                return message(body, LeadDirection.OUT);
+                return message(body, LeadDirection.OUT, true);
             case "stateInstanceChanged":
                 return new ParsedNotification.State(body.path("stateInstance").asText(""));
             case "quotaExceeded":
@@ -44,7 +45,7 @@ public final class GreenApiNotificationParser {
         return null;
     }
 
-    private static ParsedNotification message(JsonNode b, LeadDirection dir) {
+    private static ParsedNotification message(JsonNode b, LeadDirection dir, boolean viaApi) {
         JsonNode sd = b.path("senderData");
         String chatId = sd.path("chatId").asText("");
         ChatKind kind = kindOf(chatId);
@@ -69,7 +70,7 @@ public final class GreenApiNotificationParser {
         if (tm.equals("editedMessage")) {
             JsonNode ed = md.path("editedMessageData");
             return new ParsedNotification.Message(account, chatId, kind, phone, chatName, senderName, dir, idMessage, at,
-                    ChatMessageType.TEXT, text(ed, "textMessage"), null, ed.path("stanzaId").asText(""));
+                    ChatMessageType.TEXT, text(ed, "textMessage"), null, ed.path("stanzaId").asText(""), viaApi);
         }
 
         ChatMessageType type;
@@ -114,14 +115,14 @@ public final class GreenApiNotificationParser {
                 break;
             case "contactsArrayMessage":
                 type = ChatMessageType.CONTACT;
-                bodyText = "[контакты]";
+                bodyText = "[контакты: " + md.path("contactsArrayMessageData").path("contacts").size() + "]";
                 break;
             default:
                 type = ChatMessageType.OTHER;
                 bodyText = "[сообщение типа " + (tm.isEmpty() ? "неизвестно" : tm) + " — смотрите в WhatsApp]";
         }
         return new ParsedNotification.Message(account, chatId, kind, phone, chatName, senderName, dir, idMessage, at,
-                type, bodyText, file, null);
+                type, bodyText, file, null, viaApi);
     }
 
     private static String location(JsonNode ld) {

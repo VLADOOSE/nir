@@ -245,6 +245,33 @@ class ChatIngestWriterTest {
         assertThat(deleted.getBody()).isEqualTo("Нужны два облучателя");
     }
 
+    /** Автоответ бота/интеграции на том же инстансе не должен уводить каждое новое обращение из «Новых». */
+    @Test
+    void messageSentViaApiDoesNotTakeLeadIntoWork() {
+        String chat = personal();
+        ChatIngestWriter.Outcome o = write(in(chat, "Нужен облучатель"));
+
+        write(parse(GreenApiJson.outgoingApi(chat, "Айгерим", id(), clock += 60,
+                GreenApiJson.text("Спасибо за обращение! Ответим в течение часа."))));
+
+        assertThat(leadRepository.findById(o.createdLeadId()).orElseThrow().getStatus()).isEqualTo(LeadStatus.NEW);
+        assertThat(messageRepository.findLatest(o.chatId(), PageRequest.of(0, 5))).hasSize(2);   // в переписке оно есть
+    }
+
+    /** Правка без текста (например, подписи к файлу — форма уведомления не проверена) не стирает сообщение. */
+    @Test
+    void editWithoutTextKeepsPreviousBody() {
+        String chat = personal();
+        ParsedNotification.Message original = in(chat, "Нужен облучатель");
+        ChatIngestWriter.Outcome o = write(original);
+
+        write(parse(GreenApiJson.incoming(chat, "Айгерим", id(), clock += 60, GreenApiJson.edited(original.idMessage(), ""))));
+
+        ChatMessage m = messageRepository.findByChatIdAndExternalId(o.chatId(), original.idMessage()).orElseThrow();
+        assertThat(m.getBody()).isEqualTo("Нужен облучатель");
+        assertThat(m.isEdited()).isTrue();
+    }
+
     @Test
     void editOfLastMessageUpdatesChatPreviewButEditOfOlderDoesNot() {
         String chat = personal();

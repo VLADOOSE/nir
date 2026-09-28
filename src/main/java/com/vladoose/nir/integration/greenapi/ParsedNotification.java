@@ -10,11 +10,12 @@ public sealed interface ParsedNotification {
 
     /**
      * Сообщение — входящее или отправленное с телефона. phone — «+цифры» только у личного чата с номером (@c.us);
-     * chatName — лучшее имя чата (§6.6); editOf != null — правка сообщения editOf, body — новый текст.
+     * chatName — лучшее имя чата (§6.6); editOf != null — правка сообщения editOf, body — новый текст;
+     * viaApi — исходящее отправлено через API (бот, другая интеграция на инстансе), а не человеком с телефона.
      */
     record Message(String account, String chatId, ChatKind kind, String phone, String chatName, String senderName,
                    LeadDirection direction, String idMessage, OffsetDateTime sentAt, ChatMessageType type,
-                   String body, FileRef file, String editOf) implements ParsedNotification {
+                   String body, FileRef file, String editOf, boolean viaApi) implements ParsedNotification {
 
         /** Текст для превью и первого сообщения обращения: у файла без подписи — «[фото]» и т.п. */
         public String displayText() {

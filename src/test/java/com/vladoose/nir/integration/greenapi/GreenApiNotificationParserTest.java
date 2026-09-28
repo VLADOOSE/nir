@@ -139,10 +139,27 @@ class GreenApiNotificationParserTest {
                 .isEqualTo("📍 Клиника, Уральск, ул. Ленина 1");
         assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-17", T, GreenApiJson.contact("Иван Поставщик"))).body())
                 .isEqualTo("[контакт: Иван Поставщик]");
+        assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-19", T, GreenApiJson.contacts("Иван", "Мария", "Данияр"))).body())
+                .isEqualTo("[контакты: 3]");
         assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-18", T, GreenApiJson.typeOnly("pollMessage")))).satisfies(m -> {
             assertThat(m.type()).isEqualTo(ChatMessageType.OTHER);
             assertThat(m.body()).contains("pollMessage");
         });
+    }
+
+    /**
+     * Ревью 2026-09-28: отправленное ЧЕРЕЗ API (бот/другая интеграция на инстансе) — это не ответ человека с телефона;
+     * по нему обращение не берётся в работу (правило §5.2 п.3 «с телефона»).
+     */
+    @Test
+    void messageSentViaApiIsOutgoingButMarked() {
+        ParsedNotification.Message api = msg(GreenApiJson.outgoingApi(CLIENT, "Айгерим", "ID-20", T, GreenApiJson.text("Спасибо за обращение!")));
+        ParsedNotification.Message phone = msg(GreenApiJson.outgoing(CLIENT, "Айгерим", "ID-21", T, GreenApiJson.text("Добрый день!")));
+
+        assertThat(api.direction()).isEqualTo(LeadDirection.OUT);
+        assertThat(api.viaApi()).isTrue();
+        assertThat(phone.direction()).isEqualTo(LeadDirection.OUT);
+        assertThat(phone.viaApi()).isFalse();
     }
 
     @Test

@@ -130,9 +130,10 @@ public class ChatService {
         if (c.isGroup()) throw new BadRequestException("Из группы обращение не создаётся");
         OffsetDateTime now = OffsetDateTime.now();
         if (rules.findOpenLead(c, now).isPresent()) throw new BadRequestException("У чата уже есть открытое обращение");
-        // обращение начинается с первого сообщения после прошлого обращения чата — его переписка попадёт в карточку
+        // обращение начинается с первого сообщения после КОНЦА прошлого обращения чата (закрыто/последняя правка):
+        // от его начала карточка нового снова показала бы старую переписку (ревью 2026-09-28)
         OffsetDateTime after = leadRepository.findByChatIdIn(List.of(c.getId())).stream()
-                .map(Lead::getReceivedAt).max(Comparator.naturalOrder()).orElse(EPOCH);
+                .map(ChatService::episodeEnd).max(Comparator.naturalOrder()).orElse(EPOCH);
         OffsetDateTime start = messageRepository.findEarliestAfter(c.getId(), after, PageRequest.of(0, 1)).stream()
                 .findFirst().map(ChatMessage::getSentAt).orElse(now);
         String lastIncoming = messageRepository.findLatestByDirection(c.getId(), LeadDirection.IN, PageRequest.of(0, 1))
@@ -171,7 +172,19 @@ public class ChatService {
     }
 
     public static boolean isSafeImage(String mime) {
-        return mime != null && INLINE_IMAGES.contains(mime.split(";")[0].trim().toLowerCase(Locale.ROOT));
+        return safeImageType(mime) != null;
+    }
+
+    /** Базовый тип картинки из белого списка — без параметров отправителя (кривой параметр валил отдачу 500-й). */
+    public static String safeImageType(String mime) {
+        if (mime == null) return null;
+        String base = mime.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        return INLINE_IMAGES.contains(base) ? base : null;
+    }
+
+    private static OffsetDateTime episodeEnd(Lead l) {
+        OffsetDateTime u = l.getUpdatedAt();
+        return u != null && u.isAfter(l.getReceivedAt()) ? u : l.getReceivedAt();
     }
 
     public static boolean isExcel(String fileName, String mime) {
@@ -190,9 +203,12 @@ public class ChatService {
         r.setGroup(c.isGroup());
         r.setNotClient(c.isNotClient());
         r.setLastMessageAt(c.getLastMessageAt());
-        Lead lead = currentLeads(List.of(c.getId())).get(c.getId());
+        // открытое обращение может быть найдено по НОМЕРУ (с сайта, ещё не привязано к чату) — показываем его,
+        // иначе кнопка «Создать обращение» спрятана, а ссылки нет (ревью 2026-09-28)
+        Optional<Lead> open = c.isGroup() ? Optional.empty() : rules.findOpenLead(c, OffsetDateTime.now());
+        Lead lead = open.orElseGet(() -> currentLeads(List.of(c.getId())).get(c.getId()));
         r.setLead(lead == null ? null : new ChatLeadRef(lead.getId(), lead.getStatus().name()));
-        r.setLeadOpen(!c.isGroup() && rules.findOpenLead(c, OffsetDateTime.now()).isPresent());
+        r.setLeadOpen(open.isPresent());
         return r;
     }
 

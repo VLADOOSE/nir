@@ -44,6 +44,7 @@ class LeadChatTest {
     @Autowired ChatIngestWriter writer;
     @Autowired LeadService leadService;
     @Autowired HeaderSynonymRepository synonymRepository;
+    @Autowired jakarta.validation.Validator validator;
 
     long clock = Instant.now().getEpochSecond() - 3600;
 
@@ -145,6 +146,24 @@ class LeadChatTest {
         leadService.close(o.createdLeadId(), LeadCloseReason.SPAM, null, "admin");
         assertThatThrownBy(() -> leadController.importItems(o.createdLeadId(), request("REPLACE", "h", item("A", null, 1))))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    /**
+     * Ревью 2026-09-28: одна ячейка длиннее лимита (@Size у LeadItemDto) давала 400 на ВЕСЬ файл, хотя сервис сам
+     * обрезает строки. У импорта в частную заявку таких ограничений нет — и здесь не должно быть.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void overlongCellIsTrimmedInsteadOfRejectingWholeFile() {
+        ChatIngestWriter.Outcome o = write(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x")));
+        LeadItemsImportRequest req = request("REPLACE", "h", item("А".repeat(600), "Б".repeat(300), 1));
+
+        assertThat(validator.validate(req)).isEmpty();
+        LeadCardResponse card = leadController.importItems(o.createdLeadId(), req);
+        assertThat(card.getItems()).singleElement().satisfies(i -> {
+            assertThat(i.getName()).hasSize(500);
+            assertThat(i.getBrand()).hasSize(255);
+        });
     }
 
     @Test

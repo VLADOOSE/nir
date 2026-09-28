@@ -23,6 +23,11 @@ public final class GreenApiJson {
         return envelope("outgoingMessageReceived", idMessage, epochSec, chatId, WID, recipientName, "West-Med", "", messageData);
     }
 
+    /** Отправлено ЧЕРЕЗ API (бот, другая интеграция на том же инстансе) — не человек с телефона. */
+    public static ObjectNode outgoingApi(String chatId, String recipientName, String idMessage, long epochSec, ObjectNode messageData) {
+        return envelope("outgoingAPIMessageReceived", idMessage, epochSec, chatId, WID, recipientName, "West-Med", "", messageData);
+    }
+
     public static ObjectNode group(String groupId, String groupName, String authorChatId, String authorName,
                                    String idMessage, long epochSec, ObjectNode messageData) {
         return envelope("incomingMessageReceived", idMessage, epochSec, groupId, authorChatId, groupName,
@@ -77,6 +82,14 @@ public final class GreenApiJson {
     public static ObjectNode contact(String displayName) {
         ObjectNode md = type("contactMessage");
         md.set("contactMessageData", M.createObjectNode().put("displayName", displayName).put("vcard", "BEGIN:VCARD\nEND:VCARD"));
+        return md;
+    }
+
+    public static ObjectNode contacts(String... displayNames) {
+        ObjectNode md = type("contactsArrayMessage");
+        com.fasterxml.jackson.databind.node.ArrayNode list = M.createArrayNode();
+        for (String n : displayNames) list.add(M.createObjectNode().put("displayName", n).put("vcard", "BEGIN:VCARD\nEND:VCARD"));
+        md.set("contactsArrayMessageData", M.createObjectNode().set("contacts", list));
         return md;
     }
 

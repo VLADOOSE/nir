@@ -59,7 +59,8 @@ public class ChatIngestWriter {
             Optional<ChatMessage> original = messageRepository.findByChatIdAndExternalId(chat.getId(), m.editOf());
             if (original.isPresent()) {
                 ChatMessage edited = original.get();
-                edited.setBody(m.body());
+                // правка без текста (форма, скажем, правки подписи к файлу не проверена) прежний текст не стирает
+                if (m.body() != null) edited.setBody(m.body());
                 edited.setEdited(true);
                 // превью — текст ПОСЛЕДНЕГО сообщения (спека §6.6): правка последнего его меняет, правка старого — нет
                 if (m.body() != null && !m.body().isBlank() && isLatest(chat, edited)) {
@@ -132,7 +133,8 @@ public class ChatIngestWriter {
         if (open.isPresent()) {
             Lead lead = open.get();
             if (lead.getChat() == null) lead.setChat(chat);
-            if (m.direction() == LeadDirection.OUT) leadService.takeAutomatically(lead, AUTO_TAKE_NOTE);
+            // «в работу» — только ответ человека с телефона; отправленное через API (бот, автоответ интеграции) — нет
+            if (m.direction() == LeadDirection.OUT && !m.viaApi()) leadService.takeAutomatically(lead, AUTO_TAKE_NOTE);
             return null;
         }
         if (m.direction() != LeadDirection.IN) return null;   // написали первыми мы — обращение не создаём
