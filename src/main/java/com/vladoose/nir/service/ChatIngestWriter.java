@@ -11,6 +11,7 @@ import com.vladoose.nir.repository.ChatAttachmentRepository;
 import com.vladoose.nir.repository.ChatMessageRepository;
 import com.vladoose.nir.repository.ChatRepository;
 import com.vladoose.nir.util.PhoneNormalizer;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,9 +58,14 @@ public class ChatIngestWriter {
         if (m.isEdit()) {
             Optional<ChatMessage> original = messageRepository.findByChatIdAndExternalId(chat.getId(), m.editOf());
             if (original.isPresent()) {
-                original.get().setBody(m.body());
-                original.get().setEdited(true);
-                return new Outcome(false, chat.getId(), original.get().getId(), null);
+                ChatMessage edited = original.get();
+                edited.setBody(m.body());
+                edited.setEdited(true);
+                // превью — текст ПОСЛЕДНЕГО сообщения (спека §6.6): правка последнего его меняет, правка старого — нет
+                if (m.body() != null && !m.body().isBlank() && isLatest(chat, edited)) {
+                    chat.setLastMessagePreview(trunc(m.body().strip(), PREVIEW_MAX));
+                }
+                return new Outcome(false, chat.getId(), edited.getId(), null);
             }
             // исходного нет (пришло до подключения) — сохраняем правку как новое сообщение с пометкой
         }
@@ -83,6 +89,12 @@ public class ChatIngestWriter {
             chat.setLastMessagePreview(trunc(m.displayText().strip(), PREVIEW_MAX));
         }
         return new Outcome(false, chat.getId(), msg.getId(), createdLeadId);
+    }
+
+    /** Последнее в порядке ленты (sentAt, id) — тот же порядок, что у экрана «Чаты» и у записи превью. */
+    private boolean isLatest(Chat chat, ChatMessage msg) {
+        List<ChatMessage> latest = messageRepository.findLatest(chat.getId(), PageRequest.of(0, 1));
+        return !latest.isEmpty() && latest.get(0).getId().equals(msg.getId());
     }
 
     /** «Удалено отправителем»: пометка, текст сохраняется. Неизвестное сообщение — пропускаем. */

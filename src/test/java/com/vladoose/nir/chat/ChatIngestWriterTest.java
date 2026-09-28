@@ -246,6 +246,22 @@ class ChatIngestWriterTest {
     }
 
     @Test
+    void editOfLastMessageUpdatesChatPreviewButEditOfOlderDoesNot() {
+        String chat = personal();
+        ParsedNotification.Message first = in(chat, "Нужен один облучатель");
+        ChatIngestWriter.Outcome o = write(first);
+        ParsedNotification.Message last = in(chat, "И рециркулятор");
+        write(last);
+
+        // превью — текст ПОСЛЕДНЕГО сообщения (спека §6.6): иначе список показывает текст, которого в переписке уже нет
+        write(parse(GreenApiJson.incoming(chat, "Айгерим", id(), clock += 60, GreenApiJson.edited(last.idMessage(), "И два рециркулятора"))));
+        assertThat(chatRepository.findById(o.chatId()).orElseThrow().getLastMessagePreview()).isEqualTo("И два рециркулятора");
+
+        write(parse(GreenApiJson.incoming(chat, "Айгерим", id(), clock += 60, GreenApiJson.edited(first.idMessage(), "Нужны два облучателя"))));
+        assertThat(chatRepository.findById(o.chatId()).orElseThrow().getLastMessagePreview()).isEqualTo("И два рециркулятора");
+    }
+
+    @Test
     void fileIsStoredOrMarkedNotStored() {
         String chat = personal();
         ParsedNotification.Message photo = parse(GreenApiJson.incoming(chat, "Айгерим", id(), clock += 60,
