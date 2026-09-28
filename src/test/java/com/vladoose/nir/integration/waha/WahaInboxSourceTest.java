@@ -274,4 +274,24 @@ class WahaInboxSourceTest {
         assertThat(repository.findAllById(List.of(doneOld, doneNew, droppedOld, droppedNew, pendingOld)))
                 .extracting(WhatsappInboxEvent::getId).containsExactlyInAnyOrder(doneNew, droppedNew, pendingOld);
     }
+
+    /**
+     * Событие смены статуса — повод сразу перечитать сессию: иначе после привязки строка «подключён» до минуты
+     * была без номера (поймано живьём).
+     */
+    @Test
+    void statusEventRefreshesSessionAtOnce() {
+        fake.session = new WahaSession("westmed", "SCAN_QR_CODE", null, null);
+        WahaInboxSource s = source(0);
+        WhatsappStatusHolder status = new WhatsappStatusHolder();
+        s.housekeeping(status);
+        fake.session = new WahaSession("westmed", "WORKING", WahaJson.ME, "West-Med");
+
+        // само событие статус не пишет: статус и номер — одним чтением сессии, иначе строка на миг «подключён» без номера
+        assertThat(s.parse(note(WahaJson.sessionStatus("WORKING")))).isInstanceOf(ParsedNotification.Skip.class);
+        s.housekeeping(status);
+
+        assertThat(status.snapshot(true, true).getState()).isEqualTo("WORKING");
+        assertThat(status.snapshot(true, true).getNumber()).isEqualTo(WahaJson.ACCOUNT);
+    }
 }

@@ -153,7 +153,13 @@ public class WahaInboxSource implements WhatsappSource {
     @Override
     public ParsedNotification parse(WhatsappNotification n) {
         ParsedNotification p = WahaEventParser.parse(n.body(), sessions.account());
-        if (p instanceof ParsedNotification.State s && WahaSessionManager.WORKING.equals(s.state())) catchUpDue = true;
+        if (p instanceof ParsedNotification.State s) {
+            // событие лишь торопит опрос: статус и номер берём из сессии ОДНИМ чтением на ближайшем проходе (~1 с),
+            // иначе строка на миг показывала «подключён» без номера (поймано живьём)
+            nextStatusCheck = 0;
+            if (WahaSessionManager.WORKING.equals(s.state())) catchUpDue = true;
+            return new ParsedNotification.Skip("статус сессии — из опроса сессии");
+        }
         if (p instanceof ParsedNotification.Message m) return names.enrich(sessions.session(), m);
         return p;
     }
