@@ -63,6 +63,12 @@ public class WhatsappStatusHolder {
         droppedAt = now;
     }
 
+    /** Пропущено «ядовитых» за сутки (счёт живёт с последнего пропуска). */
+    public int recentDrops() {
+        OffsetDateTime at = droppedAt;
+        return at != null && at.isAfter(OffsetDateTime.now().minus(RECENT)) ? droppedCount : 0;
+    }
+
     public void setLastError(String e) { lastError = e; }
 
     public String lastError() { return lastError; }

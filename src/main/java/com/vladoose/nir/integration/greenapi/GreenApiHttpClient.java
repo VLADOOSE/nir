@@ -231,8 +231,10 @@ public class GreenApiHttpClient implements GreenApiClient {
             for (ByteBuffer b : items) {
                 total += b.remaining();
                 if (total > maxBytes) {
-                    subscription.cancel();
+                    // сперва исход, потом отмена: onError от отмены не должен успеть превратить «больше предела»
+                    // в «не скачался» (тогда были бы три лишних скачивания и DOWNLOAD_FAILED вместо TOO_LARGE)
                     result.completeExceptionally(new FileTooLargeException(maxBytes));
+                    subscription.cancel();
                     return;
                 }
                 byte[] chunk = new byte[b.remaining()];

@@ -61,6 +61,8 @@ export class LeadItemsImportComponent implements OnChanges, OnDestroy {
   busy = false;
   error = '';
   private previewSub?: Subscription;
+  /** Импорт в полёте привязан к файлу: сменили файл — ответ по прежнему не закроет панель нового с чужим тостом. */
+  private applySub?: Subscription;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) {}
 
@@ -72,7 +74,10 @@ export class LeadItemsImportComponent implements OnChanges, OnDestroy {
     if (ch['attachment'] || ch['chatId']) this.loadPreview();
   }
 
-  ngOnDestroy() { this.previewSub?.unsubscribe(); }
+  ngOnDestroy() {
+    this.previewSub?.unsubscribe();
+    this.applySub?.unsubscribe();
+  }
 
   apply(mode: 'REPLACE' | 'APPEND') {
     const built = buildImportLines(this.preview);
@@ -84,7 +89,8 @@ export class LeadItemsImportComponent implements OnChanges, OnDestroy {
       brand: l.manufact && String(l.manufact).trim() ? String(l.manufact).trim() : null,
       quantity: l.quantity,
     }));
-    this.api.importLeadItems(this.leadId, { mappings: built.mappings, items, mode }).subscribe({
+    this.applySub?.unsubscribe();
+    this.applySub = this.api.importLeadItems(this.leadId, { mappings: built.mappings, items, mode }).subscribe({
       next: card => { this.busy = false; this.done.emit(card); },
       error: e => { this.busy = false; this.error = e.error?.message || 'Позиции не сохранились'; this.cdr.detectChanges(); },
     });
@@ -92,6 +98,7 @@ export class LeadItemsImportComponent implements OnChanges, OnDestroy {
 
   private loadPreview() {
     this.previewSub?.unsubscribe();   // ответ по прежнему файлу больше не нужен
+    this.applySub?.unsubscribe();
     this.preview = null;
     this.error = '';
     this.busy = false;

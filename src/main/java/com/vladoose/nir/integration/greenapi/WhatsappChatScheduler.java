@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -138,25 +139,39 @@ public class WhatsappChatScheduler {
             }
         } catch (GreenApiAuthException e) {
             pausedUntil = System.currentTimeMillis() + authBackoffMs;
-            status.setLastError(e.getMessage() + " — повтор через " + Math.max(1, authBackoffMs / 60_000) + " мин");
-            log.warn("WhatsApp: {}", status.lastError());
+            if (changed(e.getMessage() + " — повтор через " + Math.max(1, authBackoffMs / 60_000) + " мин")) {
+                log.warn("WhatsApp: {}", status.lastError());
+            }
         } catch (GreenApiQuotaException e) {
             status.quotaExceeded();
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
-            status.setLastError(e.getMessage());
-        } catch (RuntimeException e) {
-            // в строку состояния (её видит любой вошедший) — только свой текст или класс, подробности — в лог
+            changed(e.getMessage());
+        } catch (GreenApiException e) {
+            // свой текст без адреса; трасса ни о чём не скажет — сеть или ответ сервиса
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
-            status.setLastError(WhatsappChatSync.reason(e));
-            log.warn("WhatsApp: проход приёма не удался — пауза {} с", errorBackoffMs / 1000, e);
+            if (changed(e.getMessage())) log.warn("WhatsApp: {} — пауза {} с", e.getMessage(), errorBackoffMs / 1000);
+        } catch (RuntimeException e) {
+            // в строку состояния (её видит любой вошедший) — только класс, подробности — в лог
+            pausedUntil = System.currentTimeMillis() + errorBackoffMs;
+            if (changed(WhatsappChatSync.reason(e))) {
+                log.warn("WhatsApp: проход приёма не удался — пауза {} с", errorBackoffMs / 1000, e);
+            }
         } catch (Error e) {
             // нехватка памяти и т.п.: без паузы та же голова очереди повторялась бы раз в секунду, молча
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
-            status.setLastError(WhatsappChatSync.reason(e));
-            log.error("WhatsApp: проход приёма упал ({}) — пауза {} с", e.getClass().getSimpleName(), errorBackoffMs / 1000, e);
+            if (changed(WhatsappChatSync.reason(e))) {
+                log.error("WhatsApp: проход приёма упал ({}) — пауза {} с", e.getClass().getSimpleName(), errorBackoffMs / 1000, e);
+            }
         } finally {
             MarketContext.clear();
         }
+    }
+
+    /** Записать ошибку в строку состояния; true — текст новый (в лог — один раз на состояние, не каждым проходом). */
+    private boolean changed(String error) {
+        boolean isNew = !Objects.equals(status.lastError(), error);
+        status.setLastError(error);
+        return isNew;
     }
 
     public WhatsappStatusResponse status() {

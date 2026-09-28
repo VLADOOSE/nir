@@ -16,8 +16,10 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.*;
@@ -35,12 +37,15 @@ class WestmedHttpClientTest {
     static volatile int rejectStatus;      // чем отвечать на чужой токен (реальный сайт — 403)
     static volatile String adminBody;
     static volatile String productsBody;
+    /** Заголовки и начало тела — и тишина: соединение не рвётся, тело не приходит. */
+    static volatile boolean stall;
 
     static final String PASSWORD = "S3cr3t-pass";
 
     @BeforeAll
     static void start() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.setExecutor(Executors.newCachedThreadPool());   // «зависший» ответ не держит остальные тесты
         server.createContext("/", ex -> {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getRawPath();
@@ -49,6 +54,15 @@ class WestmedHttpClientTest {
             String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             calls.add(method + " " + path + (query != null ? "?" + query : "")
                     + " auth=" + (auth == null ? "none" : auth) + " body=" + body);
+            if (stall) {
+                ex.sendResponseHeaders(200, 100);
+                OutputStream os = ex.getResponseBody();
+                os.write("{\"cont".getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                try { Thread.sleep(8000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+                ex.close();
+                return;
+            }
             int status;
             String resp;
             if (path.equals("/api/auth/login")) {
@@ -90,6 +104,23 @@ class WestmedHttpClientTest {
         rejectStatus = 403;
         adminBody = "{\"content\":[],\"last\":true,\"totalPages\":0,\"number\":0}";
         productsBody = "{\"content\":[],\"last\":true,\"totalPages\":0,\"number\":0}";
+        stall = false;
+    }
+
+    /**
+     * Таймаут HttpRequest в JDK 17 снимается на заголовках: вставшее тело держало бы поток приёма (и опрос сайта,
+     * и разбор корзины в чатах WhatsApp) вечно. Дедлайн — на весь обмен (перепроверка ревью 2026-09-28).
+     */
+    @Test
+    void stalledBodyIsCutOffByDeadline() {
+        stall = true;
+        WestmedHttpClient c = new WestmedHttpClient(new ObjectMapper(), "http://localhost:" + port, "u", "p", Duration.ofSeconds(2));
+        long t0 = System.nanoTime();
+
+        assertThatThrownBy(() -> c.searchProducts("облучатель", 5))
+                .isInstanceOfSatisfying(WestmedApiException.class, e -> assertThat(e.status()).isZero());
+
+        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(5));
     }
 
     private static WestmedHttpClient client(String password) {

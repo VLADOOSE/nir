@@ -6,6 +6,7 @@ import com.vladoose.nir.integration.westmed.dto.WestmedPage;
 import com.vladoose.nir.integration.westmed.dto.WestmedPriceRequest;
 import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
 import com.vladoose.nir.integration.westmed.dto.WestmedQuoteRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * HTTP к API сайта westmed.kz. Токен (живёт 30 мин) держим в памяти. На отказ admin-вызова —
@@ -39,15 +44,24 @@ public class WestmedHttpClient implements WestmedClient {
     private final String username;
     private final String password;
     private volatile String token;
+    /** Обмен целиком — заголовки И тело — не дольше. */
+    private final Duration deadline;
 
+    @Autowired
     public WestmedHttpClient(ObjectMapper objectMapper,
                              @Value("${leads.westmed.base-url:https://westmed.kz}") String baseUrl,
                              @Value("${leads.westmed.username:}") String username,
                              @Value("${leads.westmed.password:}") String password) {
+        this(objectMapper, baseUrl, username, password, Duration.ofSeconds(20));
+    }
+
+    /** Короткий дедлайн — для теста «зависшего» ответа. */
+    WestmedHttpClient(ObjectMapper objectMapper, String baseUrl, String username, String password, Duration deadline) {
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.username = username;
         this.password = password;
+        this.deadline = deadline;
     }
 
     @Override
@@ -120,9 +134,13 @@ public class WestmedHttpClient implements WestmedClient {
         return t;
     }
 
+    /**
+     * ⚠️ Таймаут HttpRequest в JDK 17 снимается на заголовках — вставшее тело держало бы поток вечно (опрос сайта,
+     * разбор корзины в чатах WhatsApp). Поэтому sendAsync с дедлайном на весь обмен и отменой.
+     */
     private HttpResponse<String> send(String method, String path, String body, String bearer) {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(20))
+                .timeout(deadline)
                 .header("Accept", "application/json");
         if (bearer != null) b.header("Authorization", "Bearer " + bearer);
         if (body != null) {
@@ -131,12 +149,18 @@ public class WestmedHttpClient implements WestmedClient {
         } else {
             b.method(method, HttpRequest.BodyPublishers.noBody());
         }
+        CompletableFuture<HttpResponse<String>> f = http.sendAsync(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         try {
-            return http.send(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new WestmedApiException(0, "сайт недоступен: " + e.getClass().getSimpleName()
-                    + (e.getMessage() != null ? " — " + e.getMessage() : ""));
+            return f.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            f.cancel(true);
+            throw new WestmedApiException(0, "сайт не ответил за " + deadline.toSeconds() + " с");
+        } catch (ExecutionException e) {
+            Throwable c = e.getCause() == null ? e : e.getCause();
+            throw new WestmedApiException(0, "сайт недоступен: " + c.getClass().getSimpleName()
+                    + (c.getMessage() != null ? " — " + c.getMessage() : ""));
         } catch (InterruptedException e) {
+            f.cancel(true);
             Thread.currentThread().interrupt();
             throw new WestmedApiException(0, "запрос к сайту прерван");
         }

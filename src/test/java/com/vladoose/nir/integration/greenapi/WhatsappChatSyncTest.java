@@ -247,6 +247,27 @@ class WhatsappChatSyncTest {
                 .singleElement().extracting(ChatAttachmentMeta::notStoredReason).isEqualTo(AttachmentNotStoredReason.DOWNLOAD_FAILED);
     }
 
+    /**
+     * Перепроверка ревью: предохранитель считал «ядовитые» ПОДРЯД, и любое успешное уведомление между ними (статус
+     * доставки, группа, удаление) сбрасывало счёт — регрессия, ломающая только личные сообщения, снова выкидывала
+     * очередь по одному. Считаем пропуски за сутки.
+     */
+    @Test
+    void fuseCountsDropsNotStreaks() {
+        List<Long> poison = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            poison.add(fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x" + i))));
+            fake.enqueue(GreenApiJson.webhook("outgoingMessageStatus"));   // проходит успешно
+        }
+        WhatsappChatSync s = sync(writerThrowing(new IllegalStateException("регрессия записи личных сообщений")));
+
+        for (int i = 0; i < 30; i++) s.drain(10);
+
+        assertThat(fake.deleted).containsAll(poison.subList(0, WhatsappChatSync.DROP_FUSE)).doesNotContain(poison.get(3));
+        assertThat(fake.queue.peekFirst().receiptId()).isEqualTo(poison.get(3));
+        assertThat(status.lastError()).contains("приём остановлен");
+    }
+
     /** Отказ ключа приходит из receive() — уходит наверх (паузу ставит планировщик), очередь не трогаем. */
     @Test
     void receiveFailurePropagatesWithQueueUntouched() {

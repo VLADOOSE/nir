@@ -115,7 +115,8 @@ public final class GreenApiNotificationParser {
                 break;
             case "contactsArrayMessage":
                 type = ChatMessageType.CONTACT;
-                bodyText = "[контакты: " + md.path("contactsArrayMessageData").path("contacts").size() + "]";
+                int contacts = md.path("contactsArrayMessageData").path("contacts").size();
+                bodyText = contacts > 0 ? "[контакты: " + contacts + "]" : "[контакты]";
                 break;
             default:
                 type = ChatMessageType.OTHER;

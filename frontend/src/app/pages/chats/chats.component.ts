@@ -29,7 +29,7 @@ const PAGE = 50;
         <p class="subtitle">Вся переписка рабочего номера WhatsApp. Отвечаете с телефона — ответ появится здесь.</p>
       </div>
     </div>
-    <app-whatsapp-status-line [status]="waStatus"></app-whatsapp-status-line>
+    <app-whatsapp-status-line [status]="waStatus" [showMarketHint]="true"></app-whatsapp-status-line>
 
     <div class="layout" [class.has-open]="openId !== null">
       <section class="list-pane" aria-label="Чаты">

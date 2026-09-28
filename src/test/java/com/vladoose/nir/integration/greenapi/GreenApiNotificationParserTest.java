@@ -141,6 +141,8 @@ class GreenApiNotificationParserTest {
                 .isEqualTo("[контакт: Иван Поставщик]");
         assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-19", T, GreenApiJson.contacts("Иван", "Мария", "Данияр"))).body())
                 .isEqualTo("[контакты: 3]");
+        assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-22", T, GreenApiJson.typeOnly("contactsArrayMessage"))).body())
+                .isEqualTo("[контакты]");
         assertThat(msg(GreenApiJson.incoming(CLIENT, "A", "ID-18", T, GreenApiJson.typeOnly("pollMessage")))).satisfies(m -> {
             assertThat(m.type()).isEqualTo(ChatMessageType.OTHER);
             assertThat(m.body()).contains("pollMessage");

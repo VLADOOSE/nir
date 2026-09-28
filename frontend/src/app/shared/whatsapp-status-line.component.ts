@@ -4,8 +4,9 @@ import { MarketService } from '../services/market.service';
 import { marketHint, WhatsappStatus, whatsappStatusLine } from './whatsapp-status';
 
 /**
- * Строка «WhatsApp …» на «Чатах» и «Обращениях» (спека §7). Красная, если что-то мешает приёму. Под ней —
- * подсказка, если выбран не тот рынок: иначе пустой список при «подключён» выглядит как поломка.
+ * Строка «WhatsApp …» на «Чатах» и «Обращениях» (спека §7). Красная, если что-то мешает приёму. На «Чатах» под
+ * ней — подсказка, если выбран не тот рынок: иначе пустой список при «подключён» выглядит как поломка.
+ * На «Обращениях» подсказки нет — плашку про рынок там оператор отклонил (спека §1, решение 7).
  */
 @Component({
   selector: 'app-whatsapp-status-line',
@@ -13,7 +14,7 @@ import { marketHint, WhatsappStatus, whatsappStatusLine } from './whatsapp-statu
   imports: [NgIf],
   template: `
     <div class="wa-plate" *ngIf="line as l" [class.is-error]="l.error">{{ l.text }}</div>
-    <div class="wa-plate is-hint" *ngIf="hint as h" role="note">{{ h }}</div>
+    <div class="wa-plate is-hint" *ngIf="showMarketHint && hint as h" role="note">{{ h }}</div>
   `,
   styles: [`
     .wa-plate { font-size: 13px; color: var(--text-muted); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
@@ -23,6 +24,7 @@ import { marketHint, WhatsappStatus, whatsappStatusLine } from './whatsapp-statu
 })
 export class WhatsappStatusLineComponent {
   @Input() status: WhatsappStatus | null = null;
+  @Input() showMarketHint = false;
 
   constructor(private market: MarketService) {}
 
