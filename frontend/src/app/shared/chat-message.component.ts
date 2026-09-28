@@ -21,7 +21,10 @@ const NOT_STORED: Record<string, string> = {
   standalone: true,
   imports: [NgIf],
   template: `
-    <div class="row" [class.out]="m.direction === 'OUT'">
+    <div class="call" *ngIf="m.type === 'CALL'">
+      <span class="call-line">{{ m.body }} · <time [attr.title]="full(m.sentAt)">{{ time(m.sentAt) }}</time></span>
+    </div>
+    <div class="row" *ngIf="m.type !== 'CALL'" [class.out]="m.direction === 'OUT'">
       <div class="bubble" [class.out]="m.direction === 'OUT'" [class.deleted]="m.deleted">
         <div class="author" *ngIf="showAuthor && m.direction === 'IN' && m.senderName">{{ m.senderName }}</div>
         <ng-container *ngIf="m.attachment as a">
@@ -69,6 +72,10 @@ const NOT_STORED: Record<string, string> = {
     /* вуаль — самое частое значение приложения; пятое не заводить (§16 CLAUDE.md) */
     .zoom { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1100; display: flex; align-items: center; justify-content: center; cursor: zoom-out; outline: none; }
     .zoom img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
+    /* звонок — служебная строка по центру, не пузырь (спека whatsapp-waha §8) */
+    .call { display: flex; justify-content: center; margin: 6px 0; }
+    .call-line { font-size: 12px; color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+                 border-radius: 999px; padding: 4px 12px; text-align: center; }
     @media (max-width: 900px) {
       .bubble { max-width: 88%; }
       .thumb img { max-width: 180px; }

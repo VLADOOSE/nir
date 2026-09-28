@@ -428,7 +428,20 @@ export class ApiService {
   getWhatsappStatus(): Observable<any> {
     return this.http.get<any>(`${this.base}/chats/status`);
   }
-  getLeadChatMessages(leadId: number): Observable<any[]> {
+  // === WhatsApp: сессия шлюза — «Система → WhatsApp» (только ADMIN; спека 2026-09-28-whatsapp-waha §7) ===
+  getWhatsappSession(): Observable<any> {
+    return this.http.get<any>(`${this.base}/whatsapp/session`);
+  }
+  /** QR — только blob через HttpClient: голый <img src> на /api не несёт ни сессии перехватчиков, ни обработки ошибок. */
+  getWhatsappQr(): Observable<Blob> {
+    return this.http.get(`${this.base}/whatsapp/session/qr`, { responseType: 'blob' });
+  }
+  restartWhatsappSession(): Observable<any> {
+    return this.http.post<any>(`${this.base}/whatsapp/session/restart`, {});
+  }
+  logoutWhatsappSession(): Observable<any> {
+    return this.http.post<any>(`${this.base}/whatsapp/session/logout`, {});
+  }  getLeadChatMessages(leadId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/leads/${leadId}/chat-messages`);
   }
   importLeadItems(leadId: number, body: { mappings: any[]; items: any[]; mode: 'REPLACE' | 'APPEND' }): Observable<any> {

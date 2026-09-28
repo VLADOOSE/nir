@@ -1,9 +1,11 @@
 import { relativeTime } from './relative-time';
 
-/** Ответ GET /api/chats/status (спека whatsapp-chats §7). */
+/** Ответ GET /api/chats/status (спеки whatsapp-chats §7, whatsapp-waha §7). */
 export interface WhatsappStatus {
   enabled: boolean;
   configured: boolean;
+  /** Шлюз: waha / greenapi; опечатка в WHATSAPP_PROVIDER приходит как есть (configured=false, lastError объясняет). */
+  provider: string | null;
   state: string | null;
   number: string | null;
   lastMessageAt: string | null;
@@ -22,6 +24,7 @@ const WARNING_TEXT: Record<string, string> = {
   INCOMING_OFF: 'не включены уведомления о входящих',
   OUTGOING_PHONE_OFF: 'не включены уведомления об ответах с телефона — ваши ответы не попадут в АИС',
   QUOTA_EXCEEDED: 'исчерпан лимит бесплатного тарифа — сообщения из новых чатов не приходят',
+  CATCH_UP_FAILED: 'не удалось догнать сообщения, пришедшие без АИС, — повтор через 10 мин',
 };
 
 /** Подписи — как в селекторе рынка слева вверху. */
@@ -34,22 +37,37 @@ function droppedText(n: number): string {
 }
 
 const STATE_TEXT: Record<string, StatusLine> = {
+  // Green-API
   notAuthorized: { text: 'WhatsApp: номер не подключён — отсканируйте QR-код в кабинете Green-API', error: true },
   blocked: { text: 'WhatsApp: номер заблокирован WhatsApp', error: true },
   suspended: { text: 'WhatsApp: временные ограничения WhatsApp на номере', error: true },
   sleepMode: { text: 'WhatsApp: телефон выключен — сообщения придут, когда он появится в сети', error: true },
   starting: { text: 'WhatsApp: инстанс запускается', error: false },
+  // WAHA (спека whatsapp-waha §7)
+  SCAN_QR_CODE: { text: 'WhatsApp: номер не подключён — привяжите в «Система → WhatsApp»', error: true },
+  FAILED: { text: 'WhatsApp: сессия WhatsApp упала — перезапустите в «Система → WhatsApp»', error: true },
+  STOPPED: { text: 'WhatsApp: сессия остановлена — запустите в «Система → WhatsApp»', error: true },
+  STARTING: { text: 'WhatsApp: подключается…', error: false },
+  PASSKEY_REQUIRED: { text: 'WhatsApp: нужно подтверждение на рабочем телефоне', error: true },
+  PASSKEY_CONFIRMATION_REQUIRED: { text: 'WhatsApp: нужно подтверждение на рабочем телефоне', error: true },
 };
 
-/** Одна строка: выключено → нет ключей → ошибка → состояние → предупреждения → «подключён». */
+/** «Подключён»: у Green-API — authorized, у WAHA — WORKING. */
+const CONNECTED = ['authorized', 'WORKING'];
+
+function notConfigured(provider: string | null): string {
+  return provider === 'greenapi' ? 'не заданы учётные данные Green-API' : 'не заданы ключи шлюза WAHA';
+}
+
+/** Одна строка: выключено → не настроено → ошибка → состояние → предупреждения → «подключён». */
 export function whatsappStatusLine(s: WhatsappStatus | null): StatusLine | null {
   if (!s) return null;
   if (!s.enabled) return { text: 'WhatsApp: приём выключен', error: false };
-  if (!s.configured) return { text: 'WhatsApp: не заданы учётные данные Green-API', error: true };
+  if (!s.configured) return { text: 'WhatsApp: ' + (s.lastError || notConfigured(s.provider)), error: true };
   if (s.lastError) return { text: 'WhatsApp: ' + s.lastError, error: true };
   if (!s.state) return { text: 'WhatsApp: подключение проверяется…', error: false };
-  if (s.state !== 'authorized') {
-    return STATE_TEXT[s.state] || { text: 'WhatsApp: состояние инстанса — ' + s.state, error: true };
+  if (!CONNECTED.includes(s.state)) {
+    return STATE_TEXT[s.state] || { text: 'WhatsApp: состояние шлюза — ' + s.state, error: true };
   }
   const warnings = (s.warnings || []).map(w => w === 'MESSAGE_DROPPED' ? droppedText(s.droppedCount) : WARNING_TEXT[w] || w);
   if (warnings.length) return { text: 'WhatsApp: ' + warnings.join('; '), error: true };

@@ -21,6 +21,7 @@ import { LeadsComponent } from './pages/leads/leads.component';
 import { ChatsComponent } from './pages/chats/chats.component';
 import { EmailTemplateComponent } from './pages/email-template/email-template.component';
 import { DevicesComponent } from './pages/devices/devices.component';
+import { WhatsappComponent } from './pages/whatsapp/whatsapp.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 
 export const routes: Routes = [
@@ -48,6 +49,7 @@ export const routes: Routes = [
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'devices', component: DevicesComponent, canActivate: [adminGuard] },
+      { path: 'whatsapp', component: WhatsappComponent, canActivate: [adminGuard] },
       { path: 'profile', component: ProfileComponent },
       { path: 'about', component: AboutComponent },
     ]

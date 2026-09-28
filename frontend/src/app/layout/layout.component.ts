@@ -145,6 +145,9 @@ import { filter } from 'rxjs/operators';
               <svg lucideIcon="monitor-smartphone" [size]="16"></svg> Устройства
               <span class="nav-count" *ngIf="pendingDevices > 0" [attr.aria-label]="pendingDevices + ' ждут допуска'">{{ pendingDevices }}</span>
             </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/whatsapp" routerLinkActive="active">
+              <svg lucideIcon="qr-code" [size]="16"></svg> WhatsApp
+            </a>
             <a routerLink="/profile" routerLinkActive="active">
               <svg lucideIcon="user" [size]="16"></svg> Мой профиль
             </a>
