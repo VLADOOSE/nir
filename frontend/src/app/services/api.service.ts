@@ -397,6 +397,44 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/leads/sync`, {});
   }
 
+  // === Чаты WhatsApp (спека 2026-09-28-whatsapp-chats-green-api) ===
+  getChats(params: { filter?: string; q?: string } = {}): Observable<any[]> {
+    const p: any = {};
+    if (params.filter) p.filter = params.filter;
+    if (params.q) p.q = params.q;
+    return this.http.get<any[]>(`${this.base}/chats`, { params: p });
+  }
+  getChat(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/chats/${id}`);
+  }
+  getChatMessages(id: number, before?: number): Observable<any[]> {
+    const p: any = {};
+    if (before != null) p.before = before;
+    return this.http.get<any[]>(`${this.base}/chats/${id}/messages`, { params: p });
+  }
+  /** Только так (blob через HttpClient): голый <img src> не несёт X-Market → 404 на чат KZ. */
+  getChatAttachment(chatId: number, attachmentId: number): Observable<Blob> {
+    return this.http.get(`${this.base}/chats/${chatId}/attachments/${attachmentId}`, { responseType: 'blob' });
+  }
+  previewChatAttachment(chatId: number, attachmentId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/chats/${chatId}/attachments/${attachmentId}/preview`, {});
+  }
+  createChatLead(chatId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/chats/${chatId}/lead`, {});
+  }
+  setChatNotClient(chatId: number, value: boolean): Observable<any> {
+    return this.http.post<any>(`${this.base}/chats/${chatId}/not-client`, { value });
+  }
+  getWhatsappStatus(): Observable<any> {
+    return this.http.get<any>(`${this.base}/chats/status`);
+  }
+  getLeadChatMessages(leadId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/leads/${leadId}/chat-messages`);
+  }
+  importLeadItems(leadId: number, body: { mappings: any[]; items: any[]; mode: 'REPLACE' | 'APPEND' }): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${leadId}/items/import`, body);
+  }
+
   // === Калитка ais.westmed.kz: устройства (только ADMIN) ===
   getDevices(): Observable<any> {
     return this.http.get<any>(`${this.base}/devices`);

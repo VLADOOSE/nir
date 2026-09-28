@@ -117,6 +117,9 @@ import { filter } from 'rxjs/operators';
               <svg lucideIcon="inbox" [size]="16"></svg> Обращения
               <span class="nav-count" *ngIf="newLeads > 0" [attr.aria-label]="newLeads + ' новых'">{{ newLeads }}</span>
             </a>
+            <a routerLink="/chats" routerLinkActive="active">
+              <svg lucideIcon="messages-square" [size]="16"></svg> Чаты
+            </a>
             <a routerLink="/applies" routerLinkActive="active">
               <svg lucideIcon="clipboard-list" [size]="16"></svg> Заявки на участие
             </a>

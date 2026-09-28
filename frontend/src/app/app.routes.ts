@@ -18,6 +18,7 @@ import { RegistryReconciliationComponent } from './pages/registry-reconciliation
 import { PrivateRequestsComponent } from './pages/private-requests/private-requests.component';
 import { InboundComponent } from './pages/inbound/inbound.component';
 import { LeadsComponent } from './pages/leads/leads.component';
+import { ChatsComponent } from './pages/chats/chats.component';
 import { EmailTemplateComponent } from './pages/email-template/email-template.component';
 import { DevicesComponent } from './pages/devices/devices.component';
 import { ProfileComponent } from './pages/profile/profile.component';
@@ -42,6 +43,7 @@ export const routes: Routes = [
       { path: 'users', component: UsersComponent, canActivate: [adminGuard] },
       { path: 'equipment-types', component: EquipmentTypesComponent, canActivate: [adminGuard] },
       { path: 'leads', component: LeadsComponent },
+      { path: 'chats', component: ChatsComponent },
       { path: 'private-requests', component: PrivateRequestsComponent },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
