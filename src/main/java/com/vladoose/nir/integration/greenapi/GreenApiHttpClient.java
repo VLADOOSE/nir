@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.whatsapp.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,24 +115,24 @@ public class GreenApiHttpClient implements GreenApiClient {
             String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
             // https всегда; http — только если сам сервис на http (dev-стаб, тесты)
             if (!scheme.equals("https") && !scheme.equals(apiScheme())) {
-                throw new GreenApiException(0, "Green-API: ссылка на файл не по https — не скачиваем");
+                throw new GatewayException(0, "Green-API: ссылка на файл не по https — не скачиваем");
             }
             req = HttpRequest.newBuilder(uri).timeout(downloadDeadline).GET().build();
         } catch (IllegalArgumentException e) {
-            throw new GreenApiException(0, "Green-API: некорректная ссылка на файл");
+            throw new GatewayException(0, "Green-API: некорректная ссылка на файл");
         }
         HttpResponse<byte[]> r = exchange(req, info -> info.statusCode() / 100 == 2
                 ? new LimitedBytes(maxBytes)
                 : HttpResponse.BodySubscribers.replacing(null), downloadDeadline, what);
         if (r.statusCode() / 100 != 2) {
-            throw new GreenApiException(r.statusCode(), "Green-API: HTTP " + r.statusCode() + " при скачивании файла");
+            throw new GatewayException(r.statusCode(), "Green-API: HTTP " + r.statusCode() + " при скачивании файла");
         }
         return r.body();
     }
 
     private HttpResponse<String> call(String method, String apiMethod, String suffix, Duration deadline, String what) {
         if (!isConfigured()) {
-            throw new GreenApiAuthException(0, "не заданы учётные данные Green-API");
+            throw new GatewayAuthException(0, "не заданы учётные данные Green-API");
         }
         HttpRequest req;
         try {
@@ -139,20 +141,20 @@ public class GreenApiHttpClient implements GreenApiClient {
                     .method(method, HttpRequest.BodyPublishers.noBody()).build();
         } catch (IllegalArgumentException e) {
             // текст исключения JDK содержит весь адрес вместе с токеном — наружу только своё
-            throw new GreenApiAuthException(0, "Green-API: адрес запроса не собирается — проверьте WHATSAPP_API_URL, "
+            throw new GatewayAuthException(0, "Green-API: адрес запроса не собирается — проверьте WHATSAPP_API_URL, "
                     + "WHATSAPP_ID_INSTANCE и WHATSAPP_API_TOKEN (опечатка, пробел или кавычка)");
         }
         HttpResponse<String> r = exchange(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8), deadline, what);
         int st = r.statusCode();
         if (st == 401 || st == 403) {
-            throw new GreenApiAuthException(st, "Green-API отклонил ключ (HTTP " + st + ") при " + what
+            throw new GatewayAuthException(st, "Green-API отклонил ключ (HTTP " + st + ") при " + what
                     + " — проверьте idInstance и токен");
         }
         if (st == 466) {
-            throw new GreenApiQuotaException(st, "Green-API: исчерпан лимит тарифа (HTTP 466) при " + what);
+            throw new GatewayQuotaException(st, "Green-API: исчерпан лимит тарифа (HTTP 466) при " + what);
         }
         if (st / 100 != 2) {
-            throw new GreenApiException(st, "Green-API: HTTP " + st + " при " + what);
+            throw new GatewayException(st, "Green-API: HTTP " + st + " при " + what);
         }
         return r;
     }
@@ -163,24 +165,24 @@ public class GreenApiHttpClient implements GreenApiClient {
         try {
             f = http.sendAsync(req, handler);
         } catch (RuntimeException e) {
-            throw new GreenApiException(0, "Green-API: запрос не отправлен при " + what + ": " + e.getClass().getSimpleName());
+            throw new GatewayException(0, "Green-API: запрос не отправлен при " + what + ": " + e.getClass().getSimpleName());
         }
         try {
             return f.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             f.cancel(true);
-            throw new GreenApiException(0, "Green-API не ответил за " + deadline.toSeconds() + " с при " + what);
+            throw new GatewayException(0, "Green-API не ответил за " + deadline.toSeconds() + " с при " + what);
         } catch (ExecutionException e) {
             for (Throwable c = e.getCause(); c != null; c = c.getCause()) {
                 if (c instanceof FileTooLargeException tooLarge) throw tooLarge;
             }
             // только класс исключения: текст части исключений JDK содержит адрес
             Throwable c = e.getCause() == null ? e : e.getCause();
-            throw new GreenApiException(0, "Green-API недоступен при " + what + ": " + c.getClass().getSimpleName());
+            throw new GatewayException(0, "Green-API недоступен при " + what + ": " + c.getClass().getSimpleName());
         } catch (InterruptedException e) {
             f.cancel(true);
             Thread.currentThread().interrupt();
-            throw new GreenApiException(0, "Green-API: запрос прерван при " + what);
+            throw new GatewayException(0, "Green-API: запрос прерван при " + what);
         }
     }
 
@@ -189,7 +191,7 @@ public class GreenApiHttpClient implements GreenApiClient {
         try {
             return objectMapper.readTree(body);
         } catch (IOException e) {
-            throw new GreenApiException(200, "Green-API: ответ не разобран при " + what);
+            throw new GatewayException(200, "Green-API: ответ не разобран при " + what);
         }
     }
 

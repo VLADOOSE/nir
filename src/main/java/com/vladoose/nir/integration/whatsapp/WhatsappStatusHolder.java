@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.dto.response.WhatsappStatusResponse;
 import org.springframework.stereotype.Component;
@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Состояние подключения WhatsApp для UI (спека §7). Пишут цикл приёма и планировщик (поток «whatsapp-chats»),
- * читает контроллер — поля volatile, список предупреждений заменяется целиком.
+ * Состояние подключения WhatsApp для UI (спеки whatsapp-chats §7, whatsapp-waha §7). Пишут цикл приёма и источник
+ * (поток «whatsapp-chats»), читают контроллеры — поля volatile, список предупреждений заменяется целиком.
  */
 @Component
 public class WhatsappStatusHolder {
@@ -31,23 +31,24 @@ public class WhatsappStatusHolder {
     private volatile OffsetDateTime quotaExceededAt;
     private volatile OffsetDateTime droppedAt;
     private volatile int droppedCount;
-    private volatile List<String> settingsWarnings = List.of();
-    /** Когда проход приёма в последний раз продвинулся (ответ Green-API, записанное уведомление). */
+    /** Предупреждения источника (Green-API — настройки инстанса); заменяются целиком. */
+    private volatile List<String> sourceWarnings = List.of();
+    /** Когда проход приёма в последний раз продвинулся (ответ шлюза, записанное уведомление). */
     private volatile long progressAt = System.currentTimeMillis();
 
     public void setState(String s) { state = s == null || s.isBlank() ? null : s; }
 
-    public void settingsChecked(GreenApiSettings s) {
-        String wid = s.wid() == null ? "" : s.wid().strip();
-        int at = wid.indexOf('@');
-        String digits = at < 0 ? wid : wid.substring(0, at);
+    /** «77000000001@c.us» / «77000000001:12@s.whatsapp.net» / «77000000001» → «77000000001»; пусто → null. */
+    public void setNumber(String wid) {
+        String w = wid == null ? "" : wid.strip();
+        int at = w.indexOf('@');
+        String user = at < 0 ? w : w.substring(0, at);
+        int device = user.indexOf(':');
+        String digits = device < 0 ? user : user.substring(0, device);
         number = digits.isEmpty() ? null : digits;
-        List<String> w = new ArrayList<>();
-        if (s.webhookUrl() != null && !s.webhookUrl().isBlank()) w.add(WEBHOOK_URL_SET);
-        if (!s.incomingWebhook()) w.add(INCOMING_OFF);
-        if (!s.outgoingMessageWebhook()) w.add(OUTGOING_PHONE_OFF);
-        settingsWarnings = List.copyOf(w);
     }
+
+    public void setSourceWarnings(List<String> warnings) { sourceWarnings = List.copyOf(warnings); }
 
     public void messageSeen(OffsetDateTime at) {
         if (at != null && (lastMessageAt == null || at.isAfter(lastMessageAt))) lastMessageAt = at;
@@ -85,7 +86,7 @@ public class WhatsappStatusHolder {
         r.setNumber(number);
         r.setLastMessageAt(lastMessageAt);
         r.setLastError(lastError);
-        List<String> w = new ArrayList<>(settingsWarnings);
+        List<String> w = new ArrayList<>(sourceWarnings);
         OffsetDateTime cutoff = OffsetDateTime.now().minus(RECENT);
         if (quotaExceededAt != null && quotaExceededAt.isAfter(cutoff)) w.add(QUOTA_EXCEEDED);
         if (droppedAt != null && droppedAt.isAfter(cutoff)) {

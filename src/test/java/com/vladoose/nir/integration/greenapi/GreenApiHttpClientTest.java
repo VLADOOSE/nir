@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.whatsapp.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
@@ -122,19 +124,19 @@ class GreenApiHttpClientTest {
         status = 401;
         body = "";
         assertThatThrownBy(() -> client().receive(5))
-                .isInstanceOf(GreenApiAuthException.class)
+                .isInstanceOf(GatewayAuthException.class)
                 .hasMessageContaining("401")
                 .hasMessageNotContaining(TOKEN)
                 .hasMessageNotContaining("waInstance");
         status = 403;
-        assertThatThrownBy(() -> client().state()).isInstanceOf(GreenApiAuthException.class);
+        assertThatThrownBy(() -> client().state()).isInstanceOf(GatewayAuthException.class);
     }
 
     @Test
     void quota466IsQuotaError() {
         status = 466;
         body = "";
-        assertThatThrownBy(() -> client().receive(5)).isInstanceOf(GreenApiQuotaException.class);
+        assertThatThrownBy(() -> client().receive(5)).isInstanceOf(GatewayQuotaException.class);
     }
 
     @Test
@@ -142,7 +144,7 @@ class GreenApiHttpClientTest {
         status = 500;
         body = "";
         assertThatThrownBy(() -> client().delete(1))
-                .isInstanceOfSatisfying(GreenApiException.class, e -> {
+                .isInstanceOfSatisfying(GatewayException.class, e -> {
                     assertThat(e.status()).isEqualTo(500);
                     assertThat(e.getMessage()).doesNotContain(TOKEN).doesNotContain("waInstance");
                 });
@@ -155,7 +157,7 @@ class GreenApiHttpClientTest {
         GreenApiHttpClient c = new GreenApiHttpClient(new ObjectMapper(), "http://localhost:" + free, "1101", TOKEN);
 
         assertThatThrownBy(() -> c.receive(5))
-                .isInstanceOfSatisfying(GreenApiException.class, e -> {
+                .isInstanceOfSatisfying(GatewayException.class, e -> {
                     assertThat(e.status()).isZero();
                     assertThat(e.getMessage()).startsWith("Green-API недоступен").doesNotContain(TOKEN);
                 });
@@ -175,7 +177,7 @@ class GreenApiHttpClientTest {
         GreenApiHttpClient c = new GreenApiHttpClient(new ObjectMapper(), "https://api.green-api.example", "1101", TOKEN);
 
         assertThatThrownBy(() -> c.download("http://localhost:" + port + "/files/a.pdf", 10))
-                .isInstanceOf(GreenApiException.class).hasMessageContaining("https");
+                .isInstanceOf(GatewayException.class).hasMessageContaining("https");
         assertThat(calls).isEmpty();
     }
 
@@ -190,7 +192,7 @@ class GreenApiHttpClientTest {
 
         for (GreenApiHttpClient c : List.of(oneSlash, spaced)) {
             assertThatThrownBy(() -> c.receive(5))
-                    .isInstanceOf(GreenApiAuthException.class)
+                    .isInstanceOf(GatewayAuthException.class)
                     .hasMessageContaining("WHATSAPP_API_URL")
                     .hasMessageNotContaining(TOKEN)
                     .hasMessageNotContaining("secret")
@@ -203,7 +205,7 @@ class GreenApiHttpClientTest {
     @Test
     void badFileLinkIsDownloadFailure() {
         assertThatThrownBy(() -> client().download("https:/files.example/a.pdf", 10))
-                .isInstanceOf(GreenApiException.class);
+                .isInstanceOf(GatewayException.class);
     }
 
     /**
@@ -217,9 +219,9 @@ class GreenApiHttpClientTest {
                 Duration.ofSeconds(2), Duration.ofSeconds(1));
         long t0 = System.nanoTime();
 
-        assertThatThrownBy(() -> c.receive(1)).isInstanceOf(GreenApiException.class).hasMessageNotContaining(TOKEN);
+        assertThatThrownBy(() -> c.receive(1)).isInstanceOf(GatewayException.class).hasMessageNotContaining(TOKEN);
         assertThatThrownBy(() -> c.download("http://localhost:" + port + "/files/a.pdf", 1000))
-                .isInstanceOf(GreenApiException.class);
+                .isInstanceOf(GatewayException.class);
 
         assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(7));
     }
@@ -229,7 +231,7 @@ class GreenApiHttpClientTest {
         GreenApiHttpClient c = new GreenApiHttpClient(new ObjectMapper(), "http://localhost:" + port, "1101", "");
 
         assertThat(c.isConfigured()).isFalse();
-        assertThatThrownBy(() -> c.receive(5)).isInstanceOf(GreenApiAuthException.class).hasMessageContaining("не заданы");
+        assertThatThrownBy(() -> c.receive(5)).isInstanceOf(GatewayAuthException.class).hasMessageContaining("не заданы");
         assertThat(calls).isEmpty();
     }
 }

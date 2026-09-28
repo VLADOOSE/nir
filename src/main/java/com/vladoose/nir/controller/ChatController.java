@@ -3,7 +3,7 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.dto.request.ChatNotClientRequest;
 import com.vladoose.nir.dto.response.*;
 import com.vladoose.nir.entity.ChatAttachment;
-import com.vladoose.nir.integration.greenapi.WhatsappChatScheduler;
+import com.vladoose.nir.integration.whatsapp.WhatsappChatScheduler;
 import com.vladoose.nir.service.ChatService;
 import jakarta.validation.Valid;
 import org.springframework.http.*;

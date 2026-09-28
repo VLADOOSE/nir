@@ -1,10 +1,14 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.WhatsappStatusResponse;
 import com.vladoose.nir.entity.Chat;
 import com.vladoose.nir.entity.LeadChannel;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.integration.greenapi.FakeGreenApiClient;
+import com.vladoose.nir.integration.greenapi.GreenApiJson;
+import com.vladoose.nir.integration.greenapi.GreenApiSettings;
+import com.vladoose.nir.integration.greenapi.GreenApiSource;
 import com.vladoose.nir.integration.westmed.FakeWestmedClient;
 import com.vladoose.nir.repository.ChatRepository;
 import com.vladoose.nir.service.ChatIngestWriter;
@@ -31,24 +35,26 @@ class WhatsappChatSchedulerTest {
     @Autowired ChatRepository chatRepository;
 
     FakeGreenApiClient fake;
+    GreenApiSource source;
     WhatsappStatusHolder status;
 
     @BeforeEach
     void setUp() {
         fake = new FakeGreenApiClient();
+        source = new GreenApiSource(fake, 5, 300_000, 3_600_000);
         status = new WhatsappStatusHolder();
     }
 
     @AfterEach void tearDown() { MarketContext.clear(); }
 
     private WhatsappChatSync sync() {
-        return new WhatsappChatSync(fake, writer, new FakeWestmedClient(), status, "https://westmed.kz", 25, 5);
+        return new WhatsappChatSync(source, writer, new FakeWestmedClient(), status, "https://westmed.kz", 25);
     }
 
     private WhatsappChatScheduler scheduler(boolean enabled) { return scheduler(enabled, 300_000); }
 
     private WhatsappChatScheduler scheduler(boolean enabled, long stallMs) {
-        return new WhatsappChatScheduler(sync(), fake, status, enabled, "KZ", 600_000, 30_000, 300_000, 3_600_000, stallMs);
+        return new WhatsappChatScheduler(sync(), source, status, enabled, "KZ", 600_000, 30_000, stallMs);
     }
 
     @Test
@@ -85,7 +91,7 @@ class WhatsappChatSchedulerTest {
 
     @Test
     void rejectedKeyPausesFurtherCycles() {
-        fake.failReceiveWith = new GreenApiAuthException(401,
+        fake.failReceiveWith = new GatewayAuthException(401,
                 "Green-API отклонил ключ (HTTP 401) при приёме сообщений — проверьте idInstance и токен");
         WhatsappChatScheduler s = scheduler(true);
 
@@ -146,8 +152,7 @@ class WhatsappChatSchedulerTest {
     /** Опечатка в WHATSAPP_MARKET молча превращалась в RF — чаты уходили на рынок, где их никто не ищет. */
     @Test
     void unknownMarketStopsIntakeInsteadOfWritingToRf() {
-        WhatsappChatScheduler s = new WhatsappChatScheduler(sync(), fake, status, true, "KZZ",
-                600_000, 30_000, 300_000, 3_600_000, 300_000);
+        WhatsappChatScheduler s = new WhatsappChatScheduler(sync(), source, status, true, "KZZ", 600_000, 30_000, 300_000);
 
         s.cycle();
 
@@ -158,6 +163,11 @@ class WhatsappChatSchedulerTest {
     @Test
     void statusTellsWhichMarketTheMirrorWritesTo() {
         assertThat(scheduler(true).status().getMarket()).isEqualTo("KZ");
+    }
+
+    @Test
+    void statusTellsWhichGatewayIsActive() {
+        assertThat(scheduler(true).status().getProvider()).isEqualTo("greenapi");
     }
 
     /** Ревью 2026-09-28: застрявший проход держал «подключён» без ошибки — со стороны неотличимо от тишины в чатах. */

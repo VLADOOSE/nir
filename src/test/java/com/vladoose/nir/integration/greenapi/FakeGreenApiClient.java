@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.whatsapp.*;
+
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.*;
@@ -60,10 +62,10 @@ public class FakeGreenApiClient implements GreenApiClient {
         int left = downloadFailuresLeft.getOrDefault(url, 0);
         if (left > 0) {
             downloadFailuresLeft.put(url, left - 1);
-            throw new GreenApiException(0, "Green-API: файл не скачался: ConnectException");
+            throw new GatewayException(0, "Green-API: файл не скачался: ConnectException");
         }
         byte[] b = files.get(url);
-        if (b == null) throw new GreenApiException(404, "Green-API: HTTP 404 при скачивании файла");
+        if (b == null) throw new GatewayException(404, "Green-API: HTTP 404 при скачивании файла");
         if (b.length > maxBytes) throw new FileTooLargeException(maxBytes);
         return b;
     }

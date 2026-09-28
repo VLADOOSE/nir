@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.WhatsappStatusResponse;
@@ -18,9 +18,10 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Приём WhatsApp (спека whatsapp-chats §6.1): тик раз в секунду ставит проход в СВОЙ однопоточный экзекьютор
- * «whatsapp-chats» — long-poll держит поток до 20 с, общий scheduling-1 занимать нельзя. Рынок ставится ЯВНО
- * и чистится в finally (§6 CLAUDE.md). Паузы: отказ ключа — 10 мин, прочие сбои — 30 с.
+ * Приём WhatsApp (спеки whatsapp-chats §6.1, whatsapp-waha §3): тик раз в секунду ставит проход в СВОЙ однопоточный
+ * экзекьютор «whatsapp-chats» — long-poll Green-API держит поток до 20 с, общий scheduling-1 занимать нельзя. Рынок
+ * ставится ЯВНО и чистится в finally (§6 CLAUDE.md). Проход: обслуживание источника (состояние, номер; у WAHA ещё
+ * догонка и уборка) → очередь. Паузы: отказ ключа — 10 мин, прочие сбои — 30 с.
  */
 @Component
 public class WhatsappChatScheduler {
@@ -29,7 +30,7 @@ public class WhatsappChatScheduler {
     static final int MAX_PER_DRAIN = 200;
 
     private final WhatsappChatSync sync;
-    private final GreenApiClient client;
+    private final WhatsappSource source;
     private final WhatsappStatusHolder status;
     private final boolean enabled;
     /** null — WHATSAPP_MARKET не распознан: приём стоит (раньше опечатка молча превращалась в RF). */
@@ -37,8 +38,6 @@ public class WhatsappChatScheduler {
     private final String marketRaw;
     private final long authBackoffMs;
     private final long errorBackoffMs;
-    private final long stateRefreshMs;
-    private final long settingsRefreshMs;
     /** Проход без продвижения дольше этого — строка состояния говорит «приём не продвигается». */
     private final long stallMs;
 
@@ -49,29 +48,23 @@ public class WhatsappChatScheduler {
     });
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile long pausedUntil;
-    private volatile long nextStateCheck;
-    private volatile long nextSettingsCheck;
     private volatile boolean credentialsWarned;
     private volatile boolean marketWarned;
 
-    public WhatsappChatScheduler(WhatsappChatSync sync, GreenApiClient client, WhatsappStatusHolder status,
+    public WhatsappChatScheduler(WhatsappChatSync sync, WhatsappSource source, WhatsappStatusHolder status,
                                  @Value("${chats.whatsapp.enabled:false}") boolean enabled,
                                  @Value("${chats.whatsapp.market:KZ}") String market,
                                  @Value("${chats.whatsapp.auth-backoff-ms:600000}") long authBackoffMs,
                                  @Value("${chats.whatsapp.error-backoff-ms:30000}") long errorBackoffMs,
-                                 @Value("${chats.whatsapp.state-refresh-ms:300000}") long stateRefreshMs,
-                                 @Value("${chats.whatsapp.settings-refresh-ms:3600000}") long settingsRefreshMs,
                                  @Value("${chats.whatsapp.stall-ms:300000}") long stallMs) {
         this.sync = sync;
-        this.client = client;
+        this.source = source;
         this.status = status;
         this.enabled = enabled;
         this.market = parseMarket(market);
         this.marketRaw = market;
         this.authBackoffMs = authBackoffMs;
         this.errorBackoffMs = errorBackoffMs;
-        this.stateRefreshMs = stateRefreshMs;
-        this.settingsRefreshMs = settingsRefreshMs;
         this.stallMs = stallMs;
     }
 
@@ -112,8 +105,8 @@ public class WhatsappChatScheduler {
             }
             return;
         }
-        if (!client.isConfigured()) {
-            status.setLastError("не заданы учётные данные Green-API (WHATSAPP_API_URL / WHATSAPP_ID_INSTANCE / WHATSAPP_API_TOKEN)");
+        if (!source.isConfigured()) {
+            status.setLastError(source.configHint());
             if (!credentialsWarned) {
                 log.warn("WhatsApp: {}", status.lastError());
                 credentialsWarned = true;
@@ -123,31 +116,23 @@ public class WhatsappChatScheduler {
         if (System.currentTimeMillis() < pausedUntil) return;   // пауза: lastError уже объясняет
         MarketContext.set(market);
         try {
-            long now = System.currentTimeMillis();
-            if (now >= nextSettingsCheck) {
-                status.settingsChecked(client.settings());
-                nextSettingsCheck = now + settingsRefreshMs;
-            }
-            if (now >= nextStateCheck) {
-                status.setState(client.state());
-                nextStateCheck = now + stateRefreshMs;
-            }
+            source.housekeeping(status);
             if (sync.drain(MAX_PER_DRAIN)) {
                 status.setLastError(null);
             } else {
                 pausedUntil = System.currentTimeMillis() + errorBackoffMs;
             }
-        } catch (GreenApiAuthException e) {
+        } catch (GatewayAuthException e) {
             pausedUntil = System.currentTimeMillis() + authBackoffMs;
             if (changed(e.getMessage() + " — повтор через " + Math.max(1, authBackoffMs / 60_000) + " мин")) {
                 log.warn("WhatsApp: {}", status.lastError());
             }
-        } catch (GreenApiQuotaException e) {
+        } catch (GatewayQuotaException e) {
             status.quotaExceeded();
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
             changed(e.getMessage());
-        } catch (GreenApiException e) {
-            // свой текст без адреса; трасса ни о чём не скажет — сеть или ответ сервиса
+        } catch (GatewayException e) {
+            // свой текст без адреса; трасса ни о чём не скажет — сеть или ответ шлюза
             pausedUntil = System.currentTimeMillis() + errorBackoffMs;
             if (changed(e.getMessage())) log.warn("WhatsApp: {} — пауза {} с", e.getMessage(), errorBackoffMs / 1000);
         } catch (RuntimeException e) {
@@ -175,7 +160,8 @@ public class WhatsappChatScheduler {
     }
 
     public WhatsappStatusResponse status() {
-        WhatsappStatusResponse r = status.snapshot(enabled, client.isConfigured());
+        WhatsappStatusResponse r = status.snapshot(enabled, source.isConfigured());
+        r.setProvider(source.name());
         r.setMarket(market == null ? null : market.name());
         long idleMs = status.sinceProgressMs();
         if (running.get() && idleMs > stallMs) {

@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.whatsapp.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vladoose.nir.entity.ChatMessageType;
 import com.vladoose.nir.entity.LeadDirection;
@@ -36,19 +38,10 @@ public final class GreenApiNotificationParser {
         }
     }
 
-    /** Вид чата; null — это не чат (истории status@broadcast, каналы …@newsletter, рассылки …@broadcast). */
-    static ChatKind kindOf(String chatId) {
-        if (chatId == null || chatId.isBlank()) return null;
-        if (chatId.endsWith("@g.us")) return ChatKind.GROUP;
-        if (chatId.endsWith("@c.us")) return ChatKind.PERSONAL;
-        if (chatId.endsWith("@lid")) return ChatKind.PERSONAL_HIDDEN;
-        return null;
-    }
-
     private static ParsedNotification message(JsonNode b, LeadDirection dir, boolean viaApi) {
         JsonNode sd = b.path("senderData");
         String chatId = sd.path("chatId").asText("");
-        ChatKind kind = kindOf(chatId);
+        ChatKind kind = ChatKind.of(chatId);
         if (kind == null) return new ParsedNotification.Skip("не чат: " + chatId);
 
         String account = beforeAt(b.path("instanceData").path("wid").asText(""));

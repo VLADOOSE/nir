@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.entity.AttachmentNotStoredReason;
 

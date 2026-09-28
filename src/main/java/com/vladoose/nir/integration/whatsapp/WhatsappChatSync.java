@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.entity.AttachmentNotStoredReason;
 import com.vladoose.nir.entity.LeadDirection;
@@ -27,10 +27,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Проход по очереди Green-API (спека whatsapp-chats §6): получить → (скачать файл, найти бренды корзины — ВНЕ
- * транзакции) → записать (ChatIngestWriter, своя транзакция) → удалить из очереди. Удаляем ТОЛЬКО после записи:
- * сбой посередине → уведомление придёт снова, дубль отсечёт writer. Сам НЕ транзакционный; MarketContext ставит
- * вызывающий (WhatsappChatScheduler).
+ * Проход по очереди источника (спеки whatsapp-chats §6, whatsapp-waha §3): взять голову → (скачать файл, найти бренды
+ * корзины — ВНЕ транзакции) → записать (ChatIngestWriter, своя транзакция) → подтвердить. Подтверждаем ТОЛЬКО после
+ * записи: сбой посередине → уведомление придёт снова, дубль отсечёт writer. Сам НЕ транзакционный; MarketContext
+ * ставит вызывающий (WhatsappChatScheduler). Шлюза не знает — всё шлюзовое за WhatsappSource.
  */
 @Service
 public class WhatsappChatSync {
@@ -39,9 +39,9 @@ public class WhatsappChatSync {
     static final int MAX_ATTEMPTS = 3;
     /**
      * Столько «ядовитых» ЗА СУТКИ — это уже не битое уведомление, а поломка (регрессия, ломающая запись): дальше не
-     * удаляем, стоим с красной строкой — новые сообщения ждут в очереди Green-API (сутки). Именно за сутки, а не
-     * подряд: успешные служебные уведомления между «ядовитыми» (статусы доставки, группы) сбрасывали бы серию,
-     * и регрессия, ломающая только личные сообщения, выкидывала бы очередь по одному (перепроверка ревью).
+     * пропускаем, стоим с красной строкой — новые сообщения ждут в очереди. Именно за сутки, а не подряд: успешные
+     * служебные уведомления между «ядовитыми» (статусы, группы) сбрасывали бы серию, и регрессия, ломающая только
+     * личные сообщения, выкидывала бы очередь по одному (перепроверка ревью 2026-09-28).
      */
     static final int DROP_FUSE = 3;
     /** Предел глубины цепочки причин — от циклов, которые не самоссылка. */
@@ -49,107 +49,106 @@ public class WhatsappChatSync {
     /** Классы SQLSTATE: 08 соединение, 40 откат (deadlock), 53 ресурсы (диск/память), 57 вмешательство, 58 система. */
     private static final Set<String> INFRA_SQLSTATE_CLASSES = Set.of("08", "40", "53", "57", "58");
 
-    private final GreenApiClient client;
+    private final WhatsappSource source;
     private final ChatIngestWriter writer;
     private final WestmedClient westmedClient;
     private final WhatsappStatusHolder status;
     private final String siteUrl;
     private final long maxFileBytes;
-    private final int receiveTimeoutSec;
-    /** receiptId → сколько раз подряд не приняли. В памяти: после рестарта счёт с нуля — это ≤ 2 лишние попытки. */
+    /** id уведомления → сколько раз подряд не приняли. В памяти: после рестарта счёт с нуля — это ≤ 2 лишние попытки. */
     private final Map<Long, Integer> failures = new ConcurrentHashMap<>();
     /**
-     * Состояния «база недоступна» и «приём остановлен» повторяются каждым проходом (раз в 30–60 с): в лог — один раз
-     * на вход в состояние, иначе тысячи трасс в сутки. Сбрасывает успешное уведомление. Пишет один поток приёма.
+     * Состояния «база недоступна» и «приём остановлен» повторяются каждым проходом: в лог — один раз на вход в
+     * состояние, иначе тысячи трасс в сутки. Сбрасывает успешное уведомление. Пишет один поток приёма.
      */
     private boolean infraLogged;
     private boolean haltLogged;
 
-    public WhatsappChatSync(GreenApiClient client, ChatIngestWriter writer, WestmedClient westmedClient,
+    public WhatsappChatSync(WhatsappSource source, ChatIngestWriter writer, WestmedClient westmedClient,
                             WhatsappStatusHolder status,
                             @Value("${leads.westmed.site-url:https://westmed.kz}") String siteUrl,
-                            @Value("${chats.whatsapp.max-file-mb:25}") int maxFileMb,
-                            @Value("${chats.whatsapp.receive-timeout-s:20}") int receiveTimeoutSec) {
-        this.client = client;
+                            @Value("${chats.whatsapp.max-file-mb:25}") int maxFileMb) {
+        this.source = source;
         this.writer = writer;
         this.westmedClient = westmedClient;
         this.status = status;
         this.siteUrl = siteUrl.endsWith("/") ? siteUrl.substring(0, siteUrl.length() - 1) : siteUrl;
         this.maxFileBytes = maxFileMb * 1024L * 1024L;
-        this.receiveTimeoutSec = receiveTimeoutSec;
     }
 
     /** До maxNotifications уведомлений или до пустой очереди. false — проход оборван сбоем уведомления (нужна пауза). */
     public boolean drain(int maxNotifications) {
         for (int i = 0; i < maxNotifications; i++) {
-            GreenApiReceived r = client.receive(receiveTimeoutSec);
+            WhatsappNotification n = source.next();
             status.progress();
-            if (r == null) return true;
-            if (!process(r)) return false;
+            if (n == null) return true;
+            if (!process(n)) return false;
             status.progress();
         }
         return true;
     }
 
     /**
-     * Одно уведомление. false — не принято и оставлено в очереди (Green-API отдаст его снова — голову очереди).
-     * Сбой базы/диска — не вина уведомления: попытку не считаем. «Ядовитое» (упало MAX_ATTEMPTS раз) удаляем,
-     * чтобы оно не забило голову очереди навсегда, — но не больше DROP_FUSE за сутки.
+     * Одно уведомление. false — не принято и оставлено в очереди (источник отдаст его снова). Сбой базы/диска — не
+     * вина уведомления: попытку не считаем. «Ядовитое» (упало MAX_ATTEMPTS раз) пропускаем, чтобы оно не забило
+     * голову очереди навсегда, — но не больше DROP_FUSE за сутки.
      */
-    boolean process(GreenApiReceived r) {
-        int attempt = failures.getOrDefault(r.receiptId(), 0) + 1;
+    boolean process(WhatsappNotification n) {
+        int attempt = failures.getOrDefault(n.id(), 0) + 1;
+        String dropped = null;
         try {
-            handle(GreenApiNotificationParser.parse(r.body()), attempt);
+            handle(source.parse(n), attempt);
             infraLogged = false;
             haltLogged = false;
         } catch (RuntimeException e) {
             if (isInfrastructureFailure(e)) {
                 status.setLastError("приём приостановлен: база данных недоступна (" + e.getClass().getSimpleName()
-                        + ") — сообщения ждут в очереди Green-API");
+                        + ") — " + source.waitingNote());
                 if (!infraLogged) {
-                    log.warn("WhatsApp: база данных недоступна — уведомление {} ждёт в очереди", r.receiptId(), e);
+                    log.warn("WhatsApp: база данных недоступна — уведомление {} ждёт в очереди", n.id(), e);
                     infraLogged = true;
                 }
                 return false;
             }
             String reason = reason(e);
             if (attempt < MAX_ATTEMPTS) {
-                failures.put(r.receiptId(), attempt);
+                failures.put(n.id(), attempt);
                 status.setLastError("сообщение не принято (попытка " + attempt + " из " + MAX_ATTEMPTS + "): " + reason);
-                log.warn("WhatsApp: уведомление {} не принято (попытка {} из {})", r.receiptId(), attempt, MAX_ATTEMPTS, e);
+                log.warn("WhatsApp: уведомление {} не принято (попытка {} из {})", n.id(), attempt, MAX_ATTEMPTS, e);
                 return false;
             }
             if (status.recentDrops() >= DROP_FUSE) {
-                failures.put(r.receiptId(), attempt);
+                failures.put(n.id(), attempt);
                 status.setLastError("приём остановлен: за сутки не записались " + status.recentDrops()
-                        + " сообщения — нужна проверка (новые ждут в очереди Green-API до суток): " + reason);
+                        + " сообщения — нужна проверка; " + source.waitingNote() + ". Причина: " + reason);
                 if (!haltLogged) {
                     log.error("WhatsApp: за сутки не записались {} уведомления — приём остановлен, {} оставлено в очереди",
-                            status.recentDrops(), r.receiptId(), e);
+                            status.recentDrops(), n.id(), e);
                     haltLogged = true;
                 }
                 return false;
             }
             status.messageDropped();
             status.setLastError("сообщение пропущено после " + MAX_ATTEMPTS + " попыток: " + reason);
-            log.warn("WhatsApp: уведомление {} не принято {} раз подряд — удалено из очереди", r.receiptId(), attempt, e);
+            log.warn("WhatsApp: уведомление {} не принято {} раз подряд — пропущено", n.id(), attempt, e);
+            dropped = reason;
         }
-        failures.remove(r.receiptId());
-        client.delete(r.receiptId());
+        failures.remove(n.id());
+        source.ack(n, dropped);
         return true;
     }
 
     /**
-     * Текст для строки состояния, которую видит любой вошедший: свои сообщения Green-API — как есть (собраны без
-     * адреса), чужие исключения — только класс: в их тексте бывают SQL, значения и адреса.
+     * Текст для строки состояния, которую видит любой вошедший: свои сообщения шлюза — как есть (собраны без адреса
+     * и ключей), чужие исключения — только класс: в их тексте бывают SQL, значения и адреса.
      */
     static String reason(Throwable e) {
-        if (e instanceof GreenApiException) return e.getMessage();
+        if (e instanceof GatewayException) return e.getMessage();
         return "внутренняя ошибка (" + e.getClass().getSimpleName() + ") — подробности в логе сервера";
     }
 
     /** Сбой инфраструктуры (база, диск, соединение), а не битое уведомление — по всей цепочке причин. */
-    static boolean isInfrastructureFailure(Throwable e) {
+    public static boolean isInfrastructureFailure(Throwable e) {
         int depth = 0;
         for (Throwable t = e; t != null && depth++ < MAX_CAUSE_DEPTH; t = t.getCause() == t ? null : t.getCause()) {
             if (t instanceof DataAccessResourceFailureException || t instanceof CannotCreateTransactionException
@@ -177,19 +176,23 @@ public class WhatsappChatSync {
         } else if (p instanceof ParsedNotification.QuotaExceeded) {
             status.quotaExceeded();
         }
-        // Skip — только подтвердить (рекомендация Green-API)
+        // Skip — только подтвердить
     }
 
     private IncomingFile fetchFile(ParsedNotification.Message m, int attempt) {
         FileRef ref = m.file();
         if (ref == null) return null;
         if (m.kind() == ChatKind.GROUP) return IncomingFile.notStored(ref, AttachmentNotStoredReason.GROUP);
-        if (ref.downloadUrl() == null) return IncomingFile.notStored(ref, AttachmentNotStoredReason.DOWNLOAD_FAILED);
+        if (ref.locator() == null) return IncomingFile.notStored(ref, AttachmentNotStoredReason.DOWNLOAD_FAILED);
+        // размер известен заранее — большой файл не качаем вовсе (WAHA держит скачиваемое целиком в памяти)
+        if (ref.sizeBytes() != null && ref.sizeBytes() > maxFileBytes) {
+            return IncomingFile.notStored(ref, AttachmentNotStoredReason.TOO_LARGE);
+        }
         try {
-            return IncomingFile.stored(ref, client.download(ref.downloadUrl(), maxFileBytes));
+            return IncomingFile.stored(ref, source.download(ref, maxFileBytes));
         } catch (FileTooLargeException e) {
             return IncomingFile.notStored(ref, AttachmentNotStoredReason.TOO_LARGE);
-        } catch (GreenApiException e) {
+        } catch (GatewayException e) {
             // последняя попытка — пишем сообщение без файла: текст важнее, файл остаётся в телефоне
             if (attempt >= MAX_ATTEMPTS) return IncomingFile.notStored(ref, AttachmentNotStoredReason.DOWNLOAD_FAILED);
             throw e;

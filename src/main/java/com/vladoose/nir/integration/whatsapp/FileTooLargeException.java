@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 /** Файл больше chats.whatsapp.max-file-mb — скачивание оборвано, в базу не пишем. */
 public class FileTooLargeException extends RuntimeException {

@@ -19,4 +19,6 @@ public class WhatsappStatusResponse {
     private int droppedCount;
     /** Рынок зеркала — экран подскажет переключиться, если выбран другой (ловушка «не видно данных»). */
     private String market;
+    /** Шлюз: waha / greenapi (или опечатка из WHATSAPP_PROVIDER — тогда configured=false и lastError объясняет). */
+    private String provider;
 }

@@ -15,7 +15,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.integration.greenapi.GreenApiJson;
 import com.vladoose.nir.integration.greenapi.GreenApiNotificationParser;
-import com.vladoose.nir.integration.greenapi.ParsedNotification;
+import com.vladoose.nir.integration.whatsapp.ParsedNotification;
 import com.vladoose.nir.repository.HeaderSynonymRepository;
 import com.vladoose.nir.service.ChatIngestWriter;
 import com.vladoose.nir.service.LeadService;

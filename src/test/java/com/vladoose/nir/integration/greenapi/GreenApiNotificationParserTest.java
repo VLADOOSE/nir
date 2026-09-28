@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.whatsapp.*;
+
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.entity.ChatMessageType;
 import com.vladoose.nir.entity.LeadDirection;

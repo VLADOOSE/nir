@@ -1,11 +1,11 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.entity.ChatMessageType;
 import com.vladoose.nir.entity.LeadDirection;
 
 import java.time.OffsetDateTime;
 
-/** Разобранное уведомление Green-API (спека whatsapp-chats §2, §6.5). */
+/** Разобранное уведомление шлюза WhatsApp — Green-API или WAHA (спеки whatsapp-chats §2, §6.5; whatsapp-waha §2). */
 public sealed interface ParsedNotification {
 
     /**

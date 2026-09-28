@@ -1,9 +1,12 @@
-package com.vladoose.nir.integration.greenapi;
+package com.vladoose.nir.integration.whatsapp;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.ChatAttachmentMeta;
 import com.vladoose.nir.dto.response.WhatsappStatusResponse;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.greenapi.FakeGreenApiClient;
+import com.vladoose.nir.integration.greenapi.GreenApiJson;
+import com.vladoose.nir.integration.greenapi.GreenApiSource;
 import com.vladoose.nir.integration.lead.IncomingLead;
 import com.vladoose.nir.integration.westmed.FakeWestmedClient;
 import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
@@ -27,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +52,7 @@ class WhatsappChatSyncTest {
     @Autowired LeadService leadService;
 
     FakeGreenApiClient fake;
+    GreenApiSource source;
     FakeWestmedClient westmed;
     WhatsappStatusHolder status;
     long clock = Instant.now().getEpochSecond() - 3600;
@@ -56,6 +61,7 @@ class WhatsappChatSyncTest {
     void setUp() {
         MarketContext.set(Market.KZ);
         fake = new FakeGreenApiClient();
+        source = new GreenApiSource(fake, 5, 300_000, 3_600_000);
         westmed = new FakeWestmedClient();
         status = new WhatsappStatusHolder();
     }
@@ -64,7 +70,7 @@ class WhatsappChatSyncTest {
 
     /** Предел файла — 1 МБ, чтобы тест «больше предела» не гонял 25 МБ. */
     private WhatsappChatSync sync(ChatIngestWriter w) {
-        return new WhatsappChatSync(fake, w, westmed, status, "https://westmed.kz/", 1, 5);
+        return new WhatsappChatSync(source, w, westmed, status, "https://westmed.kz/", 1);
     }
     private WhatsappChatSync sync() { return sync(writer); }
 
@@ -272,9 +278,51 @@ class WhatsappChatSyncTest {
     @Test
     void receiveFailurePropagatesWithQueueUntouched() {
         fake.enqueue(GreenApiJson.incoming(personal(), "Айгерим", id(), clock += 60, GreenApiJson.text("x")));
-        fake.failReceiveWith = new GreenApiAuthException(401, "Green-API отклонил ключ (HTTP 401) при приёме сообщений");
+        fake.failReceiveWith = new GatewayAuthException(401, "Green-API отклонил ключ (HTTP 401) при приёме сообщений");
 
-        assertThatThrownBy(() -> sync().drain(10)).isInstanceOf(GreenApiAuthException.class);
+        assertThatThrownBy(() -> sync().drain(10)).isInstanceOf(GatewayAuthException.class);
         assertThat(fake.deleted).isEmpty();
+    }
+
+    /**
+     * Размер сообщён шлюзом (WAHA — proto-поле fileLength) и больше предела — не качаем вовсе: WAHA тянет скачиваемый
+     * файл целиком в память (спека whatsapp-waha §6).
+     */
+    @Test
+    void fileWithKnownSizeOverLimitIsNotDownloaded() {
+        String chat = personal();
+        ParsedNotification.Message m = new ParsedNotification.Message(GreenApiJson.ACCOUNT, chat, ChatKind.PERSONAL,
+                "+" + chat.substring(0, 11), "Айгерим", "Айгерим", LeadDirection.IN, id(), OffsetDateTime.now().minusMinutes(5),
+                ChatMessageType.DOCUMENT, "Смета", new FileRef("loc-1", "big.pdf", "application/pdf", 2L * 1024 * 1024),
+                null, false);
+        SingleMessageSource one = new SingleMessageSource(m);
+
+        new WhatsappChatSync(one, writer, westmed, status, "https://westmed.kz", 1).drain(10);
+
+        assertThat(one.downloads).isEmpty();
+        assertThat(attachmentRepository.findMetaByMessageIds(List.of(lastMessage(chat).getId())))
+                .singleElement().extracting(ChatAttachmentMeta::notStoredReason).isEqualTo(AttachmentNotStoredReason.TOO_LARGE);
+    }
+
+    /** Источник из одного готового сообщения — для правил цикла, которые от шлюза не зависят. */
+    static final class SingleMessageSource implements WhatsappSource {
+        final ParsedNotification.Message message;
+        final List<String> downloads = new ArrayList<>();
+        boolean acked;
+
+        SingleMessageSource(ParsedNotification.Message message) { this.message = message; }
+
+        @Override public String name() { return "test"; }
+        @Override public boolean isConfigured() { return true; }
+        @Override public String configHint() { return ""; }
+        @Override public String waitingNote() { return "сообщения ждут в тесте"; }
+        @Override public void housekeeping(WhatsappStatusHolder status) { }
+        @Override public WhatsappNotification next() { return acked ? null : new WhatsappNotification(1, null); }
+        @Override public ParsedNotification parse(WhatsappNotification n) { return message; }
+        @Override public void ack(WhatsappNotification n, String droppedReason) { acked = true; }
+        @Override public byte[] download(FileRef ref, long maxBytes) {
+            downloads.add(ref.locator());
+            return new byte[]{1};
+        }
     }
 }

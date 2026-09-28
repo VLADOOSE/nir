@@ -2,9 +2,9 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
-import com.vladoose.nir.integration.greenapi.ChatKind;
-import com.vladoose.nir.integration.greenapi.IncomingFile;
-import com.vladoose.nir.integration.greenapi.ParsedNotification;
+import com.vladoose.nir.integration.whatsapp.ChatKind;
+import com.vladoose.nir.integration.whatsapp.IncomingFile;
+import com.vladoose.nir.integration.whatsapp.ParsedNotification;
 import com.vladoose.nir.integration.lead.IncomingLead;
 import com.vladoose.nir.integration.lead.LeadSources;
 import com.vladoose.nir.repository.ChatAttachmentRepository;
