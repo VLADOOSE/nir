@@ -128,30 +128,24 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090   # 200
 ---
 
 ## 6. Доступ по `https://ais.westmed.kz` (без Tailscale)
-Шаг 1 блока «доступ без Tailscale», 2026-09-27. Адрес Tailscale продолжает работать параллельно.
+Шаг 1 (2026-09-27): адрес, сертификат, общий пароль nginx. Шаг 2 (2026-09-28): **калитка по коду устройства** вместо общего пароля — спека `docs/superpowers/specs/2026-09-28-device-gate-design.md`. Tailscale и SSH-туннель работают параллельно и калитку обходят — это запасной вход админа.
 - **DNS:** A-запись `ais` → `185.125.46.26` в панели unihost.kz (NS домена — `ns1/ns2.unihost.kz`).
-- **nginx хоста:** конфиг — `deploy/nginx/zz-ais.westmed.kz.conf` из репо → `/etc/nginx/sites-available/zz-ais.westmed.kz`
-  + симлинк в `sites-enabled`. 80-й порт — только ACME и редирект; 443 — пароль на входе и прокси на `127.0.0.1:8090`.
-  ⚠️ **Префикс `zz-` обязателен:** `default_server` на сервере не задан, и неизвестные запросы (голый IP, TLS без SNI)
-  получает первый загруженный по алфавиту конфиг — файл `ais.…` сделал бы АИС ответом на любой запрос к IP.
-  Обновить конфиг:
-  ```bash
-  scp deploy/nginx/zz-ais.westmed.kz.conf root@185.125.46.26:/etc/nginx/sites-available/zz-ais.westmed.kz
-  ssh root@185.125.46.26 'nginx -t && systemctl reload nginx'
-  ```
-  ⚠️ Если `nginx -t` падает — сразу вернуть прежний файл: битый конфиг сорвёт и следующий reload из хука certbot,
-  то есть продление сертификатов всех трёх сайтов.
-- **Сертификат:** Let's Encrypt через webroot `/var/www/certbot`, как у соседних сайтов; продлевает `certbot.timer`.
-  Хук `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` перечитывает сертификаты после продления. До 2026-09-27
-  хука не было: продлённый сертификат nginx не видел до перезапуска и отдавал старый из памяти — у всех трёх сайтов.
-- **Пароль на входе (basic auth):** пользователь `westmed`, хеш в `/etc/nginx/.htpasswd-ais` (`640 root:www-data`).
-  Сменить (reload не нужен — nginx читает файл на каждый запрос):
-  ```bash
-  ssh root@185.125.46.26 'H=$(openssl passwd -6 -stdin); printf "westmed:%s\n" "$H" > /etc/nginx/.htpasswd-ais' < новый-пароль.txt
-  ```
-- **Пароли** лежат на Mac оператора в `~/.config/ais/` (права 600): `ais-gate.pass` — вход nginx, `ais-admin.pass`
-  и `ais-operator.pass` — логины АИС. Скопировать в буфер, не показывая на экране: `pbcopy < ~/.config/ais/ais-gate.pass`.
-- **Ограничения:** 10 запросов/с на IP (запас 100), вход в АИС — 10 попыток в минуту на IP; `robots.txt` запрещает
-  индексацию, плюс `X-Robots-Tag: noindex`; cookie сессии получает `Secure; SameSite=Lax` на уровне nginx
-  (nginx 1.18 не знает `proxy_cookie_flags` — через `proxy_cookie_path`).
-- **Шаг 2 (следующий):** «калитка» по коду устройства вместо общего пароля nginx.
+- **nginx хоста:** эталон — `deploy/nginx/zz-ais.westmed.kz.conf`, ставится `deploy/nginx/apply.sh [файл]`: заливает, проверяет `nginx -t`, при провале сам возвращает прежний файл; прежний хранится рядом — `/etc/nginx/sites-available/zz-ais.westmed.kz.prev`.
+  ⚠️ **Префикс `zz-` обязателен:** `default_server` на сервере не задан, и неизвестные запросы (голый IP, TLS без SNI) получает первый загруженный по алфавиту конфиг — файл `ais.…` сделал бы АИС ответом на любой запрос к IP.
+  ⚠️ Битый конфиг в `sites-enabled` сорвал бы следующий reload из хука certbot, то есть продление сертификатов всех трёх сайтов, — поэтому только через `apply.sh`.
+- **Калитка:** перед каждым запросом nginx спрашивает АИС (`auth_request` → `/api/gate/check`). Недопущенным: страница → `302 /gate/`, API → `401` + `X-AIS-Gate: device`. Устройства допускает и отзывает админ: АИС → Система → Устройства.
+- **Первое устройство** (или все потеряны): `ssh -N -L 8090:127.0.0.1:8090 root@185.125.46.26` → `http://localhost:8090` → вход админом → «Устройства» → «Допустить» запрос с кодом, который показывает калитка.
+- **Раскатка калитки поверх шага 1** (порядок — спека §13):
+  1. деплой кода (push `main` делает оператор) — nginx ещё с общим паролем, калитка лежит без дела;
+  2. запасная вкладка через туннель (см. «Первое устройство»);
+  3. переходный конфиг — пароль nginx только на трёх локациях калитки:
+     `perl -pe 's{(# калитка)$}{$1\n        auth_basic "AIS"; auth_basic_user_file /etc/nginx/.htpasswd-ais;}' deploy/nginx/zz-ais.westmed.kz.conf > /tmp/zz-ais.transition.conf && deploy/nginx/apply.sh /tmp/zz-ais.transition.conf`
+     → с Mac и с телефона: пароль → калитка → запрос → допуск из запасной вкладки → вход в АИС;
+  4. итоговый конфиг: `deploy/nginx/apply.sh`, затем `ssh root@185.125.46.26 'rm -f /etc/nginx/.htpasswd-ais'`.
+- **Откат** на прежний конфиг: `ssh root@185.125.46.26 'cd /etc/nginx/sites-available && cp -p zz-ais.westmed.kz.prev zz-ais.westmed.kz && nginx -t && systemctl reload nginx'`. Вернуть общий пароль после шага 4 — заново создать `/etc/nginx/.htpasswd-ais` (команда ниже) и поставить конфиг шага 1 из git: `git show 83ffbd0:deploy/nginx/zz-ais.westmed.kz.conf > /tmp/step1.conf && deploy/nginx/apply.sh /tmp/step1.conf`.
+- **Сертификат:** Let's Encrypt через webroot `/var/www/certbot`, как у соседних сайтов; продлевает `certbot.timer`. Хук `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` перечитывает сертификаты после продления (до 2026-09-27 его не было — продлённый сертификат nginx не видел до перезапуска, у всех трёх сайтов).
+- **Пароль nginx** (нужен только в переходный период шага 3): пользователь `westmed`, хеш в `/etc/nginx/.htpasswd-ais` (`640 root:www-data`); задать —
+  `ssh root@185.125.46.26 'H=$(openssl passwd -6 -stdin); printf "westmed:%s\n" "$H" > /etc/nginx/.htpasswd-ais; chown root:www-data /etc/nginx/.htpasswd-ais; chmod 640 /etc/nginx/.htpasswd-ais' < ~/.config/ais/ais-gate.pass`.
+- **Пароли** — на Mac оператора в `~/.config/ais/` (права 600): `ais-admin.pass`, `ais-operator.pass` — логины АИС; `ais-gate.pass` — пароль nginx переходного периода. В буфер, не показывая на экране: `pbcopy < ~/.config/ais/ais-admin.pass`.
+- **Ограничения:** 10 запросов/с на IP (запас 100), вход в АИС — 10 попыток в минуту на IP, запросы доступа на калитке — 3 в минуту на IP; `robots.txt` запрещает индексацию, плюс `X-Robots-Tag: noindex`; cookie сессии получает `Secure; SameSite=Lax` на уровне nginx (nginx 1.18 не знает `proxy_cookie_flags` — через `proxy_cookie_path`).
+- **Проверка после любой правки конфига** — curl-набор из плана калитки (`docs/superpowers/plans/2026-09-28-device-gate.md`, Task 7) на стенде `nginx:1.18`, прежде чем ставить на сервер.
