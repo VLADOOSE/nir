@@ -58,6 +58,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // ключ подписи вебхука WAHA для HTTP-тестов: так они идут в ОБЩЕМ контексте, без @TestPropertySource
+    // (каждый особый контекст — ещё 10 соединений к nirdb, CLAUDE.md §14)
+    systemProperty 'chats.whatsapp.waha.hmac-key', 'test-hmac-key'
 }
 
 // Детерминированное имя fat-JAR для Docker-образа (COPY build/libs/app.jar). Плейн-JAR не нужен.

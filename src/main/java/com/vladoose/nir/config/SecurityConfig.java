@@ -1,5 +1,6 @@
 package com.vladoose.nir.config;
 
+import com.vladoose.nir.integration.waha.WahaWebhookController;
 import com.vladoose.nir.security.SessionIdRotationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -47,6 +48,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         // калитка ais.westmed.kz: её зовут nginx (auth_request) и недопущенное устройство — до входа в АИС
                         .requestMatchers("/api/gate/**").permitAll()
+                        // вебхук WAHA: зовёт только сама WAHA внутри сети docker; защита — подпись HMAC (спека whatsapp-waha §10)
+                        .requestMatchers(HttpMethod.POST, WahaWebhookController.PATH).permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )

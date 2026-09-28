@@ -159,3 +159,14 @@ chats:
     settings-refresh-ms: 3600000
     stall-ms: 300000                               # проход без продвижения дольше — «приём не продвигается» в строке
     lead-converted-days: 30
+    waha:                                          # спека whatsapp-waha §11
+      url: ${WHATSAPP_WAHA_URL:http://ais-waha:3000}
+      api-key: ${WHATSAPP_WAHA_API_KEY:}           # секрет: только env
+      hmac-key: ${WHATSAPP_WAHA_HMAC_KEY:}         # секрет: только env; подпись вебхука
+      session: ${WHATSAPP_WAHA_SESSION:westmed}
+      settle-ms: 3000                              # событие «отлёживается», чтобы правка не обогнала оригинал
+      catch-up-ms: 600000
+      catch-up-overlap-min: 10
+      status-refresh-ms: 60000
+      inbox-done-days: 7
+      inbox-dropped-days: 30
