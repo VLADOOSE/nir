@@ -1,7 +1,9 @@
 package com.vladoose.nir.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -28,17 +30,31 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http,
+                                           @Value("${passkeys.rp-id}") String passkeyRpId,
+                                           @Value("${passkeys.allowed-origins}") String[] passkeyOrigins) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
+                        // вход по ключу (passkeys): встроенное удаление ключа в Spring 6.5.5 не проверяет ни владельца,
+                        // ни даже вход, а его фильтр стоит после этой проверки прав — закрыто для всех; свои ключи
+                        // удаляются через /api/passkeys/{id} (спека passkeys-login §5.2)
+                        .requestMatchers(HttpMethod.DELETE, "/webauthn/**").denyAll()
+                        .requestMatchers("/webauthn/register", "/webauthn/register/**").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         // калитка ais.westmed.kz: её зовут nginx (auth_request) и недопущенное устройство — до входа в АИС
                         .requestMatchers("/api/gate/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )
+                // встроенные эндпоинты passkeys: POST /webauthn/register/options, /webauthn/register,
+                // /webauthn/authenticate/options, /login/webauthn; ключ навсегда привязан к домену rpId
+                .webAuthn(w -> w
+                        .rpName("АИС Медзакупки")
+                        .rpId(passkeyRpId)
+                        .allowedOrigins(passkeyOrigins)
+                        .disableDefaultRegistrationPage(true))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                 )

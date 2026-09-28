@@ -8,3 +8,9 @@ logging:
   level:
     org.hibernate.SQL: warn
     org.springframework.web: warn
+
+# Вход по Face ID / Touch ID: ключи привязаны к домену прода (спека passkeys-login §5.1).
+# На Tailscale и SSH-туннеле кнопки входа по ключу нет — там вход паролем.
+passkeys:
+  rp-id: ais.westmed.kz
+  allowed-origins: https://ais.westmed.kz

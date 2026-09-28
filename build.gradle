@@ -30,6 +30,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-security'
+    // вход по Face ID / Touch ID (passkeys): WebAuthn в Spring Security 6.5.5 требует webauthn4j — ровно
+    // та версия, с которой собран Spring 6.5.5 (gradle/libs.versions.toml тега 6.5.5), спека passkeys-login §1.1
+    implementation 'com.webauthn4j:webauthn4j-core:0.29.5.RELEASE'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'

@@ -49,6 +49,19 @@ spring:
 
 server:
   port: 8080
+  servlet:
+    session:
+      # «рабочий день» (спека passkeys-login §5.3): вход живёт до 12 ч с момента входа и переживает закрытие
+      # браузера; было — 30 мин бездействия (умолчание Spring Boot) и cookie до закрытия браузера
+      timeout: 12h
+      cookie:
+        max-age: 12h
+
+# Вход по Face ID / Touch ID — passkeys (спека docs/superpowers/specs/2026-09-28-passkeys-login-design.md).
+# Ключ навсегда привязан к домену rp-id: здесь — разработка (ng serve на :4200), прод — application-prod.yaml.
+passkeys:
+  rp-id: localhost
+  allowed-origins: http://localhost:4200
 
 mail:
   kp:
