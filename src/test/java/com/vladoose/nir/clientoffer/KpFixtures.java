@@ -3,7 +3,13 @@ package com.vladoose.nir.clientoffer;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.service.document.KpDocument;
 import com.vladoose.nir.service.document.KpDocumentBuilder;
+import com.vladoose.nir.service.document.KpFonts;
+import com.vladoose.nir.service.document.KpHtmlRenderer;
+import com.vladoose.nir.service.document.KpPdfRenderer;
 import com.vladoose.nir.service.offer.ClientOfferCalculator;
+import org.thymeleaf.spring6.SpringTemplateEngine;
+import org.thymeleaf.templatemode.TemplateMode;
+import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -86,5 +92,22 @@ final class KpFixtures {
 
     static KpDocument document(ClientOffer offer, CompanyProfile profile) {
         return new KpDocumentBuilder().build(offer, profile, new ClientOfferCalculator().calculate(offer));
+    }
+
+    /** Тот же шаблон из classpath, что и в приложении, — без Spring-контекста. */
+    static SpringTemplateEngine templateEngine() {
+        ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
+        resolver.setPrefix("templates/");
+        resolver.setSuffix(".html");
+        resolver.setTemplateMode(TemplateMode.HTML);
+        resolver.setCharacterEncoding("UTF-8");
+        SpringTemplateEngine engine = new SpringTemplateEngine();
+        engine.setTemplateResolver(resolver);
+        return engine;
+    }
+
+    static byte[] pdf(ClientOffer offer, CompanyProfile profile) {
+        String html = new KpHtmlRenderer(templateEngine()).render(document(offer, profile));
+        return new KpPdfRenderer(new KpFonts()).render(html);
     }
 }

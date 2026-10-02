@@ -2,6 +2,13 @@ package com.vladoose.nir.clientoffer;
 
 import com.sun.net.httpserver.HttpServer;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.contentstream.PDFStreamEngine;
+import org.apache.pdfbox.contentstream.operator.DrawObject;
+import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.state.Concatenate;
+import org.apache.pdfbox.contentstream.operator.state.Restore;
+import org.apache.pdfbox.contentstream.operator.state.Save;
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -11,12 +18,15 @@ import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
+import org.apache.pdfbox.util.Matrix;
 
 import javax.imageio.ImageIO;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -58,8 +68,128 @@ final class KpTestSupport {
         }
     }
 
+    /**
+     * Строки текста PDF по порядку, без пустых: внутри строки пробельные — один пробел, края обрезаны. В отличие от
+     * {@link #text} переводы строк сохраняются — так видно, что абзац вышел двумя строками, а не склеился в одну.
+     */
+    static List<String> lines(byte[] pdf) {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            List<String> lines = new ArrayList<>();
+            for (String line : new PDFTextStripper().getText(d).split("\\R")) {
+                String t = normalize(line).trim();
+                if (!t.isEmpty()) lines.add(t);
+            }
+            return lines;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     private static String normalize(String text) {
         return text.replace('\u00A0', ' ').replaceAll("\\s+", " ");
+    }
+
+    /** Где напечатан текст: страница (с 0), края в мм от левого верхнего угла листа, шрифт первого знака. */
+    record Placed(int page, float left, float top, float right, float bottom, String font) {}
+
+    /** Прямоугольник картинки: страница (с 0), края в мм от левого верхнего угла листа. */
+    record Box(int page, float left, float top, float right, float bottom) {
+        float width() {
+            return right - left;
+        }
+
+        float height() {
+            return bottom - top;
+        }
+
+        boolean overlaps(Placed t) {
+            return page == t.page() && left < t.right() && t.left() < right && top < t.bottom() && t.top() < bottom;
+        }
+    }
+
+    /**
+     * Первое вхождение текста в PDF — для проверок вёрстки (выравнивание, ширины, жирный). Пробелы, в том числе
+     * неразрывные, не сравниваются: PDF не обязан рисовать их знаками. Текст, перенесённый на несколько строк,
+     * находится тоже — края тогда охватывают все его строки.
+     */
+    static Placed find(byte[] pdf, String needle) {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            StringBuilder chars = new StringBuilder();
+            List<TextPosition> glyphs = new ArrayList<>();
+            List<Integer> pages = new ArrayList<>();
+            PDFTextStripper stripper = new PDFTextStripper() {
+                @Override
+                protected void processTextPosition(TextPosition text) {
+                    for (char c : text.getUnicode().toCharArray()) {
+                        if (Character.isWhitespace(c) || Character.isSpaceChar(c)) continue;
+                        chars.append(c);
+                        glyphs.add(text);
+                        pages.add(getCurrentPageNo() - 1);
+                    }
+                }
+            };
+            stripper.getText(d);
+            String target = needle.replaceAll("[\\s\\u00A0]", "");
+            int at = chars.indexOf(target);
+            if (at < 0) throw new AssertionError("в PDF нет текста «" + needle + "»");
+            float left = Float.MAX_VALUE, top = Float.MAX_VALUE, right = -Float.MAX_VALUE, bottom = -Float.MAX_VALUE;
+            for (TextPosition g : glyphs.subList(at, at + target.length())) {
+                left = Math.min(left, g.getXDirAdj());
+                right = Math.max(right, g.getXDirAdj() + g.getWidthDirAdj());
+                top = Math.min(top, g.getYDirAdj() - g.getHeightDir());
+                bottom = Math.max(bottom, g.getYDirAdj());
+            }
+            return new Placed(pages.get(at), mm(left), mm(top), mm(right), mm(bottom), glyphs.get(at).getFont().getName());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Где нарисованы растровые картинки — в порядке рисования, с вложенными формами. */
+    static List<Box> imageBoxes(byte[] pdf) {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            List<Box> boxes = new ArrayList<>();
+            for (int i = 0; i < d.getNumberOfPages(); i++) {
+                int page = i;
+                float height = d.getPage(i).getMediaBox().getHeight();
+                PDFStreamEngine engine = new PDFStreamEngine() {
+                    {
+                        addOperator(new Concatenate(this));
+                        addOperator(new Save(this));
+                        addOperator(new Restore(this));
+                        addOperator(new DrawObject(this));   // формы — внутрь, картинки ловит processOperator
+                    }
+
+                    @Override
+                    protected void processOperator(Operator operator, List<COSBase> operands) throws IOException {
+                        if ("Do".equals(operator.getName()) && !operands.isEmpty() && operands.get(0) instanceof COSName name
+                                && getResources().getXObject(name) instanceof PDImageXObject) {
+                            // картинка — единичный квадрат, растянутый текущей матрицей
+                            Matrix m = getGraphicsState().getCurrentTransformationMatrix();
+                            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+                            for (float[] corner : new float[][] {{0, 0}, {1, 0}, {0, 1}, {1, 1}}) {
+                                Point2D.Float p = m.transformPoint(corner[0], corner[1]);
+                                minX = Math.min(minX, p.x);
+                                maxX = Math.max(maxX, p.x);
+                                minY = Math.min(minY, p.y);
+                                maxY = Math.max(maxY, p.y);
+                            }
+                            boxes.add(new Box(page, mm(minX), mm(height - maxY), mm(maxX), mm(height - minY)));
+                        } else {
+                            super.processOperator(operator, operands);
+                        }
+                    }
+                };
+                engine.processPage(d.getPage(i));
+            }
+            return boxes;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static float mm(float pt) {
+        return pt * 25.4f / 72f;
     }
 
     /** Сколько растровых картинок нарисовано на страницах (с вложенными формами). */

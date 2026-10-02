@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title th:text="${doc.numberLine()}">КП</title>
+  <style th:text="${pageCss}">@page { size: A4; }</style>
+  <style>
+    /* Документ КП (спека client-kp-constructor §6). Только CSS 2.1 — openhtmltopdf не знает flex/grid.
+       Цвета — печатные (#000): это бумага, а не интерфейс АИС. */
+    body { font-family: 'Liberation Serif'; font-size: 11pt; color: #000; }
+    table { border-collapse: collapse; }
+    .lh-top { width: 100%; }
+    .lh-top td { font-weight: bold; font-size: 11pt; vertical-align: top; padding: 0; }
+    .lh-right { text-align: right; }
+    .lh-logo { text-align: center; margin: 1mm 0; }
+    .lh-logo img { max-width: 100%; max-height: 20mm; }
+    .lh-brand { text-align: center; font-size: 30pt; font-weight: bold; margin: 1mm 0; }
+    .lh-lines { text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.25; }
+    .lh-rule { border-bottom: 2.5pt solid #000; margin: 2mm 0 4mm 0; }
+    .meta { width: 100%; margin-bottom: 3mm; }
+    .meta td { vertical-align: top; padding: 0; }
+    .meta-recipient { text-align: right; width: 50%; }
+    .title { text-align: center; font-weight: bold; font-size: 13pt; margin: 2mm 0 1mm 0; }
+    /* предмет и вводная — сырой текст оператора: его переводы строк (абзацы) сохраняются */
+    .subject { text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 2mm; white-space: pre-line; }
+    .intro { margin: 2mm 0; white-space: pre-line; }
+    .terms-table { width: 100%; margin: 2mm 0 4mm 0; }
+    .terms-table td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: top; font-size: 10.5pt; }
+    .terms-table .term-label { font-weight: bold; width: 45%; }
+    .items { width: 100%; table-layout: fixed; -fs-table-paginate: paginate; margin-top: 2mm; }
+    .items thead { display: table-header-group; }
+    .items th, .items td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; font-size: 10pt; vertical-align: middle; word-wrap: break-word; }
+    .items th { font-weight: bold; text-align: center; }
+    .items tr { page-break-inside: avoid; }
+    .a-left { text-align: left; }
+    .a-center { text-align: center; }
+    .a-right { text-align: right; }
+    .row-section td { font-weight: bold; }
+    .span-cell { text-align: center; }
+    .row-section .span-cell { text-align: left; }
+    .totals { margin-top: 3mm; text-align: right; }
+    .totals .total-main { font-weight: bold; font-size: 12pt; }
+    .words { margin-top: 2mm; }
+    .terms-list { margin-top: 4mm; }
+    .terms-list div { margin-bottom: 1mm; }
+    .signoff { margin-top: 10mm; position: relative; page-break-inside: avoid; }
+    .sign-table { width: 100%; margin-top: 1mm; }
+    .sign-table td { vertical-align: bottom; padding: 0; }
+    .sign-line { width: 45mm; height: 15mm; border-bottom: 0.7pt solid #000; text-align: center; }
+    .sign-line img { max-height: 15mm; max-width: 44mm; }
+    .sign-name { padding-left: 3mm; }
+    .contacts { margin-top: 2mm; font-size: 10pt; }
+    .stamp { position: absolute; }
+  </style>
+</head>
+<body>
+  <table class="lh-top" th:if="${!doc.letterhead().left().isEmpty() or !doc.letterhead().right().isEmpty()}">
+    <tr>
+      <td><th:block th:each="l, s : ${doc.letterhead().left()}"><span th:text="${l}">слева</span><br th:unless="${s.last}"/></th:block></td>
+      <td class="lh-right"><th:block th:each="l, s : ${doc.letterhead().right()}"><span th:text="${l}">справа</span><br th:unless="${s.last}"/></th:block></td>
+    </tr>
+  </table>
+  <div class="lh-logo" th:if="${logo != null}"><img th:src="${logo}" alt=""/></div>
+  <div class="lh-brand" th:if="${logo == null and doc.letterhead().brandText() != null}" th:text="${doc.letterhead().brandText()}">Бренд</div>
+  <div class="lh-lines" th:if="${!doc.letterhead().lines().isEmpty()}"><th:block th:each="l, s : ${doc.letterhead().lines()}"><span th:text="${l}">строка</span><br th:unless="${s.last}"/></th:block></div>
+  <div class="lh-rule"></div>
+
+  <table class="meta">
+    <tr>
+      <td th:text="${doc.numberLine()}">Исх. №</td>
+      <td class="meta-recipient"><th:block th:each="l, s : ${doc.recipientLines()}"><span th:text="${l}">кому</span><br th:unless="${s.last}"/></th:block></td>
+    </tr>
+  </table>
+
+  <div class="title" th:text="${doc.title()}">КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ</div>
+  <div class="subject" th:if="${doc.subject() != null}" th:text="${doc.subject()}">предмет</div>
+  <p class="intro" th:if="${doc.intro() != null}" th:text="${doc.intro()}">вводная</p>
+
+  <table class="terms-table" th:if="${!doc.termsTable().isEmpty()}">
+    <tr th:each="t : ${doc.termsTable()}">
+      <td class="term-label" th:text="${t.label()}">условие</td>
+      <td><th:block th:each="l, s : ${t.valueLines()}"><span th:text="${l}">значение</span><br th:unless="${s.last}"/></th:block></td>
+    </tr>
+  </table>
+
+  <table class="items">
+    <colgroup><col th:each="c : ${doc.columns()}" th:style="${'width: ' + c.percent() + '%'}"/></colgroup>
+    <thead>
+      <tr><th th:each="c : ${doc.columns()}" th:text="${c.label()}">колонка</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="r : ${doc.rows()}" th:class="${r.kind().name() == 'SECTION' ? 'row-section' : (r.kind().name() == 'INCLUDED' ? 'row-included' : 'row-item')}">
+        <td th:each="cell, cs : ${r.cells()}" th:class="${'a-' + #strings.toLowerCase(doc.columns()[cs.index].align().name())}"><th:block th:each="l, s : ${cell}"><span th:text="${l}">ячейка</span><br th:unless="${s.last}"/></th:block></td>
+        <td class="span-cell" th:if="${r.spanFrom() < doc.columns().size()}" th:colspan="${doc.columns().size() - r.spanFrom()}"><th:block th:each="l, s : ${r.spanLines()}"><span th:text="${l}">объединено</span><br th:unless="${s.last}"/></th:block></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div th:each="t, s : ${doc.totalLines()}" th:class="${s.first ? 'total-main' : 'total-line'}" th:text="${t}">Итого</div>
+  </div>
+  <div class="words" th:if="${doc.amountInWords() != null}" th:text="${doc.amountInWords()}">прописью</div>
+
+  <div class="terms-list" th:if="${!doc.termsList().isEmpty()}">
+    <div th:each="t : ${doc.termsList()}" th:text="${t}">1. условие</div>
+  </div>
+
+  <div class="signoff">
+    <div>С уважением,</div>
+    <table class="sign-table" th:if="${doc.signoff().director()}">
+      <tr>
+        <td th:text="${doc.signoff().titleLine()}">Директор</td>
+        <td class="sign-line"><img th:if="${signature != null}" th:src="${signature}" alt=""/></td>
+        <td class="sign-name" th:text="${doc.signoff().nameLine()}">Фамилия И. О.</td>
+      </tr>
+    </table>
+    <div th:unless="${doc.signoff().director()}" th:text="${doc.signoff().titleLine()}">ТОО</div>
+    <div class="contacts" th:if="${doc.signoff().contacts() != null}" th:text="${doc.signoff().contacts()}">контакты</div>
+    <img class="stamp" th:if="${stamp != null}" th:src="${stamp}" th:style="${stampStyle}" alt=""/>
+  </div>
+</body>
+</html>
