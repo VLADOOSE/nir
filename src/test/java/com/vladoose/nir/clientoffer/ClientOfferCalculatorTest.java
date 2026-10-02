@@ -250,4 +250,36 @@ class ClientOfferCalculatorTest {
         assertThat(c.profit()).isEqualByComparingTo("21000.00");
         assertThat(c.effectiveVatRate()).isNull();
     }
+
+    // Средняя наценка (javadoc OfferTotals, спека §5.4) — прибыль / себестоимость только по строкам, где себестоимость
+    // известна: выручка строки без закупки в неё не входит (иначе наценка завышена); нет таких строк — null.
+    @Test
+    void markupAvgCountsOnlyRowsWithKnownCost() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        add(o, "105000", "5");                                   // себестоимость 100 000, без НДС 120 000, прибыль 20 000
+        add(o, null, "5").setPriceOverride(new BigDecimal("52500")); // закупки нет: без НДС 50 000, прибыль неизвестна
+        OfferTotals t = calculator.calculate(o).totals();
+        assertThat(t.revenueNet()).isEqualByComparingTo("170000.00");
+        assertThat(t.cost()).isEqualByComparingTo("100000.00");
+        assertThat(t.profit()).isEqualByComparingTo("20000.00");
+        assertThat(t.markupAvg()).isEqualByComparingTo("20.00");    // не (170 000 − 100 000) / 100 000 = 70
+
+        ClientOffer noCost = ClientOfferTestData.newOffer(2);
+        add(noCost, null, "5").setPriceOverride(new BigDecimal("52500"));
+        assertThat(calculator.calculate(noCost).totals().markupAvg()).isNull();
+    }
+
+    // Спека §5.1 п.3: закупка 0 и ручная цена — наценка «—» (null), а не деление на ноль (ArithmeticException → 500
+    // при чтении такого КП).
+    @Test
+    void manualPriceWithZeroPurchaseHasNoMarkup() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        add(o, "0", "5").setPriceOverride(new BigDecimal("1000"));
+        ItemCalc c = first(o);
+        assertThat(c.markupPct()).isNull();
+        assertThat(c.price()).isEqualByComparingTo("1000.00");
+        assertThat(c.vatSum()).isEqualByComparingTo("47.62");
+        assertThat(c.cost()).isEqualByComparingTo("0.00");
+        assertThat(c.profit()).isEqualByComparingTo("952.38");
+    }
 }
