@@ -184,8 +184,11 @@ public class WhatsappChatSync {
         if (ref == null) return null;
         if (m.kind() == ChatKind.GROUP) return IncomingFile.notStored(ref, AttachmentNotStoredReason.GROUP);
         if (ref.locator() == null) return IncomingFile.notStored(ref, AttachmentNotStoredReason.DOWNLOAD_FAILED);
-        // размер известен заранее — большой файл не качаем вовсе (WAHA держит скачиваемое целиком в памяти)
+        // размер известен заранее — большой файл не качаем вовсе (WAHA держит скачиваемое целиком в памяти). Строка в
+        // логе — для приёмочного теста: отличить «не качали» от «WAHA скачала, а АИС обрезала поток» (DEPLOY.md §7)
         if (ref.sizeBytes() != null && ref.sizeBytes() > maxFileBytes) {
+            log.info("WhatsApp: файл больше предела ({} МБ при пределе {} МБ) — не скачиваем",
+                    ref.sizeBytes() / (1024 * 1024), maxFileBytes / (1024 * 1024));
             return IncomingFile.notStored(ref, AttachmentNotStoredReason.TOO_LARGE);
         }
         try {

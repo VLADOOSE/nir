@@ -16,8 +16,11 @@ import com.vladoose.nir.service.LeadService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.CannotCreateTransactionException;
@@ -34,6 +37,7 @@ import static org.assertj.core.api.Assertions.*;
 /** Вебхук WAHA → очередь → общий цикл → чаты и обращения (спека whatsapp-waha §5, §6, §8) на реальной базе. */
 @SpringBootTest
 @Transactional
+@ExtendWith(OutputCaptureExtension.class)
 class WahaIntakeTest {
 
     static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -162,9 +166,12 @@ class WahaIntakeTest {
         assertThat(status.lastError()).contains("приём остановлен").contains("очереди АИС");
     }
 
-    /** Размер из события больше предела — WAHA не трогаем вовсе: она держала бы весь файл в памяти (спека §6). */
+    /**
+     * Размер из события больше предела — WAHA не трогаем вовсе: она держала бы весь файл в памяти (спека §6). Строка в
+     * логе — то, по чему приёмочный тест (DEPLOY.md §7) отличает «не качали» от «WAHA скачала, АИС обрезала».
+     */
     @Test
-    void knownSizeOverLimitIsNotDownloaded() {
+    void knownSizeOverLimitIsNotDownloaded(CapturedOutput output) {
         String c = personal();
         queue(WahaJson.incomingFile(c, "Айгерим", raw(), clock += 60, "documentMessage", "Каталог.pdf", "application/pdf",
                 40L * 1024 * 1024, "каталог"));
@@ -174,6 +181,7 @@ class WahaIntakeTest {
         assertThat(fake.calls).noneMatch(x -> x.startsWith("message ") || x.startsWith("download "));
         assertThat(attachmentRepository.findMetaByMessageIds(List.of(lastMessage(c).getId())))
                 .singleElement().extracting(ChatAttachmentMeta::notStoredReason).isEqualTo(AttachmentNotStoredReason.TOO_LARGE);
+        assertThat(output.getOut()).contains("файл больше предела (40 МБ при пределе 1 МБ) — не скачиваем");
     }
 
     @Test
