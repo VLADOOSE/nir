@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.entity.WhatsappInboxStatus;
+import com.vladoose.nir.integration.whatsapp.WhatsappStatusHolder;
 import com.vladoose.nir.repository.WhatsappInboxRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ class WahaWebhookTest {
     @Autowired WahaInboxWriter writer;
     @Autowired WhatsappInboxRepository repository;
     @Autowired ObjectMapper objectMapper;
+    @Autowired WhatsappStatusHolder status;
 
     MockMvc mvc;
 
@@ -95,6 +97,44 @@ class WahaWebhookTest {
         assertThat(repository.findByMessageKey("false_" + rawId)).isEmpty();
     }
 
+    /**
+     * Разошедшийся ключ подписи иначе виден только в логе: догонка раз в 10 мин маскирует пропажу сообщений, а правки,
+     * удаления и звонки теряются молча. Предупреждение держится, пока не придёт событие с верной подписью.
+     */
+    @Test
+    void foreignSignatureIsVisibleInStatusUntilSignedEventArrives() throws Exception {
+        byte[] body = bytes(WahaJson.sessionStatus("WORKING"));
+
+        post(body, WahaSignature.sign(body, "чужой-ключ"), "req-" + raw()).andExpect(status().isUnauthorized());
+        assertThat(status.snapshot(true, true).getWarnings()).contains(WhatsappStatusHolder.WEBHOOK_REJECTED);
+
+        post(body, WahaSignature.sign(body, KEY), "req-" + raw()).andExpect(status().isOk());
+        assertThat(status.snapshot(true, true).getWarnings()).doesNotContain(WhatsappStatusHolder.WEBHOOK_REJECTED);
+    }
+
+    /**
+     * Провайдер — не WAHA (откат на Green-API, а контейнер WAHA ещё работает): событие принимается, но в очередь не
+     * ложится — иначе очередь росла бы без предела, а при возврате на WAHA проиграла бы давние звонки и правки.
+     */
+    @Test
+    void otherProviderAcknowledgesButDoesNotQueue() {
+        String rawId = raw();
+        byte[] body = bytes(WahaJson.incomingText(CLIENT, "Айгерим", rawId, T, "x"));
+        WahaWebhookController greenApi = new WahaWebhookController(writer, objectMapper, new WhatsappStatusHolder(), KEY, "greenapi");
+
+        assertThat(greenApi.receive(WahaSignature.sign(body, KEY), "req-" + rawId, body).getStatusCode().value()).isEqualTo(200);
+        assertThat(repository.findByMessageKey("false_" + rawId)).isEmpty();
+    }
+
+    /** Эндпоинт без входа: тело больше предела не читается в память целиком — 413 до проверки подписи. */
+    @Test
+    void oversizedBodyIs413AndNotQueued() throws Exception {
+        byte[] body = new byte[WahaWebhookController.MAX_BODY_BYTES + 1];
+        java.util.Arrays.fill(body, (byte) 'a');
+
+        post(body, WahaSignature.sign(body, KEY), "req-" + raw()).andExpect(status().isPayloadTooLarge());
+    }
+
     /** Повтор WAHA приходит с тем же X-Webhook-Request-Id. */
     @Test
     void wahaRetryIsStoredOnce() throws Exception {
@@ -143,7 +183,7 @@ class WahaWebhookTest {
                 throw new CannotCreateTransactionException("нет соединения с базой");
             }
         };
-        WahaWebhookController controller = new WahaWebhookController(down, objectMapper, KEY);
+        WahaWebhookController controller = new WahaWebhookController(down, objectMapper, new WhatsappStatusHolder(), KEY, "waha");
         byte[] body = bytes(WahaJson.sessionStatus("WORKING"));
 
         assertThat(controller.receive(WahaSignature.sign(body, KEY), "req-x", body).getStatusCode().value()).isEqualTo(503);

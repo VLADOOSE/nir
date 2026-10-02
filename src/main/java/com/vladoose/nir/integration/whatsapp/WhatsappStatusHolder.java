@@ -21,9 +21,13 @@ public class WhatsappStatusHolder {
     public static final String QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
     public static final String MESSAGE_DROPPED = "MESSAGE_DROPPED";
     public static final String CATCH_UP_FAILED = "CATCH_UP_FAILED";
+    /** Вебхуки WAHA приходят с чужой подписью — ключ WHATSAPP_WAHA_HMAC_KEY разошёлся с WAHA. */
+    public static final String WEBHOOK_REJECTED = "WEBHOOK_REJECTED";
 
     /** Лимит тарифа и пропущенное сообщение показываем сутки: оба — события, а не состояние. */
     private static final Duration RECENT = Duration.ofHours(24);
+    /** Отклонённый вебхук без последующих принятых — предупреждение на час (повторы WAHA его продлевают). */
+    private static final Duration WEBHOOK_REJECT_WINDOW = Duration.ofHours(1);
 
     private volatile String state;
     private volatile String number;
@@ -38,6 +42,9 @@ public class WhatsappStatusHolder {
     private volatile List<String> sourceWarnings = List.of();
     /** Когда проход приёма в последний раз продвинулся (ответ шлюза, записанное уведомление). */
     private volatile long progressAt = System.currentTimeMillis();
+    /** Вебхук WAHA с неверной подписью / с верной — пишут потоки HTTP. */
+    private volatile OffsetDateTime webhookRejectedAt;
+    private volatile OffsetDateTime webhookAcceptedAt;
 
     public void setState(String s) { state = s == null || s.isBlank() ? null : s; }
 
@@ -85,6 +92,10 @@ public class WhatsappStatusHolder {
 
     public void progress() { progressAt = System.currentTimeMillis(); }
 
+    public void webhookRejected() { webhookRejectedAt = OffsetDateTime.now(); }
+
+    public void webhookAccepted() { webhookAcceptedAt = OffsetDateTime.now(); }
+
     public long sinceProgressMs() { return System.currentTimeMillis() - progressAt; }
 
     public WhatsappStatusResponse snapshot(boolean enabled, boolean configured) {
@@ -101,6 +112,12 @@ public class WhatsappStatusHolder {
         if (droppedAt != null && droppedAt.isAfter(cutoff)) {
             w.add(MESSAGE_DROPPED);
             r.setDroppedCount(droppedCount);
+        }
+        OffsetDateTime rejected = webhookRejectedAt;
+        OffsetDateTime accepted = webhookAcceptedAt;
+        if (rejected != null && rejected.isAfter(OffsetDateTime.now().minus(WEBHOOK_REJECT_WINDOW))
+                && (accepted == null || rejected.isAfter(accepted))) {
+            w.add(WEBHOOK_REJECTED);
         }
         r.setWarnings(w);
         return r;
