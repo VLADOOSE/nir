@@ -30,12 +30,13 @@ public class KpDocumentBuilder {
             Set.of(OfferRegistrationStatus.CONFIRMED, OfferRegistrationStatus.NOT_REQUIRED, OfferRegistrationStatus.MANUAL);
 
     /**
-     * Сокращения, точка которых в конце условия — часть слова, а не конец фразы: «до 31.12.2026 г.», «и т.д.», «50 шт.».
-     * Слово перед последней точкой сравнивается целиком и без учёта регистра; в составных после внутренней точки
-     * допустим пробел («и т. д.»).
+     * Сокращения, точка которых в конце условия — часть слова, а не конец фразы: «до 31.12.2026 г.», «12 мес.», «и т.д.»,
+     * «50 шт.». Слово перед последней точкой сравнивается целиком и без учёта регистра; в составных после внутренней
+     * точки допустим пробел («и т. д.»).
      */
-    private static final List<String> TERM_ABBREVIATIONS =
-            List.of("г", "гг", "т.д", "т.п", "т.е", "руб", "коп", "тыс", "млн", "млрд", "шт", "ед", "др", "пр");
+    private static final List<String> TERM_ABBREVIATIONS = List.of(
+            "г", "гг", "мес", "дн", "т.д", "т.п", "т.е", "т.ч", "т.к",
+            "руб", "коп", "тыс", "млн", "млрд", "шт", "ед", "см", "др", "пр");
     private static final Pattern ABBREVIATION_AT_END = Pattern.compile("(?iU)(?<!\\p{L})(?:" + TERM_ABBREVIATIONS.stream()
             .map(a -> Arrays.stream(a.split("\\.")).map(Pattern::quote).collect(Collectors.joining("\\.\\s*")))
             .collect(Collectors.joining("|")) + ")$");
