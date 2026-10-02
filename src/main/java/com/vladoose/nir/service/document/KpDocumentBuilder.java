@@ -3,6 +3,7 @@ package com.vladoose.nir.service.document;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.service.CompanyLines;
+import com.vladoose.nir.service.offer.ColumnAlign;
 import com.vladoose.nir.service.offer.ItemCalc;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.offer.OfferColumnKey;
@@ -29,6 +30,16 @@ public class KpDocumentBuilder {
     private static final Set<OfferRegistrationStatus> PRINTED_REGISTRATION =
             Set.of(OfferRegistrationStatus.CONFIRMED, OfferRegistrationStatus.NOT_REQUIRED, OfferRegistrationStatus.MANUAL);
 
+    /** Кегль таблицы позиций, pt: offer.html (.items td) и Word — 10 pt. */
+    private static final double TABLE_FONT_PT = 10;
+    /**
+     * Поля ячейки по горизонтали, обе стороны, мм: в PDF 2 × 1,5 (offer.html), у Word по умолчанию 2 × 108 twip ≈ 2 × 1,9 —
+     * берётся большее, чтобы число влезло в обоих документах.
+     */
+    private static final double CELL_PADDING_MM = 3.8;
+    /** Ширина набора, мм: A4 без полей страницы — @page в KpHtmlRenderer.pageCss (книжная 20/12, альбомная 15/15), у Word те же. */
+    private static final double TEXT_WIDTH_PORTRAIT_MM = 210 - 20 - 12, TEXT_WIDTH_LANDSCAPE_MM = 297 - 15 - 15;
+
     /**
      * Сокращения, точка которых в конце условия — часть слова, а не конец фразы: «до 31.12.2026 г.», «12 мес.», «и т.д.»,
      * «50 шт.». Слово перед последней точкой сравнивается целиком и без учёта регистра; в составных после внутренней
@@ -43,7 +54,9 @@ public class KpDocumentBuilder {
 
     public KpDocument build(ClientOffer offer, CompanyProfile profile, OfferCalculation calc) {
         String currency = profile.getMarket().currencyCode();
-        List<KpDocument.Column> columns = columns(offer.getTableColumns(), offer.isVatEnabled());
+        List<KpDocument.Column> chosen = columns(offer.getTableColumns(), offer.isVatEnabled());
+        List<KpDocument.Row> rows = rows(offer, calc, chosen);
+        List<KpDocument.Column> columns = fitNumbers(chosen, rows, offer.isLandscape());
         return new KpDocument(
                 offer.isLandscape(),
                 new KpDocument.Letterhead(CompanyLines.split(profile.getHeaderLeft()), CompanyLines.split(profile.getHeaderRight()),
@@ -55,7 +68,7 @@ public class KpDocumentBuilder {
                 blankToNull(offer.getIntro()),
                 offer.getTermsStyle() == TermsStyle.TABLE ? termsTable(offer.getTerms()) : List.of(),
                 columns,
-                rows(offer, calc, columns),
+                rows,
                 totalLines(offer, calc, currency),
                 offer.isShowAmountInWords() ? "Сумма прописью: " + AmountInWords.of(calc.totals().sum(), currency) : null,
                 offer.getTermsStyle() == TermsStyle.LIST ? termsList(offer.getTerms()) : List.of(),
@@ -80,15 +93,60 @@ public class KpDocumentBuilder {
             keys.add(0, OfferColumnKey.NAME);
             labels.add(0, OfferColumnKey.NAME.defaultLabel(vat));
         }
-        // Наименованию — не меньше четверти ширины: в тесной таблице доли остальных сжимаются до 75 % и округляются
-        // ВНИЗ (целочисленно). Округление к ближайшему поднимало их сумму до 80 % — наименованию оставалось 20 %.
-        int othersRaw = keys.stream().filter(k -> k != OfferColumnKey.NAME).mapToInt(OfferColumnKey::weight).sum();
+        return sized(keys, labels, keys.stream().mapToInt(OfferColumnKey::weight).toArray());
+    }
+
+    /**
+     * Колонки денег (выравнивание вправо) — не уже самого длинного числа в них: в ячейке число не переносится
+     * (white-space: nowrap в offer.html), а «2 721 000,0 / 0» в КП клиенту недопустимо. Вес такой колонки — большее из
+     * веса по умолчанию и ⌈ширина числа + поля ячейки⌉ в процентах ширины набора листа (книжного или альбомного);
+     * дальше — то же сжатие, что оставляет наименованию четверть ширины. На книжном листе доли по умолчанию держат цену
+     * (12 %) до 999 999,99 и сумму (13 %) до 9 999 999,99 — обычные КП ширин не меняют.
+     */
+    static List<KpDocument.Column> fitNumbers(List<KpDocument.Column> columns, List<KpDocument.Row> rows, boolean landscape) {
+        double page = landscape ? TEXT_WIDTH_LANDSCAPE_MM : TEXT_WIDTH_PORTRAIT_MM;
+        List<OfferColumnKey> keys = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        int[] weights = new int[columns.size()];
+        for (int i = 0; i < columns.size(); i++) {
+            OfferColumnKey key = OfferColumnKey.parse(columns.get(i).key());
+            keys.add(key);
+            labels.add(columns.get(i).label());
+            weights[i] = key.weight();
+            if (key.align() != ColumnAlign.RIGHT) continue;
+            double widest = 0;
+            for (KpDocument.Row r : rows) {
+                if (i >= r.cells().size()) continue;   // объединённая ячейка раздела / «включено» — не число
+                for (String line : r.cells().get(i)) widest = Math.max(widest, textWidthMm(line));
+            }
+            weights[i] = Math.max(key.weight(), (int) Math.ceil((widest + CELL_PADDING_MM) * 100 / page));
+        }
+        return sized(keys, labels, weights);
+    }
+
+    /**
+     * Ширина строки в ячейке таблицы позиций, мм, — оценка с запасом для чисел: цифра 0,5 em (у Liberation Serif и Times
+     * New Roman ровно 0,5), любой другой знак — 0,3 em (неразрывный пробел и запятая по замеру в PDF — 0,25 em).
+     */
+    static double textWidthMm(String text) {
+        double em = 0;
+        for (int i = 0; i < text.length(); i++) em += Character.isDigit(text.charAt(i)) ? 0.5 : 0.3;
+        return em * TABLE_FONT_PT * 25.4 / 72;
+    }
+
+    /**
+     * Доли ширины из весов. Наименованию — остаток, но не меньше четверти ширины: в тесной таблице доли остальных
+     * сжимаются до 75 % и округляются ВНИЗ (целочисленно). Округление к ближайшему поднимало их сумму до 80 % —
+     * наименованию оставалось 20 %.
+     */
+    private static List<KpDocument.Column> sized(List<OfferColumnKey> keys, List<String> labels, int[] weights) {
+        int othersRaw = 0;
+        for (int i = 0; i < keys.size(); i++) if (keys.get(i) != OfferColumnKey.NAME) othersRaw += weights[i];
         int[] percent = new int[keys.size()];
         int others = 0;
         for (int i = 0; i < keys.size(); i++) {
             if (keys.get(i) == OfferColumnKey.NAME) continue;
-            int weight = keys.get(i).weight();
-            percent[i] = othersRaw > 75 ? weight * 75 / othersRaw : weight;
+            percent[i] = othersRaw > 75 ? weights[i] * 75 / othersRaw : weights[i];
             others += percent[i];
         }
         List<KpDocument.Column> result = new ArrayList<>();

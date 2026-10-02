@@ -151,6 +151,19 @@ class KpPdfDocumentTest {
         }
     }
 
+    /** Поля листа — ровно @page (книжная 20/12 мм, альбомная 15/15 мм; у Word те же): своё поле body обнулено. */
+    @Test
+    void pageMarginsAreExactlyThePageRule() {
+        Edges portrait = Edges.of(KpFixtures.pdf(KpFixtures.offer2409(), KpFixtures.profileKz()));
+        assertThat(portrait.left()).isCloseTo(20f, within(0.2f));
+        assertThat(portrait.right()).isCloseTo(210f - 12f, within(0.2f));
+        ClientOffer o = KpFixtures.offer2409();
+        o.setLandscape(true);
+        Edges landscape = Edges.of(KpFixtures.pdf(o, KpFixtures.profileKz()));
+        assertThat(landscape.left()).isCloseTo(15f, within(0.2f));
+        assertThat(landscape.right()).isCloseTo(297f - 15f, within(0.2f));
+    }
+
     /** «Кому» — справа, первой строкой напротив «Исх. №» (спека §6.1 п.2). */
     @Test
     void recipientStandsRightOfTheNumberLine() {
@@ -188,6 +201,36 @@ class KpPdfDocumentTest {
         byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
         float nameRight = Edges.of(pdf).columns(cols, "NAME", "NAME")[1];
         assertThat(KpTestSupport.find(pdf, code).right()).isLessThanOrEqualTo(nameRight - PAD + 0.5f);
+    }
+
+    /** Цены и суммы на миллионы (КП отца) — целиком в одну строку и внутри своей ячейки, а не «2 721 000,0 / 0». */
+    @Test
+    void millionsPrintWholeInsideTheirCells() {
+        ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
+        List<KpDocument.Column> cols = KpFixtures.document(o, KpFixtures.profileKz()).columns();
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        List<String> lines = KpTestSupport.lines(pdf);
+        for (String number : List.of("2 721 000,00", "7 650 000,00", "15 300 000,00")) {
+            assertThat(lines).as(number).anySatisfy(l -> assertThat(l).contains(number));
+        }
+        Edges page = Edges.of(pdf);   // числа прижаты вправо: не влезли бы — вылезли бы за левый край ячейки
+        assertThat(KpTestSupport.find(pdf, "7 650 000,00").left())
+                .isGreaterThanOrEqualTo(page.columns(cols, "PRICE", "PRICE")[0] + PAD - 0.1f);
+        assertThat(KpTestSupport.find(pdf, "15 300 000,00").left())
+                .isGreaterThanOrEqualTo(page.columns(cols, "SUM", "SUM")[0] + PAD - 0.1f);
+    }
+
+    /** Тесная таблица (книжный лист, 11 колонок): колонки денег сжаты, но число не рвётся по строкам (nowrap). */
+    @Test
+    void crowdedTableNeverSplitsNumbers() {
+        ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
+        o.getTableColumns().add(new OfferColumn("MODEL", null));
+        o.getTableColumns().add(new OfferColumn("MANUFACTURER", null));
+        o.getTableColumns().add(new OfferColumn("COUNTRY", null));
+        List<String> lines = KpTestSupport.lines(KpFixtures.pdf(o, KpFixtures.profileKz()));
+        for (String number : List.of("105 600,00", "2 721 000,00", "7 650 000,00", "15 300 000,00")) {
+            assertThat(lines).as(number).anySatisfy(l -> assertThat(l).contains(number));
+        }
     }
 
     /** Раздел — на всю ширину, жирным, слева; «включено в стоимость» — по центру объединённой ячейки (спека §6.1 п.5). */
@@ -281,5 +324,27 @@ class KpPdfDocumentTest {
             assertThat(images.get(0).overlaps(title)).as("печать на строке должности, строк добавлено: %d", extra).isTrue();
             if (title.page() > 0) onSecondPage++;
         }
+    }
+
+    /**
+     * Печать ложится центром у левого края линии подписи (спека §6.3): линия идёт сразу за должностью — таблица подписи
+     * по содержимому, а не во всю ширину (тогда линия уезжала вправо, и печать ложилась в ≈ 45 мм от неё).
+     */
+    @Test
+    void stampCentreLiesAtTheStartOfTheSignLine() {
+        CompanyProfile p = KpFixtures.profileKz();
+        p.setStampPng(KpTestSupport.circlePng());
+        ClientOffer o = KpFixtures.offer2409();
+        o.setWithStamp(true);
+        byte[] pdf = KpFixtures.pdf(o, p);
+        KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
+        // линия подписи — горизонтальная черта шириной ≈ 45 мм у низа строки должности
+        List<KpTestSupport.Box> signLines = KpTestSupport.shapeBoxes(pdf).stream()
+                .filter(b -> b.page() == title.page() && b.height() < 1 && b.width() > 40 && b.width() < 50
+                        && Math.abs(b.top() - title.bottom()) < 3)
+                .toList();
+        assertThat(signLines).hasSize(1);
+        KpTestSupport.Box stamp = KpTestSupport.imageBoxes(pdf).get(0);
+        assertThat((stamp.left() + stamp.right()) / 2).isCloseTo(signLines.get(0).left(), within(5f));
     }
 }

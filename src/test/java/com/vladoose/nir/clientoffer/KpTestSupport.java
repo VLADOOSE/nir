@@ -2,6 +2,7 @@ package com.vladoose.nir.clientoffer;
 
 import com.sun.net.httpserver.HttpServer;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
 import org.apache.pdfbox.contentstream.PDFStreamEngine;
 import org.apache.pdfbox.contentstream.operator.DrawObject;
 import org.apache.pdfbox.contentstream.operator.Operator;
@@ -16,6 +17,7 @@ import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
@@ -26,7 +28,9 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.GeneralPath;
 import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -178,6 +182,102 @@ final class KpTestSupport {
                         } else {
                             super.processOperator(operator, operands);
                         }
+                    }
+                };
+                engine.processPage(d.getPage(i));
+            }
+            return boxes;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Залитые и обведённые фигуры — рамки, линии (в том числе линия подписи): прямоугольник каждой, в мм от левого
+     * верхнего угла листа. Точки пути PDFBox уже переводит текущей матрицей в координаты страницы.
+     */
+    static List<Box> shapeBoxes(byte[] pdf) {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            List<Box> boxes = new ArrayList<>();
+            for (int i = 0; i < d.getNumberOfPages(); i++) {
+                int page = i;
+                float height = d.getPage(i).getMediaBox().getHeight();
+                PDFGraphicsStreamEngine engine = new PDFGraphicsStreamEngine(d.getPage(i)) {
+                    private final GeneralPath path = new GeneralPath();
+
+                    @Override
+                    public void appendRectangle(Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
+                        path.moveTo(p0.getX(), p0.getY());
+                        path.lineTo(p1.getX(), p1.getY());
+                        path.lineTo(p2.getX(), p2.getY());
+                        path.lineTo(p3.getX(), p3.getY());
+                        path.closePath();
+                    }
+
+                    @Override
+                    public void moveTo(float x, float y) {
+                        path.moveTo(x, y);
+                    }
+
+                    @Override
+                    public void lineTo(float x, float y) {
+                        path.lineTo(x, y);
+                    }
+
+                    @Override
+                    public void curveTo(float x1, float y1, float x2, float y2, float x3, float y3) {
+                        path.curveTo(x1, y1, x2, y2, x3, y3);
+                    }
+
+                    @Override
+                    public Point2D getCurrentPoint() {
+                        return path.getCurrentPoint();
+                    }
+
+                    @Override
+                    public void closePath() {
+                        path.closePath();
+                    }
+
+                    @Override
+                    public void endPath() {
+                        path.reset();
+                    }
+
+                    @Override
+                    public void strokePath() {
+                        emit();
+                    }
+
+                    @Override
+                    public void fillPath(int windingRule) {
+                        emit();
+                    }
+
+                    @Override
+                    public void fillAndStrokePath(int windingRule) {
+                        emit();
+                    }
+
+                    @Override
+                    public void clip(int windingRule) {
+                    }
+
+                    @Override
+                    public void drawImage(PDImage pdImage) {
+                    }
+
+                    @Override
+                    public void shadingFill(COSName shadingName) {
+                    }
+
+                    private void emit() {
+                        if (path.getCurrentPoint() != null) {
+                            Rectangle2D r = path.getBounds2D();
+                            boxes.add(new Box(page, mm((float) r.getMinX()), mm(height - (float) r.getMaxY()),
+                                    mm((float) r.getMaxX()), mm(height - (float) r.getMinY())));
+                        }
+                        path.reset();
                     }
                 };
                 engine.processPage(d.getPage(i));

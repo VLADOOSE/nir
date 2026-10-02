@@ -79,6 +79,15 @@ final class KpFixtures {
         return o;
     }
 
+    /** + две строки на миллионы, как в КП отца: ИВЛ 2 721 000,00 × 1 и анализатор 7 650 000,00 × 2 (= 15 300 000,00). */
+    static ClientOffer withMillionPrices(ClientOffer o) {
+        line(o, "Аппарат ИВЛ для экстренной помощи А-ИВЛ-Э-03", 1, "2721000.00", "5",
+                OfferRegistrationStatus.MANUAL, "№ РК-МТ-5№021045");
+        line(o, "Анализатор автоматический биохимический «ВитаЛайн 200»", 2, "7650000.00", "5",
+                OfferRegistrationStatus.UNCHECKED, null);
+        return o;
+    }
+
     static ClientOfferItem line(ClientOffer o, String name, int qty, String price, String vat,
                                 OfferRegistrationStatus reg, String regText) {
         ClientOfferItem it = ClientOfferTestData.item(o, o.getItems().size() + 1, name, null, vat);

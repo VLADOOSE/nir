@@ -7,7 +7,8 @@
   <style>
     /* Документ КП (спека client-kp-constructor §6). Только CSS 2.1 — openhtmltopdf не знает flex/grid.
        Цвета — печатные (#000): это бумага, а не интерфейс АИС. */
-    body { font-family: 'Liberation Serif'; font-size: 11pt; color: #000; }
+    /* поля листа задаёт только @page (как поля страницы в Word); у body свои 8px по умолчанию — обнулены */
+    body { font-family: 'Liberation Serif'; font-size: 11pt; color: #000; margin: 0; }
     table { border-collapse: collapse; }
     .lh-top { width: 100%; }
     .lh-top td { font-weight: bold; font-size: 11pt; vertical-align: top; padding: 0; }
@@ -35,6 +36,8 @@
     .a-left { text-align: left; }
     .a-center { text-align: center; }
     .a-right { text-align: right; }
+    /* справа — только деньги: число не переносится (ширину колонки подбирает KpDocumentBuilder.fitNumbers) */
+    .items td.a-right { white-space: nowrap; }
     .row-section td { font-weight: bold; }
     .span-cell { text-align: center; }
     .row-section .span-cell { text-align: left; }
@@ -45,7 +48,8 @@
     .terms-list div { margin-bottom: 1mm; }
     /* с печатью блок получает min-height до низа печати — KpHtmlRenderer.signoffStyle */
     .signoff { margin-top: 10mm; position: relative; page-break-inside: avoid; }
-    .sign-table { width: 100%; margin-top: 1mm; }
+    /* по содержимому: линия подписи — сразу за должностью, печать (STAMP_LEFT_MM) ложится центром у её начала */
+    .sign-table { margin-top: 1mm; }
     .sign-table td { vertical-align: bottom; padding: 0; }
     .sign-line { width: 45mm; height: 15mm; border-bottom: 0.7pt solid #000; text-align: center; }
     .sign-line img { max-height: 15mm; max-width: 44mm; }

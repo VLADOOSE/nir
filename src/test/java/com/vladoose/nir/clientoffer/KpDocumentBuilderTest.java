@@ -276,6 +276,30 @@ class KpDocumentBuilderTest {
         assertThat(columns).allSatisfy(c -> assertThat(c.percent()).isPositive());
     }
 
+    /** Колонки денег — под самое длинное число, если оно не влезает в обычную долю; альбомный лист шире — хватает её. */
+    @Test
+    void moneyColumnsWidenForMillionsOnlyWhenTheyDoNotFit() {
+        ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
+                .containsExactly(5, 29, 7, 7, 13, 8, 14, 17);   // цена 12 → 13 («7 650 000,00»), сумма 13 → 14 («15 300 000,00»)
+        o.setLandscape(true);
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
+                .containsExactly(5, 31, 7, 7, 12, 8, 13, 17);
+    }
+
+    /** Тесная таблица с миллионами: колонки денег шире, но наименованию — всё равно не меньше четверти. */
+    @Test
+    void crowdedTableWithMillionsStillKeepsNameAQuarter() {
+        ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
+        List<OfferColumn> all = new ArrayList<>();
+        for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
+        o.setTableColumns(all);
+        List<KpDocument.Column> columns = KpFixtures.document(o, KpFixtures.profileKz()).columns();
+        assertThat(columns.stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
+        assertThat(columns.get(1).percent()).isGreaterThanOrEqualTo(25);
+        assertThat(columns).allSatisfy(c -> assertThat(c.percent()).isPositive());
+    }
+
     @Test
     void ownColumnsAndVatColumnsPrintTheirValues() {
         ClientOffer o = KpFixtures.offer2409();
