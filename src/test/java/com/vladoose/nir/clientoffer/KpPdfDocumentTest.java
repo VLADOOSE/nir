@@ -2,6 +2,7 @@ package com.vladoose.nir.clientoffer;
 
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.service.document.KpDocument;
+import com.vladoose.nir.service.offer.OfferColumnKey;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
@@ -220,16 +221,55 @@ class KpPdfDocumentTest {
                 .isGreaterThanOrEqualTo(page.columns(cols, "SUM", "SUM")[0] + PAD - 0.1f);
     }
 
-    /** Тесная таблица (книжный лист, 11 колонок): колонки денег сжаты, но число не рвётся по строкам (nowrap). */
+    /** Обычная таблица — обычный кегль 10 pt (шапка и строки). */
     @Test
-    void crowdedTableNeverSplitsNumbers() {
+    void defaultTableKeepsTheBaseTypeSize() {
+        assertThat(KpFixtures.document(KpFixtures.offer2409(), KpFixtures.profileKz()).tableFontPt()).isEqualTo(10.0);
+        byte[] pdf = KpFixtures.pdf(KpFixtures.offer2409(), KpFixtures.profileKz());
+        assertThat(KpTestSupport.find(pdf, "105 600,00").sizePt()).isCloseTo(10f, within(0.1f));
+        assertThat(KpTestSupport.find(pdf, "Наименование").sizePt()).isCloseTo(10f, within(0.1f));
+    }
+
+    /**
+     * Тесная таблица (книжный лист, 11 колонок, суммы на миллионы): таблица мельчает, и ни одно число не вылезает за
+     * свою ячейку — раньше колонки денег сжимались ниже ширины числа, и суммы печатались поверх соседних колонок.
+     */
+    @Test
+    void crowdedTableShrinksTheTypeSoNumbersFitTheirCells() {
         ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
         o.getTableColumns().add(new OfferColumn("MODEL", null));
         o.getTableColumns().add(new OfferColumn("MANUFACTURER", null));
         o.getTableColumns().add(new OfferColumn("COUNTRY", null));
-        List<String> lines = KpTestSupport.lines(KpFixtures.pdf(o, KpFixtures.profileKz()));
-        for (String number : List.of("105 600,00", "2 721 000,00", "7 650 000,00", "15 300 000,00")) {
-            assertThat(lines).as(number).anySatisfy(l -> assertThat(l).contains(number));
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(doc.tableFontPt()).isLessThan(10);
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        Edges page = Edges.of(pdf);
+        // цена и сумма строки 1 (105 600,00 × 3) и строки 6 (7 650 000,00 × 2)
+        for (String[] number : new String[][] {{"105 600,00", "PRICE"}, {"316 800,00", "SUM"},
+                {"7 650 000,00", "PRICE"}, {"15 300 000,00", "SUM"}}) {
+            KpTestSupport.Placed placed = KpTestSupport.find(pdf, number[0]);
+            float[] cell = page.columns(doc.columns(), number[1], number[1]);
+            assertThat(placed.sizePt()).as(number[0]).isCloseTo((float) doc.tableFontPt(), within(0.1f));
+            assertThat(placed.left()).as(number[0]).isGreaterThanOrEqualTo(cell[0] + PAD - 0.1f);
+            assertThat(placed.right()).as(number[0]).isLessThanOrEqualTo(cell[1] - PAD + 0.1f);
+        }
+    }
+
+    /**
+     * Последний рубеж: таблицу не спасают и 8 pt (все 15 колонок на книжном листе, цена на сотни миллионов) — число всё
+     * равно не рвётся по строкам (white-space: nowrap): печатается в одну строку, пусть и шире своей ячейки.
+     */
+    @Test
+    void numbersStayOnOneLineEvenWhenNothingFits() {
+        ClientOffer o = KpFixtures.offer2409();
+        KpFixtures.line(o, "Томограф магнитно-резонансный", 2, "300000000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        List<OfferColumn> all = new ArrayList<>();
+        for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
+        o.setTableColumns(all);
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        for (String number : List.of("300 000 000,00", "600 000 000,00")) {
+            KpTestSupport.Placed placed = KpTestSupport.find(pdf, number);
+            assertThat(placed.bottom() - placed.top()).as(number + ": одна строка").isLessThan(3f);
         }
     }
 
@@ -281,7 +321,7 @@ class KpPdfDocumentTest {
         assertThat(KpTestSupport.text(pdf)).doesNotContain("Директор", "Ширяев");
     }
 
-    /** Подпись — на линии подписи, правее должности, не выше 15 мм и не шире линии (спека §6.3). */
+    /** Подпись — на линии подписи, по её центру, не выше 15 мм и не шире линии (спека §6.3). */
     @Test
     void signatureSitsOnTheSignLine() {
         CompanyProfile p = KpFixtures.profileKz();
@@ -293,58 +333,109 @@ class KpPdfDocumentTest {
         assertThat(images).hasSize(1);
         KpTestSupport.Box signature = images.get(0);
         KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
+        KpTestSupport.Box line = signLine(pdf, title);
         assertThat(signature.height()).isLessThanOrEqualTo(15.5f);
         assertThat(signature.width()).isLessThanOrEqualTo(44.5f);
         assertThat(signature.left()).isGreaterThanOrEqualTo(title.right());
-        assertThat(signature.bottom()).isCloseTo(title.bottom(), within(1.5f));   // низ подписи — у строки должности
+        assertThat(signature.bottom()).isCloseTo(line.top(), MM);   // стоит на линии
+        // по центру линии (подпись 44 мм в линии 45 мм: прижатая влево сдвинулась бы всего на 0,5 мм — допуск 0,2)
+        assertThat((signature.left() + signature.right()) / 2).isCloseTo((line.left() + line.right()) / 2, within(0.2f));
+    }
+
+    /** «Должность ____ Фамилия» (спека §6.3): линия — сразу за должностью, фамилия — в 3 мм после линии, не вплотную. */
+    @Test
+    void signLineFollowsTheTitleAndTheSurnameKeepsItsGap() {
+        byte[] pdf = KpFixtures.pdf(KpFixtures.offer2409(), KpFixtures.profileKz());
+        KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
+        KpTestSupport.Box line = signLine(pdf, title);
+        assertThat(line.left() - title.right()).isCloseTo(0f, MM);
+        assertThat(KpTestSupport.find(pdf, "Ширяев И. В.").left() - line.right()).isCloseTo(3f, MM);
     }
 
     /**
-     * Печать — на строке должности (спека §6.3), где бы ни кончился лист: блок подписи сдвигается добавленными строками
-     * через низ первой страницы на вторую. Печать свисает ниже блока; без запаса высоты блока openhtmltopdf уносил её
-     * за обрыв страницы, где она не рисовалась (блок у самого низа листа — печати нет, а галочка стоит).
+     * Печать держится за линию подписи (спека §6.3), где бы ни кончился лист и какой бы длины ни была должность (KZ и
+     * длинная, как у сида РФ): блок подписи сдвигается добавленными строками через низ первой страницы на вторую. Без
+     * запаса снизу блока openhtmltopdf уносил свисающую печать за обрыв страницы, где она не рисовалась; на перенесённом
+     * листе он же сдвигал её ниже (якорь в прижатой книзу ячейки, отступ блока margin, а не padding) — ловит проверка
+     * центра печати на каждом шаге.
      */
     @Test
-    void stampLiesOnTheSignoffWhereverThePageEnds() {
-        CompanyProfile p = KpFixtures.profileKz();
-        p.setStampPng(KpTestSupport.circlePng());
-        int onSecondPage = 0;
-        for (int extra = 0; onSecondPage < 2; extra++) {
-            assertThat(extra).as("подпись так и не ушла на вторую страницу").isLessThan(60);
-            ClientOffer o = KpFixtures.offer2409();
-            o.setWithStamp(true);
-            for (int i = 0; i < extra; i++) {
-                KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+    void stampLiesOnTheSignLineWhereverThePageEnds() {
+        for (CompanyProfile p : List.of(KpFixtures.profileKz(), profileWithLongTitle())) {
+            p.setStampPng(KpTestSupport.circlePng());
+            int onSecondPage = 0;
+            for (int extra = 0; onSecondPage < 2; extra++) {
+                assertThat(extra).as("подпись так и не ушла на вторую страницу").isLessThan(60);
+                ClientOffer o = KpFixtures.offer2409();
+                o.setWithStamp(true);
+                for (int i = 0; i < extra; i++) {
+                    KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+                }
+                byte[] pdf = KpFixtures.pdf(o, p);
+                KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор " + p.getShortName());
+                List<KpTestSupport.Box> images = KpTestSupport.imageBoxes(pdf);
+                String as = p.getShortName() + ", строк добавлено: " + extra;
+                assertThat(images).as(as).hasSize(1);
+                assertThat(images.get(0).page()).as(as).isEqualTo(title.page());
+                assertThat(images.get(0).width()).as("stamp_size_mm").isCloseTo(40f, MM);
+                assertStampAtLineStart(images.get(0), signLine(pdf, title), as);
+                if (title.page() > 0) onSecondPage++;
             }
-            byte[] pdf = KpFixtures.pdf(o, p);
-            KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
-            List<KpTestSupport.Box> images = KpTestSupport.imageBoxes(pdf);
-            assertThat(images).as("строк добавлено: %d", extra).hasSize(1);
-            assertThat(images.get(0).width()).as("stamp_size_mm").isCloseTo(40f, MM);
-            assertThat(images.get(0).overlaps(title)).as("печать на строке должности, строк добавлено: %d", extra).isTrue();
-            if (title.page() > 0) onSecondPage++;
         }
     }
 
-    /**
-     * Печать ложится центром у левого края линии подписи (спека §6.3): линия идёт сразу за должностью — таблица подписи
-     * по содержимому, а не во всю ширину (тогда линия уезжала вправо, и печать ложилась в ≈ 45 мм от неё).
-     */
+    /** Центр печати — у начала линии подписи и для KZ, и для длинной должности РФ; подпись на линии не мешает. */
     @Test
     void stampCentreLiesAtTheStartOfTheSignLine() {
+        for (CompanyProfile p : List.of(KpFixtures.profileKz(), profileWithLongTitle())) {
+            p.setStampPng(KpTestSupport.circlePng());
+            p.setSignaturePng(KpTestSupport.signaturePng());
+            ClientOffer o = KpFixtures.offer2409();
+            o.setWithStamp(true);
+            byte[] pdf = KpFixtures.pdf(o, p);
+            KpTestSupport.Box stamp = KpTestSupport.imageBoxes(pdf).stream()
+                    .filter(b -> Math.abs(b.width() - 40) < 1).findFirst().orElseThrow();
+            assertStampAtLineStart(stamp, signLine(pdf, KpTestSupport.find(pdf, "Директор " + p.getShortName())),
+                    p.getShortName());
+        }
+    }
+
+    /** Подпись от компании: линии нет — печать центром у конца названия компании, как у начала линии. */
+    @Test
+    void companyStampSitsAtTheEndOfTheCompanyName() {
         CompanyProfile p = KpFixtures.profileKz();
         p.setStampPng(KpTestSupport.circlePng());
         ClientOffer o = KpFixtures.offer2409();
+        o.setSignoff(OfferSignoff.COMPANY);
         o.setWithStamp(true);
+        o.setIntro(null);   // иначе первое «ТОО «West-Med»» в листе — во вводной
         byte[] pdf = KpFixtures.pdf(o, p);
-        KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
-        // линия подписи — горизонтальная черта шириной ≈ 45 мм у низа строки должности
-        List<KpTestSupport.Box> signLines = KpTestSupport.shapeBoxes(pdf).stream()
+        KpTestSupport.Placed name = KpTestSupport.find(pdf, "ТОО «West-Med»");
+        KpTestSupport.Box stamp = KpTestSupport.imageBoxes(pdf).get(0);
+        assertThat((stamp.left() + stamp.right()) / 2).isCloseTo(name.right(), within(2f));
+        assertThat(stamp.overlaps(name)).isTrue();
+    }
+
+    /** Линия подписи — нарисованная черта ≈ 45 мм у низа строки должности. */
+    private static KpTestSupport.Box signLine(byte[] pdf, KpTestSupport.Placed title) {
+        List<KpTestSupport.Box> lines = KpTestSupport.shapeBoxes(pdf).stream()
                 .filter(b -> b.page() == title.page() && b.height() < 1 && b.width() > 40 && b.width() < 50
                         && Math.abs(b.top() - title.bottom()) < 3)
                 .toList();
-        assertThat(signLines).hasSize(1);
-        KpTestSupport.Box stamp = KpTestSupport.imageBoxes(pdf).get(0);
-        assertThat((stamp.left() + stamp.right()) / 2).isCloseTo(signLines.get(0).left(), within(5f));
+        assertThat(lines).as("линия подписи").hasSize(1);
+        return lines.get(0);
+    }
+
+    /** Центр печати — у начала линии и на 4 мм выше неё (KpHtmlRenderer.STAMP_CENTER_X_MM = 0, STAMP_CENTER_Y_MM = −4). */
+    private static void assertStampAtLineStart(KpTestSupport.Box stamp, KpTestSupport.Box line, String as) {
+        assertThat((stamp.left() + stamp.right()) / 2 - line.left()).as(as + ": центр от начала линии").isCloseTo(0f, within(2f));
+        assertThat((stamp.top() + stamp.bottom()) / 2 - line.top()).as(as + ": центр над линией").isCloseTo(-4f, within(2f));
+    }
+
+    /** Реквизиты KZ с должностью длиннее — как у сида РФ «Директор ООО «РЕГИОН-МЕД»»: линия начинается на 9 мм правее. */
+    private static CompanyProfile profileWithLongTitle() {
+        CompanyProfile p = KpFixtures.profileKz();
+        p.setShortName("ООО «РЕГИОН-МЕД»");
+        return p;
     }
 }

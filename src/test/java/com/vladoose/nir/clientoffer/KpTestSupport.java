@@ -93,8 +93,9 @@ final class KpTestSupport {
         return text.replace('\u00A0', ' ').replaceAll("\\s+", " ");
     }
 
-    /** Где напечатан текст: страница (с 0), края в мм от левого верхнего угла листа, шрифт первого знака. */
-    record Placed(int page, float left, float top, float right, float bottom, String font) {}
+    /** Где напечатан текст: страница (с 0), края в мм от левого верхнего угла листа, шрифт и кегль (pt) первого знака —
+     * по матрице вывода текста (getFontSizeInPt у PDFBox округляет вниз до целого: 8 pt читается как 7). */
+    record Placed(int page, float left, float top, float right, float bottom, String font, float sizePt) {}
 
     /** Прямоугольник картинки: страница (с 0), края в мм от левого верхнего угла листа. */
     record Box(int page, float left, float top, float right, float bottom) {
@@ -143,7 +144,9 @@ final class KpTestSupport {
                 top = Math.min(top, g.getYDirAdj() - g.getHeightDir());
                 bottom = Math.max(bottom, g.getYDirAdj());
             }
-            return new Placed(pages.get(at), mm(left), mm(top), mm(right), mm(bottom), glyphs.get(at).getFont().getName());
+            TextPosition first = glyphs.get(at);
+            return new Placed(pages.get(at), mm(left), mm(top), mm(right), mm(bottom), first.getFont().getName(),
+                    first.getXScale());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

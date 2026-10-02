@@ -28,15 +28,16 @@
     .terms-table { width: 100%; margin: 2mm 0 4mm 0; }
     .terms-table td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: top; font-size: 10.5pt; }
     .terms-table .term-label { font-weight: bold; width: 45%; }
+    /* кегль таблицы — у самой таблицы (th:style, KpDocument.tableFontPt): в тесной таблице мельче, ячейки наследуют */
     .items { width: 100%; table-layout: fixed; -fs-table-paginate: paginate; margin-top: 2mm; }
     .items thead { display: table-header-group; }
-    .items th, .items td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; font-size: 10pt; vertical-align: middle; word-wrap: break-word; }
+    .items th, .items td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: middle; word-wrap: break-word; }
     .items th { font-weight: bold; text-align: center; }
     .items tr { page-break-inside: avoid; }
     .a-left { text-align: left; }
     .a-center { text-align: center; }
     .a-right { text-align: right; }
-    /* справа — только деньги: число не переносится (ширину колонки подбирает KpDocumentBuilder.fitNumbers) */
+    /* справа — только деньги: число не переносится (ширину колонки и кегль подбирает KpDocumentBuilder.fitTable) */
     .items td.a-right { white-space: nowrap; }
     .row-section td { font-weight: bold; }
     .span-cell { text-align: center; }
@@ -46,15 +47,24 @@
     .words { margin-top: 2mm; }
     .terms-list { margin-top: 4mm; }
     .terms-list div { margin-bottom: 1mm; }
-    /* с печатью блок получает min-height до низа печати — KpHtmlRenderer.signoffStyle */
-    .signoff { margin-top: 10mm; position: relative; page-break-inside: avoid; }
-    /* по содержимому: линия подписи — сразу за должностью, печать (STAMP_LEFT_MM) ложится центром у её начала */
+    /* с печатью блок получает запас снизу до низа печати — KpHtmlRenderer.signoffStyle. Отступ сверху — padding, не
+       margin: блок, перенесённый page-break-inside: avoid на новый лист, с margin openhtmltopdf рисовал с печатью
+       на ≈ 3,5 мм ниже, чем на первом листе (замер); с padding печать там же, где у текста */
+    .signoff { padding-top: 10mm; page-break-inside: avoid; }
+    /* по содержимому: линия подписи — сразу за должностью */
     .sign-table { margin-top: 1mm; }
-    .sign-table td { vertical-align: bottom; padding: 0; }
-    .sign-line { width: 45mm; height: 15mm; border-bottom: 0.7pt solid #000; text-align: center; }
-    .sign-line img { max-height: 15mm; max-width: 44mm; }
-    .sign-name { padding-left: 3mm; }
+    .sign-table td, .company-sign td { vertical-align: bottom; padding: 0; }
+    .sign-line { width: 45mm; height: 15mm; border-bottom: 0.7pt solid #000; }
+    .sign-table .sign-name { padding-left: 3mm; }
     .contacts { margin-top: 2mm; font-size: 10pt; }
+    /* подпись и печать держатся за линию: блок во всю ячейку линии (низ блока — сама линия), картинки — от его низа.
+       Без подписи директора линии нет — такой же блок (только когда есть печать) встаёт за названием компании, и строка
+       названия, как строка должности, оказывается внизу под печатью. Блок во всю высоту ячейки нужен и openhtmltopdf:
+       абсолютную картинку внутри прижатой книзу ячейки на перенесённом листе он сдвигал на высоту прижатия.
+       Сдвиг центра печати от начала линии — KpHtmlRenderer.STAMP_CENTER_X_MM / STAMP_CENTER_Y_MM */
+    .sign-box { position: relative; height: 15mm; }
+    .sign-pic { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; }
+    .sign-pic img { max-height: 15mm; max-width: 44mm; }
     .stamp { position: absolute; }
   </style>
 </head>
@@ -88,7 +98,7 @@
     </tr>
   </table>
 
-  <table class="items">
+  <table class="items" th:style="${tableStyle}">
     <colgroup><col th:each="c : ${doc.columns()}" th:style="${'width: ' + c.percent() + '%'}"/></colgroup>
     <thead>
       <tr><th th:each="c : ${doc.columns()}" th:text="${c.label()}">колонка</th></tr>
@@ -115,13 +125,17 @@
     <table class="sign-table" th:if="${doc.signoff().director()}">
       <tr>
         <td th:text="${doc.signoff().titleLine()}">Директор</td>
-        <td class="sign-line"><img th:if="${signature != null}" th:src="${signature}" alt=""/></td>
+        <td class="sign-line"><div class="sign-box"><div class="sign-pic" th:if="${signature != null}"><img th:src="${signature}" alt=""/></div><img class="stamp" th:if="${stamp != null}" th:src="${stamp}" th:style="${stampStyle}" alt=""/></div></td>
         <td class="sign-name" th:text="${doc.signoff().nameLine()}">Фамилия И. О.</td>
       </tr>
     </table>
-    <div th:unless="${doc.signoff().director()}" th:text="${doc.signoff().titleLine()}">ТОО</div>
+    <table class="company-sign" th:unless="${doc.signoff().director()}">
+      <tr>
+        <td th:text="${doc.signoff().titleLine()}">ТОО</td>
+        <td><div class="sign-box" th:if="${stamp != null}"><img class="stamp" th:src="${stamp}" th:style="${stampStyle}" alt=""/></div></td>
+      </tr>
+    </table>
     <div class="contacts" th:if="${doc.signoff().contacts() != null}" th:text="${doc.signoff().contacts()}">контакты</div>
-    <img class="stamp" th:if="${stamp != null}" th:src="${stamp}" th:style="${stampStyle}" alt=""/>
   </div>
 </body>
 </html>

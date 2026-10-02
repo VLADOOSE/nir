@@ -6,7 +6,8 @@ import java.util.List;
 
 /**
  * Неизменяемая модель документа КП (спека §6.4): всё уже посчитано и отформатировано — рендереры PDF и Word
- * ничего не считают и не форматируют сами, поэтому документы не расходятся по содержанию.
+ * ничего не считают и не форматируют сами, поэтому документы не расходятся по содержанию. tableFontPt — кегль таблицы
+ * позиций (шапка и строки), pt: в тесной таблице меньше обычного, чтобы числа поместились в свои колонки.
  */
 public record KpDocument(
         boolean landscape,
@@ -22,7 +23,8 @@ public record KpDocument(
         List<String> totalLines,
         String amountInWords,
         List<String> termsList,
-        Signoff signoff) {
+        Signoff signoff,
+        double tableFontPt) {
 
     public record Letterhead(List<String> left, List<String> right, byte[] logoPng, String brandText, List<String> lines) {}
 

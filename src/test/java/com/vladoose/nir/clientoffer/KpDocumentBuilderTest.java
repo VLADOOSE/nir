@@ -279,12 +279,56 @@ class KpDocumentBuilderTest {
     /** Колонки денег — под самое длинное число, если оно не влезает в обычную долю; альбомный лист шире — хватает её. */
     @Test
     void moneyColumnsWidenForMillionsOnlyWhenTheyDoNotFit() {
+        assertThat(KpFixtures.document(KpFixtures.offer2409(), KpFixtures.profileKz()).tableFontPt()).isEqualTo(10.0);
         ClientOffer o = KpFixtures.withMillionPrices(KpFixtures.offer2409());
-        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.columns()).extracting(KpDocument.Column::percent)
                 .containsExactly(5, 29, 7, 7, 13, 8, 14, 17);   // цена 12 → 13 («7 650 000,00»), сумма 13 → 14 («15 300 000,00»)
+        assertThat(d.tableFontPt()).isEqualTo(10.0);
         o.setLandscape(true);
-        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
-                .containsExactly(5, 31, 7, 7, 12, 8, 13, 17);
+        d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.columns()).extracting(KpDocument.Column::percent).containsExactly(5, 31, 7, 7, 12, 8, 13, 17);
+        assertThat(d.tableFontPt()).isEqualTo(10.0);
+    }
+
+    /**
+     * Не влезает в 75 % — таблица мельчает шагом 0,5 pt, а не сжимает числа: веса по умолчанию уменьшаются вместе с
+     * кеглем, ширина чисел считается заново. «Страна» — 9,5 pt; «Страна» и миллионы — 9 pt; «Страна», «Производитель» и
+     * миллионы не влезают и в 8 pt — деньги держат свою ширину (цена 11 %, сумма 12 %), сжимаются остальные колонки.
+     */
+    @Test
+    void crowdedTablesShrinkTheTypeInsteadOfSqueezingNumbers() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getTableColumns().add(new OfferColumn("COUNTRY", null));
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).tableFontPt()).isEqualTo(9.5);
+        KpFixtures.withMillionPrices(o);
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).tableFontPt()).isEqualTo(9.0);
+        o.getTableColumns().add(new OfferColumn("MANUFACTURER", null));
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(8.0);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("PRICE")).extracting(KpDocument.Column::percent).containsExactly(11);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("SUM")).extracting(KpDocument.Column::percent).containsExactly(12);
+        assertThat(d.columns().stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
+        assertThat(d.columns().get(1).percent()).isGreaterThanOrEqualTo(25);
+    }
+
+    /**
+     * Абсурдно тесная таблица (все 15 колонок на книжном листе и цена на сотни миллионов): деньгам не уступить и в 8 pt
+     * (остальным колонкам не осталось бы и по 1 %) — прежнее пропорциональное сжатие всех колонок; наименованию —
+     * по-прежнему не меньше четверти, у каждой колонки — своя доля.
+     */
+    @Test
+    void absurdlyCrowdedTableFallsBackToTheProportionalSqueeze() {
+        ClientOffer o = KpFixtures.offer2409();
+        KpFixtures.line(o, "Томограф магнитно-резонансный", 2, "300000000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        List<OfferColumn> all = new ArrayList<>();
+        for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
+        o.setTableColumns(all);
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(8.0);
+        assertThat(d.columns().stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
+        assertThat(d.columns().get(1).percent()).isGreaterThanOrEqualTo(25);
+        assertThat(d.columns()).allSatisfy(c -> assertThat(c.percent()).isPositive());
     }
 
     /** Тесная таблица с миллионами: колонки денег шире, но наименованию — всё равно не меньше четверти. */
