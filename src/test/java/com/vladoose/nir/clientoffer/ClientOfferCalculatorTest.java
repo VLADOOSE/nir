@@ -6,6 +6,8 @@ import com.vladoose.nir.service.offer.ItemCalc;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.offer.OfferTotals;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 
@@ -281,5 +283,36 @@ class ClientOfferCalculatorTest {
         assertThat(c.vatSum()).isEqualByComparingTo("47.62");
         assertThat(c.cost()).isEqualByComparingTo("0.00");
         assertThat(c.profit()).isEqualByComparingTo("952.38");
+    }
+
+    // Цена на точной «половинке» (спека §5.1–5.2: промежуточные значения — без округления, всё HALF_UP). Закупка «как у
+    // продажи»: множители НДС сокращаются, точная цена = закупка × (1 + наценка) — и она часто ровно посередине шага.
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "1080  | 5  | 25   | HUNDRED | 1400.00",               // 1 080 × 1,25 = 1 350 → до 100
+            "1500  | 5  | 10   | HUNDRED | 1700.00",               // 1 500 × 1,10 = 1 650 → до 100
+            "100   | 16 | 15   | TEN     | 120.00",                // 100 × 1,15 = 115 → до 10
+            "135   | 5  | 10   | UNIT    | 149.00",                // 135 × 1,10 = 148,5 → до 1
+            "12345 | 16 | 15.5 | NONE    | 14258.48",              // 12 345 × 1,155 = 14 258,475 → до 0,01
+    })
+    void priceExactTieRoundsHalfUp(String purchase, String vat, String markup, OfferRounding rounding, String expected) {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        o.setRounding(rounding);
+        add(o, purchase, vat).setMarkupPct(new BigDecimal(markup));
+        assertThat(first(o).price()).isEqualByComparingTo(expected);
+    }
+
+    // Себестоимость строки на точной «половинке»: количество сокращает знаменатель — 1 234,57 × 3 × 100 / 120 =
+    // 370 371 / 120 = 3 086,425 → HALF_UP 3 086,43. Через себестоимость за единицу до 10 знаков выходило
+    // 1 028,8083333333 × 3 = 3 086,4249999999 → 3 086,42. НДС 20%: при 5% и 16% с целым количеством точной половинки
+    // копейки не бывает (×1000 это P·q·200/21 и P·q·250/29, P — закупка в копейках: всегда кончается на 0).
+    @Test
+    void costTotalExactTieRoundsHalfUp() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        add(o, "1234.57", "20").setQuantity(new BigDecimal("3"));   // цена 1 234,57 × 1,2 = 1 481,484 → 1 481,48
+        ItemCalc c = first(o);
+        assertThat(c.costTotal()).isEqualByComparingTo("3086.43");
+        assertThat(c.sumNet()).isEqualByComparingTo("3703.70");      // 4 444,44 − НДС 740,74
+        assertThat(c.profit()).isEqualByComparingTo("617.27");       // прибыль + себестоимость строки = сумма без НДС
     }
 }
