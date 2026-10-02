@@ -2,6 +2,7 @@ package com.vladoose.nir.clientoffer;
 
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.service.document.KpDocument;
+import com.vladoose.nir.service.offer.ColumnAlign;
 import com.vladoose.nir.service.offer.OfferColumnKey;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.assertj.core.data.Offset;
@@ -204,6 +205,79 @@ class KpPdfDocumentTest {
         assertThat(KpTestSupport.find(pdf, code).right()).isLessThanOrEqualTo(nameRight - PAD + 0.5f);
     }
 
+    /**
+     * Длинный код модели без пробелов в своей колонке «Модель» (спека §6.4, §11): переносится внутри ячейки, таблица от
+     * него не меняется — те же доли и кегль, что с коротким кодом, деньги на месте. Раньше колонка, где в каждой ячейке
+     * одно «слово», становилась неразрывной: код в 46 знаков уходил за лист, а деньги печатались поверх соседних ячеек.
+     */
+    @Test
+    void longModelCodeInTheModelColumnWrapsInsideItsCell() {
+        String code = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJ";
+        ClientOffer o = KpFixtures.offer2409();
+        o.getItems().get(0).setModel(code);
+        o.getTableColumns().add(new OfferColumn("MODEL", null));
+        ClientOffer shortCode = KpFixtures.offer2409();
+        shortCode.getItems().get(0).setModel("PO70");
+        shortCode.getTableColumns().add(new OfferColumn("MODEL", null));
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        KpDocument plain = KpFixtures.document(shortCode, KpFixtures.profileKz());
+        assertThat(doc.columns()).isEqualTo(plain.columns());
+        assertThat(doc.tableFontPt()).isEqualTo(plain.tableFontPt());
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        float[] model = Edges.of(pdf).columns(doc.columns(), "MODEL", "MODEL");
+        KpTestSupport.Placed placed = KpTestSupport.find(pdf, code);
+        assertThat(placed.bottom() - placed.top()).as("код перенесён").isGreaterThan(5f);
+        assertThat(placed.left()).as("левый край кода").isGreaterThanOrEqualTo(model[0] + PAD - 0.1f);
+        assertThat(placed.right()).as("правый край кода").isLessThanOrEqualTo(model[1] - PAD + 0.1f);
+        assertMoneyInsideItsCells(o);
+    }
+
+    /**
+     * Тесные книжные таблицы КП от 24.09 — 11 колонок (миллионы, цена и сумма без НДС, сумма НДС) и 12 колонок (цена и
+     * сумма без НДС, сумма НДС и «Страна», обычные цены): ни одно число не заходит за свою ячейку. Раньше запасной путь
+     * сжимал все колонки подряд, и «7 650 000,00», «46 193,10» залезали за край ячейки на 0,3–0,4 мм; теперь деньги — по
+     * нужде, уступают текстовые колонки и наименование (до 20 %).
+     */
+    @Test
+    void crowdedPortraitTablesKeepEveryNumberInsideItsCell() {
+        ClientOffer eleven = KpFixtures.withMillionPrices(KpFixtures.offer2409());
+        for (String k : new String[] {"PRICE_NET", "VAT_SUM", "SUM_NET"}) eleven.getTableColumns().add(new OfferColumn(k, null));
+        ClientOffer twelve = KpFixtures.offer2409();
+        for (String k : new String[] {"PRICE_NET", "VAT_SUM", "SUM_NET", "COUNTRY"}) twelve.getTableColumns().add(new OfferColumn(k, null));
+        assertThat(KpFixtures.document(eleven, KpFixtures.profileKz()).columns()).hasSize(11);
+        assertThat(KpFixtures.document(twelve, KpFixtures.profileKz()).columns()).hasSize(12);
+        assertMoneyInsideItsCells(eleven);
+        assertMoneyInsideItsCells(twelve);
+    }
+
+    /**
+     * Каждое число денежных колонок каждой позиции нарисовано внутри текста своей ячейки (поля 1,5 мм). Одно число бывает
+     * в двух колонках (цена и сумма при количестве 1) — из вхождений берётся то, чья середина в этой колонке.
+     */
+    private static void assertMoneyInsideItsCells(ClientOffer o) {
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        Edges page = Edges.of(pdf);
+        int checked = 0;
+        for (int i = 0; i < doc.columns().size(); i++) {
+            KpDocument.Column c = doc.columns().get(i);
+            if (c.align() != ColumnAlign.RIGHT) continue;
+            float[] cell = page.columns(doc.columns(), c.key(), c.key());
+            for (KpDocument.Row r : doc.rows()) {
+                if (r.kind() != KpDocument.RowKind.ITEM) continue;
+                String number = r.cells().get(i).get(0);
+                String as = c.key() + " «" + number + "»";
+                KpTestSupport.Placed placed = KpTestSupport.findAll(pdf, number).stream()
+                        .filter(t -> (t.left() + t.right()) / 2 > cell[0] && (t.left() + t.right()) / 2 < cell[1])
+                        .findFirst().orElseThrow(() -> new AssertionError(as + ": нет в своей колонке"));
+                assertThat(placed.left()).as(as + ": левый край").isGreaterThanOrEqualTo(cell[0] + PAD - 0.1f);
+                assertThat(placed.right()).as(as + ": правый край").isLessThanOrEqualTo(cell[1] - PAD + 0.1f);
+                checked++;
+            }
+        }
+        assertThat(checked).isGreaterThan(0);
+    }
+
     /** Цены и суммы на миллионы (КП отца) — целиком в одну строку и внутри своей ячейки, а не «2 721 000,0 / 0». */
     @Test
     void millionsPrintWholeInsideTheirCells() {
@@ -308,8 +382,8 @@ class KpPdfDocumentTest {
 
     /**
      * Все 15 колонок на альбомном листе: ни одна колонка не уже полей и одной буквы, короткие колонки — не уже своего
-     * содержимого («упаковка», «1 000», «16%», «шт», и «Германия» — в колонке, где каждая ячейка одно слово): всё в одну
-     * строку и внутри ячейки (раньше — 1 % ширины, «ш / т»).
+     * содержимого («упаковка» — на альбомном листе она не длиннее доли ед. изм., «1 000», «16%», «шт»): в одну строку и
+     * внутри ячейки (раньше — 1 % ширины, «ш / т»). «Германия» — текст: переносится, но внутри своей ячейки.
      */
     @Test
     void allColumnsInLandscapeKeepTheirMinimums() {
@@ -328,10 +402,13 @@ class KpPdfDocumentTest {
         }
         byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
         Edges page = Edges.of(pdf);
-        for (String[] cell : new String[][] {{"упаковка", "UNIT"}, {"1 000", "QTY"}, {"16%", "VAT_RATE"}, {"шт", "UNIT"},
-                {"Германия", "COUNTRY"}}) {
+        for (String[] cell : new String[][] {{"упаковка", "UNIT"}, {"1 000", "QTY"}, {"16%", "VAT_RATE"}, {"шт", "UNIT"}}) {
             assertInsideColumn(pdf, cell[0], page.columns(doc.columns(), cell[1], cell[1]));
         }
+        float[] country = page.columns(doc.columns(), "COUNTRY", "COUNTRY");
+        KpTestSupport.Placed germany = KpTestSupport.find(pdf, "Германия");
+        assertThat(germany.left()).as("Германия: левый край").isGreaterThanOrEqualTo(country[0] + PAD - 0.1f);
+        assertThat(germany.right()).as("Германия: правый край").isLessThanOrEqualTo(country[1] - PAD + 0.1f);
     }
 
     /** КП от 24.09 и ещё 8 строк — номера до 12. */

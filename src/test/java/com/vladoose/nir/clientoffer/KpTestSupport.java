@@ -118,6 +118,13 @@ final class KpTestSupport {
      * находится тоже — края тогда охватывают все его строки.
      */
     static Placed find(byte[] pdf, String needle) {
+        List<Placed> all = findAll(pdf, needle);
+        if (all.isEmpty()) throw new AssertionError("в PDF нет текста «" + needle + "»");
+        return all.get(0);
+    }
+
+    /** Все вхождения текста в PDF, в порядке вывода (одно число бывает и в цене, и в сумме), — как {@link #find}. */
+    static List<Placed> findAll(byte[] pdf, String needle) {
         try (PDDocument d = Loader.loadPDF(pdf)) {
             StringBuilder chars = new StringBuilder();
             List<TextPosition> glyphs = new ArrayList<>();
@@ -135,18 +142,20 @@ final class KpTestSupport {
             };
             stripper.getText(d);
             String target = needle.replaceAll("[\\s\\u00A0]", "");
-            int at = chars.indexOf(target);
-            if (at < 0) throw new AssertionError("в PDF нет текста «" + needle + "»");
-            float left = Float.MAX_VALUE, top = Float.MAX_VALUE, right = -Float.MAX_VALUE, bottom = -Float.MAX_VALUE;
-            for (TextPosition g : glyphs.subList(at, at + target.length())) {
-                left = Math.min(left, g.getXDirAdj());
-                right = Math.max(right, g.getXDirAdj() + g.getWidthDirAdj());
-                top = Math.min(top, g.getYDirAdj() - g.getHeightDir());
-                bottom = Math.max(bottom, g.getYDirAdj());
+            List<Placed> found = new ArrayList<>();
+            for (int at = chars.indexOf(target); at >= 0; at = chars.indexOf(target, at + 1)) {
+                float left = Float.MAX_VALUE, top = Float.MAX_VALUE, right = -Float.MAX_VALUE, bottom = -Float.MAX_VALUE;
+                for (TextPosition g : glyphs.subList(at, at + target.length())) {
+                    left = Math.min(left, g.getXDirAdj());
+                    right = Math.max(right, g.getXDirAdj() + g.getWidthDirAdj());
+                    top = Math.min(top, g.getYDirAdj() - g.getHeightDir());
+                    bottom = Math.max(bottom, g.getYDirAdj());
+                }
+                TextPosition first = glyphs.get(at);
+                found.add(new Placed(pages.get(at), mm(left), mm(top), mm(right), mm(bottom), first.getFont().getName(),
+                        first.getXScale()));
             }
-            TextPosition first = glyphs.get(at);
-            return new Placed(pages.get(at), mm(left), mm(top), mm(right), mm(bottom), first.getFont().getName(),
-                    first.getXScale());
+            return found;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

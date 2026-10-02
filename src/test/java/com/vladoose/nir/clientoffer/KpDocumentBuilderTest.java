@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /** Модель документа (спека §6): колонки, строки трёх видов, итоги, условия, бланк, подпись. */
 class KpDocumentBuilderTest {
@@ -314,12 +315,15 @@ class KpDocumentBuilderTest {
 
     /**
      * Теснота — в миллиметрах: колонки, которым тесно на книжном листе (178 мм), на альбомном (267 мм) помещаются — там
-     * обычный кегль. В сжатии деньги держат ровно свою нужду, а не долю по умолчанию (на альбомном листе цене хватает 8 %).
+     * обычный кегль. Доли по умолчанию на альбомном листе бывают больше 75 % — первыми уступают деньги и короткие излишком
+     * своей доли сверх нужды, ровно сколько нужно (цена: с «Страной» — своя доля 12 %, с колонками без НДС — 9 %), затем
+     * текст; до нужды (на альбомном листе цене хватает 8 %) — только когда без этого не обойтись.
      */
     @Test
     void landscapeMeasuresCrowdingInMillimetres() {
         String[][] extras = {{"COUNTRY"}, {"PRICE_NET", "VAT_SUM", "SUM_NET"}, {"MODEL", "MANUFACTURER", "COUNTRY"}};
         double[] portraitPt = {9.5, 8.0, 8.0};
+        int[] landscapePrice = {12, 9, 8};
         for (int i = 0; i < extras.length; i++) {
             ClientOffer o = KpFixtures.offer2409();
             for (String k : extras[i]) o.getTableColumns().add(new OfferColumn(k, null));
@@ -330,20 +334,127 @@ class KpDocumentBuilderTest {
             assertThat(d.tableFontPt()).as("альбомная +%s", (Object) extras[i]).isEqualTo(10.0);
             assertThat(d.columns().stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
             assertThat(d.columns()).filteredOn(c -> c.key().equals("PRICE")).extracting(KpDocument.Column::percent)
-                    .containsExactly(8);
+                    .as("альбомная +%s", (Object) extras[i]).containsExactly(landscapePrice[i]);
+            assertThat(d.columns().get(1).percent()).isGreaterThanOrEqualTo(25);
         }
     }
 
     /**
-     * Проценты — округлением наибольших остатков, а не вниз: «Страна» на книжном листе (9,5 pt, веса × 0,95) — номер,
-     * ед. изм. и кол-во не теряют по процентному пункту, наименование не забирает себе всё срезанное (было 4/30/6/6).
+     * Альбомный лист и «Страна»: доли по умолчанию — 78 % (наименованию осталось бы 22 %), а в миллиметрах тесноты нет —
+     * обычный кегль, и цена с суммой держат свою ширину (12 и 13 %, во втором раунде — 11 и 12 % при 9,5 pt), а не
+     * срезаются до нужды (8 и 8 %, пока наименованию доставался 31 %): уступают излишек короткие колонки и текст.
+     */
+    @Test
+    void landscapeWithCountryKeepsPriceAndSumAtTheirShare() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getTableColumns().add(new OfferColumn("COUNTRY", null));
+        o.setLandscape(true);
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(10.0);
+        assertThat(d.columns()).extracting(KpDocument.Column::key, KpDocument.Column::percent).contains(
+                tuple("PRICE", 12), tuple("SUM", 13));
+        assertThat(d.columns().get(1).percent()).isEqualTo(25);
+        assertThat(d.columns().stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
+    }
+
+    /**
+     * Классы колонок — по ключу: деньги и короткие (№, кол-во, ед. изм., ставка) не переносятся, текст (модель,
+     * производитель, страна, регистрация, примечание) переносится всегда, даже если в каждой ячейке одно «слово» (код
+     * модели, «Германия»). Короткая колонка со свободным текстом длиннее своей доли («упаковка» в ед. изм. на книжном листе:
+     * доля 7 % = 12,5 мм, слово ≈ 17 мм) в этом документе — текст; на альбомном листе (7 % = 18,7 мм) «упаковка» влезает —
+     * короткая.
+     */
+    @Test
+    void columnClassesFollowTheKeyAndAShortColumnWithLongTextWraps() {
+        ClientOffer o = KpFixtures.offer2409();
+        ClientOfferItem gloves = KpFixtures.line(o, "Перчатки смотровые", 1000, "15.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        for (ClientOfferItem it : o.getItems()) {
+            it.setModel("ABCDEFGHIJKLMNOPQRSTUV");
+            it.setManufacturer("Mindray");
+            it.setCountry("Германия");
+            it.setNote("Новинка");
+        }
+        for (String k : new String[] {"MODEL", "MANUFACTURER", "COUNTRY", "NOTE"}) o.getTableColumns().add(new OfferColumn(k, null));
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.columns()).filteredOn(KpDocument.Column::nowrap).extracting(KpDocument.Column::key)
+                .containsExactly("NUM", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM");
+
+        gloves.setUnit("упаковка");
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
+                .extracting(KpDocument.Column::key).containsExactly("NUM", "QTY", "PRICE", "VAT_RATE", "SUM");
+        o.setLandscape(true);
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
+                .extracting(KpDocument.Column::key).containsExactly("NUM", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM");
+    }
+
+    /**
+     * Таблицы на 12 строк, которым хватает шагов 1–3 подбора (кегль; сжатие текста; наименование до 20 %): «№» и «Кол-во»
+     * не уже полей ячейки и одной буквы (1 em) — номера 10–12 не рвутся. Раньше запасной путь сжимал их до 3 % = 5,3 мм.
+     */
+    @Test
+    void rowNumberAndQuantityKeepPaddingAndAGlyphInTwelveRowTables() {
+        String[][] sets = {{"MODEL", "MANUFACTURER", "COUNTRY"}, {"PRICE_NET", "VAT_SUM", "SUM_NET"},
+                {"PRICE_NET", "VAT_SUM", "SUM_NET", "COUNTRY"}, {"MODEL", "MANUFACTURER", "COUNTRY", "NOTE"}};
+        for (boolean landscape : new boolean[] {false, true}) {
+            for (String[] extras : sets) {
+                ClientOffer o = KpFixtures.offer2409();
+                for (int i = 0; i < 8; i++) KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+                for (String k : extras) o.getTableColumns().add(new OfferColumn(k, null));
+                o.setLandscape(landscape);
+                KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+                double page = landscape ? 267 : 178, minMm = 2 * 1.5 + d.tableFontPt() * 25.4 / 72;
+                for (String key : new String[] {"NUM", "QTY"}) {
+                    assertThat(d.columns()).filteredOn(c -> c.key().equals(key)).singleElement()
+                            .satisfies(c -> assertThat(c.percent() * page / 100).as("%s %s +%s", landscape ? "альбомная" : "книжная",
+                                    key, String.join("+", extras)).isGreaterThanOrEqualTo(minMm));
+                }
+            }
+        }
+    }
+
+    /**
+     * Все 15 колонок на книжном листе (обычные цены) — единственный из наборов КП, которому не хватает и шага 3: деньги по
+     * нужде (68 %) и текст по пределу (5 колонок × 5 %) не оставляют наименованию и 20 %. Это шаг 4 — прежнее
+     * пропорциональное сжатие: наименованию четверть, цене 6 % = 10,7 мм, хотя «105 600,00» в 8 pt — 12,7 мм с полями 15,7 мм
+     * (числа выходят за ячейки; редактор предложит альбомный лист). Те же колонки на альбомном листе влезают в шаг 2.
+     */
+    @Test
+    void fifteenColumnsOnPortraitAreLeftToTheProportionalSqueeze() {
+        ClientOffer o = KpFixtures.offer2409();
+        List<OfferColumn> all = new ArrayList<>();
+        for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
+        o.setTableColumns(all);
+        double priceMm = 4.5 * 8 * 25.4 / 72 + 2 * 1.5;   // «105 600,00»: 8 цифр по 0,5 em, пробел и запятая по 0,25 em
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(8.0);
+        assertThat(d.columns().get(1).percent()).isEqualTo(25);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("PRICE")).singleElement()
+                .satisfies(c -> assertThat(c.percent() * 178.0 / 100).isLessThan(priceMm));
+        o.setLandscape(true);
+        d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(8.0);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("PRICE")).singleElement()
+                .satisfies(c -> assertThat(c.percent() * 267.0 / 100).isGreaterThanOrEqualTo(priceMm));
+    }
+
+    /**
+     * Проценты: деньгам и коротким — округлением вверх (их ширина не урезается и на долю процента), остальным —
+     * наибольшими остатками, а не вниз: «Страна» на книжном листе (9,5 pt, веса × 0,95: номер 4,75, ед. изм. и кол-во
+     * 6,65, цена 11,4, ставка 7,6, сумма 12,35) — 5/7/7/12/8/13, а регистрация, страна и наименование делят остальное
+     * (было при округлении вниз 4/30/6/6, при наибольших остатках для всех — цена 11, сумма 12). Недостача округления —
+     * наибольшему остатку, а не наименованию: «Страна», «Производитель» и миллионы (8 pt, регистрация 13,6, страна 7,2,
+     * производитель 12, наименование 25,2) — пункт получает регистрация.
      */
     @Test
     void percentsUseLargestRemainders() {
         ClientOffer o = KpFixtures.offer2409();
         o.getTableColumns().add(new OfferColumn("COUNTRY", null));
         assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
-                .containsExactly(5, 26, 7, 7, 11, 8, 12, 16, 8);
+                .containsExactly(5, 25, 7, 7, 12, 8, 13, 15, 8);
+        KpFixtures.withMillionPrices(o);
+        o.getTableColumns().add(new OfferColumn("MANUFACTURER", null));
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
+                .containsExactly(4, 25, 5, 4, 11, 6, 12, 14, 7, 12);
     }
 
     /**

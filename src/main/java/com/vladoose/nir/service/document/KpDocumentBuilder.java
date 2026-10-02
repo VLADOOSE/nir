@@ -41,8 +41,17 @@ public class KpDocumentBuilder {
      * берётся большее, чтобы число влезло в обоих документах.
      */
     private static final double CELL_PADDING_MM = 3.8;
-    /** Самая узкая колонка — поля и одна буква: самые широкие буквы (Ш, Щ, Ю, М, W) — около 1 em. */
+    /** Самая узкая колонка денег и короткая — поля и одна буква: самые широкие буквы (Ш, Щ, Ю, М, W) — около 1 em. */
     private static final double ONE_GLYPH_EM = 1.0;
+    /**
+     * Текстовую колонку сжатие (шаги 2–3 подбора) не уводит уже полей и четырёх букв: четыре буквы средней ширины — 2 em
+     * (строчная кириллица Liberation Serif по частотам букв — 0,498 em), поля — ячейки PDF, 2 × 1,5 мм (offer.html). Текст
+     * переносится и за ячейку не выходит, поэтому здесь поля PDF, а не большие поля Word (в самой узкой текстовой колонке
+     * Word — около 3,6 буквы в строке); с полями Word книжная таблица в 11 колонок с миллионами не влезала бы и в шаг 3.
+     */
+    private static final double TEXT_MIN_EM = 4 * 0.5, TEXT_PADDING_MM = 2 * 1.5;
+    /** Наименованию — не меньше четверти ширины, в крайнем случае (шаг 3 подбора) — пятой части. */
+    private static final double NAME_MIN_PERCENT = 25, NAME_MIN_SQUEEZED_PERCENT = 20;
     /**
      * Ширина набора, мм: A4 без полей страницы — @page в KpHtmlRenderer.pageCss (книжная 20/12, альбомная 15/15), у Word
      * те же. Веса колонок по умолчанию (OfferColumnKey.weight) — доли книжного листа: на альбомном та же колонка в
@@ -50,7 +59,11 @@ public class KpDocumentBuilder {
      */
     private static final double TEXT_WIDTH_PORTRAIT_MM = 210 - 20 - 12, TEXT_WIDTH_LANDSCAPE_MM = 297 - 15 - 15;
     private static final double MM_PER_PT = 25.4 / 72;
-    /** Короткие колонки — одно «слово» в ячейке (номер, количество, единица, ставка): ширина по содержимому, без переноса. */
+    /**
+     * Классы колонок — по ключу: деньги — выравнивание вправо (цена, цена без НДС, сумма НДС, суммы); короткие — номер,
+     * количество, единица, ставка: одно «слово» в ячейке, ширина по содержимому, без переноса. Остальные — текст: всегда
+     * переносятся (длинный код модели без пробелов — внутри своей ячейки, спека §6.4).
+     */
     private static final Set<OfferColumnKey> SHORT_COLUMNS =
             EnumSet.of(OfferColumnKey.NUM, OfferColumnKey.QTY, OfferColumnKey.UNIT, OfferColumnKey.VAT_RATE);
     private static final double EPS = 1e-9;
@@ -119,18 +132,21 @@ public class KpDocumentBuilder {
     private enum Fit { NAME, MONEY, SHORT, TEXT }
 
     /**
-     * Ширины колонок и кегль таблицы. Деньги и короткие колонки (№, кол-во, ед. изм., ставка и любая колонка, где в каждой
-     * ячейке одно «слово») не переносятся — их колонка не уже самого длинного содержимого; любая колонка — не уже полей
-     * и одной буквы; остальные колонки (кроме наименования) — по весу по умолчанию.
-     * <ul>
-     * <li>Теснота — в миллиметрах: всё, кроме наименования, на книжном листе должно влезть в 75 % ширины; на альбомном те
-     * же колонки в миллиметрах занимают меньшую долю — таблица, которой хватает 267 мм, остаётся в обычном кегле.</li>
-     * <li>Тесно — таблица мельчает: от 10 до 8 pt шагом 0,5 pt; с кеглем пропорционально уменьшаются веса по умолчанию
-     * (мельче буквы — меньше места), содержимое считается заново. Первый подошедший кегль — ответ.</li>
-     * <li>Доли не влезают в 75 % (на альбомном листе — проценты те же, что на книжном, а физически места хватает; или
-     * не хватило и 8 pt) — сжатие: деньги — ровно по нужде, остальные — пропорционально весам, но не ниже своего минимума.
-     * Минимумы не влезают и в 8 pt (абсурдно тесная таблица) — прежнее пропорциональное сжатие всех колонок.</li>
-     * </ul>
+     * Ширины колонок и кегль таблицы. Классы колонок — по ключу (SHORT_COLUMNS): деньги и короткие не переносятся, их
+     * «нужда» — самое длинное содержимое (и не меньше одной буквы) + поля; текст переносится всегда. Короткая колонка
+     * со свободным текстом длиннее своей доли по умолчанию (ед. изм. «упаковка по 100 шт», ставка «Без НДС») в этом
+     * документе считается текстовой. Тесная таблица уступает по порядку — первый подошедший шаг:
+     * <ol>
+     * <li>кегль от 10 до 8 pt шагом 0,5: деньги и короткие — большее из доли по умолчанию × кегль / 10 и нужды, текст —
+     * доля по умолчанию × кегль / 10, наименованию — остаток, не меньше четверти. Теснота — в миллиметрах (доли по
+     * умолчанию — книжного листа), раскладка — в долях листа; на альбомном листе, где теснота позволяет кегль, а доли
+     * вместе больше 75 %, первыми уступают деньги и короткие (излишек сверх нужды, ровно сколько нужно), затем текст;</li>
+     * <li>8 pt: деньги и короткие — ровно по нужде, текст сжимается пропорционально, не уже полей и четырёх букв,
+     * наименованию — не меньше четверти;</li>
+     * <li>то же, наименованию — не меньше пятой части;</li>
+     * <li>только абсурдно тесная таблица: прежнее пропорциональное сжатие всех колонок (числа шире своих ячеек —
+     * редактор предложит альбомный лист).</li>
+     * </ol>
      * Обычные КП не меняются: 10 pt и доли по умолчанию держат цену (12 %) до 999 999,99 и сумму (13 %) до 9 999 999,99.
      */
     private static TableFit fitTable(List<KpDocument.Column> columns, List<KpDocument.Row> rows, boolean landscape) {
@@ -140,101 +156,211 @@ public class KpDocumentBuilder {
         List<String> labels = new ArrayList<>();
         Fit[] fit = new Fit[n];
         double[] widestEm = new double[n];   // самая длинная строка ячейки колонки, em
+        boolean[] nowrap = new boolean[n];
         for (int i = 0; i < n; i++) {
             OfferColumnKey key = OfferColumnKey.parse(columns.get(i).key());
             keys.add(key);
             labels.add(columns.get(i).label());
-            boolean filled = false, singleWords = true;
             for (KpDocument.Row r : rows) {
                 if (i >= r.cells().size()) continue;   // объединённая ячейка раздела / «включено» — не своя
-                for (String line : r.cells().get(i)) {
-                    if (line.isBlank()) continue;
-                    filled = true;
-                    singleWords &= line.trim().indexOf(' ') < 0;   // переносится только по обычному пробелу (NBSP — нет)
-                    widestEm[i] = Math.max(widestEm[i], textEm(line));
-                }
+                for (String line : r.cells().get(i)) widestEm[i] = Math.max(widestEm[i], textEm(line));
             }
             fit[i] = key == OfferColumnKey.NAME ? Fit.NAME
                     : key.align() == ColumnAlign.RIGHT ? Fit.MONEY
-                    : SHORT_COLUMNS.contains(key) || (filled && singleWords) ? Fit.SHORT : Fit.TEXT;
+                    : SHORT_COLUMNS.contains(key) ? Fit.SHORT : Fit.TEXT;
+            if (fit[i] == Fit.SHORT && widestEm[i] * TABLE_FONT_PT * MM_PER_PT > key.weight() * page / 100) fit[i] = Fit.TEXT;
+            nowrap[i] = content(fit[i]);
         }
-        boolean[] nowrap = new boolean[n];
-        for (int i = 0; i < n; i++) nowrap[i] = fit[i] == Fit.MONEY || fit[i] == Fit.SHORT;
+        // 1. кегль 10 → 8 pt, теснота — в миллиметрах
         for (double pt = TABLE_FONT_PT; pt >= MIN_TABLE_FONT_PT; pt -= TABLE_FONT_STEP_PT) {
-            double[] physical = weightsAt(keys, fit, widestEm, pt, page, TEXT_WIDTH_PORTRAIT_MM / page);
-            if (others(keys, physical) > OTHERS_MAX_PERCENT + EPS) continue;   // тесно в миллиметрах — мельче
-            double[] fitted = squeeze(fit, weightsAt(keys, fit, widestEm, pt, page, 1), minimums(fit, widestEm, pt, page));
-            if (fitted != null) return new TableFit(sized(keys, labels, nowrap, fitted), pt);
+            if (sum(fit, targets(keys, fit, widestEm, pt, page, TEXT_WIDTH_PORTRAIT_MM / page)) > OTHERS_MAX_PERCENT + EPS) continue;
+            double[] needs = needs(fit, widestEm, pt, page);
+            double[] targets = targets(keys, fit, widestEm, pt, page, 1);
+            double[] floors = textFloors(fit, targets, pt, page);
+            double[] fitted = relieve(fit, targets, needs, floors, 100 - NAME_MIN_PERCENT);
+            if (fitted != null) return new TableFit(columnList(keys, labels, nowrap, percents(fit, fitted, needs, floors, NAME_MIN_PERCENT)), pt);
         }
-        double[] weights = weightsAt(keys, fit, widestEm, MIN_TABLE_FONT_PT, page, 1);
-        double[] fitted = squeeze(fit, weights, minimums(fit, widestEm, MIN_TABLE_FONT_PT, page));
-        return new TableFit(sized(keys, labels, nowrap, fitted != null ? fitted : weights), MIN_TABLE_FONT_PT);
+        // 2, 3. 8 pt: деньги и короткие — по нужде, текст сжимается; наименованию — четверть, затем пятая часть
+        double pt = MIN_TABLE_FONT_PT;
+        double[] needs = needs(fit, widestEm, pt, page);
+        double[] targets = targets(keys, fit, widestEm, pt, page, 1);
+        double[] floors = textFloors(fit, targets, pt, page);
+        for (double nameMin : new double[] {NAME_MIN_PERCENT, NAME_MIN_SQUEEZED_PERCENT}) {
+            double[] fitted = squeezeText(fit, targets, needs, floors, 100 - nameMin);
+            if (fitted != null) return new TableFit(columnList(keys, labels, nowrap, percents(fit, fitted, needs, floors, nameMin)), pt);
+        }
+        // 4. абсурдно тесная таблица — прежнее пропорциональное сжатие (числа могут выйти за свои ячейки)
+        return new TableFit(sized(keys, labels, nowrap, targets), pt);
+    }
+
+    /** Нужда колонки денег или короткой при кегле pt, % ширины набора (целая — округление её не урежет). */
+    private static int need(double widestEm, double pt, double page) {
+        return (int) Math.ceil((Math.max(widestEm, ONE_GLYPH_EM) * pt * MM_PER_PT + CELL_PADDING_MM) * 100 / page - EPS);
+    }
+
+    private static double[] needs(Fit[] fit, double[] widestEm, double pt, double page) {
+        double[] needs = new double[fit.length];
+        for (int i = 0; i < fit.length; i++) {
+            if (content(fit[i])) needs[i] = need(widestEm[i], pt, page);
+        }
+        return needs;
     }
 
     /**
-     * Веса колонок при кегле pt, % ширины набора: вес по умолчанию × кегль / 10 × scale (scale — доля книжного листа в
-     * текущем: проверка тесноты в миллиметрах; 1 — доли раскладки), но не меньше минимума колонки.
+     * Веса шага 1 при кегле pt, % ширины набора: доля по умолчанию × кегль / 10 × scale (scale — доля книжного листа в
+     * текущем: проверка тесноты в миллиметрах; 1 — доли раскладки), у денег и коротких — не меньше нужды.
      */
-    private static double[] weightsAt(List<OfferColumnKey> keys, Fit[] fit, double[] widestEm, double pt, double page, double scale) {
-        double[] minimum = minimums(fit, widestEm, pt, page);
-        double[] weights = new double[keys.size()];
-        for (int i = 0; i < keys.size(); i++) {
-            if (fit[i] != Fit.NAME) weights[i] = Math.max(keys.get(i).weight() * pt / TABLE_FONT_PT * scale, minimum[i]);
-        }
-        return weights;
-    }
-
-    /**
-     * Минимум колонки при кегле pt, % ширины набора (целый — округление его не урежет): поля ячейки и самое длинное
-     * содержимое у денег и коротких колонок, у любой колонки — не меньше полей и одной буквы.
-     */
-    private static double[] minimums(Fit[] fit, double[] widestEm, double pt, double page) {
-        double[] minimum = new double[fit.length];
+    private static double[] targets(List<OfferColumnKey> keys, Fit[] fit, double[] widestEm, double pt, double page, double scale) {
+        double[] targets = new double[fit.length];
         for (int i = 0; i < fit.length; i++) {
             if (fit[i] == Fit.NAME) continue;
-            double em = fit[i] == Fit.MONEY || fit[i] == Fit.SHORT ? Math.max(widestEm[i], ONE_GLYPH_EM) : ONE_GLYPH_EM;
-            minimum[i] = Math.ceil((em * pt * MM_PER_PT + CELL_PADDING_MM) * 100 / page - EPS);
+            targets[i] = keys.get(i).weight() * pt / TABLE_FONT_PT * scale;
+            if (fit[i] != Fit.TEXT) targets[i] = Math.max(targets[i], need(widestEm[i], pt, page));
         }
-        return minimum;
+        return targets;
+    }
+
+    /** Нижний предел текстовой колонки: поля и четыре буквы (но не больше её доли — сжатие не расширяет). */
+    private static double[] textFloors(Fit[] fit, double[] targets, double pt, double page) {
+        double[] floors = new double[fit.length];
+        double glyphs = Math.ceil((TEXT_MIN_EM * pt * MM_PER_PT + TEXT_PADDING_MM) * 100 / page - EPS);
+        for (int i = 0; i < fit.length; i++) if (fit[i] == Fit.TEXT) floors[i] = Math.min(targets[i], glyphs);
+        return floors;
     }
 
     /**
-     * Сжатие в 75 %: деньги — ровно по нужде (не по весу по умолчанию), остальные колонки делят оставшееся пропорционально
-     * своим весам, но не ниже минимума: упёршаяся в минимум остаётся на нём, остальные делят остаток заново. null —
-     * минимумы не влезают.
+     * Шаг 1 на альбомном листе: теснота в миллиметрах позволяет кегль, а доли по умолчанию (доли листа) вместе больше 75 % —
+     * первыми уступают деньги и короткие: излишек своей доли сверх нужды, пропорционально излишку и ровно сколько нужно (не
+     * «до нужды»); не хватило — текст, пропорционально, не уже своего предела. На книжном листе доли и миллиметры совпадают —
+     * сюда доходит только то, что влезает. null — не влезает и так (пробуется кегль меньше).
      */
-    private static double[] squeeze(Fit[] fit, double[] weights, double[] minimum) {
-        double total = 0;
-        for (int i = 0; i < fit.length; i++) if (fit[i] != Fit.NAME) total += weights[i];
-        if (total <= OTHERS_MAX_PERCENT + EPS) return weights;
-        double[] squeezed = new double[fit.length];
-        double rest = OTHERS_MAX_PERCENT;
-        List<Integer> free = new ArrayList<>();
+    private static double[] relieve(Fit[] fit, double[] targets, double[] needs, double[] floors, double budget) {
+        double over = sum(fit, targets) - budget;
+        if (over <= EPS) return targets;
+        double spare = 0;
+        for (int i = 0; i < fit.length; i++) if (content(fit[i])) spare += targets[i] - needs[i];
+        double fromSpare = Math.min(over, spare);
+        double[] relieved = targets.clone();
         for (int i = 0; i < fit.length; i++) {
-            if (fit[i] == Fit.MONEY) {
-                squeezed[i] = minimum[i];
-                rest -= minimum[i];
-            } else if (fit[i] != Fit.NAME) {
-                free.add(i);
+            if (content(fit[i]) && spare > EPS) relieved[i] = targets[i] - (targets[i] - needs[i]) * fromSpare / spare;
+        }
+        double fromText = over - fromSpare;
+        if (fromText <= EPS) return relieved;
+        double text = sum(fit, Fit.TEXT, targets);
+        if (text - fromText + EPS < sum(fit, Fit.TEXT, floors)) return null;
+        double[] shrunk = shrink(fit, Fit.TEXT, targets, floors, text - fromText);
+        for (int i = 0; i < fit.length; i++) if (fit[i] == Fit.TEXT) relieved[i] = shrunk[i];
+        return relieved;
+    }
+
+    /** Шаги 2–3: деньги и короткие — ровно по нужде, текст — пропорционально, не уже своего предела. null — не влезает. */
+    private static double[] squeezeText(Fit[] fit, double[] targets, double[] needs, double[] floors, double budget) {
+        double[] squeezed = new double[fit.length];
+        double rest = budget;
+        for (int i = 0; i < fit.length; i++) {
+            if (content(fit[i])) {
+                squeezed[i] = needs[i];
+                rest -= needs[i];
             }
         }
-        while (rest >= -EPS) {
+        if (rest + EPS < sum(fit, Fit.TEXT, floors)) return null;
+        double[] text = shrink(fit, Fit.TEXT, targets, floors, Math.min(rest, sum(fit, Fit.TEXT, targets)));
+        for (int i = 0; i < fit.length; i++) if (fit[i] == Fit.TEXT) squeezed[i] = text[i];
+        return squeezed;
+    }
+
+    /**
+     * Колонки класса kind — в сумму total: пропорционально весам, но не ниже своего предела («водяное заполнение»:
+     * упёршаяся в предел колонка остаётся на нём, остальные делят остаток заново).
+     */
+    private static double[] shrink(Fit[] fit, Fit kind, double[] weights, double[] floors, double total) {
+        double[] shrunk = new double[fit.length];
+        List<Integer> free = new ArrayList<>();
+        for (int i = 0; i < fit.length; i++) if (fit[i] == kind) free.add(i);
+        double rest = total;
+        while (!free.isEmpty()) {
             double sum = 0;
             for (int i : free) sum += weights[i];
             double share = sum > 0 ? Math.min(1, rest / sum) : 1;
             List<Integer> stuck = new ArrayList<>();
-            for (int i : free) if (weights[i] * share < minimum[i] - EPS) stuck.add(i);
+            for (int i : free) if (weights[i] * share < floors[i] - EPS) stuck.add(i);
             if (stuck.isEmpty()) {
-                for (int i : free) squeezed[i] = weights[i] * share;
-                return squeezed;
+                for (int i : free) shrunk[i] = weights[i] * share;
+                break;
             }
             for (int i : stuck) {
-                squeezed[i] = minimum[i];
-                rest -= minimum[i];
+                shrunk[i] = floors[i];
+                rest -= floors[i];
             }
             free.removeAll(stuck);
         }
-        return null;
+        return shrunk;
+    }
+
+    private static double sum(Fit[] fit, double[] weights) {
+        double sum = 0;
+        for (int i = 0; i < fit.length; i++) if (fit[i] != Fit.NAME) sum += weights[i];
+        return sum;
+    }
+
+    private static double sum(Fit[] fit, Fit kind, double[] weights) {
+        double sum = 0;
+        for (int i = 0; i < fit.length; i++) if (fit[i] == kind) sum += weights[i];
+        return sum;
+    }
+
+    /** Деньги и короткие: ширина по содержимому, без переноса. */
+    private static boolean content(Fit fit) {
+        return fit == Fit.MONEY || fit == Fit.SHORT;
+    }
+
+    /**
+     * Целые проценты шагов 1–3, сумма 100. Деньгам и коротким — их доля, округлённая вверх (нужда — целая, ниже неё
+     * округление их не уводит), остальным — наибольшие остатки от оставшегося. Перебор снимается с тех, кто выше своего
+     * предела (текст — поля и четыре буквы, наименование — его минимум), в последнюю очередь — с денег и коротких сверх
+     * нужды.
+     */
+    private static int[] percents(Fit[] fit, double[] weights, double[] needs, double[] floors, double nameMin) {
+        int n = fit.length;
+        double[] exact = new double[n];
+        int[] percent = new int[n], lower = new int[n];
+        double others = 0;
+        int name = -1;
+        for (int i = 0; i < n; i++) {
+            if (fit[i] == Fit.NAME) {
+                name = i;
+                continue;
+            }
+            exact[i] = weights[i];
+            others += weights[i];
+        }
+        exact[name] = 100 - others;
+        int sum = 0;
+        for (int i = 0; i < n; i++) {
+            lower[i] = i == name ? (int) Math.ceil(nameMin - EPS)
+                    : content(fit[i]) ? (int) needs[i] : (int) Math.floor(floors[i] + EPS);
+            percent[i] = Math.max(lower[i], content(fit[i]) ? (int) Math.ceil(exact[i] - EPS) : (int) Math.floor(exact[i] + EPS));
+            sum += percent[i];
+        }
+        while (sum < 100) {   // недостача — тем, у кого остаток больше
+            int best = -1;
+            for (int i = 0; i < n; i++) if (best < 0 || exact[i] - percent[i] > exact[best] - percent[best]) best = i;
+            percent[best]++;
+            sum++;
+        }
+        while (sum > 100) {   // перебор — у тех, кто выше предела: сперва текст и наименование, затем деньги и короткие
+            int best = -1;
+            for (int pass = 0; pass < 2 && best < 0; pass++) {
+                for (int i = 0; i < n; i++) {
+                    if (percent[i] <= lower[i] || content(fit[i]) != (pass == 1)) continue;
+                    if (best < 0 || exact[i] - percent[i] < exact[best] - percent[best]) best = i;
+                }
+            }
+            if (best < 0) break;   // все на пределе — не случается: пределы шагов 1–3 вместе не больше 100
+            percent[best]--;
+            sum--;
+        }
+        return percent;
     }
 
     private static double others(List<OfferColumnKey> keys, double[] weights) {
@@ -293,8 +419,12 @@ public class KpDocumentBuilder {
         for (int i = 0; i < n; i++) byRemainder[i] = i;
         Arrays.sort(byRemainder, (a, b) -> Double.compare(exact[b] - percent[b], exact[a] - percent[a]));
         for (int k = 0; k < 100 - sum; k++) percent[byRemainder[k]]++;
+        return columnList(keys, labels, nowrap, percent);
+    }
+
+    private static List<KpDocument.Column> columnList(List<OfferColumnKey> keys, List<String> labels, boolean[] nowrap, int[] percent) {
         List<KpDocument.Column> result = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < keys.size(); i++) {
             OfferColumnKey k = keys.get(i);
             result.add(new KpDocument.Column(k.name(), labels.get(i), k.align(), percent[i], nowrap[i]));
         }
