@@ -40,7 +40,13 @@ public class WahaCatchUp {
     }
 
     /** Сколько новых событий легло в очередь. account — номер сессии без «@c.us» (null — не привязан). */
-    public int run(String session, String account) {
+    public int run(String session, String account) { return run(session, account, () -> { }); }
+
+    /**
+     * onPage — после каждой страницы истории: догонка (до 50 страниц по ≤90 с) идёт в потоке приёма, и без отметки
+     * движения долгая догонка выглядела бы как «приём не продвигается» в строке состояния.
+     */
+    public int run(String session, String account, Runnable onPage) {
         if (account == null) return 0;
         OffsetDateTime latest = messages.findLatestSentAt(LeadChannel.WHATSAPP, account);
         if (latest == null) return 0;
@@ -48,6 +54,7 @@ public class WahaCatchUp {
         int added = 0;
         for (int page = 0; page < MAX_PAGES; page++) {
             List<JsonNode> batch = client.history(session, from, PAGE, page * PAGE);
+            onPage.run();
             for (JsonNode m : batch) {
                 // фильтру WAHA по времени не верим вслепую: старше окна — это переписка до привязки (решение 9)
                 if (epochSec(m.path("timestamp").asLong(0)) < from) continue;

@@ -120,7 +120,7 @@ public class WahaInboxSource implements WhatsappSource {
 
     private void runCatchUp(WhatsappStatusHolder status) {
         try {
-            int added = catchUp.run(sessions.session(), sessions.account());
+            int added = catchUp.run(sessions.session(), sessions.account(), status::progress);
             if (added > 0) log.info("WhatsApp: догонка добавила в очередь сообщений: {}", added);
             if (catchUpFailed) {
                 status.setSourceWarnings(List.of());

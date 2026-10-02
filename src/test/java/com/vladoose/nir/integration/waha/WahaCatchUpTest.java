@@ -96,6 +96,19 @@ class WahaCatchUpTest {
         assertThat(repository.findByMessageKey("false_3EB0" + account + "NEW")).hasSize(1);
     }
 
+    /** Каждая страница истории отмечается: долгая догонка — движение приёма, а не «застрявший» проход. */
+    @Test
+    void everyHistoryPageIsReported() {
+        long t = Instant.now().getEpochSecond() - 3600;
+        stored(t);
+        for (int i = 0; i < 150; i++) fake.history.add(historyMessage("3EB0" + account + "P" + i, t + i));
+        int[] pages = {0};
+
+        catchUp().run("westmed", account, () -> pages[0]++);
+
+        assertThat(pages[0]).isEqualTo(2);
+    }
+
     @Test
     void messageAlreadyQueuedByWebhookIsNotDuplicated() {
         long t = Instant.now().getEpochSecond() - 3600;

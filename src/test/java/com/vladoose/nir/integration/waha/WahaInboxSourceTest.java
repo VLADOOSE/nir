@@ -60,9 +60,10 @@ class WahaInboxSourceTest {
         CountingCatchUp() { super(fake, inbox, messages, objectMapper, 10); }
 
         @Override
-        public int run(String session, String account) {
+        public int run(String session, String account, Runnable onPage) {
             runs++;
             if (failWith != null) throw failWith;
+            onPage.run();                              // одна «страница» истории
             return 0;
         }
     }
@@ -247,6 +248,23 @@ class WahaInboxSourceTest {
         s.housekeeping(status);
 
         assertThat(catchUp.runs).isEqualTo(2);
+    }
+
+    /**
+     * Долгая догонка (до 50 страниц) идёт в потоке приёма: каждая страница — движение приёма, иначе через 5 мин
+     * строка ложно писала бы «приём не продвигается — перезапустите бэкенд» (финальное ревью ветки).
+     */
+    @Test
+    void catchUpPagesCountAsProgress() {
+        fake.session = new WahaSession("westmed", "WORKING", WahaJson.ME, "West-Med");
+        int[] progress = {0};
+        WhatsappStatusHolder status = new WhatsappStatusHolder() {
+            @Override public void progress() { progress[0]++; super.progress(); }
+        };
+
+        source(0, new CountingCatchUp()).housekeeping(status);
+
+        assertThat(progress[0]).isEqualTo(1);
     }
 
     /** Догонка упала — предупреждение в строке, приём идёт; удалась — предупреждение снято. */
