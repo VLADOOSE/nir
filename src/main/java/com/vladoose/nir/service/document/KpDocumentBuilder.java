@@ -13,9 +13,12 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /** КП + реквизиты рынка + расчёт → KpDocument (спека §6.1–§6.3). */
 @Component
@@ -25,6 +28,17 @@ public class KpDocumentBuilder {
     static final String INCLUDED_DEFAULT = "Включено в стоимость";
     private static final Set<OfferRegistrationStatus> PRINTED_REGISTRATION =
             Set.of(OfferRegistrationStatus.CONFIRMED, OfferRegistrationStatus.NOT_REQUIRED, OfferRegistrationStatus.MANUAL);
+
+    /**
+     * Сокращения, точка которых в конце условия — часть слова, а не конец фразы: «до 31.12.2026 г.», «и т.д.», «50 шт.».
+     * Слово перед последней точкой сравнивается целиком и без учёта регистра; в составных после внутренней точки
+     * допустим пробел («и т. д.»).
+     */
+    private static final List<String> TERM_ABBREVIATIONS =
+            List.of("г", "гг", "т.д", "т.п", "т.е", "руб", "коп", "тыс", "млн", "млрд", "шт", "ед", "др", "пр");
+    private static final Pattern ABBREVIATION_AT_END = Pattern.compile("(?iU)(?<!\\p{L})(?:" + TERM_ABBREVIATIONS.stream()
+            .map(a -> Arrays.stream(a.split("\\.")).map(Pattern::quote).collect(Collectors.joining("\\.\\s*")))
+            .collect(Collectors.joining("|")) + ")$");
 
     public KpDocument build(ClientOffer offer, CompanyProfile profile, OfferCalculation calc) {
         String currency = profile.getMarket().currencyCode();
@@ -190,11 +204,27 @@ public class KpDocumentBuilder {
         List<String> out = new ArrayList<>();
         for (int i = 0; i < filled.size(); i++) {
             OfferTerm t = filled.get(i);
-            String value = String.join(" ", lines(t.getValue())).replaceAll("[;.]+$", "");
-            String text = blankToNull(t.getLabel()) == null ? value : t.getLabel().trim() + ": " + value;
-            out.add((i + 1) + ". " + text + (i < filled.size() - 1 ? ";" : "."));
+            String value = withListItemEnd(String.join(" ", lines(t.getValue())), i == filled.size() - 1);
+            String label = termLabel(t.getLabel());
+            out.add((i + 1) + ". " + (label.isEmpty() ? value : label + ": " + value));
         }
         return out;
+    }
+
+    /**
+     * Знак конца пункта: «;», у последнего — «.». Свои «.» и «;» на конце значения снимаются, кроме точки сокращения
+     * ({@link #TERM_ABBREVIATIONS}): «до 31.12.2026 г.;», а последний пункт — «… г.», без второй точки.
+     */
+    private static String withListItemEnd(String value, boolean last) {
+        String core = value.replaceAll("[;.]+$", "");
+        boolean abbreviation = value.startsWith(".", core.length()) && ABBREVIATION_AT_END.matcher(core).find();
+        if (abbreviation) core += ".";
+        return core + (last ? (abbreviation ? "" : ".") : ";");
+    }
+
+    /** Подпись условия без своих «:» и пробелов на конце: «Порядок оплаты:» не превращается в «Порядок оплаты:: …». */
+    private static String termLabel(String label) {
+        return label == null ? "" : label.replaceAll("(?U)[\\s:]+$", "").trim();
     }
 
     private static KpDocument.Signoff signoff(ClientOffer offer, CompanyProfile profile) {

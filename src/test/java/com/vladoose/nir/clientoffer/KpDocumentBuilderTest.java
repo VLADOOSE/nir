@@ -355,6 +355,40 @@ class KpDocumentBuilderTest {
     }
 
     @Test
+    void termsListKeepsTheDotOfAnAbbreviation() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        o.setTerms(new ArrayList<>(List.of(
+                new OfferTerm("Срок действия КП", "до 15.10.2026 г."),
+                new OfferTerm("", "Цены действительны в течение 10 дней."),
+                new OfferTerm("Сервисный центр", "г. Оренбург."),            // «г» — конец слова «Оренбург», не сокращение
+                new OfferTerm("Документы", "счёт-фактура, накладная и т.д."),
+                new OfferTerm("Комплектация", "кабели, датчики и т. п."),
+                new OfferTerm("", "ЦЕНЫ ДЕЙСТВИТЕЛЬНЫ ДО 31.10.2026 Г."),
+                new OfferTerm("Оплата", "до 20.10.2026 г"),                  // точки не было — не дописываем
+                new OfferTerm("Срок поставки", "не позднее 31.12.2026 г."))));
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).termsList()).containsExactly(
+                "1. Срок действия КП: до 15.10.2026 г.;",
+                "2. Цены действительны в течение 10 дней;",
+                "3. Сервисный центр: г. Оренбург;",
+                "4. Документы: счёт-фактура, накладная и т.д.;",
+                "5. Комплектация: кабели, датчики и т. п.;",
+                "6. ЦЕНЫ ДЕЙСТВИТЕЛЬНЫ ДО 31.10.2026 Г.;",
+                "7. Оплата: до 20.10.2026 г;",
+                "8. Срок поставки: не позднее 31.12.2026 г.");
+    }
+
+    @Test
+    void termLabelTypedWithAColonGetsASingleOne() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        o.setTerms(new ArrayList<>(List.of(new OfferTerm("Порядок оплаты:", "100% предоплата"),
+                new OfferTerm("Форма оплаты :  ", "безналичная"),
+                new OfferTerm(" : ", "Цены действительны в течение 10 дней"))));   // от подписи осталось пусто
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).termsList()).containsExactly(
+                "1. Порядок оплаты: 100% предоплата;", "2. Форма оплаты: безналичная;",
+                "3. Цены действительны в течение 10 дней.");
+    }
+
+    @Test
     void blankHeaderTextFallsBackOrIsSkippedAndOrientationIsKept() {
         ClientOffer o = KpFixtures.offer2409();
         o.setTitle(" ");
