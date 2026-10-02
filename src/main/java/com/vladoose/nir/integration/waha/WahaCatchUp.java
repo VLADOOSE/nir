@@ -49,12 +49,17 @@ public class WahaCatchUp {
         for (int page = 0; page < MAX_PAGES; page++) {
             List<JsonNode> batch = client.history(session, from, PAGE, page * PAGE);
             for (JsonNode m : batch) {
+                // фильтру WAHA по времени не верим вслепую: старше окна — это переписка до привязки (решение 9)
+                if (epochSec(m.path("timestamp").asLong(0)) < from) continue;
                 if (inbox.insert(envelope(session, account, m))) added++;
             }
             if (batch.size() < PAGE) break;
         }
         return added;
     }
+
+    /** Метка сообщения WAHA — секунды; на всякий случай принимаем и миллисекунды (как WahaEventParser.eventAt). */
+    private static long epochSec(long ts) { return ts > 100_000_000_000L ? ts / 1000 : ts; }
 
     private ObjectNode envelope(String session, String account, JsonNode message) {
         ObjectNode env = objectMapper.createObjectNode();

@@ -23,6 +23,8 @@ public class FakeWahaClient implements WahaClient {
     public final Map<String, byte[]> files = new HashMap<>();
     /** Сообщения «телефона» для догонки: отдаются с timestamp ≥ from, по возрастанию, страницами. */
     public final List<JsonNode> history = new ArrayList<>();
+    /** WAHA проигнорировала filter.timestamp.gte и отдала историю с начала. */
+    public boolean ignoreHistoryFilter;
     public final Map<String, WahaContact> contacts = new HashMap<>();
     public final Map<String, String> groups = new HashMap<>();
     public final Map<String, String> lids = new HashMap<>();
@@ -96,7 +98,7 @@ public class FakeWahaClient implements WahaClient {
         call("history " + fromEpochSec + " " + limit + " " + offset);
         if (failHistoryWith != null) throw failHistoryWith;
         List<JsonNode> matching = history.stream()
-                .filter(m -> m.path("timestamp").asLong() >= fromEpochSec)
+                .filter(m -> ignoreHistoryFilter || m.path("timestamp").asLong() >= fromEpochSec)
                 .sorted(Comparator.comparingLong((JsonNode m) -> m.path("timestamp").asLong()))
                 .toList();
         return matching.subList(Math.min(offset, matching.size()), Math.min(offset + limit, matching.size()));

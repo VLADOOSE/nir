@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 import static com.vladoose.nir.util.LeadText.trunc;
 
@@ -43,7 +44,16 @@ public class WahaInboxWriter {
         String event = env.path("event").asText("");
         String rid = requestId == null || requestId.isBlank() ? null : trunc(requestId.strip(), 100);
         return jdbc.update(INSERT, WhatsappProviders.WAHA, rid, WahaEventParser.messageKey(env),
-                trunc(event.isEmpty() ? "?" : event, 40), WahaEventParser.eventAt(env), payload) == 1;
+                trunc(event.isEmpty() ? "?" : event, 40), queueTime(WahaEventParser.eventAt(env)), payload) == 1;
+    }
+
+    /**
+     * Время в очереди — время события, но не позже «сейчас + 1 мин»: событие с меткой из далёкого будущего (часы
+     * телефона, битое событие) иначе вечно ждало бы своей очереди в PENDING — его не берут и не убирают.
+     */
+    static OffsetDateTime queueTime(OffsetDateTime eventAt) {
+        OffsetDateTime cap = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(1);
+        return eventAt.isAfter(cap) ? cap : eventAt;
     }
 
     /** Синтетическое событие догонки: тело — сериализованный конверт, request_id нет. */

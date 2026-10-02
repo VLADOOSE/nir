@@ -79,6 +79,23 @@ class WahaCatchUpTest {
                 .containsExactly("history " + from + " 100 0", "history " + from + " 100 100", "history " + from + " 100 200");
     }
 
+    /**
+     * Фильтру WAHA по времени догонка не доверяет вслепую: если он не сработал, история старше окна (переписка до
+     * привязки) в очередь не попадает — иначе первая же догонка завела бы обращения по старым перепискам (решение 9).
+     */
+    @Test
+    void historyOlderThanWindowIsSkippedEvenIfWahaIgnoredTheFilter() {
+        long t = Instant.now().getEpochSecond() - 3600;
+        stored(t);
+        fake.ignoreHistoryFilter = true;
+        fake.history.add(historyMessage("3EB0" + account + "OLD", t - 86_400));
+        fake.history.add(historyMessage("3EB0" + account + "NEW", t + 5));
+
+        assertThat(catchUp().run("westmed", account)).isEqualTo(1);
+        assertThat(repository.findByMessageKey("false_3EB0" + account + "OLD")).isEmpty();
+        assertThat(repository.findByMessageKey("false_3EB0" + account + "NEW")).hasSize(1);
+    }
+
     @Test
     void messageAlreadyQueuedByWebhookIsNotDuplicated() {
         long t = Instant.now().getEpochSecond() - 3600;

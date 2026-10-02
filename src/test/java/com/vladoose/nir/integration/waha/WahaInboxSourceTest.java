@@ -94,6 +94,17 @@ class WahaInboxSourceTest {
         assertThat(s.next()).isNull();
     }
 
+    /**
+     * Метка времени из далёкого будущего (часы телефона, битое событие) не держит событие в PENDING вечно: в очередь
+     * оно ложится не позже «приём + 1 мин» — его разберут, а уборка потом уберёт.
+     */
+    @Test
+    void farFutureTimestampIsCappedSoEventIsNotStuck() {
+        long id = queue(WahaJson.incomingText(personal(), "Айгерим", raw(), now + 86_400, "из будущего"));
+
+        assertThat(repository.findById(id).orElseThrow().getEventAt().toEpochSecond()).isLessThanOrEqualTo(now + 65);
+    }
+
     @Test
     void ackMarksDoneOrDroppedWithReason() {
         long ok = queue(WahaJson.incomingText(personal(), "А", raw(), now - 60, "x"));
