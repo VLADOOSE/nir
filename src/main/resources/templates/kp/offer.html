@@ -43,6 +43,7 @@
     .words { margin-top: 2mm; }
     .terms-list { margin-top: 4mm; }
     .terms-list div { margin-bottom: 1mm; }
+    /* с печатью блок получает min-height до низа печати — KpHtmlRenderer.signoffStyle */
     .signoff { margin-top: 10mm; position: relative; page-break-inside: avoid; }
     .sign-table { width: 100%; margin-top: 1mm; }
     .sign-table td { vertical-align: bottom; padding: 0; }
@@ -105,7 +106,7 @@
     <div th:each="t : ${doc.termsList()}" th:text="${t}">1. условие</div>
   </div>
 
-  <div class="signoff">
+  <div class="signoff" th:style="${signoffStyle}">
     <div>С уважением,</div>
     <table class="sign-table" th:if="${doc.signoff().director()}">
       <tr>

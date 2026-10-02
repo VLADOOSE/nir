@@ -30,10 +30,21 @@ public class KpHtmlRenderer {
         ctx.setVariable("pageCss", pageCss(doc.landscape()));
         ctx.setVariable("logo", dataUri(doc.letterhead().logoPng()));
         ctx.setVariable("signature", dataUri(doc.signoff().signaturePng()));
-        ctx.setVariable("stamp", dataUri(doc.signoff().stampPng()));
+        String stamp = dataUri(doc.signoff().stampPng());
+        ctx.setVariable("stamp", stamp);
         ctx.setVariable("stampStyle", "width: " + doc.signoff().stampSizeMm() + "mm; left: " + STAMP_LEFT_MM
                 + "mm; top: " + STAMP_TOP_MM + "mm;");
+        ctx.setVariable("signoffStyle", stamp == null ? null : signoffStyle(doc.signoff().stampSizeMm()));
         return engine.process("kp/offer", ctx);
+    }
+
+    /**
+     * Блок подписи — не ниже низа печати (+1 мм на округление). Печать свисает ниже текста подписи, а блок
+     * с page-break-inside: avoid переносит на новый лист только себя: печать, не влезшую на лист, openhtmltopdf уносил
+     * за обрыв страницы, где она не рисовалась, — у подписи внизу листа печати не было, хотя галочка стоит.
+     */
+    static String signoffStyle(int stampSizeMm) {
+        return "min-height: " + Math.max(0, STAMP_TOP_MM + stampSizeMm + 1) + "mm;";
     }
 
     static String pageCss(boolean landscape) {

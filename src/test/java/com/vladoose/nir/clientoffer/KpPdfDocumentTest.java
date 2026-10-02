@@ -255,4 +255,31 @@ class KpPdfDocumentTest {
         assertThat(signature.left()).isGreaterThanOrEqualTo(title.right());
         assertThat(signature.bottom()).isCloseTo(title.bottom(), within(1.5f));   // низ подписи — у строки должности
     }
+
+    /**
+     * Печать — на строке должности (спека §6.3), где бы ни кончился лист: блок подписи сдвигается добавленными строками
+     * через низ первой страницы на вторую. Печать свисает ниже блока; без запаса высоты блока openhtmltopdf уносил её
+     * за обрыв страницы, где она не рисовалась (блок у самого низа листа — печати нет, а галочка стоит).
+     */
+    @Test
+    void stampLiesOnTheSignoffWhereverThePageEnds() {
+        CompanyProfile p = KpFixtures.profileKz();
+        p.setStampPng(KpTestSupport.circlePng());
+        int onSecondPage = 0;
+        for (int extra = 0; onSecondPage < 2; extra++) {
+            assertThat(extra).as("подпись так и не ушла на вторую страницу").isLessThan(60);
+            ClientOffer o = KpFixtures.offer2409();
+            o.setWithStamp(true);
+            for (int i = 0; i < extra; i++) {
+                KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+            }
+            byte[] pdf = KpFixtures.pdf(o, p);
+            KpTestSupport.Placed title = KpTestSupport.find(pdf, "Директор ТОО «West-Med»");
+            List<KpTestSupport.Box> images = KpTestSupport.imageBoxes(pdf);
+            assertThat(images).as("строк добавлено: %d", extra).hasSize(1);
+            assertThat(images.get(0).width()).as("stamp_size_mm").isCloseTo(40f, MM);
+            assertThat(images.get(0).overlaps(title)).as("печать на строке должности, строк добавлено: %d", extra).isTrue();
+            if (title.page() > 0) onSecondPage++;
+        }
+    }
 }
