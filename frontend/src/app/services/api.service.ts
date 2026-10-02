@@ -441,7 +441,8 @@ export class ApiService {
   }
   logoutWhatsappSession(): Observable<any> {
     return this.http.post<any>(`${this.base}/whatsapp/session/logout`, {});
-  }  getLeadChatMessages(leadId: number): Observable<any[]> {
+  }
+  getLeadChatMessages(leadId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/leads/${leadId}/chat-messages`);
   }
   importLeadItems(leadId: number, body: { mappings: any[]; items: any[]; mode: 'REPLACE' | 'APPEND' }): Observable<any> {

@@ -33,12 +33,14 @@ class WahaInboxSourceTest {
 
     FakeWahaClient fake;
     WahaSessionManager sessions;
-    final long now = Instant.now().getEpochSecond();
+    /** Берётся в setUp, а не при создании экземпляра: экземпляр создаётся ДО подъёма контекста Spring (~13 с). */
+    long now;
 
     /** Чужие PENDING из dev-базы не должны мешать порядку: в транзакции теста (она откатится) считаем их разобранными. */
     @BeforeEach
     void setUp() {
         jdbc.update("UPDATE whatsapp_inbox SET status = 'DONE' WHERE status = 'PENDING'");
+        now = Instant.now().getEpochSecond();
         fake = new FakeWahaClient();
         sessions = new WahaSessionManager(fake, "westmed", "KZ");
     }
@@ -82,7 +84,7 @@ class WahaInboxSourceTest {
     void nextIsOldestSettledPendingEvent() {
         long later = queue(WahaJson.incomingText(personal(), "Айгерим", raw(), now - 60, "второе"));
         long earlier = queue(WahaJson.incomingText(personal(), "Ерлан", raw(), now - 120, "первое"));
-        queue(WahaJson.incomingText(personal(), "Сауле", raw(), now - 1, "ещё отлёживается"));
+        queue(WahaJson.incomingText(personal(), "Сауле", raw(), now + 30, "ещё отлёживается"));
         WahaInboxSource s = source(3000);
 
         WhatsappNotification first = s.next();
