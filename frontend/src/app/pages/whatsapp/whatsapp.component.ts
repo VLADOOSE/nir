@@ -125,6 +125,9 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   confirmLogout = false;
   private timer: any = null;
   private qrSub?: Subscription;
+  private sessionSub?: Subscription;
+  private statusSub?: Subscription;
+  private destroyed = false;
 
   constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef) {}
 
@@ -133,9 +136,12 @@ export class WhatsappComponent implements OnInit, OnDestroy {
     this.timer = setInterval(() => this.load(true), 5000);   // код живёт 20 с; после привязки состояние сменится сразу
   }
 
-  /** Запрос QR отменяется вместе с видом: иначе ответ создал бы blob-адрес, который уже некому отозвать. */
+  /** Запросы отменяются вместе с видом: иначе поздний ответ создал бы blob-адрес QR, который уже некому отозвать. */
   ngOnDestroy() {
+    this.destroyed = true;
     clearInterval(this.timer);
+    this.sessionSub?.unsubscribe();
+    this.statusSub?.unsubscribe();
     this.qrSub?.unsubscribe();
     this.dropQr();
   }
@@ -144,8 +150,27 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   get canRestart(): boolean { return this.canManage && ['FAILED', 'STOPPED'].includes(this.info.status); }
   get canLogout(): boolean { return this.canManage && !!this.info.status && this.info.status !== 'SCAN_QR_CODE'; }
 
-  load(quiet = false) {
-    this.api.getWhatsappSession().subscribe({
+  /**
+   * quiet — ошибку не показывать (фоновый опрос). Фоновый опрос не перекрывает незавершённый — ответы не применятся не
+   * по порядку (WAHA может отвечать до 20 с, а опрос — раз в 5 с); явный (после действия) заменяет его свежим.
+   */
+  load(quiet = false, replace = !quiet) {
+    if (this.destroyed) return;
+    if (replace || !this.sessionSub || this.sessionSub.closed) {
+      this.sessionSub?.unsubscribe();
+      this.sessionSub = this.loadSession(quiet);
+    }
+    if (replace || !this.statusSub || this.statusSub.closed) {
+      this.statusSub?.unsubscribe();
+      this.statusSub = this.api.getWhatsappStatus().subscribe({
+        next: s => { this.status = s; this.syncLine(); this.cdr.detectChanges(); },
+        error: () => {},
+      });
+    }
+  }
+
+  private loadSession(quiet: boolean): Subscription {
+    return this.api.getWhatsappSession().subscribe({
       next: s => {
         this.info = s;
         this.error = '';
@@ -165,10 +190,6 @@ export class WhatsappComponent implements OnInit, OnDestroy {
         }
       },
     });
-    this.api.getWhatsappStatus().subscribe({
-      next: s => { this.status = s; this.syncLine(); this.cdr.detectChanges(); },
-      error: () => {},
-    });
   }
 
   /** Бейдж и строка не должны спорить: у WAHA состояние берём живое, у Green-API и при ошибке — как есть. */
@@ -181,6 +202,7 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   }
 
   private loadQr() {
+    if (this.destroyed) return;
     this.qrSub?.unsubscribe();
     this.qrSub = this.api.getWhatsappQr().subscribe({
       next: blob => { this.dropQr(); this.qrUrl = URL.createObjectURL(blob); this.cdr.detectChanges(); },
@@ -205,8 +227,8 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   private act(obs: Observable<any>, ok: string) {
     this.busy = true;
     obs.subscribe({
-      next: s => { this.busy = false; this.info = s; this.syncLine(); this.notify.success(ok); this.load(true); },
-      error: e => { this.busy = false; this.notify.error(e.error?.message || 'Не удалось выполнить действие'); this.load(true); },
+      next: s => { this.busy = false; this.info = s; this.syncLine(); this.notify.success(ok); this.load(true, true); },
+      error: e => { this.busy = false; this.notify.error(e.error?.message || 'Не удалось выполнить действие'); this.load(true, true); },
     });
   }
 
