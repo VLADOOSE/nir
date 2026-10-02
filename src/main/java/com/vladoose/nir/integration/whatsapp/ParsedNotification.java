@@ -36,6 +36,11 @@ public sealed interface ParsedNotification {
             return new Message(account, chatId, kind, newPhone, newChatName, senderName, direction, idMessage, sentAt,
                     type, body, file, editOf, viaApi);
         }
+
+        public Message withSentAt(OffsetDateTime newSentAt) {
+            return new Message(account, chatId, kind, phone, chatName, senderName, direction, idMessage, newSentAt,
+                    type, body, file, editOf, viaApi);
+        }
     }
 
     record Delete(String account, String chatId, String deletedId) implements ParsedNotification {}

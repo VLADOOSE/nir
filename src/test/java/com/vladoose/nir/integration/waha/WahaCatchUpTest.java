@@ -109,6 +109,18 @@ class WahaCatchUpTest {
         assertThat(pages[0]).isEqualTo(2);
     }
 
+    /** Сообщение с будущим sentAt (записано до ограничения) не усыпляет догонку до этой даты: отметка — не позже «сейчас». */
+    @Test
+    void futureLatestMessageDoesNotStallCatchUp() {
+        long now = Instant.now().getEpochSecond();
+        stored(now + 86_400);
+
+        catchUp().run("westmed", account);
+
+        assertThat(fake.calls).filteredOn(c -> c.startsWith("history ")).first().satisfies(c ->
+                assertThat(Long.parseLong(c.split(" ")[1])).isLessThanOrEqualTo(now));
+    }
+
     @Test
     void messageAlreadyQueuedByWebhookIsNotDuplicated() {
         long t = Instant.now().getEpochSecond() - 3600;

@@ -44,16 +44,17 @@ public class WahaInboxWriter {
         String event = env.path("event").asText("");
         String rid = requestId == null || requestId.isBlank() ? null : trunc(requestId.strip(), 100);
         return jdbc.update(INSERT, WhatsappProviders.WAHA, rid, WahaEventParser.messageKey(env),
-                trunc(event.isEmpty() ? "?" : event, 40), queueTime(WahaEventParser.eventAt(env)), payload) == 1;
+                trunc(event.isEmpty() ? "?" : event, 40), capFuture(WahaEventParser.eventAt(env)), payload) == 1;
     }
 
     /**
-     * Время в очереди — время события, но не позже «сейчас + 1 мин»: событие с меткой из далёкого будущего (часы
-     * телефона, битое событие) иначе вечно ждало бы своей очереди в PENDING — его не берут и не убирают.
+     * Время события, но не позже «сейчас + 1 мин» — и в очереди, и у сообщения (WahaInboxSource.parse). Метка из
+     * далёкого будущего (часы телефона, битое событие) иначе держала бы событие в PENDING вечно, а разобранное —
+     * держало бы чат наверху с застывшим превью и усыпило бы догонку до этой даты.
      */
-    static OffsetDateTime queueTime(OffsetDateTime eventAt) {
+    static OffsetDateTime capFuture(OffsetDateTime at) {
         OffsetDateTime cap = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(1);
-        return eventAt.isAfter(cap) ? cap : eventAt;
+        return at != null && at.isAfter(cap) ? cap : at;
     }
 
     /** Синтетическое событие догонки: тело — сериализованный конверт, request_id нет. */

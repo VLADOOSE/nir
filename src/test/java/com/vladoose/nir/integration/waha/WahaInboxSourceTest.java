@@ -112,6 +112,18 @@ class WahaInboxSourceTest {
         assertThat(repository.findById(id).orElseThrow().getEventAt().toEpochSecond()).isLessThanOrEqualTo(now + 65);
     }
 
+    /**
+     * Время сообщения ограничено так же, как время в очереди: иначе событие из будущего разбиралось бы с будущим sentAt —
+     * чат навсегда наверху с застывшим превью, обращение «из будущего», догонка спит до этой даты (перепроверка ревью).
+     */
+    @Test
+    void farFutureSentAtIsCappedOnParse() {
+        ParsedNotification.Message m = (ParsedNotification.Message) source(0)
+                .parse(note(WahaJson.incomingText(personal(), "Айгерим", raw(), now + 86_400, "из будущего")));
+
+        assertThat(m.sentAt().toEpochSecond()).isLessThanOrEqualTo(now + 65);
+    }
+
     @Test
     void ackMarksDoneOrDroppedWithReason() {
         long ok = queue(WahaJson.incomingText(personal(), "А", raw(), now - 60, "x"));

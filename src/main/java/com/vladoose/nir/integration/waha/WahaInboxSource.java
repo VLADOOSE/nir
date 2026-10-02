@@ -162,7 +162,10 @@ public class WahaInboxSource implements WhatsappSource {
             if (WahaSessionManager.WORKING.equals(s.state())) catchUpDue = true;
             return new ParsedNotification.Skip("статус сессии — из опроса сессии");
         }
-        if (p instanceof ParsedNotification.Message m) return names.enrich(sessions.session(), m);
+        if (p instanceof ParsedNotification.Message m) {
+            OffsetDateTime sentAt = WahaInboxWriter.capFuture(m.sentAt());
+            return names.enrich(sessions.session(), sentAt == m.sentAt() ? m : m.withSentAt(sentAt));
+        }
         return p;
     }
 

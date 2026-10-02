@@ -50,6 +50,8 @@ public class WahaCatchUp {
         if (account == null) return 0;
         OffsetDateTime latest = messages.findLatestSentAt(LeadChannel.WHATSAPP, account);
         if (latest == null) return 0;
+        OffsetDateTime now = OffsetDateTime.now();
+        if (latest.isAfter(now)) latest = now;           // сообщение «из будущего» не усыпляет догонку до своей даты
         long from = latest.minusMinutes(overlapMin).toEpochSecond();
         int added = 0;
         for (int page = 0; page < MAX_PAGES; page++) {
