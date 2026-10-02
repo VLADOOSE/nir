@@ -86,8 +86,10 @@ public class ChatIngestWriter {
                     .sizeBytes(file.content() == null ? null : (long) file.content().length)
                     .content(file.content()).notStoredReason(file.notStoredReason()).build());
         }
-        // правила — ДО сдвига lastMessageAt: активность обращения меряется по ПРОШЛЫМ сообщениям (спека §5.1)
-        Long createdLeadId = m.isEdit() ? null : applyLeadRules(chat, m, cartItems);
+        // правила — ДО сдвига lastMessageAt: активность обращения меряется по ПРОШЛЫМ сообщениям (спека §5.1).
+        // Правка без оригинала обращения не заводит, КРОМЕ исхода звонка: у событий звонка одна метка времени, и после
+        // простоя WAHA досылает их в любом порядке — исход раньше звонка иначе оставлял звонок нового клиента без обращения
+        Long createdLeadId = m.isEdit() && m.type() != ChatMessageType.CALL ? null : applyLeadRules(chat, m, cartItems);
         if (chat.getLastMessageAt() == null || !m.sentAt().isBefore(chat.getLastMessageAt())) {
             chat.setLastMessageAt(m.sentAt());
             chat.setLastMessagePreview(trunc(m.displayText().strip(), PREVIEW_MAX));

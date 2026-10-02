@@ -384,15 +384,36 @@ class ChatIngestWriterTest {
         assertThat(messageRepository.findById(o.messageId()).orElseThrow().getType()).isEqualTo(ChatMessageType.CALL);
     }
 
-    /** call.received потерялся — исход становится строкой звонка сам, без пометки «изменено». */
+    /**
+     * call.received потерялся или ещё не пришёл — исход становится строкой звонка сам, без пометки «изменено», и
+     * обращение создаёт он: звонок нового клиента без обращения терялся бы (финальное ревью ветки WAHA).
+     */
     @Test
-    void outcomeWithoutReceivedCallBecomesCallLine() {
+    void outcomeWithoutReceivedCallBecomesCallLineAndStartsCallLead() {
         ChatIngestWriter.Outcome o = write(call(personal(), "C5", " — отклонён"));
 
         ChatMessage m = messageRepository.findById(o.messageId()).orElseThrow();
         assertThat(m.getBody()).isEqualTo("📞 Входящий звонок — отклонён");
         assertThat(m.getExternalId()).isEqualTo("call:C5");
         assertThat(m.isEdited()).isFalse();
-        assertThat(o.createdLeadId()).isNull();
+        Lead l = leadRepository.findById(o.createdLeadId()).orElseThrow();
+        assertThat(l.getSubject()).isEqualTo("Звонок в WhatsApp");
+        assertThat(l.getMessage()).isEqualTo("📞 Входящий звонок — отклонён");
+    }
+
+    /**
+     * WAHA после простоя бэкенда досылает события повторами со своим джиттером, а метка времени у всех событий звонка
+     * одна — порядок решает приход. Исход раньше звонка: одна строка и ОДНО обращение, поздний call.received — дубль.
+     */
+    @Test
+    void outcomeBeforeReceivedCallGivesOneLineAndOneLead() {
+        String chat = personal();
+        ChatIngestWriter.Outcome outcome = write(call(chat, "C6", " — отклонён"));
+        ChatIngestWriter.Outcome received = write(call(chat, "C6", null));
+
+        assertThat(received.duplicate()).isTrue();
+        assertThat(messagesOf(outcome.chatId())).singleElement()
+                .extracting(ChatMessage::getBody).isEqualTo("📞 Входящий звонок — отклонён");
+        assertThat(leadsOf(outcome)).singleElement().extracting(Lead::getSubject).isEqualTo("Звонок в WhatsApp");
     }
 }

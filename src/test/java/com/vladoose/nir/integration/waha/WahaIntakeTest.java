@@ -69,7 +69,8 @@ class WahaIntakeTest {
     private WhatsappChatSync sync(ChatIngestWriter w) {
         WahaInboxSource source = new WahaInboxSource(repository, inbox, fake, new WahaSessionManager(fake, "westmed", "KZ"),
                 new WahaChatNames(fake), new WahaCatchUp(fake, inbox, messageRepository, objectMapper, 10), objectMapper,
-                "test-hmac-key", 0, 60_000, 600_000, 7, 30);        return new WhatsappChatSync(source, w, new FakeWestmedClient(), status, "https://westmed.kz", 1);
+                "test-hmac-key", 0, 60_000, 600_000, 7, 30);
+        return new WhatsappChatSync(source, w, new FakeWestmedClient(), status, "https://westmed.kz", 1);
     }
 
     private WhatsappChatSync sync() { return sync(writer); }
@@ -209,6 +210,26 @@ class WahaIntakeTest {
             assertThat(m.getBody()).isEqualTo("📞 Входящий звонок — принят");
             assertThat(m.isEdited()).isFalse();
         });
+        assertThat(leadRepository.findByChatIdIn(List.of(chat(c).getId()))).singleElement()
+                .extracting(Lead::getSubject).isEqualTo("Звонок в WhatsApp");
+    }
+
+    /**
+     * У событий звонка одна метка времени, и после простоя бэкенда WAHA досылает их повторами в любом порядке:
+     * исход, пришедший раньше звонка, — одна строка и одно обращение (финальное ревью ветки WAHA).
+     */
+    @Test
+    void outcomeQueuedBeforeCallStillGivesOneLineAndOneLead() {
+        String c = personal();
+        String callId = "CALL" + raw();
+        long at = clock += 60;
+        queue(WahaJson.call("call.rejected", callId, c, at, false, null));
+        queue(WahaJson.call("call.received", callId, c, at, false, null));
+
+        assertThat(sync().drain(10)).isTrue();
+
+        assertThat(messageRepository.findLatest(chat(c).getId(), PageRequest.of(0, 5))).singleElement()
+                .extracting(ChatMessage::getBody).isEqualTo("📞 Входящий звонок — отклонён");
         assertThat(leadRepository.findByChatIdIn(List.of(chat(c).getId()))).singleElement()
                 .extracting(Lead::getSubject).isEqualTo("Звонок в WhatsApp");
     }
