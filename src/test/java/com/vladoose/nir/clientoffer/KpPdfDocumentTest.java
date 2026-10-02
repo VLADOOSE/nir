@@ -256,21 +256,103 @@ class KpPdfDocumentTest {
     }
 
     /**
-     * Последний рубеж: таблицу не спасают и 8 pt (все 15 колонок на книжном листе, цена на сотни миллионов) — число всё
-     * равно не рвётся по строкам (white-space: nowrap): печатается в одну строку, пусть и шире своей ячейки.
+     * Последний рубеж: таблицу не спасают и 8 pt (все 15 колонок на книжном листе, цена на сотни миллионов, 12 строк) —
+     * числа и номера строк всё равно не рвутся по строкам (white-space: nowrap): печатаются в одну строку, пусть и шире
+     * своей ячейки.
      */
     @Test
     void numbersStayOnOneLineEvenWhenNothingFits() {
         ClientOffer o = KpFixtures.offer2409();
         KpFixtures.line(o, "Томограф магнитно-резонансный", 2, "300000000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        for (int i = 0; i < 7; i++) KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
         List<OfferColumn> all = new ArrayList<>();
         for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
         o.setTableColumns(all);
         byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
-        for (String number : List.of("300 000 000,00", "600 000 000,00")) {
+        for (String number : List.of("300 000 000,00", "600 000 000,00", "12Доп. позиция 6")) {
             KpTestSupport.Placed placed = KpTestSupport.find(pdf, number);
             assertThat(placed.bottom() - placed.top()).as(number + ": одна строка").isLessThan(3f);
         }
+    }
+
+    /**
+     * Альбомный лист шире книжного: таблица КП от 24.09 с ценой и суммой без НДС и суммой НДС тесна на 178 мм, но на
+     * 267 мм помещается — обычный кегль 10 pt, все числа в своих ячейках, номер строки 10 — в одну строку (раньше
+     * теснота считалась в долях листа: 8 pt, «№» — 2 %, «10» печаталось «1 / 0»).
+     */
+    @Test
+    void landscapeTableWithNetAndVatColumnsKeepsTheBaseTypeSize() {
+        ClientOffer o = twelveRows();
+        for (String k : new String[] {"PRICE_NET", "VAT_SUM", "SUM_NET"}) o.getTableColumns().add(new OfferColumn(k, null));
+        o.setLandscape(true);
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(doc.tableFontPt()).isEqualTo(10.0);
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        Edges page = Edges.of(pdf);
+        // строка 1: 105 600,00 × 3, НДС 5% в т.ч.
+        for (String[] number : new String[][] {{"105 600,00", "PRICE"}, {"100 571,43", "PRICE_NET"}, {"15 085,71", "VAT_SUM"},
+                {"301 714,29", "SUM_NET"}, {"316 800,00", "SUM"}}) {
+            assertInsideColumn(pdf, number[0], page.columns(doc.columns(), number[1], number[1]));
+        }
+        assertOneLine(pdf, "10Доп. позиция 5");   // номер 10 и наименование строки 10 — на одной строке
+    }
+
+    /** 11 колонок на книжном листе, 12 строк: номера 10–12 — в одну строку («№» не сжимается уже своего содержимого). */
+    @Test
+    void rowNumbersStayOnOneLineInTheElevenColumnPortraitTable() {
+        ClientOffer o = twelveRows();
+        for (String k : new String[] {"MODEL", "MANUFACTURER", "COUNTRY"}) o.getTableColumns().add(new OfferColumn(k, null));
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        for (int row = 10; row <= 12; row++) assertOneLine(pdf, row + "Доп. позиция " + (row - 5));
+    }
+
+    /**
+     * Все 15 колонок на альбомном листе: ни одна колонка не уже полей и одной буквы, короткие колонки — не уже своего
+     * содержимого («упаковка», «1 000», «16%», «шт», и «Германия» — в колонке, где каждая ячейка одно слово): всё в одну
+     * строку и внутри ячейки (раньше — 1 % ширины, «ш / т»).
+     */
+    @Test
+    void allColumnsInLandscapeKeepTheirMinimums() {
+        ClientOffer o = KpFixtures.offer2409();
+        ClientOfferItem gloves = KpFixtures.line(o, "Перчатки смотровые", 1000, "15.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        gloves.setUnit("упаковка");
+        gloves.setCountry("Германия");
+        List<OfferColumn> all = new ArrayList<>();
+        for (OfferColumnKey k : OfferColumnKey.values()) all.add(new OfferColumn(k.name(), null));
+        o.setTableColumns(all);
+        o.setLandscape(true);
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        double oneGlyphMm = doc.tableFontPt() * 25.4 / 72;   // буква ≈ 1 em
+        for (KpDocument.Column c : doc.columns()) {
+            assertThat(c.percent() * 267.0 / 100).as(c.key() + ": поля и одна буква").isGreaterThanOrEqualTo(2 * PAD + oneGlyphMm);
+        }
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        Edges page = Edges.of(pdf);
+        for (String[] cell : new String[][] {{"упаковка", "UNIT"}, {"1 000", "QTY"}, {"16%", "VAT_RATE"}, {"шт", "UNIT"},
+                {"Германия", "COUNTRY"}}) {
+            assertInsideColumn(pdf, cell[0], page.columns(doc.columns(), cell[1], cell[1]));
+        }
+    }
+
+    /** КП от 24.09 и ещё 8 строк — номера до 12. */
+    private static ClientOffer twelveRows() {
+        ClientOffer o = KpFixtures.offer2409();
+        for (int i = 0; i < 8; i++) KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        return o;
+    }
+
+    /** Текст нарисован в одну строку (рамка знаков ниже 3 мм: две строки — больше 5 мм). */
+    private static void assertOneLine(byte[] pdf, String text) {
+        KpTestSupport.Placed placed = KpTestSupport.find(pdf, text);
+        assertThat(placed.bottom() - placed.top()).as(text + ": одна строка").isLessThan(3f);
+    }
+
+    /** Текст — в одну строку и внутри текста своей колонки (поля ячейки 1,5 мм). */
+    private static void assertInsideColumn(byte[] pdf, String text, float[] column) {
+        assertOneLine(pdf, text);
+        KpTestSupport.Placed placed = KpTestSupport.find(pdf, text);
+        assertThat(placed.left()).as(text + ": левый край").isGreaterThanOrEqualTo(column[0] + PAD - 0.1f);
+        assertThat(placed.right()).as(text + ": правый край").isLessThanOrEqualTo(column[1] - PAD + 0.1f);
     }
 
     /** Раздел — на всю ширину, жирным, слева; «включено в стоимость» — по центру объединённой ячейки (спека §6.1 п.5). */

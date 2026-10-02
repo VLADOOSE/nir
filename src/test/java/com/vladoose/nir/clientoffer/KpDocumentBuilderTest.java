@@ -313,6 +313,40 @@ class KpDocumentBuilderTest {
     }
 
     /**
+     * Теснота — в миллиметрах: колонки, которым тесно на книжном листе (178 мм), на альбомном (267 мм) помещаются — там
+     * обычный кегль. В сжатии деньги держат ровно свою нужду, а не долю по умолчанию (на альбомном листе цене хватает 8 %).
+     */
+    @Test
+    void landscapeMeasuresCrowdingInMillimetres() {
+        String[][] extras = {{"COUNTRY"}, {"PRICE_NET", "VAT_SUM", "SUM_NET"}, {"MODEL", "MANUFACTURER", "COUNTRY"}};
+        double[] portraitPt = {9.5, 8.0, 8.0};
+        for (int i = 0; i < extras.length; i++) {
+            ClientOffer o = KpFixtures.offer2409();
+            for (String k : extras[i]) o.getTableColumns().add(new OfferColumn(k, null));
+            assertThat(KpFixtures.document(o, KpFixtures.profileKz()).tableFontPt()).as("книжная +%s", (Object) extras[i])
+                    .isEqualTo(portraitPt[i]);
+            o.setLandscape(true);
+            KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+            assertThat(d.tableFontPt()).as("альбомная +%s", (Object) extras[i]).isEqualTo(10.0);
+            assertThat(d.columns().stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
+            assertThat(d.columns()).filteredOn(c -> c.key().equals("PRICE")).extracting(KpDocument.Column::percent)
+                    .containsExactly(8);
+        }
+    }
+
+    /**
+     * Проценты — округлением наибольших остатков, а не вниз: «Страна» на книжном листе (9,5 pt, веса × 0,95) — номер,
+     * ед. изм. и кол-во не теряют по процентному пункту, наименование не забирает себе всё срезанное (было 4/30/6/6).
+     */
+    @Test
+    void percentsUseLargestRemainders() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getTableColumns().add(new OfferColumn("COUNTRY", null));
+        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
+                .containsExactly(5, 26, 7, 7, 11, 8, 12, 16, 8);
+    }
+
+    /**
      * Абсурдно тесная таблица (все 15 колонок на книжном листе и цена на сотни миллионов): деньгам не уступить и в 8 pt
      * (остальным колонкам не осталось бы и по 1 %) — прежнее пропорциональное сжатие всех колонок; наименованию —
      * по-прежнему не меньше четверти, у каждой колонки — своя доля.

@@ -37,8 +37,9 @@
     .a-left { text-align: left; }
     .a-center { text-align: center; }
     .a-right { text-align: right; }
-    /* справа — только деньги: число не переносится (ширину колонки и кегль подбирает KpDocumentBuilder.fitTable) */
-    .items td.a-right { white-space: nowrap; }
+    /* деньги и короткие колонки (№, кол-во, ед. изм., ставка — KpDocument.Column.nowrap) не переносятся: ширину колонки
+       под самое длинное содержимое и кегль подбирает KpDocumentBuilder.fitTable */
+    .items td.nowrap { white-space: nowrap; }
     .row-section td { font-weight: bold; }
     .span-cell { text-align: center; }
     .row-section .span-cell { text-align: left; }
@@ -105,7 +106,7 @@
     </thead>
     <tbody>
       <tr th:each="r : ${doc.rows()}" th:class="${r.kind().name() == 'SECTION' ? 'row-section' : (r.kind().name() == 'INCLUDED' ? 'row-included' : 'row-item')}">
-        <td th:each="cell, cs : ${r.cells()}" th:class="${'a-' + #strings.toLowerCase(doc.columns()[cs.index].align().name())}"><th:block th:each="l, s : ${cell}"><span th:text="${l}">ячейка</span><br th:unless="${s.last}"/></th:block></td>
+        <td th:each="cell, cs : ${r.cells()}" th:class="${'a-' + #strings.toLowerCase(doc.columns()[cs.index].align().name()) + (doc.columns()[cs.index].nowrap() ? ' nowrap' : '')}"><th:block th:each="l, s : ${cell}"><span th:text="${l}">ячейка</span><br th:unless="${s.last}"/></th:block></td>
         <td class="span-cell" th:if="${r.spanFrom() < doc.columns().size()}" th:colspan="${doc.columns().size() - r.spanFrom()}"><th:block th:each="l, s : ${r.spanLines()}"><span th:text="${l}">объединено</span><br th:unless="${s.last}"/></th:block></td>
       </tr>
     </tbody>

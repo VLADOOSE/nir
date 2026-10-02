@@ -30,8 +30,12 @@ public record KpDocument(
 
     public record Term(String label, List<String> valueLines) {}
 
-    /** percent — доля ширины таблицы, сумма по колонкам = 100. */
-    public record Column(String key, String label, ColumnAlign align, int percent) {}
+    /**
+     * percent — доля ширины таблицы, сумма по колонкам = 100. nowrap — ячейки колонки не переносятся: деньги и короткие
+     * колонки (№, кол-во, ед. изм., ставка НДС и любая колонка, где в каждой ячейке одно «слово»); ширина колонки
+     * подобрана под самое длинное содержимое.
+     */
+    public record Column(String key, String label, ColumnAlign align, int percent, boolean nowrap) {}
 
     public enum RowKind { ITEM, SECTION, INCLUDED }
 
