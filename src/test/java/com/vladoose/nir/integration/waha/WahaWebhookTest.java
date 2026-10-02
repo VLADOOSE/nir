@@ -126,13 +126,17 @@ class WahaWebhookTest {
         assertThat(repository.findByMessageKey("false_" + rawId)).isEmpty();
     }
 
-    /** Эндпоинт без входа: тело больше предела не читается в память целиком — 413 до проверки подписи. */
+    /**
+     * Эндпоинт без входа: тело больше предела не читается в память целиком — 413 до проверки подписи. И это видно в
+     * строке состояния: живое событие крупнее предела WAHA повторила бы впустую, а правка или звонок пропали бы молча.
+     */
     @Test
-    void oversizedBodyIs413AndNotQueued() throws Exception {
+    void oversizedBodyIs413AndShownInStatus() throws Exception {
         byte[] body = new byte[WahaWebhookController.MAX_BODY_BYTES + 1];
         java.util.Arrays.fill(body, (byte) 'a');
 
         post(body, WahaSignature.sign(body, KEY), "req-" + raw()).andExpect(status().isPayloadTooLarge());
+        assertThat(status.snapshot(true, true).getWarnings()).contains(WhatsappStatusHolder.WEBHOOK_TOO_LARGE);
     }
 
     /** Повтор WAHA приходит с тем же X-Webhook-Request-Id. */

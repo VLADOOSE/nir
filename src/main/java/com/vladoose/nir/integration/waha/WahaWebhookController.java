@@ -58,6 +58,7 @@ public class WahaWebhookController {
                                         HttpServletRequest request) throws IOException {
         byte[] body = readLimited(request);
         if (body == null) {
+            status.webhookTooLarge();
             log.warn("WAHA: вебхук отклонён — тело больше {} МБ", MAX_BODY_BYTES / (1024 * 1024));
             return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
         }

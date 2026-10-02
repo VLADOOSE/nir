@@ -23,11 +23,11 @@ public class WhatsappStatusHolder {
     public static final String CATCH_UP_FAILED = "CATCH_UP_FAILED";
     /** Вебхуки WAHA приходят с чужой подписью — ключ WHATSAPP_WAHA_HMAC_KEY разошёлся с WAHA. */
     public static final String WEBHOOK_REJECTED = "WEBHOOK_REJECTED";
+    /** Событие WAHA крупнее предела вебхука отклонено (413) — правка или звонок могли не дойти. */
+    public static final String WEBHOOK_TOO_LARGE = "WEBHOOK_TOO_LARGE";
 
     /** Лимит тарифа и пропущенное сообщение показываем сутки: оба — события, а не состояние. */
     private static final Duration RECENT = Duration.ofHours(24);
-    /** Отклонённый вебхук без последующих принятых — предупреждение на час (повторы WAHA его продлевают). */
-    private static final Duration WEBHOOK_REJECT_WINDOW = Duration.ofHours(1);
 
     private volatile String state;
     private volatile String number;
@@ -42,9 +42,13 @@ public class WhatsappStatusHolder {
     private volatile List<String> sourceWarnings = List.of();
     /** Когда проход приёма в последний раз продвинулся (ответ шлюза, записанное уведомление). */
     private volatile long progressAt = System.currentTimeMillis();
-    /** Вебхук WAHA с неверной подписью / с верной — пишут потоки HTTP. */
+    /**
+     * Вебхук WAHA с неверной подписью / с верной — пишут потоки HTTP. Отклонённый без последующих принятых виден сутки:
+     * ложную тревогу снимает первое же принятое событие, а неверный ключ в тихий период не должен гаснуть через час.
+     */
     private volatile OffsetDateTime webhookRejectedAt;
     private volatile OffsetDateTime webhookAcceptedAt;
+    private volatile OffsetDateTime webhookTooLargeAt;
 
     public void setState(String s) { state = s == null || s.isBlank() ? null : s; }
 
@@ -96,6 +100,8 @@ public class WhatsappStatusHolder {
 
     public void webhookAccepted() { webhookAcceptedAt = OffsetDateTime.now(); }
 
+    public void webhookTooLarge() { webhookTooLargeAt = OffsetDateTime.now(); }
+
     public long sinceProgressMs() { return System.currentTimeMillis() - progressAt; }
 
     public WhatsappStatusResponse snapshot(boolean enabled, boolean configured) {
@@ -115,10 +121,10 @@ public class WhatsappStatusHolder {
         }
         OffsetDateTime rejected = webhookRejectedAt;
         OffsetDateTime accepted = webhookAcceptedAt;
-        if (rejected != null && rejected.isAfter(OffsetDateTime.now().minus(WEBHOOK_REJECT_WINDOW))
-                && (accepted == null || rejected.isAfter(accepted))) {
+        if (rejected != null && rejected.isAfter(cutoff) && (accepted == null || rejected.isAfter(accepted))) {
             w.add(WEBHOOK_REJECTED);
         }
+        if (webhookTooLargeAt != null && webhookTooLargeAt.isAfter(cutoff)) w.add(WEBHOOK_TOO_LARGE);
         r.setWarnings(w);
         return r;
     }

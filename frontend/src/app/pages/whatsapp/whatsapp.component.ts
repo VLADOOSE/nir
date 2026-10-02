@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { NgIf } from '@angular/common';
-import { Observable, Subscription } from 'rxjs';
+import { Observable, Subscription, timeout } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { WhatsappStatusLineComponent } from '../../shared/whatsapp-status-line.component';
@@ -31,6 +31,9 @@ const STATUS_LABEL: Record<string, { text: string; tone: Tone }> = {
  * страница обновляет его сама), «Перезапустить» и «Отвязать номер» с подтверждением в самой странице.
  * Только администратор: QR — это доступ к рабочему WhatsApp.
  */
+/** Дольше бэкенд не отвечает (дедлайн WAHA — 20 с): запрос считается повисшим, опрос идёт дальше. */
+const POLL_TIMEOUT_MS = 30_000;
+
 @Component({
   selector: 'app-whatsapp',
   standalone: true,
@@ -153,6 +156,7 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   /**
    * quiet — ошибку не показывать (фоновый опрос). Фоновый опрос не перекрывает незавершённый — ответы не применятся не
    * по порядку (WAHA может отвечать до 20 с, а опрос — раз в 5 с); явный (после действия) заменяет его свежим.
+   * Таймаут 30 с — страховка от повисшего запроса (сон устройства, потерянный сокет): иначе опрос встал бы до его конца.
    */
   load(quiet = false, replace = !quiet) {
     if (this.destroyed) return;
@@ -162,7 +166,7 @@ export class WhatsappComponent implements OnInit, OnDestroy {
     }
     if (replace || !this.statusSub || this.statusSub.closed) {
       this.statusSub?.unsubscribe();
-      this.statusSub = this.api.getWhatsappStatus().subscribe({
+      this.statusSub = this.api.getWhatsappStatus().pipe(timeout(POLL_TIMEOUT_MS)).subscribe({
         next: s => { this.status = s; this.syncLine(); this.cdr.detectChanges(); },
         error: () => {},
       });
@@ -170,7 +174,7 @@ export class WhatsappComponent implements OnInit, OnDestroy {
   }
 
   private loadSession(quiet: boolean): Subscription {
-    return this.api.getWhatsappSession().subscribe({
+    return this.api.getWhatsappSession().pipe(timeout(POLL_TIMEOUT_MS)).subscribe({
       next: s => {
         this.info = s;
         this.error = '';
