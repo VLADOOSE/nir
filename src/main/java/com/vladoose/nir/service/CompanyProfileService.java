@@ -79,7 +79,12 @@ public class CompanyProfileService {
         p.setDefaultTerms(new ArrayList<>(r.getDefaultTerms()));
         p.setDefaultTermsStyle(r.getDefaultTermsStyle());
         p.setDefaultIntro(trim(r.getDefaultIntro()));
-        p.setNextNumber(r.getNextNumber());
+        if (r.getNextNumber() != null) {
+            // явная правка «следующего исх. №» (спека §4.2, §7): JPA колонку не пишет — тем же JDBC, что и выдача номера
+            jdbc.update("UPDATE company_profile SET next_number = ? WHERE market = ?",
+                    r.getNextNumber(), p.getMarket().name());
+            p.setNextNumber(r.getNextNumber());
+        }
         p.setUpdatedAt(OffsetDateTime.now());
         return repository.save(p);
     }
@@ -122,8 +127,11 @@ public class CompanyProfileService {
     }
 
     /**
-     * Следующий «исх. №» рынка — атомарно (UPDATE … RETURNING), без гонки двух вкладок. Мимо JPA: сущность профиля
-     * в этой транзакции не меняется, поэтому её устаревший nextNumber никто не запишет обратно.
+     * Следующий «исх. №» рынка — атомарно (UPDATE … RETURNING): одновременные КП получают разные номера. Счётчик пишут
+     * только этот метод и явная правка поля «следующий номер» на странице реквизитов ({@link #update} с nextNumber);
+     * через JPA колонка не обновляется (updatable = false), поэтому сохранение реквизитов или картинок с устаревшим
+     * номером в памяти выданные номера не откатывает. Явная правка может вернуть номер назад — это осознанное действие
+     * администратора (повтор номера допустим только так).
      */
     @Transactional
     public int allocateNumber(Market market) {

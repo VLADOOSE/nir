@@ -127,7 +127,11 @@ public class CompanyProfile {
     @Column(name = "default_intro", columnDefinition = "TEXT")
     private String defaultIntro;
 
-    @Column(name = "next_number", nullable = false)
+    /**
+     * Следующий «исх. №». Пишут только CompanyProfileService.allocateNumber и явная правка поля (оба — JDBC); через
+     * JPA колонка не обновляется: сохранение профиля со старым номером в памяти не откатит выданные номера.
+     */
+    @Column(name = "next_number", nullable = false, updatable = false)
     @Builder.Default
     private int nextNumber = 1;
 

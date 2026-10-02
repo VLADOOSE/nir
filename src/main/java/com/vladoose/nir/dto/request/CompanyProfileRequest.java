@@ -38,5 +38,6 @@ public class CompanyProfileRequest {
     @NotNull private List<OfferTerm> defaultTerms;
     @NotNull private TermsStyle defaultTermsStyle;
     @Size(max = 2000) private String defaultIntro;
-    @Min(value = 1, message = "Номер — от 1") private int nextNumber = 1;
+    /** Следующий «исх. №» — только когда администратор правит это поле; null — счётчик не трогать. */
+    @Min(value = 1, message = "Номер — от 1") private Integer nextNumber;
 }

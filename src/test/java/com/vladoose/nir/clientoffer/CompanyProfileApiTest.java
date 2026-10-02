@@ -8,12 +8,14 @@ import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.repository.CompanyProfileRepository;
 import com.vladoose.nir.service.CompanyImageKind;
 import com.vladoose.nir.service.CompanyProfileService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
@@ -45,6 +47,8 @@ class CompanyProfileApiTest {
     @Autowired ObjectMapper om;
     @Autowired CompanyProfileService service;
     @Autowired CompanyProfileRepository repository;
+    @Autowired EntityManager em;
+    @Autowired JdbcTemplate jdbc;
     MockMvc mvc;
 
     @BeforeEach
@@ -70,6 +74,16 @@ class CompanyProfileApiTest {
         } finally {
             MarketContext.clear();
         }
+    }
+
+    /**
+     * Счётчик «исх. №» в таблице. Сперва сброс изменений JPA: сохранение сущности попадает в базу только при сбросе,
+     * а транзакция теста не фиксируется — без него откат номера сущностью сюда просто не доехал бы.
+     */
+    private int storedCounter(Market market) {
+        em.flush();
+        return jdbc.queryForObject("SELECT next_number FROM company_profile WHERE market = ?", Integer.class,
+                market.name());
     }
 
     /** Ставка для сравнения по значению: 5 (из jsonb) и 5.00 (из NUMERIC) — одна ставка; null — «Без НДС». */
@@ -126,6 +140,7 @@ class CompanyProfileApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phone").value("8 777 000 00 00"))
                 .andExpect(jsonPath("$.nextNumber").value(444));
+        assertThat(storedCounter(Market.KZ)).isEqualTo(444);   // явная правка номера — в таблице
 
         // Список ставок — явно, а не сохранённый в nirdb: «12% нет в списке» не должно зависеть от правок оператора.
         // Ставки РУ и «не подлежит» — из этого же списка, иначе отказ без «Наименования» ниже мог бы прийти из-за них.
@@ -144,6 +159,45 @@ class CompanyProfileApiTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Наименование")));
+    }
+
+    /**
+     * Реквизиты открыты в одной вкладке, в другой выдаются номера КП, потом здесь правят телефон. Сохранение без поля
+     * nextNumber счётчик не трогает: раньше пропущенное поле становилось 1, а профиль целиком возвращал старый номер.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void savingRequisitesDoesNotRollTheCounterBack() throws Exception {
+        ObjectNode body = (ObjectNode) om.readTree(profileJson());   // страница реквизитов загрузила профиль
+        int original = storedCounter(Market.KZ);
+        service.allocateNumber(Market.KZ);                            // два КП из другой вкладки
+        service.allocateNumber(Market.KZ);
+        em.clear();   // следующий запрос страницы читает профиль заново, как отдельный запрос в приложении
+        body.remove("nextNumber");
+        body.put("phone", "8 777 111 11 11");
+        mvc.perform(put("/api/company-profile").header("X-Market", "KZ")
+                        .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phone").value("8 777 111 11 11"))
+                .andExpect(jsonPath("$.nextNumber").value(original + 2));
+        assertThat(storedCounter(Market.KZ)).isEqualTo(original + 2);
+    }
+
+    /**
+     * Профиль прочитан до выдачи номера (соседняя вкладка выдала номер между чтением и сохранением), потом загружена
+     * печать. Сущность сохраняется целиком, но next_number через JPA не обновляется — номер не откатывается.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void imageUploadDoesNotRollTheCounterBack() throws Exception {
+        int original = repository.findByMarket(Market.KZ).orElseThrow().getNextNumber();   // сущность — в сессии JPA
+        service.allocateNumber(Market.KZ);                                                  // её номер устарел
+        MockMultipartFile file = new MockMultipartFile("file", "stamp.jpg", "image/jpeg",
+                KpTestSupport.circleOnWhiteJpeg(400));
+        mvc.perform(multipart("/api/company-profile/images/stamp").file(file).header("X-Market", "KZ"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasStamp").value(true));
+        assertThat(storedCounter(Market.KZ)).isEqualTo(original + 1);
     }
 
     @Test
