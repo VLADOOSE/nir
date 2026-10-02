@@ -26,7 +26,7 @@
 - Спеки: `docs/superpowers/specs/YYYY-MM-DD-<тема>-design.md`. Планы: `docs/superpowers/plans/YYYY-MM-DD-<тема>.md`.
 - SDD: per-task реализатор + ревьюер + fix-loop + финальный whole-branch ревью; ledger в `.superpowers/sdd/progress.md`.
 - Мелкие правки/фиксы — инлайн на короткой ветке + мерж (не на main напрямую: `git checkout -b ...` → commit → `merge --ff-only` → удалить ветку).
-- Каждый commit заканчивать: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+- Каждый commit заканчивать строкой `Co-Authored-By:` с моделью, которая сделала работу; сейчас это `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>` (до 2026-09 строка называла Fable 5 и устарела — коммиты уже подписывались Opus 5.5).
 - Иногда вылезают **транзиентные срывы субагентов** (0 tool_uses) — переотправить или сделать инлайн.
 
 ## 4. Стек
