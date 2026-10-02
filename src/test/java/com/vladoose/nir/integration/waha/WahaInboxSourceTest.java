@@ -80,13 +80,17 @@ class WahaInboxSourceTest {
 
     static String raw() { return "3EB0" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase(); }
 
-    /** Порядок — по времени события; моложе задержки (3 с) — не берём: правка не должна обогнать оригинал. */
+    /**
+     * Порядок — по времени события; моложе задержки — не берём: правка не должна обогнать оригинал. «Отлёживающееся»
+     * событие — СЕЙЧАС (уже наступило, но моложе задержки), а не в будущем: событие из будущего не берётся и без
+     * задержки, и тест не ловил бы её снятие (перепроверка ревью: мутация «без задержки» давала зелёный).
+     */
     @Test
     void nextIsOldestSettledPendingEvent() {
         long later = queue(WahaJson.incomingText(personal(), "Айгерим", raw(), now - 60, "второе"));
         long earlier = queue(WahaJson.incomingText(personal(), "Ерлан", raw(), now - 120, "первое"));
-        queue(WahaJson.incomingText(personal(), "Сауле", raw(), now + 30, "ещё отлёживается"));
-        WahaInboxSource s = source(3000);
+        queue(WahaJson.incomingText(personal(), "Сауле", raw(), now, "ещё отлёживается"));
+        WahaInboxSource s = source(10_000);
 
         WhatsappNotification first = s.next();
         assertThat(first.id()).isEqualTo(earlier);
