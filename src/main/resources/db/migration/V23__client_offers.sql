@@ -35,7 +35,7 @@ CREATE TABLE company_profile (
     default_terms_style  VARCHAR(10)  NOT NULL DEFAULT 'LIST',
     default_intro        TEXT,
     next_number          INTEGER      NOT NULL DEFAULT 1,
-    updated_at           TIMESTAMPTZ
+    updated_at           TIMESTAMPTZ                           -- NULL = реквизиты ещё не правились (сид); ставит первое сохранение со страницы реквизитов
 );
 
 CREATE TABLE client_offer (
@@ -113,7 +113,7 @@ INSERT INTO company_profile (market, short_name, full_name, header_left, header_
                              address, accounts, bank_name, bik, phone, email, director_title, director_name,
                              signoff_contacts, vat_rates, vat_default, vat_registered, vat_not_registrable,
                              default_markup_pct, default_columns, default_terms, default_terms_style, default_intro,
-                             next_number, updated_at)
+                             next_number)
 VALUES ('KZ', 'ТОО «West-Med»', 'Товарищество с ограниченной ответственностью «West-Med»',
         E'Жауапкершілігі\nшектеулі серіктестігі', E'Товарищество\nс ограниченной ответственностью',
         '"West-Med"', 'РНН 271 800 059 535 БИН 121 040 000 303', '121040000303',
@@ -124,7 +124,7 @@ VALUES ('KZ', 'ТОО «West-Med»', 'Товарищество с огранич
         '[5, 16, null]', 5, 5, 16, 20,
         '[{"key":"NUM","label":"№"},{"key":"NAME","label":"Наименование"},{"key":"UNIT","label":"Ед. изм."},{"key":"QTY","label":"Кол-во"},{"key":"PRICE","label":"Цена за ед., тг"},{"key":"VAT_RATE","label":"НДС"},{"key":"SUM","label":"Общая сумма, тг"},{"key":"REGISTRATION","label":"Регистрация в РК"}]',
         '[{"label":"","value":"Цены действительны в течение 10 дней"},{"label":"","value":"Транспортные услуги включены в общую стоимость товара"},{"label":"Порядок оплаты","value":"100% предоплата"},{"label":"Форма оплаты","value":"безналичная"},{"label":"Срок поставки всего товара","value":"30 рабочих дней после поступления предоплаты"}]',
-        'LIST', 'ТОО «West-Med» предлагает поставку медицинской продукции по следующим ценам:', 1, now()),
+        'LIST', 'ТОО «West-Med» предлагает поставку медицинской продукции по следующим ценам:', 1),
        ('RF', 'ООО «РЕГИОН-МЕД»', 'Общество с ограниченной ответственностью «РЕГИОН-МЕД»', NULL, NULL,
         'РЕГИОН-МЕД', 'ИНН 6318000846 КПП 631801001 ОГРН 1146318039218', '6318000846',
         E'Российская Федерация, 443066, Самарская область,\nг. Самара, ул. Дыбенко, д. 120, кв. 148',
@@ -135,4 +135,4 @@ VALUES ('KZ', 'ТОО «West-Med»', 'Товарищество с огранич
         '[null, 10, 22]', 22, NULL, 22, 20,
         '[{"key":"NUM"},{"key":"NAME"},{"key":"QTY"},{"key":"UNIT"},{"key":"PRICE"},{"key":"VAT_RATE"},{"key":"SUM"}]',
         '[{"label":"","value":"Цены действительны в течение 10 дней"},{"label":"Порядок оплаты","value":"100% предоплата"},{"label":"Форма оплаты","value":"безналичная"}]',
-        'LIST', 'ООО «РЕГИОН-МЕД» предлагает поставку медицинской продукции по следующим ценам:', 1, now());
+        'LIST', 'ООО «РЕГИОН-МЕД» предлагает поставку медицинской продукции по следующим ценам:', 1);
