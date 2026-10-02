@@ -109,8 +109,10 @@ public class WahaInboxSource implements WhatsappSource {
             status.setSourceError(null);
             loggedSourceError = null;
         } catch (GatewayException e) {
-            // принятое вебхуком разбирается и без WAHA: цикл не останавливаем, только красная строка
-            status.setSourceError(e.getMessage() + " — принятые сообщения разбираются, файлы и догонка ждут");
+            // принятое вебхуком разбирается и без WAHA: цикл не останавливаем, только красная строка. Файл получает три
+            // попытки (~1 мин), потом сообщение пишется без него — «ждут» здесь было бы неправдой
+            status.setSourceError(e.getMessage() + " — принятые сообщения разбираются, но файлы к ним могут не скачаться"
+                    + " (останутся в телефоне); догонка — когда WAHA ответит");
             if (!Objects.equals(loggedSourceError, e.getMessage())) {
                 log.warn("WhatsApp: {}", e.getMessage());
                 loggedSourceError = e.getMessage();

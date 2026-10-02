@@ -200,7 +200,10 @@ class WahaInboxSourceTest {
         assertThatThrownBy(() -> source(0).parse(note(env))).isInstanceOf(GatewayException.class);
     }
 
-    /** WAHA не отвечает — красная строка, но уже принятые события разбираются: housekeeping не бросает. */
+    /**
+     * WAHA не отвечает — красная строка, но уже принятые события разбираются: housekeeping не бросает. Строка не
+     * обещает, что файлы «ждут»: файл получает три попытки (~1 мин), потом сообщение пишется без него (ревью ветки).
+     */
     @Test
     void unreachableWahaIsRedLineNotStop() {
         fake.failWith = new GatewayException(0, "WAHA недоступен при запросе состояния сессии: ConnectException");
@@ -208,7 +211,8 @@ class WahaInboxSourceTest {
 
         source(0).housekeeping(status);
 
-        assertThat(status.snapshot(true, true).getLastError()).contains("WAHA недоступен").contains("принятые сообщения разбираются");
+        assertThat(status.snapshot(true, true).getLastError()).contains("WAHA недоступен").contains("принятые сообщения разбираются")
+                .contains("файлы к ним могут не скачаться").doesNotContain("файлы и догонка ждут");
     }
 
     @Test
