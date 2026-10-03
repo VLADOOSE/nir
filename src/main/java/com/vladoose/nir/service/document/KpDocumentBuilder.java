@@ -60,12 +60,18 @@ public class KpDocumentBuilder {
     private static final double TEXT_WIDTH_PORTRAIT_MM = 210 - 20 - 12, TEXT_WIDTH_LANDSCAPE_MM = 297 - 15 - 15;
     private static final double MM_PER_PT = 25.4 / 72;
     /**
-     * Классы колонок — по ключу: деньги — выравнивание вправо (цена, цена без НДС, сумма НДС, суммы); короткие — номер,
-     * количество, единица, ставка: одно «слово» в ячейке, ширина по содержимому, без переноса. Остальные — текст: всегда
-     * переносятся (длинный код модели без пробелов — внутри своей ячейки, спека §6.4).
+     * Классы колонок — по ключу (classify). Деньги (выравнивание вправо) и количество — числа: не переносятся никогда,
+     * колонка — по самому длинному. № — так же. Ед. изм. и ставка НДС не переносятся, пока строка с полями не шире
+     * FLEX_MAX_SHARES своих долей по умолчанию; длиннее — переносятся по пробелам. Остальные — текст: переносятся всегда
+     * (длинный код модели без пробелов — внутри своей ячейки, спека §6.4).
      */
-    private static final Set<OfferColumnKey> SHORT_COLUMNS =
-            EnumSet.of(OfferColumnKey.NUM, OfferColumnKey.QTY, OfferColumnKey.UNIT, OfferColumnKey.VAT_RATE);
+    private static final Set<OfferColumnKey> FLEX_COLUMNS = EnumSet.of(OfferColumnKey.UNIT, OfferColumnKey.VAT_RATE);
+    /**
+     * Ед. изм. и ставка НДС расширяются по содержимому не дальше двух своих долей по умолчанию — физически (доля книжного
+     * листа в мм) и при выбранном кегле (доля × кегль / 10): «комплект», «упаковка» — в одну строку, а свободный текст
+     * длиннее переносится по пробелам и таблицу не раздувает.
+     */
+    private static final double FLEX_MAX_SHARES = 2;
     private static final double EPS = 1e-9;
 
     /**
@@ -132,10 +138,10 @@ public class KpDocumentBuilder {
     private enum Fit { NAME, MONEY, SHORT, TEXT }
 
     /**
-     * Ширины колонок и кегль таблицы. Классы колонок — по ключу (SHORT_COLUMNS): деньги и короткие не переносятся, их
-     * «нужда» — самое длинное содержимое (и не меньше одной буквы) + поля; текст переносится всегда. Короткая колонка
-     * со свободным текстом длиннее своей доли по умолчанию (ед. изм. «упаковка по 100 шт», ставка «Без НДС») в этом
-     * документе считается текстовой. Тесная таблица уступает по порядку — первый подошедший шаг:
+     * Ширины колонок и кегль таблицы. Классы колонок — по ключу (classify): деньги, количество, № и короткие ед. изм. /
+     * ставка НДС не переносятся, их «нужда» — самое длинное содержимое (и не меньше одной буквы) + поля; ед. изм. или
+     * ставка со строкой шире двух своих долей переносится по пробелам, её нужда — самое длинное слово (не шире двух долей);
+     * текст переносится всегда. Тесная таблица уступает по порядку — первый подошедший шаг:
      * <ol>
      * <li>кегль от 10 до 8 pt шагом 0,5: деньги и короткие — большее из доли по умолчанию × кегль / 10 и нужды, текст —
      * доля по умолчанию × кегль / 10, наименованию — остаток, не меньше четверти. Теснота — в миллиметрах (доли по
@@ -154,68 +160,88 @@ public class KpDocumentBuilder {
         int n = columns.size();
         List<OfferColumnKey> keys = new ArrayList<>();
         List<String> labels = new ArrayList<>();
-        Fit[] fit = new Fit[n];
-        double[] widestEm = new double[n];   // самая длинная строка ячейки колонки, em
-        boolean[] nowrap = new boolean[n];
+        double[] lineEm = new double[n];   // самая длинная строка ячейки колонки, em
+        double[] wordEm = new double[n];   // самое длинное слово (переносы — только по обычному пробелу), em
         for (int i = 0; i < n; i++) {
-            OfferColumnKey key = OfferColumnKey.parse(columns.get(i).key());
-            keys.add(key);
+            keys.add(OfferColumnKey.parse(columns.get(i).key()));
             labels.add(columns.get(i).label());
             for (KpDocument.Row r : rows) {
                 if (i >= r.cells().size()) continue;   // объединённая ячейка раздела / «включено» — не своя
-                for (String line : r.cells().get(i)) widestEm[i] = Math.max(widestEm[i], textEm(line));
+                for (String line : r.cells().get(i)) {
+                    lineEm[i] = Math.max(lineEm[i], textEm(line));
+                    for (String word : line.split("\\s+")) wordEm[i] = Math.max(wordEm[i], textEm(word));
+                }
             }
-            fit[i] = key == OfferColumnKey.NAME ? Fit.NAME
-                    : key.align() == ColumnAlign.RIGHT ? Fit.MONEY
-                    : SHORT_COLUMNS.contains(key) ? Fit.SHORT : Fit.TEXT;
-            if (fit[i] == Fit.SHORT && widestEm[i] * TABLE_FONT_PT * MM_PER_PT > key.weight() * page / 100) fit[i] = Fit.TEXT;
-            nowrap[i] = content(fit[i]);
         }
         // 1. кегль 10 → 8 pt, теснота — в миллиметрах
         for (double pt = TABLE_FONT_PT; pt >= MIN_TABLE_FONT_PT; pt -= TABLE_FONT_STEP_PT) {
-            if (sum(fit, targets(keys, fit, widestEm, pt, page, TEXT_WIDTH_PORTRAIT_MM / page)) > OTHERS_MAX_PERCENT + EPS) continue;
-            double[] needs = needs(fit, widestEm, pt, page);
-            double[] targets = targets(keys, fit, widestEm, pt, page, 1);
-            double[] floors = textFloors(fit, targets, pt, page);
-            double[] fitted = relieve(fit, targets, needs, floors, 100 - NAME_MIN_PERCENT);
-            if (fitted != null) return new TableFit(columnList(keys, labels, nowrap, percents(fit, fitted, needs, floors, NAME_MIN_PERCENT)), pt);
+            Classes c = classify(keys, lineEm, wordEm, pt, page);
+            if (sum(c.fit(), targets(keys, c, pt, TEXT_WIDTH_PORTRAIT_MM / page)) > OTHERS_MAX_PERCENT + EPS) continue;
+            double[] targets = targets(keys, c, pt, 1);
+            double[] floors = textFloors(c.fit(), targets, pt, page);
+            double[] fitted = relieve(c.fit(), targets, c.needs(), floors, 100 - NAME_MIN_PERCENT);
+            if (fitted != null) {
+                return new TableFit(columnList(keys, labels, c.nowrap(), percents(c.fit(), fitted, c.needs(), floors, NAME_MIN_PERCENT)), pt);
+            }
         }
         // 2, 3. 8 pt: деньги и короткие — по нужде, текст сжимается; наименованию — четверть, затем пятая часть
         double pt = MIN_TABLE_FONT_PT;
-        double[] needs = needs(fit, widestEm, pt, page);
-        double[] targets = targets(keys, fit, widestEm, pt, page, 1);
-        double[] floors = textFloors(fit, targets, pt, page);
+        Classes c = classify(keys, lineEm, wordEm, pt, page);
+        double[] targets = targets(keys, c, pt, 1);
+        double[] floors = textFloors(c.fit(), targets, pt, page);
         for (double nameMin : new double[] {NAME_MIN_PERCENT, NAME_MIN_SQUEEZED_PERCENT}) {
-            double[] fitted = squeezeText(fit, targets, needs, floors, 100 - nameMin);
-            if (fitted != null) return new TableFit(columnList(keys, labels, nowrap, percents(fit, fitted, needs, floors, nameMin)), pt);
+            double[] fitted = squeezeText(c.fit(), targets, c.needs(), floors, 100 - nameMin);
+            if (fitted != null) return new TableFit(columnList(keys, labels, c.nowrap(), percents(c.fit(), fitted, c.needs(), floors, nameMin)), pt);
         }
         // 4. абсурдно тесная таблица — прежнее пропорциональное сжатие (числа могут выйти за свои ячейки)
-        return new TableFit(sized(keys, labels, nowrap, targets), pt);
+        return new TableFit(sized(keys, labels, c.nowrap(), targets), pt);
     }
 
-    /** Нужда колонки денег или короткой при кегле pt, % ширины набора (целая — округление её не урежет). */
-    private static int need(double widestEm, double pt, double page) {
-        return (int) Math.ceil((Math.max(widestEm, ONE_GLYPH_EM) * pt * MM_PER_PT + CELL_PADDING_MM) * 100 / page - EPS);
-    }
+    /** Классы колонок при кегле, нужды денег и коротких (% ширины набора, целые — округление их не урежет), неразрывность. */
+    private record Classes(Fit[] fit, double[] needs, boolean[] nowrap) {}
 
-    private static double[] needs(Fit[] fit, double[] widestEm, double pt, double page) {
-        double[] needs = new double[fit.length];
-        for (int i = 0; i < fit.length; i++) {
-            if (content(fit[i])) needs[i] = need(widestEm[i], pt, page);
+    /**
+     * Классы при кегле pt. Деньги и количество (MONEY), № (SHORT) — неразрывны, нужда — самая длинная строка + поля. Ед.
+     * изм. и ставка НДС (SHORT) — так же, пока эта нужда не шире двух своих долей по умолчанию (FLEX_MAX_SHARES; в мм
+     * книжного листа, доля × кегль / 10); шире — переносятся по пробелам, нужда — самое длинное слово, но не шире двух
+     * долей (слово длиннее рвётся внутри ячейки). Остальное — текст (TEXT).
+     */
+    private static Classes classify(List<OfferColumnKey> keys, double[] lineEm, double[] wordEm, double pt, double page) {
+        int n = keys.size();
+        Fit[] fit = new Fit[n];
+        double[] needs = new double[n];
+        boolean[] nowrap = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            OfferColumnKey key = keys.get(i);
+            fit[i] = key == OfferColumnKey.NAME ? Fit.NAME
+                    : key.align() == ColumnAlign.RIGHT || key == OfferColumnKey.QTY ? Fit.MONEY
+                    : key == OfferColumnKey.NUM || FLEX_COLUMNS.contains(key) ? Fit.SHORT : Fit.TEXT;
+            if (!content(fit[i])) continue;
+            double lineMm = needMm(lineEm[i], pt);
+            double maxMm = FLEX_MAX_SHARES * key.weight() / 100 * TEXT_WIDTH_PORTRAIT_MM * pt / TABLE_FONT_PT;
+            boolean wraps = FLEX_COLUMNS.contains(key) && lineMm > maxMm + EPS;
+            double mm = wraps ? Math.min(needMm(wordEm[i], pt), maxMm) : lineMm;
+            needs[i] = Math.ceil(mm * 100 / page - EPS);
+            nowrap[i] = !wraps;
         }
-        return needs;
+        return new Classes(fit, needs, nowrap);
+    }
+
+    /** Ширина ячейки под строку шириной em при кегле pt, мм: строка (не уже одной буквы) и поля. */
+    private static double needMm(double em, double pt) {
+        return Math.max(em, ONE_GLYPH_EM) * pt * MM_PER_PT + CELL_PADDING_MM;
     }
 
     /**
      * Веса шага 1 при кегле pt, % ширины набора: доля по умолчанию × кегль / 10 × scale (scale — доля книжного листа в
      * текущем: проверка тесноты в миллиметрах; 1 — доли раскладки), у денег и коротких — не меньше нужды.
      */
-    private static double[] targets(List<OfferColumnKey> keys, Fit[] fit, double[] widestEm, double pt, double page, double scale) {
-        double[] targets = new double[fit.length];
-        for (int i = 0; i < fit.length; i++) {
-            if (fit[i] == Fit.NAME) continue;
+    private static double[] targets(List<OfferColumnKey> keys, Classes c, double pt, double scale) {
+        double[] targets = new double[keys.size()];
+        for (int i = 0; i < keys.size(); i++) {
+            if (c.fit()[i] == Fit.NAME) continue;
             targets[i] = keys.get(i).weight() * pt / TABLE_FONT_PT * scale;
-            if (fit[i] != Fit.TEXT) targets[i] = Math.max(targets[i], need(widestEm[i], pt, page));
+            if (content(c.fit()[i])) targets[i] = Math.max(targets[i], c.needs()[i]);
         }
         return targets;
     }

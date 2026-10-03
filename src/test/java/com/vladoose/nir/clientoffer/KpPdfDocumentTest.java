@@ -278,6 +278,70 @@ class KpPdfDocumentTest {
         assertThat(checked).isGreaterThan(0);
     }
 
+    /**
+     * Ед. изм. полным словом — «комплект», «упаковка», «флакон», «ампула» — в обычной книжной таблице КП: каждая в одну
+     * строку и внутри своей ячейки (колонка расширяется под самую длинную, до двух своих долей). Раньше колонка
+     * становилась текстовой в своей доле 7 %, и «комплект» печатался «комп / лект».
+     */
+    @Test
+    void fullWordUnitsPrintOnOneLineInTheDefaultTable() {
+        ClientOffer o = KpFixtures.offer2409();
+        String[] units = {"комплект", "упаковка", "флакон", "ампула"};
+        for (int i = 0; i < units.length; i++) o.getItems().get(i).setUnit(units[i]);
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(doc.columns()).hasSize(8);
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        float[] unit = Edges.of(pdf).columns(doc.columns(), "UNIT", "UNIT");
+        for (String u : units) assertOneLineInsideColumn(pdf, u, unit);
+    }
+
+    /**
+     * Количество на миллионы (расходники: 1 000 000 и 2 500 000 шт) — в одну строку и внутри своей ячейки: количество
+     * неразрывно, как суммы, и колонка расширяется под него. Раньше «1 000 000» переносилось «1 000 / 000».
+     */
+    @Test
+    void millionQuantitiesPrintOnOneLineInsideTheQuantityCell() {
+        ClientOffer o = KpFixtures.offer2409();
+        KpFixtures.line(o, "Перчатки смотровые нитриловые", 1_000_000, "2.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        KpFixtures.line(o, "Шприц инъекционный 5 мл", 2_500_000, "1.20", "5", OfferRegistrationStatus.UNCHECKED, null);
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        float[] qty = Edges.of(pdf).columns(doc.columns(), "QTY", "QTY");
+        for (String q : List.of("1 000 000", "2 500 000")) assertOneLineInsideColumn(pdf, q, qty);
+    }
+
+    /**
+     * Свободно набранная ед. изм. длиннее двух долей колонки («упаковка по 100 штук в коробке») переносится — по
+     * пробелам и внутри своей ячейки: колонка не уже самого длинного слова, ни одно слово не рвётся.
+     */
+    @Test
+    void veryLongFreeTypedUnitWrapsAtSpacesInsideItsCell() {
+        ClientOffer o = KpFixtures.offer2409();
+        String unit = "упаковка по 100 штук в коробке";
+        o.getItems().get(0).setUnit(unit);
+        KpDocument doc = KpFixtures.document(o, KpFixtures.profileKz());
+        byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+        float[] cell = Edges.of(pdf).columns(doc.columns(), "UNIT", "UNIT");
+        KpTestSupport.Placed placed = KpTestSupport.find(pdf, unit);
+        assertThat(placed.bottom() - placed.top()).as("перенесена").isGreaterThan(5f);
+        assertThat(placed.left()).as("левый край").isGreaterThanOrEqualTo(cell[0] + PAD - 0.1f);
+        assertThat(placed.right()).as("правый край").isLessThanOrEqualTo(cell[1] - PAD + 0.1f);
+        List<String> lines = KpTestSupport.lines(pdf);
+        for (String word : List.of("упаковка", "100", "штук", "коробке")) {
+            assertThat(lines).as("«" + word + "» — целым словом").anySatisfy(l -> assertThat(l).containsPattern("(^|\\s)" + word + "(\\s|$)"));
+        }
+    }
+
+    /** Текст — в одну строку и внутри своей колонки; из вхождений берётся то, чья середина в колонке (число бывает и в сумме). */
+    private static void assertOneLineInsideColumn(byte[] pdf, String text, float[] column) {
+        KpTestSupport.Placed placed = KpTestSupport.findAll(pdf, text).stream()
+                .filter(t -> (t.left() + t.right()) / 2 > column[0] && (t.left() + t.right()) / 2 < column[1])
+                .findFirst().orElseThrow(() -> new AssertionError("«" + text + "» нет в своей колонке"));
+        assertThat(placed.bottom() - placed.top()).as(text + ": одна строка").isLessThan(3f);
+        assertThat(placed.left()).as(text + ": левый край").isGreaterThanOrEqualTo(column[0] + PAD - 0.1f);
+        assertThat(placed.right()).as(text + ": правый край").isLessThanOrEqualTo(column[1] - PAD + 0.1f);
+    }
+
     /** Цены и суммы на миллионы (КП отца) — целиком в одну строку и внутри своей ячейки, а не «2 721 000,0 / 0». */
     @Test
     void millionsPrintWholeInsideTheirCells() {

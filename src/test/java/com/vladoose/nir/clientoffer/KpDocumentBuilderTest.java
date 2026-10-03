@@ -6,6 +6,7 @@ import com.vladoose.nir.service.offer.ColumnAlign;
 import com.vladoose.nir.service.offer.OfferColumnKey;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -358,16 +359,18 @@ class KpDocumentBuilderTest {
     }
 
     /**
-     * Классы колонок — по ключу: деньги и короткие (№, кол-во, ед. изм., ставка) не переносятся, текст (модель,
-     * производитель, страна, регистрация, примечание) переносится всегда, даже если в каждой ячейке одно «слово» (код
-     * модели, «Германия»). Короткая колонка со свободным текстом длиннее своей доли («упаковка» в ед. изм. на книжном листе:
-     * доля 7 % = 12,5 мм, слово ≈ 17 мм) в этом документе — текст; на альбомном листе (7 % = 18,7 мм) «упаковка» влезает —
-     * короткая.
+     * Классы колонок — по ключу. Деньги и количество не переносятся никогда (количество «12 345 678 901,5» шире двух долей
+     * кол-ва — всё равно), № — тоже. Ед. изм. и ставка НДС не переносятся, пока строка с полями не шире двух долей колонки
+     * по умолчанию (физически, при выбранном кегле: у ед. изм. при 10 pt — 2 × 7 % × 178 мм = 24,9 мм): «упаковка»
+     * (≈ 20,7 мм) и «Без НДС» — в одну строку на обоих листах, «упаковка по 100 штук в коробке» (≈ 61 мм) переносится —
+     * тоже на обоих. Текст (модель, производитель, страна, регистрация, примечание) переносится всегда, даже если в каждой
+     * ячейке одно «слово» (код модели, «Германия»).
      */
     @Test
     void columnClassesFollowTheKeyAndAShortColumnWithLongTextWraps() {
         ClientOffer o = KpFixtures.offer2409();
-        ClientOfferItem gloves = KpFixtures.line(o, "Перчатки смотровые", 1000, "15.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+        ClientOfferItem gloves = KpFixtures.line(o, "Перчатки смотровые", 1000, "15.00", null, OfferRegistrationStatus.UNCHECKED, null);
+        gloves.setQuantity(new BigDecimal("12345678901.5"));
         for (ClientOfferItem it : o.getItems()) {
             it.setModel("ABCDEFGHIJKLMNOPQRSTUV");
             it.setManufacturer("Mindray");
@@ -375,16 +378,72 @@ class KpDocumentBuilderTest {
             it.setNote("Новинка");
         }
         for (String k : new String[] {"MODEL", "MANUFACTURER", "COUNTRY", "NOTE"}) o.getTableColumns().add(new OfferColumn(k, null));
-        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
-        assertThat(d.columns()).filteredOn(KpDocument.Column::nowrap).extracting(KpDocument.Column::key)
-                .containsExactly("NUM", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM");
+        for (boolean landscape : new boolean[] {false, true}) {
+            o.setLandscape(landscape);
+            gloves.setUnit("упаковка");
+            assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
+                    .extracting(KpDocument.Column::key).as("«упаковка», %s", landscape ? "альбомная" : "книжная")
+                    .containsExactly("NUM", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM");
+            gloves.setUnit("упаковка по 100 штук в коробке");
+            assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
+                    .extracting(KpDocument.Column::key).as("длинная ед. изм., %s", landscape ? "альбомная" : "книжная")
+                    .containsExactly("NUM", "QTY", "PRICE", "VAT_RATE", "SUM");
+        }
+    }
 
-        gloves.setUnit("упаковка");
-        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
-                .extracting(KpDocument.Column::key).containsExactly("NUM", "QTY", "PRICE", "VAT_RATE", "SUM");
-        o.setLandscape(true);
-        assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).filteredOn(KpDocument.Column::nowrap)
-                .extracting(KpDocument.Column::key).containsExactly("NUM", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM");
+    /**
+     * Ед. изм. одним словом без пробелов длиннее двух долей («упаковкаупаковкаупаковка», ≈ 55 мм при 10 pt): колонка не
+     * шире двух своих долей, слово переносится внутри ячейки — свободный текст не раздувает таблицу. Две доли — 2 × 7 % ×
+     * 178 мм × кегль / 10: на книжном листе 23,7 мм при 9,5 pt — 14 %, на альбомном 24,9 мм при 10 pt — 10 %.
+     */
+    @Test
+    void unitColumnNeverGrowsPastTwoOfItsShares() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getItems().get(0).setUnit("упаковкаупаковкаупаковка");
+        int[] percent = {14, 10};
+        double[] pt = {9.5, 10};
+        for (int i = 0; i < 2; i++) {
+            o.setLandscape(i == 1);
+            KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+            assertThat(d.tableFontPt()).isEqualTo(pt[i]);
+            KpDocument.Column unit = d.columns().stream().filter(c -> c.key().equals("UNIT")).findFirst().orElseThrow();
+            assertThat(unit.nowrap()).isFalse();
+            assertThat(unit.percent()).isEqualTo(percent[i]);
+        }
+    }
+
+    /**
+     * Ед. изм. длиннее двух долей переносится по пробелам в колонке шириной в самое длинное слово, а не сразу в две доли:
+     * «упаковка по 100 штук в коробке» — «упаковка» ≈ 16,9 мм + поля 3,8 мм = 20,7 мм, 12 % книжного листа (две доли — 14 %).
+     */
+    @Test
+    void longFreeTypedUnitColumnIsAsWideAsItsLongestWord() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getItems().get(0).setUnit("упаковка по 100 штук в коробке");
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(10.0);
+        KpDocument.Column unit = d.columns().stream().filter(c -> c.key().equals("UNIT")).findFirst().orElseThrow();
+        assertThat(unit.nowrap()).isFalse();
+        assertThat(unit.percent()).isEqualTo(12);
+    }
+
+    /**
+     * Правило двух долей — при выбранном кегле: «уп. по 10 шт» (с полями ≈ 23,2 мм при 9,5 pt, две доли — 23,7 мм) в
+     * обычной таблице не переносится, а в тесной (8 pt: строка ≈ 20,2 мм, две доли — 19,9 мм) переносится по пробелам.
+     */
+    @Test
+    void twoShareRuleIsMeasuredAtTheChosenTypeSize() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getItems().get(0).setUnit("уп. по 10 шт");
+        KpDocument d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(9.5);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("UNIT")).singleElement()
+                .satisfies(c -> assertThat(c.nowrap()).isTrue());
+        for (String k : new String[] {"PRICE_NET", "VAT_SUM", "SUM_NET"}) o.getTableColumns().add(new OfferColumn(k, null));
+        d = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(d.tableFontPt()).isEqualTo(8.0);
+        assertThat(d.columns()).filteredOn(c -> c.key().equals("UNIT")).singleElement()
+                .satisfies(c -> assertThat(c.nowrap()).isFalse());
     }
 
     /**
