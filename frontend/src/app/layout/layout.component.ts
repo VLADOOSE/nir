@@ -126,6 +126,9 @@ import { filter } from 'rxjs/operators';
             <a routerLink="/private-requests" routerLinkActive="active">
               <svg lucideIcon="clipboard-list" [size]="16"></svg> Частные заявки
             </a>
+            <a routerLink="/client-offers" routerLinkActive="active">
+              <svg lucideIcon="file-pen-line" [size]="16"></svg> КП клиентам
+            </a>
             <a routerLink="/inbound" routerLinkActive="active">
               <svg lucideIcon="mail" [size]="16"></svg> Входящие
             </a>

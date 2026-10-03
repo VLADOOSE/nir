@@ -46,6 +46,8 @@ export const routes: Routes = [
       { path: 'leads', component: LeadsComponent },
       { path: 'chats', component: ChatsComponent },
       { path: 'private-requests', component: PrivateRequestsComponent },
+      { path: 'client-offers',
+        loadComponent: () => import('./pages/client-offers/client-offers.component').then(m => m.ClientOffersComponent) },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'company-profile', canActivate: [adminGuard],
