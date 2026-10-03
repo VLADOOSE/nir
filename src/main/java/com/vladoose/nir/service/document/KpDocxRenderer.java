@@ -14,6 +14,7 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.apache.xmlbeans.XmlCursor;
 import org.apache.xmlbeans.XmlException;
 import org.openxmlformats.schemas.drawingml.x2006.wordprocessingDrawing.CTAnchor;
 import org.openxmlformats.schemas.drawingml.x2006.wordprocessingDrawing.CTInline;
@@ -21,6 +22,7 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import javax.xml.namespace.QName;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -34,10 +36,10 @@ import java.util.List;
  * KpDocument → Word (.docx) через Apache POI XWPF (спека §6.4): те же блоки, колонки и кегль таблицы, что у PDF, и та же
  * геометрия листа (KpPageGeometry) — поля страницы и поля ячеек как у @page и ячеек шаблона offer.html, поэтому доли
  * колонок значат одно и то же в обоих документах. Ширины — только явные: tblW в DXA + fixed + gridCol + tcW у каждой
- * ячейки («100%» POI не работает — проверено 2026-10-02). Вертикальные отступы блоков — поля CSS шаблона (Flow). Печать —
- * плавающая картинка «перед текстом» (wp:anchor + wrapNone) в ячейке линии подписи, её можно сдвинуть в Word; подпись —
- * в той же ячейке над линией. Шрифт Times New Roman. ⚠ Quick Look на Mac плавающие картинки не рисует и ширин ячеек не
- * соблюдает — смотреть только в Word.
+ * ячейки («100%» POI не работает — проверено 2026-10-02). Вертикальные отступы блоков — поля CSS шаблона (Flow). Печать
+ * и подпись — плавающие картинки «перед текстом» (wp:anchor + wrapNone) в ячейке линии подписи, их можно сдвинуть в Word.
+ * Файл объявляет режим Word 2013+ (compatibilityMode 15). Шрифт Times New Roman. ⚠ Quick Look на Mac плавающие картинки
+ * не рисует и ширин ячеек не соблюдает — смотреть только в Word.
  */
 @Component
 public class KpDocxRenderer {
@@ -68,8 +70,9 @@ public class KpDocxRenderer {
     private static final double SIGNOFF_PADDING_MM = 10;
     /** Запас ячеек должности, фамилии и названия компании сверх измеренной строки, мм: Word не перенесёт её из-за округлений. */
     private static final double MEASURE_SLACK_MM = 0.5;
-    /** Кегль невидимого в строке подписи (знак абзаца, прогоны картинок), pt: «хвост» строки под подписью почти нулевой. */
-    private static final double SIGN_MARK_PT = 1;
+    /** Порядок наложения плавающих картинок (relativeHeight, больше — выше): печать поверх подписи, как в PDF. */
+    private static final long Z_SIGNATURE = 251658240, Z_STAMP = 251659264;
+    private static final String W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     /** Отступы колонтитулов, твипы (у Word по умолчанию 1,25 см): в pgMar они обязательны по схеме. */
     private static final int HEADER_FOOTER = 708;
 
@@ -79,6 +82,7 @@ public class KpDocxRenderer {
     public byte[] render(KpDocument doc) {
         try (XWPFDocument d = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             defaults(d);
+            compatibilityMode(d);
             int width = page(d, doc.landscape());
             Flow flow = new Flow(d);
             letterhead(flow, doc.letterhead(), width);
@@ -165,6 +169,23 @@ public class KpDocxRenderer {
         rPr.addNewSz().setVal(halfPoints(BODY_PT));
         rPr.addNewSzCs().setVal(halfPoints(BODY_PT));
         d.createStyles().setStyles(styles);
+    }
+
+    /**
+     * Режим Word 2013+ (compatibilityMode 15): без него Word открывает файл «в режиме совместимости» — в русском Office
+     * «[Режим ограниченной функциональности]» в заголовке окна, что похоже на ошибку, — и отступ таблиц считает по-старому
+     * (layout). CTCompat в poi-ooxml-lite нет — элемент вставляется курсором; settings нового документа POI пуст, поэтому
+     * compat — единственный его элемент и порядок элементов CT_Settings не нарушается.
+     */
+    private static void compatibilityMode(XWPFDocument d) {
+        try (XmlCursor c = d.getSettings().getCTSettings().newCursor()) {
+            c.toEndToken();
+            c.beginElement(new QName(W_NS, "compat", "w"));
+            c.beginElement(new QName(W_NS, "compatSetting", "w"));
+            c.insertAttributeWithValue(new QName(W_NS, "name", "w"), "compatibilityMode");
+            c.insertAttributeWithValue(new QName(W_NS, "uri", "w"), "http://schemas.microsoft.com/office/word");
+            c.insertAttributeWithValue(new QName(W_NS, "val", "w"), "15");
+        }
     }
 
     /** Лист и поля — KpPageGeometry, те же, что у @page PDF; возвращает ширину набора, твипы. */
@@ -330,7 +351,7 @@ public class KpDocxRenderer {
     /**
      * «Должность ____ Фамилия» (.sign-table — по содержимому, margin-top: 1mm; поля ячеек — нули): должность — ячейка по
      * ширине своей строки, поэтому линия начинается сразу за ней; линия — нижняя рамка ячейки в 45 мм; фамилия — в 3 мм
-     * после линии; ячейки прижаты к низу. В ячейке линии — подпись и печать (signParagraph).
+     * после линии; ячейки прижаты к низу. В ячейке линии — подпись и печать, обе плавающие (signParagraph).
      */
     private static List<XWPFParagraph> directorSign(Flow flow, KpDocument.Signoff s, int width)
             throws IOException, InvalidFormatException, XmlException {
@@ -348,11 +369,8 @@ public class KpDocxRenderer {
         CTTcPr pr = tcPr(lineCell);
         line((pr.isSetTcBorders() ? pr.getTcBorders() : pr.addNewTcBorders()).addNewBottom(), SIGN_LINE_BORDER);
         XWPFParagraph sign = signParagraph(lineCell);
+        if (s.signaturePng() != null) signature(sign, s.signaturePng(), lineWidth);
         if (s.stampPng() != null) stamp(sign, s.stampPng(), s.stampSizeMm());
-        if (s.signaturePng() != null) {   // .sign-pic img: по центру линии, не выше 15 мм и не шире 44 мм
-            picture(run(sign, false, SIGN_MARK_PT), s.signaturePng(), "signature.png",
-                    fit(s.signaturePng(), KpPageGeometry.SIGNATURE_MAX_WIDTH_MM, KpPageGeometry.SIGN_HEIGHT_MM));
-        }
         XWPFTableCell nameCell = row.getCell(2);
         cellLines(nameCell, s.nameLine() == null ? List.of() : List.of(s.nameLine()), ParagraphAlignment.LEFT, false, BODY_PT);
         nameCell.getParagraphs().get(0).setIndentationLeft(gap);   // .sign-table .sign-name { padding-left: 3mm }
@@ -385,53 +403,83 @@ public class KpDocxRenderer {
 
     /**
      * Абзац строки подписи — единственный в ячейке без полей, прижатой к низу, без отступов и ровно SIGN_HEIGHT_MM
-     * высотой (как .sign-box в PDF): его низ — линия (низ ячейки), верх — на SIGN_HEIGHT_MM выше. Знак абзаца и прогоны
-     * картинок — кеглем SIGN_MARK_PT: подпись стоит на строке, а «хвост» строки под ней почти нулевой — подпись на линии.
+     * высотой (как .sign-box в PDF): его низ — линия (низ ячейки), верх — на SIGN_HEIGHT_MM выше. Видимого в нём нет —
+     * только якоря плавающих подписи и печати, которые отсчитываются от верха абзаца; высоту строки подписи держит сам абзац.
      */
     private static XWPFParagraph signParagraph(XWPFTableCell cell) {
         XWPFParagraph p = cell.getParagraphs().get(0);
-        p.setAlignment(ParagraphAlignment.CENTER);   // .sign-pic: подпись по центру линии
         spacing(p, 0, 0);
         exactLine(p, twips(KpPageGeometry.SIGN_HEIGHT_MM));
-        markSize(p, SIGN_MARK_PT);
+        markSize(p, BODY_PT);
         return p;
     }
 
     /**
-     * Печать (спека §6.3) — картинка «перед текстом» (wp:anchor, wrapNone, layoutInCell; её можно сдвинуть в Word) в абзаце
-     * строки подписи. Как в PDF (KpHtmlRenderer: width S; left X − S/2; bottom −(Y + S/2) от линии): ширина — размер печати
-     * S, высота h — по пропорциям картинки; левый край — на X − S/2 от начала линии (positionH от колонки — левого края
-     * ячейки без полей); нижний край — на Y + S/2 ниже линии, то есть верхний — на Y + S/2 − h ниже линии. У круглой печати
-     * (h = S) центр — ровно на X правее начала линии и на Y ниже неё (Y = −4: на 4 мм выше). positionV отсчитывается от верха
-     * абзаца строки подписи, а он на высоту абзаца L выше линии (signParagraph): смещение = (Y + S/2 − h) + L.
+     * Подпись (.sign-pic: left 0; right 0; bottom 0; text-align: center — по центру линии, нижним краем на линии; img — не
+     * больше 44 × 15 мм, без увеличения) — плавающая картинка в абзаце строки подписи. Положение по горизонтали — от левого
+     * края ячейки линии без полей (positionH column): (ширина ячейки − w) / 2 — по центру линии; по вертикали — от верха
+     * абзаца строки подписи, а он на высоту абзаца L выше линии (signParagraph): L − h — нижний край ровно на линии.
+     * Встроенной её не сделать: в строке точной высоты Word ставит картинку на базовую линию — на 80 % высоты строки
+     * (20 % под ней — под «хвосты» букв), и подпись висела на 3 мм выше линии (замер в Word 16.80).
+     */
+    private static void signature(XWPFParagraph sign, byte[] png, int cellTwips) throws IOException, InvalidFormatException, XmlException {
+        long[] size = fit(png, KpPageGeometry.SIGNATURE_MAX_WIDTH_MM, KpPageGeometry.SIGN_HEIGHT_MM);
+        long left = (cellTwips * EMU_PER_TWIP - size[0]) / 2;
+        long top = lineEmu(sign) - size[1];
+        floating(sign, png, "signature.png", "Подпись", size[0], size[1], left, top, Z_SIGNATURE);
+    }
+
+    /**
+     * Печать (спека §6.3) — плавающая картинка в абзаце строки подписи, поверх подписи. Как в PDF (KpHtmlRenderer: width S;
+     * left X − S/2; bottom −(Y + S/2) от линии): ширина — размер печати S, высота h — по пропорциям картинки; левый край —
+     * на X − S/2 от начала линии (positionH от колонки — левого края ячейки без полей); нижний край — на Y + S/2 ниже линии,
+     * то есть верхний — на Y + S/2 − h ниже линии. У круглой печати (h = S) центр — ровно на X правее начала линии и на Y
+     * ниже неё (Y = −4: на 4 мм выше). positionV отсчитывается от верха абзаца строки подписи, а он на высоту абзаца L выше
+     * линии (signParagraph): смещение = (Y + S/2 − h) + L.
      */
     private static void stamp(XWPFParagraph sign, byte[] png, int sizeMm) throws IOException, InvalidFormatException, XmlException {
         long width = sizeMm * EMU_PER_MM;
         long height = Math.round(width * aspect(png));
-        XWPFRun r = run(sign, false, SIGN_MARK_PT);
-        r.addPicture(new ByteArrayInputStream(png), PictureType.PNG, "stamp.png", (int) width, (int) height);
+        long left = Math.round((KpPageGeometry.STAMP_CENTER_X_MM - sizeMm / 2.0) * EMU_PER_MM);
+        long top = Math.round((KpPageGeometry.STAMP_CENTER_Y_MM + sizeMm / 2.0) * EMU_PER_MM) - height + lineEmu(sign);
+        floating(sign, png, "stamp.png", "Печать", width, height, left, top, Z_STAMP);
+    }
+
+    /** Высота абзаца строки подписи (ровно), EMU: от его верха отсчитываются плавающие картинки. */
+    private static long lineEmu(XWPFParagraph sign) {
+        return ((BigInteger) ppr(sign).getSpacing().getLine()).longValue() * EMU_PER_TWIP;
+    }
+
+    /**
+     * Картинка «перед текстом» (wp:anchor, wrapNone, layoutInCell, allowOverlap; её можно сдвинуть в Word) в абзаце строки
+     * подписи: left — от левого края ячейки (positionH column; у ячейки нет полей), top — от верха абзаца (positionV
+     * paragraph), EMU; z — порядок наложения (relativeHeight). POI вставляет картинку встроенной — так выдаются связь с
+     * файлом картинки и уникальный id (docPr), — затем она становится плавающей с тем же id.
+     */
+    private static void floating(XWPFParagraph sign, byte[] png, String file, String title, long width, long height,
+                                 long left, long top, long z) throws IOException, InvalidFormatException, XmlException {
+        XWPFRun r = run(sign, false, BODY_PT);
+        r.addPicture(new ByteArrayInputStream(png), PictureType.PNG, file, (int) width, (int) height);
         CTDrawing drawing = r.getCTR().getDrawingArray(0);
         CTInline inline = drawing.getInlineArray(0);
-        long paragraph = ((BigInteger) ppr(sign).getSpacing().getLine()).longValue() * EMU_PER_TWIP;
-        long left = Math.round((KpPageGeometry.STAMP_CENTER_X_MM - sizeMm / 2.0) * EMU_PER_MM);
-        long top = Math.round((KpPageGeometry.STAMP_CENTER_Y_MM + sizeMm / 2.0) * EMU_PER_MM) - height + paragraph;
         // разбор — как CTDrawing: CTAnchor.Factory.parse сделал бы корневой wp:anchor содержимым — вложенный anchor, битый файл
-        CTAnchor anchor = CTDrawing.Factory.parse(anchorXml(left, top, width, height, inline.getDocPr().getId())).getAnchorArray(0);
+        CTAnchor anchor = CTDrawing.Factory.parse(anchorXml(left, top, width, height, z, inline.getDocPr().getId(), title))
+                .getAnchorArray(0);
         anchor.setGraphic(inline.getGraphic());
         drawing.removeInline(0);
         drawing.setAnchorArray(new CTAnchor[] {anchor});
     }
 
-    private static String anchorXml(long left, long top, long width, long height, long id) {
+    private static String anchorXml(long left, long top, long width, long height, long z, long id, String title) {
         return "<wp:anchor xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\""
-                + " distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"251659264\""
+                + " distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"" + z + "\""
                 + " behindDoc=\"0\" locked=\"0\" layoutInCell=\"1\" allowOverlap=\"1\">"
                 + "<wp:simplePos x=\"0\" y=\"0\"/>"
                 + "<wp:positionH relativeFrom=\"column\"><wp:posOffset>" + left + "</wp:posOffset></wp:positionH>"
                 + "<wp:positionV relativeFrom=\"paragraph\"><wp:posOffset>" + top + "</wp:posOffset></wp:positionV>"
                 + "<wp:extent cx=\"" + width + "\" cy=\"" + height + "\"/>"
                 + "<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/>"
-                + "<wp:docPr id=\"" + id + "\" name=\"Печать\"/><wp:cNvGraphicFramePr/></wp:anchor>";
+                + "<wp:docPr id=\"" + id + "\" name=\"" + title + "\"/><wp:cNvGraphicFramePr/></wp:anchor>";
     }
 
     private static void picture(XWPFRun r, byte[] png, String name, long[] size) throws IOException, InvalidFormatException {
@@ -458,14 +506,14 @@ public class KpDocxRenderer {
 
     /**
      * Ширина таблицы и колонок — явная (tblW в DXA + fixed + gridCol), поля ячеек — явные, ноль тоже (иначе Word берёт свои
-     * 108 twip). tblInd = поле ячейки: Word в режиме совместимости (POI не пишет w:compat) выносит рамку таблицы влево на
-     * поле первой ячейки — с отступом на это поле рамка стоит на поле листа, как в PDF.
+     * 108 twip). tblInd = 0: в режиме Word 2013+ (compatibilityMode) отступ отсчитывается до рамки таблицы — рамка стоит на
+     * поле листа, как в PDF (в старом режиме Word выносил бы её влево на поле первой ячейки).
      */
     private static void layout(XWPFTable t, int[] widths, int paddingH, int paddingV) {
         CTTbl tbl = t.getCTTbl();
         CTTblPr pr = tbl.getTblPr() != null ? tbl.getTblPr() : tbl.addNewTblPr();
         dxa(pr.isSetTblW() ? pr.getTblW() : pr.addNewTblW(), Arrays.stream(widths).sum());
-        dxa(pr.isSetTblInd() ? pr.getTblInd() : pr.addNewTblInd(), paddingH);
+        dxa(pr.isSetTblInd() ? pr.getTblInd() : pr.addNewTblInd(), 0);
         (pr.isSetTblLayout() ? pr.getTblLayout() : pr.addNewTblLayout()).setType(STTblLayoutType.FIXED);
         CTTblCellMar mar = pr.isSetTblCellMar() ? pr.getTblCellMar() : pr.addNewTblCellMar();
         dxa(mar.isSetTop() ? mar.getTop() : mar.addNewTop(), paddingV);

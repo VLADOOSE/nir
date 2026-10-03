@@ -14,6 +14,8 @@ import org.openxmlformats.schemas.drawingml.x2006.wordprocessingDrawing.CTInline
 import org.openxmlformats.schemas.drawingml.x2006.wordprocessingDrawing.STRelFromH;
 import org.openxmlformats.schemas.drawingml.x2006.wordprocessingDrawing.STRelFromV;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -25,6 +27,10 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -34,6 +40,7 @@ class KpDocxRendererTest {
 
     private static final double TWIPS_PER_MM = 1440 / 25.4;
     private static final double EMU_PER_MM = 36_000;
+    private static final String W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
     private final KpDocxRenderer renderer = new KpDocxRenderer();
 
@@ -136,8 +143,8 @@ class KpDocxRendererTest {
         }
         o.setWithStamp(true);
         try (XWPFDocument d = open(docx(o, p))) {
-            assertThat(anchors(d)).isEqualTo(1);                 // печать «перед текстом»
-            assertThat(d.getAllPictures()).hasSize(2);           // + подпись над линией
+            assertThat(anchors(d)).isEqualTo(2);                 // печать и подпись «перед текстом» (спека §6.4)
+            assertThat(d.getAllPictures()).hasSize(2);
         }
     }
 
@@ -267,8 +274,8 @@ class KpDocxRendererTest {
 
     /**
      * Поля ячеек таблиц позиций и условий — поля ячеек PDF (KpPageGeometry: 1,5 мм по бокам, 1,2 мм сверху и снизу): доли
-     * колонок посчитаны под них, а у Word по умолчанию 1,9 мм — колонки денег вышли бы уже. Рамка — на поле листа: отступ
-     * таблицы равен полю ячейки (Word в режиме совместимости выносит рамку влево на поле первой ячейки).
+     * колонок посчитаны под них, а у Word по умолчанию 1,9 мм — колонки денег вышли бы уже. Рамка — на поле листа: в режиме
+     * Word 2013+ (compatibilityMode 15) отступ таблицы отсчитывается до рамки — он нулевой.
      */
     @Test
     void itemsAndTermsTablesUseThePdfCellPadding() throws Exception {
@@ -285,14 +292,15 @@ class KpDocxRendererTest {
                 assertThat(value(mar.getRight().getW())).isEqualTo(h);
                 assertThat(value(mar.getTop().getW())).isEqualTo(v);
                 assertThat(value(mar.getBottom().getW())).isEqualTo(v);
-                assertThat(value(pr.getTblInd().getW())).isEqualTo(h);
+                assertThat(value(pr.getTblInd().getW())).isZero();
             }
         }
     }
 
     /**
      * Печать — как в PDF: центр у начала линии подписи (у левого края её ячейки) и на 4 мм выше линии — у KZ и у длинной
-     * должности (РФ), печать 40 и 30 мм; картинка «перед текстом», в ячейке, её можно сдвинуть.
+     * должности (РФ), печать 40 и 30 мм; картинка «перед текстом», в ячейке, её можно сдвинуть; поверх подписи (в PDF печать
+     * рисуется после подписи), у каждой картинки свой id.
      */
     @Test
     void stampCentreSitsAtTheStartOfTheSignLineFourMmAboveIt() throws Exception {
@@ -305,7 +313,7 @@ class KpDocxRendererTest {
                 o.setWithStamp(true);
                 String as = p.getShortName() + ", " + size + " мм";
                 try (XWPFDocument d = open(docx(o, p))) {
-                    Stamp s = stamp(d);
+                    Floating s = floating(d, "Печать");
                     XWPFTableRow row = s.cell().getTableRow();
                     int at = row.getTableCells().indexOf(s.cell());
                     assertThat(at).as(as).isEqualTo(1);
@@ -320,6 +328,10 @@ class KpDocxRendererTest {
                     assertThat(a.getBehindDoc()).as(as).isFalse();
                     assertThat(a.getLayoutInCell()).as(as).isTrue();
                     assertThat(a.getAllowOverlap()).as(as).isTrue();
+                    Floating signature = floating(d, "Подпись");
+                    assertThat(signature.cell()).as(as).isSameAs(s.cell());
+                    assertThat(a.getRelativeHeight()).as(as + ": печать поверх подписи").isGreaterThan(signature.anchor().getRelativeHeight());
+                    assertThat(a.getDocPr().getId()).as(as + ": id картинок").isNotEqualTo(signature.anchor().getDocPr().getId());
                 }
             }
         }
@@ -340,7 +352,7 @@ class KpDocxRendererTest {
         byte[] pdf = KpFixtures.pdf(o, p);
         double pdfNameEnd = KpTestSupport.find(pdf, "ТОО «West-Med»").right() - KpPageGeometry.margins(false).left();
         try (XWPFDocument d = open(docx(o, p))) {
-            Stamp s = stamp(d);
+            Floating s = floating(d, "Печать");
             XWPFTableRow row = s.cell().getTableRow();
             assertThat(row.getTableCells().indexOf(s.cell())).isEqualTo(1);
             assertThat(row.getCell(0).getText()).isEqualTo("ТОО «West-Med»");
@@ -417,13 +429,10 @@ class KpDocxRendererTest {
                     assertThat(images).as(as).hasSize(1);
                     KpTestSupport.Box pdfStamp = images.get(0);
                     try (XWPFDocument d = open(docx(o, p))) {
-                        Stamp s = stamp(d);
-                        s.centreFromLineMm();   // проверки абзаца строки подписи
-                        double lineMm = s.lineMm();
-                        assertThat(s.anchor().getPositionH().getPosOffset() / EMU_PER_MM).as(as + ": левый край от начала линии")
-                                .isCloseTo(pdfStamp.left() - line.left(), within(0.3));
-                        assertThat(s.anchor().getPositionV().getPosOffset() / EMU_PER_MM - lineMm).as(as + ": верх от линии")
-                                .isCloseTo(pdfStamp.top() - line.top(), within(0.3));
+                        Floating s = floating(d, "Печать");
+                        double[] box = s.boxFromLineMm();
+                        assertThat(box[0]).as(as + ": левый край от начала линии").isCloseTo(pdfStamp.left() - line.left(), within(0.3));
+                        assertThat(box[1]).as(as + ": верх от линии").isCloseTo(pdfStamp.top() - line.top(), within(0.3));
                         assertThat(s.extentMm()[0]).as(as + ": ширина").isCloseTo(pdfStamp.width(), within(0.3));
                         assertThat(s.extentMm()[1]).as(as + ": высота").isCloseTo(pdfStamp.height(), within(0.3));
                     }
@@ -465,32 +474,78 @@ class KpDocxRendererTest {
     }
 
     /**
-     * Подпись — картинкой в строке подписи над линией, по центру, в пределах 44 × 15 мм — того же размера, что в PDF: большая
-     * уменьшается, маленькая не растягивается (max-width / max-height).
+     * Подпись — плавающая картинка в строке подписи, как печать (спека §6.4): по центру линии и нижним краем ровно на ней —
+     * как в PDF, где подпись стоит на линии (встроенную Word ставил на базовую линию строки точной высоты — на 3 мм выше
+     * линии). Строка подписи держит высоту PDF сама, без картинки. Размер — как в PDF, в пределах 44 × 15 мм: большая
+     * уменьшается, маленькая не растягивается.
      */
     @Test
-    void signatureSitsOnTheSignLineAtThePdfSize() throws Exception {
+    void signatureFloatsWithItsBottomOnTheSignLine() throws Exception {
         for (byte[] png : List.of(KpTestSupport.signaturePng(), strokePng(60, 20))) {
             CompanyProfile p = KpFixtures.profileKz();
             p.setSignaturePng(png);
             ClientOffer o = KpFixtures.offer2409();
             o.setWithStamp(true);   // печати в реквизитах нет — рисуется одна подпись
-            List<KpTestSupport.Box> pdfImages = KpTestSupport.imageBoxes(KpFixtures.pdf(o, p));
+            byte[] pdf = KpFixtures.pdf(o, p);
+            List<KpTestSupport.Box> pdfImages = KpTestSupport.imageBoxes(pdf);
             assertThat(pdfImages).hasSize(1);
+            KpTestSupport.Box pdfSignature = pdfImages.get(0);
+            KpTestSupport.Box line = signLine(pdf, KpTestSupport.find(pdf, "Директор ТОО «West-Med»"));
             try (XWPFDocument d = open(docx(o, p))) {
-                assertThat(anchors(d)).isZero();
-                XWPFTableCell line = table(d, "Директор ТОО «West-Med»").getRow(0).getCell(1);
-                assertThat(line.getParagraphs()).hasSize(1);
-                XWPFParagraph sign = line.getParagraphs().get(0);
-                assertThat(sign.getAlignment()).isEqualTo(ParagraphAlignment.CENTER);
-                assertThat(exactLineMm(sign)).isCloseTo(KpPageGeometry.SIGN_HEIGHT_MM, within(0.02));
-                List<CTInline> inlines = new ArrayList<>();
-                for (XWPFRun r : sign.getRuns()) for (CTDrawing dr : r.getCTR().getDrawingList()) inlines.addAll(dr.getInlineList());
-                assertThat(inlines).hasSize(1);
-                double w = inlines.get(0).getExtent().getCx() / EMU_PER_MM, h = inlines.get(0).getExtent().getCy() / EMU_PER_MM;
-                assertThat(w).isCloseTo(pdfImages.get(0).width(), within(0.2)).isLessThanOrEqualTo(KpPageGeometry.SIGNATURE_MAX_WIDTH_MM + 0.01);
-                assertThat(h).isCloseTo(pdfImages.get(0).height(), within(0.2)).isLessThanOrEqualTo(KpPageGeometry.SIGN_HEIGHT_MM + 0.01);
+                assertThat(anchors(d)).isEqualTo(1);
+                Floating s = floating(d, "Подпись");
+                assertThat(s.cell().getTableRow().getTableCells().indexOf(s.cell())).as("ячейка линии").isEqualTo(1);
+                assertThat(s.paragraph().getRuns()).allSatisfy(r -> assertThat(r.getCTR().getDrawingList())
+                        .allSatisfy(dr -> assertThat(dr.sizeOfInlineArray()).isZero()));
+                assertThat(s.lineMm()).as("высота строки подписи").isCloseTo(KpPageGeometry.SIGN_HEIGHT_MM, within(0.02));
+                double[] box = s.boxFromLineMm();
+                assertThat(box[3]).as("нижний край от линии").isCloseTo(0, within(0.01));
+                assertThat((box[0] + box[2]) / 2).as("центр от начала линии")
+                        .isCloseTo(cellWidth(s.cell()) / TWIPS_PER_MM / 2, within(0.01));
+                double[] size = s.extentMm();
+                assertThat(size[0]).isCloseTo(pdfSignature.width(), within(0.2)).isLessThanOrEqualTo(KpPageGeometry.SIGNATURE_MAX_WIDTH_MM + 0.01);
+                assertThat(size[1]).isCloseTo(pdfSignature.height(), within(0.2)).isLessThanOrEqualTo(KpPageGeometry.SIGN_HEIGHT_MM + 0.01);
+                assertThat(box[0]).as("левый край от начала линии — как в PDF").isCloseTo(pdfSignature.left() - line.left(), within(0.3));
+                assertThat(box[3]).as("нижний край от линии — как в PDF").isCloseTo(pdfSignature.bottom() - line.top(), within(0.3));
+                CTAnchor a = s.anchor();
+                assertThat(a.isSetWrapNone()).isTrue();
+                assertThat(a.getBehindDoc()).isFalse();
+                assertThat(a.getLayoutInCell()).isTrue();
+                assertThat(a.getAllowOverlap()).isTrue();
             }
+        }
+    }
+
+    /**
+     * Документ объявляет режим Word 2013+ (compatibilityMode 15): без него Word открывает КП «в режиме совместимости» — в
+     * русском Office «[Режим ограниченной функциональности]» в заголовке окна, — а отступ таблиц считает по-старому.
+     * Проверить это XMLBeans нельзя: в poi-ooxml-lite нет скомпилированного типа CT_Compat (validate падает на
+     * отсутствующем ctcompat….xsb), поэтому settings.xml читается как XML и сверяется ровно с тем, что допускает ECMA-376:
+     * compat — единственный элемент settings (порядок элементов CT_Settings не нарушить), в нём один compatSetting с тремя
+     * обязательными атрибутами name / uri / val.
+     */
+    @Test
+    void documentDeclaresWord2013CompatibilityMode() throws Exception {
+        for (boolean landscape : new boolean[] {false, true}) {
+            ClientOffer o = KpFixtures.offer2409();
+            o.setLandscape(landscape);
+            Element settings = part(docx(o, KpFixtures.profileKz()), "word/settings.xml").getDocumentElement();
+            assertThat(List.of(settings.getNamespaceURI(), settings.getLocalName())).containsExactly(W, "settings");
+            List<Element> children = elements(settings);
+            assertThat(children).extracting(Element::getLocalName).containsExactly("compat");
+            assertThat(children.get(0).getNamespaceURI()).isEqualTo(W);
+            List<Element> compat = elements(children.get(0));
+            assertThat(compat).extracting(Element::getLocalName).containsExactly("compatSetting");
+            Element setting = compat.get(0);
+            assertThat(setting.getNamespaceURI()).isEqualTo(W);
+            int attributes = 0;
+            for (int i = 0; i < setting.getAttributes().getLength(); i++) {
+                if (!"http://www.w3.org/2000/xmlns/".equals(setting.getAttributes().item(i).getNamespaceURI())) attributes++;
+            }
+            assertThat(attributes).isEqualTo(3);
+            assertThat(setting.getAttributeNS(W, "name")).isEqualTo("compatibilityMode");
+            assertThat(setting.getAttributeNS(W, "uri")).isEqualTo("http://schemas.microsoft.com/office/word");
+            assertThat(setting.getAttributeNS(W, "val")).isEqualTo("15");
         }
     }
 
@@ -659,8 +714,8 @@ class KpDocxRendererTest {
 
     // --- помощники ---
 
-    /** Печать: её якорь, абзац строки подписи с ним и ячейка этого абзаца. */
-    private record Stamp(CTAnchor anchor, XWPFParagraph paragraph, XWPFTableCell cell) {
+    /** Плавающая картинка строки подписи (печать или подпись): её якорь, абзац строки подписи с ним и ячейка этого абзаца. */
+    private record Floating(CTAnchor anchor, XWPFParagraph paragraph, XWPFTableCell cell) {
 
         /** {ширина, высота}, мм. */
         double[] extentMm() {
@@ -673,10 +728,11 @@ class KpDocxRendererTest {
         }
 
         /**
-         * Центр печати от начала линии (левого края ячейки) и от самой линии (низа ячейки), мм. Абзац якоря — единственный в
-         * прижатой к низу ячейке таблицы без полей, без отступов и ровно своей высоты: его верх — на эту высоту выше линии.
+         * Прямоугольник картинки от начала линии (левого края ячейки) и от самой линии (низа ячейки), мм: {левый, верхний,
+         * правый, нижний} край. Абзац якоря — единственный в прижатой к низу ячейке таблицы без полей, без отступов и ровно
+         * своей высоты: его верх — на эту высоту выше линии.
          */
-        double[] centreFromLineMm() {
+        double[] boxFromLineMm() {
             assertThat(anchor.getPositionH().getRelativeFrom()).isEqualTo(STRelFromH.COLUMN);
             assertThat(anchor.getPositionV().getRelativeFrom()).isEqualTo(STRelFromV.PARAGRAPH);
             assertThat(cell.getParagraphs()).containsExactly(paragraph);
@@ -686,23 +742,56 @@ class KpDocxRendererTest {
             assertThat(Math.max(0, paragraph.getSpacingBefore())).isZero();
             assertThat(Math.max(0, paragraph.getSpacingAfter())).isZero();
             double[] size = extentMm();
-            return new double[] {anchor.getPositionH().getPosOffset() / EMU_PER_MM + size[0] / 2,
-                    anchor.getPositionV().getPosOffset() / EMU_PER_MM - lineMm() + size[1] / 2};
+            double left = anchor.getPositionH().getPosOffset() / EMU_PER_MM;
+            double top = anchor.getPositionV().getPosOffset() / EMU_PER_MM - lineMm();
+            return new double[] {left, top, left + size[0], top + size[1]};
+        }
+
+        /** Центр картинки от начала линии и от самой линии, мм. */
+        double[] centreFromLineMm() {
+            double[] box = boxFromLineMm();
+            return new double[] {(box[0] + box[2]) / 2, (box[1] + box[3]) / 2};
         }
     }
 
-    private static Stamp stamp(XWPFDocument d) {
+    /** Плавающая картинка с этим именем (docPr name: «Печать», «Подпись»). */
+    private static Floating floating(XWPFDocument d, String title) {
         for (XWPFParagraph p : allParagraphs(d)) {
             for (XWPFRun r : p.getRuns()) {
                 for (CTDrawing drawing : r.getCTR().getDrawingList()) {
-                    if (drawing.sizeOfAnchorArray() > 0) {
-                        assertThat(p.getBody()).as("печать — в ячейке таблицы подписи").isInstanceOf(XWPFTableCell.class);
-                        return new Stamp(drawing.getAnchorArray(0), p, (XWPFTableCell) p.getBody());
+                    for (CTAnchor anchor : drawing.getAnchorList()) {
+                        if (title.equals(anchor.getDocPr().getName())) {
+                            assertThat(p.getBody()).as(title + " — в ячейке таблицы подписи").isInstanceOf(XWPFTableCell.class);
+                            return new Floating(anchor, p, (XWPFTableCell) p.getBody());
+                        }
                     }
                 }
             }
         }
-        throw new AssertionError("печати в документе нет");
+        throw new AssertionError("в документе нет плавающей картинки «" + title + "»");
+    }
+
+    /** Часть пакета .docx как XML (DOM с пространствами имён). */
+    private static org.w3c.dom.Document part(byte[] docx, String name) throws Exception {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(docx))) {
+            for (ZipEntry entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                if (!entry.getName().equals(name)) continue;
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(true);
+                factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                return factory.newDocumentBuilder().parse(new ByteArrayInputStream(zip.readAllBytes()));
+            }
+        }
+        throw new AssertionError("в .docx нет части " + name);
+    }
+
+    /** Дочерние элементы, по порядку. */
+    private static List<Element> elements(Element parent) {
+        List<Element> out = new ArrayList<>();
+        for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n instanceof Element e) out.add(e);
+        }
+        return out;
     }
 
     /** Высота абзаца, заданная ровно (EXACT), мм. */
