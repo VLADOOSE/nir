@@ -27,15 +27,16 @@ public class ProfitabilityExcelService {
         ProfitabilityReportResponse report = reportService.buildReport();
 
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            CompanyInfoProvider.Company company = companyInfoProvider.current();
             CellStyle title = titleStyle(wb);
             CellStyle header = headerStyle(wb);
             CellStyle label = labelStyle(wb);
-            CellStyle money = moneyStyle(wb);
+            CellStyle money = moneyStyle(wb, company.currencySymbol());
             CellStyle percent = percentStyle(wb);
 
             // --- Лист 1: Сводка ---
             Sheet summarySheet = wb.createSheet("Сводка");
-            int row = ExcelCompanyHeader.writeTo(summarySheet, wb, companyInfoProvider.current());
+            int row = ExcelCompanyHeader.writeTo(summarySheet, wb, company);
 
             Row titleRow = summarySheet.createRow(row++);
             Cell c0 = titleRow.createCell(0);
@@ -61,7 +62,7 @@ public class ProfitabilityExcelService {
 
             // --- Лист 2: Топ тендеров ---
             Sheet topSheet = wb.createSheet("Топ тендеров");
-            int rt = ExcelCompanyHeader.writeTo(topSheet, wb, companyInfoProvider.current());
+            int rt = ExcelCompanyHeader.writeTo(topSheet, wb, company);
             writeRow(topSheet, rt++, new String[]{"№ тендера", "Заказчик", "Выручка", "Прибыль", "Маржа %"}, header);
             for (var t : report.getTopTenders()) {
                 Row r = topSheet.createRow(rt++);
@@ -75,7 +76,7 @@ public class ProfitabilityExcelService {
 
             // --- Лист 3: Дистрибьюторы ---
             Sheet distSheet = wb.createSheet("Дистрибьюторы");
-            int rd = ExcelCompanyHeader.writeTo(distSheet, wb, companyInfoProvider.current());
+            int rd = ExcelCompanyHeader.writeTo(distSheet, wb, company);
             writeRow(distSheet, rd++, new String[]{"Дистрибьютор", "Сделок", "Прибыль", "Средняя маржа %"}, header);
             for (var d : report.getDistributorRanking()) {
                 Row r = distSheet.createRow(rd++);
@@ -88,7 +89,7 @@ public class ProfitabilityExcelService {
 
             // --- Лист 4: Типы оборудования ---
             Sheet typeSheet = wb.createSheet("Типы оборудования");
-            int rty = ExcelCompanyHeader.writeTo(typeSheet, wb, companyInfoProvider.current());
+            int rty = ExcelCompanyHeader.writeTo(typeSheet, wb, company);
             writeRow(typeSheet, rty++, new String[]{"Тип", "Позиций", "Прибыль", "Средняя маржа %"}, header);
             for (var t : report.getProfitByType()) {
                 Row r = typeSheet.createRow(rty++);
@@ -163,10 +164,11 @@ public class ProfitabilityExcelService {
         s.setFont(f);
         return s;
     }
-    private CellStyle moneyStyle(Workbook wb) {
+    /** Знак валюты рынка: Excel рисует ₸/₽ системным шрифтом — в отличие от PDF, здесь знак уместен. */
+    private CellStyle moneyStyle(Workbook wb, String currencySymbol) {
         CellStyle s = wb.createCellStyle();
         DataFormat fmt = wb.createDataFormat();
-        s.setDataFormat(fmt.getFormat("#,##0.00 \"₽\""));
+        s.setDataFormat(fmt.getFormat("#,##0.00 \"" + currencySymbol + "\""));
         return s;
     }
     private CellStyle percentStyle(Workbook wb) {

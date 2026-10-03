@@ -28,6 +28,7 @@ public class JasperReportService {
     }
 
     public byte[] generateTenderReport(String status) throws Exception {
+        CompanyInfoProvider.Company company = companyInfoProvider.current();
         List<Tender> tenders = tenderRepository.findBySource(com.vladoose.nir.entity.Source.PUBLIC_TENDER);
         if (status != null && !status.isEmpty()) {
             tenders = tenders.stream().filter(t -> status.equals(t.getStatus())).toList();
@@ -40,8 +41,8 @@ public class JasperReportService {
 
         BaseFont bf;
         try {
-            byte[] fontBytes = getClass().getResourceAsStream("/fonts/DejaVuSans.ttf").readAllBytes();
-            bf = BaseFont.createFont("DejaVuSans.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, fontBytes, null);
+            byte[] fontBytes = getClass().getResourceAsStream("/fonts/LiberationSans-Regular.ttf").readAllBytes();
+            bf = BaseFont.createFont("LiberationSans-Regular.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, fontBytes, null);
         } catch (Exception e) {
             bf = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
         }
@@ -52,7 +53,7 @@ public class JasperReportService {
         Font subtitleFont = new Font(bf, 10);
         Font boldFont = new Font(bf, 11, Font.BOLD);
 
-        PdfCompanyHeader.addTo(document, bf, companyInfoProvider.current());
+        PdfCompanyHeader.addTo(document, bf, company);
 
         String title = "Отчёт по тендерам";
         if (status != null) title += " (статус: " + getStatusLabel(status) + ")";
@@ -95,7 +96,7 @@ public class JasperReportService {
 
             String cost = "—";
             if (t.getTotalCost() != null) {
-                cost = String.format("%,.2f ₽", t.getTotalCost());
+                cost = String.format("%,.2f %s", t.getTotalCost(), company.currencyShort());
                 totalSum = totalSum.add(t.getTotalCost());
             }
             PdfPCell costCell = new PdfPCell(new Phrase(cost, cellFont));
@@ -110,7 +111,7 @@ public class JasperReportService {
 
         Paragraph summary = new Paragraph(
                 "\nИтого тендеров: " + tenders.size()
-                        + "     Общая сумма: " + String.format("%,.2f ₽", totalSum),
+                        + "     Общая сумма: " + String.format("%,.2f %s", totalSum, company.currencyShort()),
                 boldFont);
         summary.setSpacingBefore(10);
         document.add(summary);
@@ -120,6 +121,7 @@ public class JasperReportService {
     }
 
     public byte[] generateApplyReport(ActivityApply apply, List<ApplyItem> items) throws Exception {
+        CompanyInfoProvider.Company company = companyInfoProvider.current();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document document = new Document(PageSize.A4, 30, 30, 30, 30);
         PdfWriter.getInstance(document, out);
@@ -127,8 +129,8 @@ public class JasperReportService {
 
         BaseFont bf;
         try {
-            byte[] fontBytes = getClass().getResourceAsStream("/fonts/DejaVuSans.ttf").readAllBytes();
-            bf = BaseFont.createFont("DejaVuSans.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, fontBytes, null);
+            byte[] fontBytes = getClass().getResourceAsStream("/fonts/LiberationSans-Regular.ttf").readAllBytes();
+            bf = BaseFont.createFont("LiberationSans-Regular.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, fontBytes, null);
         } catch (Exception e) {
             bf = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
         }
@@ -139,7 +141,7 @@ public class JasperReportService {
         Font labelFont = new Font(bf, 10, Font.BOLD);
         Font valueFont = new Font(bf, 10);
 
-        PdfCompanyHeader.addTo(document, bf, companyInfoProvider.current());
+        PdfCompanyHeader.addTo(document, bf, company);
 
         Paragraph title = new Paragraph("Заявка на участие в тендере", titleFont);
         title.setAlignment(Element.ALIGN_CENTER);
@@ -176,9 +178,9 @@ public class JasperReportService {
                 String unitCost = "—";
                 String itemTotalStr = "—";
                 if (item.getOfferedCost() != null) {
-                    unitCost = String.format("%,.2f ₽", item.getOfferedCost());
+                    unitCost = String.format("%,.2f %s", item.getOfferedCost(), company.currencyShort());
                     BigDecimal itemTotal = item.getOfferedCost().multiply(BigDecimal.valueOf(item.getQuantity() != null ? item.getQuantity() : 1));
-                    itemTotalStr = String.format("%,.2f ₽", itemTotal);
+                    itemTotalStr = String.format("%,.2f %s", itemTotal, company.currencyShort());
                     total = total.add(itemTotal);
                 }
                 PdfPCell unitCell = new PdfPCell(new Phrase(unitCost, cellFont));
@@ -191,12 +193,12 @@ public class JasperReportService {
             document.add(table);
 
             Font boldFont = new Font(bf, 12, Font.BOLD);
-            Paragraph totalPara = new Paragraph("\nИтого: " + String.format("%,.2f ₽", total), boldFont);
+            Paragraph totalPara = new Paragraph("\nИтого: " + String.format("%,.2f %s", total, company.currencyShort()), boldFont);
             totalPara.setAlignment(Element.ALIGN_RIGHT);
             document.add(totalPara);
         }
 
-        PdfCompanyHeader.addDirectorSignature(document, bf);
+        PdfCompanyHeader.addDirectorSignature(document, bf, company);
 
         document.close();
         return out.toByteArray();
