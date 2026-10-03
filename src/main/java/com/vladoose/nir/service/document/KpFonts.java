@@ -18,8 +18,10 @@ import java.io.UncheckedIOException;
 public class KpFonts {
 
     public static final String FAMILY = "Liberation Serif";
+    /** Обычное начертание — по нему же KpDocxRenderer меряет строки подписи: метрика та же, что у Times New Roman в Word. */
+    static final String REGULAR_FILE = "LiberationSerif-Regular.ttf";
 
-    private final byte[] regular = load("LiberationSerif-Regular.ttf");
+    private final byte[] regular = load(REGULAR_FILE);
     private final byte[] bold = load("LiberationSerif-Bold.ttf");
     private final byte[] italic = load("LiberationSerif-Italic.ttf");
     private final byte[] boldItalic = load("LiberationSerif-BoldItalic.ttf");
@@ -31,7 +33,7 @@ public class KpFonts {
         builder.useFont(() -> new ByteArrayInputStream(boldItalic), FAMILY, 700, BaseRendererBuilder.FontStyle.ITALIC, true);
     }
 
-    private static byte[] load(String file) {
+    static byte[] load(String file) {
         try (InputStream in = KpFonts.class.getResourceAsStream("/fonts/kp/" + file)) {
             if (in == null) throw new IllegalStateException("Нет шрифта в classpath: /fonts/kp/" + file);
             return in.readAllBytes();

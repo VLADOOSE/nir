@@ -649,7 +649,7 @@ class KpPdfDocumentTest {
         return lines.get(0);
     }
 
-    /** Центр печати — у начала линии и на 4 мм выше неё (KpHtmlRenderer.STAMP_CENTER_X_MM = 0, STAMP_CENTER_Y_MM = −4). */
+    /** Центр печати — у начала линии и на 4 мм выше неё (KpPageGeometry.STAMP_CENTER_X_MM = 0, STAMP_CENTER_Y_MM = −4). */
     private static void assertStampAtLineStart(KpTestSupport.Box stamp, KpTestSupport.Box line, String as) {
         assertThat((stamp.left() + stamp.right()) / 2 - line.left()).as(as + ": центр от начала линии").isCloseTo(0f, within(2f));
         assertThat((stamp.top() + stamp.bottom()) / 2 - line.top()).as(as + ": центр над линией").isCloseTo(-4f, within(2f));

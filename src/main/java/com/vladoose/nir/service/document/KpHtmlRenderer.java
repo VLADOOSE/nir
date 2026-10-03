@@ -8,21 +8,16 @@ import java.math.BigDecimal;
 import java.util.Base64;
 import java.util.Locale;
 
+import static com.vladoose.nir.service.document.KpPageGeometry.STAMP_CENTER_X_MM;
+import static com.vladoose.nir.service.document.KpPageGeometry.STAMP_CENTER_Y_MM;
+
 /**
  * KpDocument → HTML по шаблону templates/kp/offer.html. Весь текст — через th:text (экранируется); картинки —
- * data:-URI (единственное, что разрешено грузить рендереру PDF). Печать привязана к началу линии подписи.
+ * data:-URI (единственное, что разрешено грузить рендереру PDF). Печать привязана к началу линии подписи: где её центр —
+ * KpPageGeometry.STAMP_CENTER_X_MM / STAMP_CENTER_Y_MM (по тем же числам её ставит Word).
  */
 @Component
 public class KpHtmlRenderer {
-
-    /**
-     * Где печать, мм (спека §6.3: «ложится центром у левого края линии подписи»): центр печати — в STAMP_CENTER_X_MM
-     * правее начала линии подписи и в STAMP_CENTER_Y_MM ниже её (минус — выше: центр на строке должности). Длина
-     * должности не важна — печать держится за линию, а не за блок «С уважением…». У подписи от компании линии нет —
-     * её началом служит конец названия компании. Word ставит печать по тем же правилам.
-     */
-    static final double STAMP_CENTER_X_MM = 0;
-    static final double STAMP_CENTER_Y_MM = -4;
 
     private final ITemplateEngine engine;
 
