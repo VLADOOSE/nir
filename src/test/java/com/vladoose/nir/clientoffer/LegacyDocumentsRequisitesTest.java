@@ -5,8 +5,10 @@ import com.vladoose.nir.entity.ActivityApply;
 import com.vladoose.nir.entity.ApplyItem;
 import com.vladoose.nir.entity.CompanyProfile;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.repository.CompanyProfileRepository;
+import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.CompanyInfoProvider;
 import com.vladoose.nir.service.JasperReportService;
 import com.vladoose.nir.service.ProfitabilityExcelService;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Спека §7.4: старые PDF «Заявки» и Excel рентабельности печатают реквизиты СВОЕГО рынка, а не всегда Регион-Мед.
  * Реквизиты в nirdb — данные оператора (их правят страница «Реквизиты и печать» и живые проверки), поэтому тест сам
  * ставит обоим рынкам заведомо разные реквизиты внутри своей транзакции — она откатывается.
+ * PDF-тесты идут под локалью en_US, как прод (eclipse-temurin): суммы обязаны печататься по-русски на любом сервере.
+ * Знак «₽» в тексте PDF не проверяем: в шрифте его нет, OpenPDF молча выбрасывает знак — такая проверка не может упасть;
+ * сторожат точные строки сумм с «тг» / «руб.».
  */
 @SpringBootTest
 @Transactional
@@ -49,6 +55,12 @@ class LegacyDocumentsRequisitesTest {
     @Autowired JasperReportService reports;
     @Autowired ProfitabilityExcelService excel;
     @Autowired CompanyProfileRepository profiles;
+    @Autowired TenderRepository tenders;
+
+    /** Локаль JVM общая для всего набора тестов — возвращается в @AfterEach. */
+    private final Locale previousDefault = Locale.getDefault();
+    private final Locale previousFormat = Locale.getDefault(Locale.Category.FORMAT);
+    private final Locale previousDisplay = Locale.getDefault(Locale.Category.DISPLAY);
 
     @BeforeEach
     void knownRequisites() {
@@ -84,8 +96,11 @@ class LegacyDocumentsRequisitesTest {
     }
 
     @AfterEach
-    void clearMarket() {
+    void clearMarketAndLocale() {
         MarketContext.clear();
+        Locale.setDefault(previousDefault);
+        Locale.setDefault(Locale.Category.DISPLAY, previousDisplay);
+        Locale.setDefault(Locale.Category.FORMAT, previousFormat);
     }
 
     @Test
@@ -125,22 +140,47 @@ class LegacyDocumentsRequisitesTest {
         assertThat(company.directorTitleLine()).isEqualTo("ТОО «Тест-KZ»");
     }
 
+    /**
+     * Суммы — каждая строка своя: цена за ед. и итог позиции у двух строк, «Итого» по заявке. Значения подобраны так,
+     * чтобы ни одна не была частью другой (итог единственной позиции совпал бы с «Итого» и спрятал бы её формат).
+     */
     @Test
     void applyPdfOnKzPrintsKzRequisitesAndTenge() throws Exception {
+        Locale.setDefault(Locale.US);
         MarketContext.set(Market.KZ);
-        String text = KpTestSupport.text(reports.generateApplyReport(apply(), List.of(item())));
-        assertThat(text).contains(KZ_FULL_NAME, KZ_IDS, "Тест Банк KZ", "TESTKZKA", " тг",
+        String text = KpTestSupport.text(reports.generateApplyReport(apply(), items()));
+        assertThat(text).contains(KZ_FULL_NAME, KZ_IDS, "Тест Банк KZ", "TESTKZKA",
+                        "1 234 567,89 тг", "2 469 135,78 тг", "1 000,50 тг", "3 001,50 тг", "Итого: 2 472 137,28 тг",
                         "Директор ТОО «Тест-KZ»", KZ_DIRECTOR, "test-kz@example.kz")
-                .doesNotContain("1112223334", "Тест Банк RF", RF_DIRECTOR, "₽", "руб.");
+                .doesNotContain("1112223334", "Тест Банк RF", RF_DIRECTOR, "руб.");
     }
 
     @Test
     void applyPdfOnRfPrintsRfRequisitesAndRoubles() throws Exception {
+        Locale.setDefault(Locale.US);
         MarketContext.set(Market.RF);
-        String text = KpTestSupport.text(reports.generateApplyReport(apply(), List.of(item())));
-        assertThat(text).contains(RF_FULL_NAME, RF_IDS, "Тест Банк RF", " руб.",
-                        "Генеральный директор ООО «Тест-RF»", RF_DIRECTOR)
-                .doesNotContain("999 888 777 666", "Тест Банк KZ", KZ_DIRECTOR, " тг", "₽");
+        String text = KpTestSupport.text(reports.generateApplyReport(apply(), items()));
+        assertThat(text).contains(RF_FULL_NAME, RF_IDS, "Тест Банк RF",
+                        "1 234 567,89 руб.", "2 469 135,78 руб.", "1 000,50 руб.", "3 001,50 руб.",
+                        "Итого: 2 472 137,28 руб.", "Генеральный директор ООО «Тест-RF»", RF_DIRECTOR)
+                .doesNotContain("999 888 777 666", "Тест Банк KZ", KZ_DIRECTOR, " тг");
+    }
+
+    /** Отчёт по тендерам: шапка рынка, цена каждой строки и «Общая сумма» — по-русски и в валюте рынка. */
+    @Test
+    void tenderReportOnKzPrintsKzRequisitesAndTengeAmounts() throws Exception {
+        Locale.setDefault(Locale.US);
+        MarketContext.set(Market.KZ);
+        tenders.save(Tender.builder().tenderNumber("T9-A").status("T9-REPORT").source(Source.PUBLIC_TENDER)
+                .market(Market.KZ).currency("KZT").totalCost(new BigDecimal("1234567.89")).build());
+        tenders.save(Tender.builder().tenderNumber("T9-B").status("T9-REPORT").source(Source.PUBLIC_TENDER)
+                .market(Market.KZ).currency("KZT").totalCost(new BigDecimal("1000.50")).build());
+
+        String text = KpTestSupport.text(reports.generateTenderReport("T9-REPORT"));
+        assertThat(text).contains(KZ_FULL_NAME, KZ_IDS, "Тест Банк KZ", "Отчёт по тендерам (статус: T9-REPORT)",
+                        "T9-A", "T9-B", "1 234 567,89 тг", "1 000,50 тг",
+                        "Итого тендеров: 2", "Общая сумма: 1 235 568,39 тг")
+                .doesNotContain("1112223334", "Тест Банк RF", "руб.");
     }
 
     @Test
@@ -179,10 +219,15 @@ class LegacyDocumentsRequisitesTest {
         return apply;
     }
 
-    private static ApplyItem item() {
+    /** 1 234 567,89 × 2 = 2 469 135,78; 1 000,50 × 3 = 3 001,50; итого 2 472 137,28. */
+    private static List<ApplyItem> items() {
+        return List.of(item("1234567.89", 2), item("1000.50", 3));
+    }
+
+    private static ApplyItem item(String offeredCost, int quantity) {
         ApplyItem item = new ApplyItem();
-        item.setOfferedCost(new BigDecimal("100.00"));
-        item.setQuantity(2);
+        item.setOfferedCost(new BigDecimal(offeredCost));
+        item.setQuantity(quantity);
         return item;
     }
 }

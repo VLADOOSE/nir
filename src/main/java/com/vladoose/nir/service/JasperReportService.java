@@ -7,6 +7,7 @@ import com.vladoose.nir.entity.ActivityApply;
 import com.vladoose.nir.entity.ApplyItem;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.util.DocFormat;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
@@ -96,7 +97,7 @@ public class JasperReportService {
 
             String cost = "—";
             if (t.getTotalCost() != null) {
-                cost = String.format("%,.2f %s", t.getTotalCost(), company.currencyShort());
+                cost = money(t.getTotalCost(), company);
                 totalSum = totalSum.add(t.getTotalCost());
             }
             PdfPCell costCell = new PdfPCell(new Phrase(cost, cellFont));
@@ -111,7 +112,7 @@ public class JasperReportService {
 
         Paragraph summary = new Paragraph(
                 "\nИтого тендеров: " + tenders.size()
-                        + "     Общая сумма: " + String.format("%,.2f %s", totalSum, company.currencyShort()),
+                        + "     Общая сумма: " + money(totalSum, company),
                 boldFont);
         summary.setSpacingBefore(10);
         document.add(summary);
@@ -178,9 +179,9 @@ public class JasperReportService {
                 String unitCost = "—";
                 String itemTotalStr = "—";
                 if (item.getOfferedCost() != null) {
-                    unitCost = String.format("%,.2f %s", item.getOfferedCost(), company.currencyShort());
+                    unitCost = money(item.getOfferedCost(), company);
                     BigDecimal itemTotal = item.getOfferedCost().multiply(BigDecimal.valueOf(item.getQuantity() != null ? item.getQuantity() : 1));
-                    itemTotalStr = String.format("%,.2f %s", itemTotal, company.currencyShort());
+                    itemTotalStr = money(itemTotal, company);
                     total = total.add(itemTotal);
                 }
                 PdfPCell unitCell = new PdfPCell(new Phrase(unitCost, cellFont));
@@ -193,7 +194,7 @@ public class JasperReportService {
             document.add(table);
 
             Font boldFont = new Font(bf, 12, Font.BOLD);
-            Paragraph totalPara = new Paragraph("\nИтого: " + String.format("%,.2f %s", total, company.currencyShort()), boldFont);
+            Paragraph totalPara = new Paragraph("\nИтого: " + money(total, company), boldFont);
             totalPara.setAlignment(Element.ALIGN_RIGHT);
             document.add(totalPara);
         }
@@ -202,6 +203,14 @@ public class JasperReportService {
 
         document.close();
         return out.toByteArray();
+    }
+
+    /**
+     * Сумма документа «1 234 567,89 тг» — формат DocFormat, как в КП. String.format("%,.2f") брал локаль JVM: на проде
+     * (en_US) русский документ печатал бы «1,234,567.89 тг».
+     */
+    private static String money(BigDecimal value, CompanyInfoProvider.Company company) {
+        return DocFormat.money(value) + " " + company.currencyShort();
     }
 
     private String getApplyStatusLabel(String s) {
