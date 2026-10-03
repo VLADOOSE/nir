@@ -37,27 +37,30 @@ public class KpDocumentBuilder {
     /** Сумма долей всех колонок, кроме наименования, %: наименованию — не меньше четверти ширины. */
     private static final double OTHERS_MAX_PERCENT = 75;
     /**
-     * Поля ячейки по горизонтали, обе стороны, мм: в PDF 2 × 1,5 (offer.html), у Word по умолчанию 2 × 108 twip ≈ 2 × 1,9 —
-     * берётся большее, чтобы число влезло в обоих документах.
+     * Поля ячейки в нужде денег и коротких колонок, обе стороны, мм: поля ячейки 2 × KpPageGeometry.CELL_PADDING_H_MM
+     * (3,0 — одни и те же в PDF и в Word) и 0,8 мм запаса. Запас остался от полей Word по умолчанию (2 × 108 twip ≈
+     * 2 × 1,9 мм), под которые число считалось раньше: с ним ширины колонок не сдвинулись, а оценка ширины числа держит
+     * запас и на округление долей.
      */
     private static final double CELL_PADDING_MM = 3.8;
     /** Самая узкая колонка денег и короткая — поля и одна буква: самые широкие буквы (Ш, Щ, Ю, М, W) — около 1 em. */
     private static final double ONE_GLYPH_EM = 1.0;
     /**
      * Текстовую колонку сжатие (шаги 2–3 подбора) не уводит уже полей и четырёх букв: четыре буквы средней ширины — 2 em
-     * (строчная кириллица Liberation Serif по частотам букв — 0,498 em), поля — ячейки PDF, 2 × 1,5 мм (offer.html). Текст
-     * переносится и за ячейку не выходит, поэтому здесь поля PDF, а не большие поля Word (в самой узкой текстовой колонке
-     * Word — около 3,6 буквы в строке); с полями Word книжная таблица в 11 колонок с миллионами не влезала бы и в шаг 3.
+     * (строчная кириллица Liberation Serif по частотам букв — 0,498 em), поля — ровно поля ячейки, 2 × 1,5 мм
+     * (KpPageGeometry: одни в PDF и в Word). Текст переносится и за ячейку не выходит, поэтому запаса здесь нет; с запасом
+     * CELL_PADDING_MM книжная таблица в 11 колонок с миллионами не влезала бы и в шаг 3.
      */
-    private static final double TEXT_MIN_EM = 4 * 0.5, TEXT_PADDING_MM = 2 * 1.5;
+    private static final double TEXT_MIN_EM = 4 * 0.5, TEXT_PADDING_MM = 2 * KpPageGeometry.CELL_PADDING_H_MM;
     /** Наименованию — не меньше четверти ширины, в крайнем случае (шаг 3 подбора) — пятой части. */
     private static final double NAME_MIN_PERCENT = 25, NAME_MIN_SQUEEZED_PERCENT = 20;
     /**
-     * Ширина набора, мм: A4 без полей страницы — @page в KpHtmlRenderer.pageCss (книжная 20/12, альбомная 15/15), у Word
-     * те же. Веса колонок по умолчанию (OfferColumnKey.weight) — доли книжного листа: на альбомном та же колонка в
+     * Ширина набора, мм: A4 без полей страницы — KpPageGeometry (книжная 20/12, альбомная 15/15; те же поля у @page PDF и
+     * у Word). Веса колонок по умолчанию (OfferColumnKey.weight) — доли книжного листа: на альбомном та же колонка в
      * миллиметрах — меньшая доля, поэтому тесноту таблица меряет в миллиметрах.
      */
-    private static final double TEXT_WIDTH_PORTRAIT_MM = 210 - 20 - 12, TEXT_WIDTH_LANDSCAPE_MM = 297 - 15 - 15;
+    private static final double TEXT_WIDTH_PORTRAIT_MM = KpPageGeometry.textWidthMm(false),
+            TEXT_WIDTH_LANDSCAPE_MM = KpPageGeometry.textWidthMm(true);
     private static final double MM_PER_PT = 25.4 / 72;
     /**
      * Классы колонок — по ключу (classify). Деньги (выравнивание вправо) и количество — числа: не переносятся никогда,

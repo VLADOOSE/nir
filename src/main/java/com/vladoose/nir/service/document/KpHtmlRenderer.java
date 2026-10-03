@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import org.thymeleaf.ITemplateEngine;
 import org.thymeleaf.context.Context;
 
+import java.math.BigDecimal;
 import java.util.Base64;
 import java.util.Locale;
 
@@ -56,10 +57,16 @@ public class KpHtmlRenderer {
         return "padding-bottom: " + css(Math.max(0, STAMP_CENTER_Y_MM + stampSizeMm / 2.0 + 1)) + "mm;";
     }
 
+    /** Лист и его поля — из KpPageGeometry (те же поля у Word): «@page { size: A4; margin: 15mm 12mm 15mm 20mm; }». */
     static String pageCss(boolean landscape) {
-        return landscape
-                ? "@page { size: A4 landscape; margin: 12mm 15mm 12mm 15mm; }"
-                : "@page { size: A4; margin: 15mm 12mm 15mm 20mm; }";
+        KpPageGeometry.Margins m = KpPageGeometry.margins(landscape);
+        return "@page { size: A4" + (landscape ? " landscape" : "") + "; margin: " + mm(m.top()) + " " + mm(m.right()) + " "
+                + mm(m.bottom()) + " " + mm(m.left()) + "; }";
+    }
+
+    /** Длина для CSS без лишних знаков: «15mm», «12.5mm» — с точкой при любой локали. */
+    private static String mm(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString() + "mm";
     }
 
     static String dataUri(byte[] png) {
