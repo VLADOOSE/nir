@@ -2,6 +2,7 @@ package com.vladoose.nir.clientoffer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.entity.CompanyProfile;
 import com.vladoose.nir.entity.Market;
@@ -228,6 +229,45 @@ class CompanyProfileApiTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.hasStamp").value(false));
         mvc.perform(get("/api/company-profile/images/stamp").header("X-Market", "KZ")).andExpect(status().isNotFound());
         mvc.perform(get("/api/company-profile/images/nope").header("X-Market", "KZ")).andExpect(status().isNotFound());
+    }
+
+    /**
+     * Пустой элемент (null в JSON) в колонках или условиях реквизитов — 400 с причиной, а не 500 из NPE; ставка НДС 100% —
+     * тоже 400: ставка — от 0 и меньше 100 (расчёт делит на 100 + ставку). Ставки и колонки — явно, не из nirdb.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void emptyListElementsAndHundredPercentRateAreRejected() throws Exception {
+        ObjectNode base = (ObjectNode) om.readTree(profileJson());
+        base.putArray("vatRates").add(5).add(16).addNull();
+        base.put("vatDefault", 5);
+        base.put("vatRegistered", 5);
+        base.put("vatNotRegistrable", 16);
+        base.putArray("defaultColumns").addObject().put("key", "NAME");
+        base.putArray("defaultTerms");
+
+        ObjectNode body = base.deepCopy();
+        ((ArrayNode) body.get("defaultColumns")).addNull();
+        expectBadRequest(body, "Пустая колонка");
+
+        body = base.deepCopy();
+        ((ArrayNode) body.get("defaultTerms")).addNull();
+        expectBadRequest(body, "Пустое условие");
+
+        body = base.deepCopy();
+        body.putArray("vatRates").add(5).add(16).add(100).addNull();
+        expectBadRequest(body, "меньше 100%");
+
+        mvc.perform(put("/api/company-profile").header("X-Market", "KZ")
+                        .contentType(MediaType.APPLICATION_JSON).content(base.toString()))
+                .andExpect(status().isOk());   // то же без пустых элементов и 100% — сохраняется
+    }
+
+    private void expectBadRequest(ObjectNode body, String reason) throws Exception {
+        mvc.perform(put("/api/company-profile").header("X-Market", "KZ")
+                        .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(reason)));
     }
 
     @Test

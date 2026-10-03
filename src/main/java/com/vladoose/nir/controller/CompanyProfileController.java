@@ -2,6 +2,8 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.CompanyProfileRequest;
 import com.vladoose.nir.dto.response.CompanyProfileResponse;
+import com.vladoose.nir.dto.response.PreviewPagesResponse;
+import com.vladoose.nir.service.ClientOfferService;
 import com.vladoose.nir.service.CompanyImageKind;
 import com.vladoose.nir.service.CompanyProfileService;
 import jakarta.validation.Valid;
@@ -20,9 +22,11 @@ import java.io.IOException;
 public class CompanyProfileController {
 
     private final CompanyProfileService service;
+    private final ClientOfferService clientOffers;
 
-    public CompanyProfileController(CompanyProfileService service) {
+    public CompanyProfileController(CompanyProfileService service, ClientOfferService clientOffers) {
         this.service = service;
+        this.clientOffers = clientOffers;
     }
 
     @GetMapping
@@ -58,5 +62,12 @@ public class CompanyProfileController {
     @PreAuthorize("hasRole('ADMIN')")
     public CompanyProfileResponse deleteImage(@PathVariable String kind) {
         return CompanyProfileResponse.of(service.deleteImage(CompanyImageKind.fromPath(kind)));
+    }
+
+    /** Первая страница КП-образца с текущими реквизитами, печатью и подписью — «сразу видно, как ляжет». */
+    @GetMapping("/sample-preview")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PreviewPagesResponse samplePreview() {
+        return clientOffers.samplePreview();
     }
 }

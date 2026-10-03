@@ -32,8 +32,13 @@ public class KpDocumentBuilder {
             Set.of(OfferRegistrationStatus.CONFIRMED, OfferRegistrationStatus.NOT_REQUIRED, OfferRegistrationStatus.MANUAL);
 
     // Ширины колонок и кегль таблицы позиций (fitTable) — все числа здесь.
-    /** Кегль таблицы позиций, pt: обычный (им печатается всё, что помещается), нижний предел подбора, шаг подбора. */
-    private static final double TABLE_FONT_PT = 10, MIN_TABLE_FONT_PT = 8, TABLE_FONT_STEP_PT = 0.5;
+    /**
+     * Обычный кегль таблицы позиций, pt: им печатается всё, что помещается. KpDocument.tableFontPt ниже него — таблица
+     * тесная (предпросмотр сообщает это редактору: тот подсказывает «Альбомная»).
+     */
+    public static final double TABLE_FONT_PT = 10;
+    /** Нижний предел и шаг подбора кегля тесной таблицы, pt. */
+    private static final double MIN_TABLE_FONT_PT = 8, TABLE_FONT_STEP_PT = 0.5;
     /** Сумма долей всех колонок, кроме наименования, %: наименованию — не меньше четверти ширины. */
     private static final double OTHERS_MAX_PERCENT = 75;
     /**

@@ -98,4 +98,8 @@ public class ClientOfferItem {
 
     @Column(columnDefinition = "TEXT")
     private String note;
+
+    /** Ключ строки на клиенте (автосохранение сводит ответ со своими строками по нему). Не хранится. */
+    @Transient
+    private String clientKey;
 }

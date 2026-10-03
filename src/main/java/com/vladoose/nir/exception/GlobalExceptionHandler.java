@@ -151,6 +151,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(error);
     }
 
+    /** Две записи одного КП одновременно (две вкладки) — @Version отбил вторую: это не 500, а «обновите». */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+        ApiError error = ApiError.builder()
+                .status(HttpStatus.CONFLICT.value())
+                .message("Данные изменились в другой вкладке — обновите страницу")
+                .errors(null)
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleOther(Exception ex) {
         ex.printStackTrace();
