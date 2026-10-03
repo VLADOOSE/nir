@@ -141,6 +141,9 @@ import { filter } from 'rxjs/operators';
             <a *ngIf="auth.isAdmin()" routerLink="/email-template" routerLinkActive="active">
               <svg lucideIcon="mail" [size]="16"></svg> Шаблон письма КП
             </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/company-profile" routerLinkActive="active">
+              <svg lucideIcon="stamp" [size]="16"></svg> Реквизиты и печать
+            </a>
             <a *ngIf="auth.isAdmin()" routerLink="/devices" routerLinkActive="active">
               <svg lucideIcon="monitor-smartphone" [size]="16"></svg> Устройства
               <span class="nav-count" *ngIf="pendingDevices > 0" [attr.aria-label]="pendingDevices + ' ждут допуска'">{{ pendingDevices }}</span>

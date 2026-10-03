@@ -48,6 +48,8 @@ export const routes: Routes = [
       { path: 'private-requests', component: PrivateRequestsComponent },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
+      { path: 'company-profile', canActivate: [adminGuard],
+        loadComponent: () => import('./pages/company-profile/company-profile.component').then(m => m.CompanyProfileComponent) },
       { path: 'devices', component: DevicesComponent, canActivate: [adminGuard] },
       { path: 'whatsapp', component: WhatsappComponent, canActivate: [adminGuard] },
       { path: 'profile', component: ProfileComponent },

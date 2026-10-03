@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import type { PreviewPages } from '../shared/client-offer';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -486,5 +487,65 @@ export class ApiService {
   }
   saveEmailTemplate(body: { subject: string; body: string }): Observable<any> {
     return this.http.put<any>(`${this.base}/email-template`, body);
+  }
+
+  // === КП клиенту: реквизиты и печать (спека 2026-10-02-client-kp-constructor §7) ===
+  getCompanyProfile(): Observable<any> {
+    return this.http.get<any>(`${this.base}/company-profile`);
+  }
+  saveCompanyProfile(body: any): Observable<any> {
+    return this.http.put<any>(`${this.base}/company-profile`, body);
+  }
+  uploadCompanyImage(kind: string, file: File, removeBackground: boolean): Observable<any> {
+    const fd = new FormData();
+    fd.append('file', file);
+    return this.http.post<any>(`${this.base}/company-profile/images/${kind}`, fd,
+      { params: { removeBackground: String(removeBackground) } });
+  }
+  /** Только blob через HttpClient: голый <img src> на /api не несёт X-Market (CLAUDE.md §14). */
+  getCompanyImage(kind: string): Observable<Blob> {
+    return this.http.get(`${this.base}/company-profile/images/${kind}`, { responseType: 'blob' });
+  }
+  deleteCompanyImage(kind: string): Observable<any> {
+    return this.http.delete<any>(`${this.base}/company-profile/images/${kind}`);
+  }
+  getCompanyProfileSample(): Observable<PreviewPages> {
+    return this.http.get<PreviewPages>(`${this.base}/company-profile/sample-preview`);
+  }
+
+  // === КП клиенту (спека §10) ===
+  getClientOffers(params: { status?: string; q?: string } = {}): Observable<any[]> {
+    const p: any = {};
+    if (params.status) p.status = params.status;
+    if (params.q) p.q = params.q;
+    return this.http.get<any[]>(`${this.base}/client-offers`, { params: p });
+  }
+  createClientOffer(): Observable<any> {
+    return this.http.post<any>(`${this.base}/client-offers`, {});
+  }
+  getClientOffer(id: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/client-offers/${id}`);
+  }
+  saveClientOffer(id: number, body: any): Observable<any> {
+    return this.http.put<any>(`${this.base}/client-offers/${id}`, body);
+  }
+  deleteClientOffer(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/client-offers/${id}`);
+  }
+  duplicateClientOffer(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/client-offers/${id}/duplicate`, {});
+  }
+  setClientOfferStatus(id: number, status: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/client-offers/${id}/status`, { status });
+  }
+  /** crowded — таблица КП не влезла обычным кеглем, шрифт уменьшен: редактор подсказывает «Альбомная». */
+  getClientOfferPreview(id: number): Observable<PreviewPages> {
+    return this.http.get<PreviewPages>(`${this.base}/client-offers/${id}/preview`);
+  }
+  downloadClientOfferPdf(id: number): Observable<Blob> {
+    return this.http.get(`${this.base}/client-offers/${id}/pdf`, { responseType: 'blob' });
+  }
+  downloadClientOfferDocx(id: number): Observable<Blob> {
+    return this.http.get(`${this.base}/client-offers/${id}/docx`, { responseType: 'blob' });
   }
 }

@@ -11,7 +11,8 @@ import {
   LucideChevronDown, LucideChevronUp, LucideStar, LucideDownload,
   LucideTriangleAlert, LucideCircleCheck, LucideClock, LucideLogOut, LucideUser,
   LucideHandshake, LucideFileBox, LucideHistory, LucideRefreshCw, LucideEye,
-  LucideExternalLink, LucideBadgeCheck, LucideInbox, LucideMonitorSmartphone, LucideMessagesSquare, LucideQrCode
+  LucideExternalLink, LucideBadgeCheck, LucideInbox, LucideMonitorSmartphone, LucideMessagesSquare, LucideQrCode,
+  LucideStamp, LucideFilePenLine, LucideGripVertical, LucideCopy, LucideShare2, LucideFileDown
 } from '@lucide/angular';
 
 import { routes } from './app.routes';
@@ -33,7 +34,8 @@ export const appConfig: ApplicationConfig = {
       LucideChevronDown, LucideChevronUp, LucideStar, LucideDownload,
       LucideTriangleAlert, LucideCircleCheck, LucideClock, LucideLogOut, LucideUser,
       LucideHandshake, LucideFileBox, LucideHistory, LucideRefreshCw, LucideEye,
-      LucideExternalLink, LucideBadgeCheck, LucideInbox, LucideMonitorSmartphone, LucideMessagesSquare, LucideQrCode
+      LucideExternalLink, LucideBadgeCheck, LucideInbox, LucideMonitorSmartphone, LucideMessagesSquare, LucideQrCode,
+      LucideStamp, LucideFilePenLine, LucideGripVertical, LucideCopy, LucideShare2, LucideFileDown
     ),
     provideAppInitializer(() => {
       const auth = inject(AuthService);
