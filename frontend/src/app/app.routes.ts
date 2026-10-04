@@ -48,6 +48,8 @@ export const routes: Routes = [
       { path: 'private-requests', component: PrivateRequestsComponent },
       { path: 'client-offers',
         loadComponent: () => import('./pages/client-offers/client-offers.component').then(m => m.ClientOffersComponent) },
+      { path: 'client-offers/:id',
+        loadComponent: () => import('./pages/client-offers/client-offer-editor.component').then(m => m.ClientOfferEditorComponent) },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'company-profile', canActivate: [adminGuard],
