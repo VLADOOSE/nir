@@ -107,8 +107,9 @@ const MAX_MARKUP = 1000;
                        [attr.aria-label]="'Наценка, %, строка ' + (i + 1)" /></label>
               <label class="c-price"><span class="cap">Цена клиенту</span>
                 <span class="price-wrap">
-                  <input inputmode="decimal" [class.manual]="it.priceOverride != null" [value]="numText(clientPrice(it))"
-                         (change)="setPrice(it, $event)" [disabled]="readonly" [attr.aria-label]="'Цена клиенту за единицу, строка ' + (i + 1)" />
+                  <input inputmode="decimal" [class.manual]="it.priceOverride != null" [value]="priceText(it)"
+                         (focus)="startPriceEdit(it, $event)" (blur)="endPriceEdit(it)" (change)="setPrice(it, $event)" [disabled]="readonly"
+                         [attr.aria-label]="'Цена клиенту за единицу, строка ' + (i + 1)" />
                   <button type="button" class="reset" *ngIf="it.priceOverride != null && !readonly" (click)="resetPrice(it)"
                           title="Вернуть расчёт по наценке" [attr.aria-label]="'Вернуть расчёт по наценке, строка ' + (i + 1)">↺</button>
                 </span></label>
@@ -326,6 +327,13 @@ export class ClientOfferItemsComponent {
   /** undefined — ставка ещё не выбрана (null — это «Без НДС»): иначе «НДС» без выбора молча снял бы налог у выбранных. */
   bulkVat: number | null | undefined = undefined;
   openMenuKey: string | null = null;
+  /**
+   * «Цена клиенту» — единственное поле строки, чьё значение приходит и с сервера (calc.price). Пока оно в фокусе, поле
+   * показывает текст на момент фокуса: [value] сравнивает с прошлой привязкой, а не с полем, и ответ автосохранения
+   * иначе переписал бы набираемое («105» → «105 600», дальше ввод в конец — спека §8.3). После ухода из поля — снова расчёт.
+   */
+  private editingPriceKey: string | null = null;
+  private editingPriceText = '';
   readonly units = UNIT_SUGGESTIONS;
   money = money;
   numText = numText;
@@ -366,6 +374,19 @@ export class ClientOfferItemsComponent {
   /** Цена клиенту на экране: ручная или посчитанная сервером — своей формулы здесь нет. */
   clientPrice(it: OfferItem): number | null {
     return it.priceOverride ?? it.calc?.price ?? null;
+  }
+
+  priceText(it: OfferItem): string {
+    return this.editingPriceKey === it.key ? this.editingPriceText : numText(this.clientPrice(it));
+  }
+
+  startPriceEdit(it: OfferItem, ev: FocusEvent) {
+    this.editingPriceKey = it.key;
+    this.editingPriceText = (ev.target as HTMLInputElement).value;
+  }
+
+  endPriceEdit(it: OfferItem) {
+    if (this.editingPriceKey === it.key) this.editingPriceKey = null;
   }
 
   add(kind: ItemKind) {
@@ -412,6 +433,9 @@ export class ClientOfferItemsComponent {
     if (copy.registrationStatus === 'CONFIRMED') copy.registrationStatus = 'MANUAL';
     if (copy.registrationStatus === 'SUGGESTED') { copy.registrationStatus = 'UNCHECKED'; copy.registrationText = null; }
     copy.regNumber = null;
+    // Ставку, которой больше нет в настройках рынка, сервер оставляет только уже сохранённой строке: копия — новая
+    // строка, с такой ставкой каждое автосохранение получало бы 400. Пока профиль не пришёл, ставки не известны — не трогаем.
+    if (copy.kind === 'ITEM' && this.profile && !this.hasRate(copy.vatRate)) copy.vatRate = this.profile.vatDefault ?? null;
     this.offer.items.splice(i + 1, 0, copy);
     this.openMenuKey = null;
     this.emit();
