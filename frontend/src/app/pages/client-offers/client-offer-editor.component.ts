@@ -263,10 +263,11 @@ const MAX_MARKUP = 1000;
     @media (max-width: 900px) {
       .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); }
       .ed-title h2 { font-size: 17px; }
-      /* одна строка рядом со статусом: «Сохранено · 12:04», «Изменено в другой вкладке» длиннее «Сохранено» и уходили
-         на новую строку — шапка росла на 25 px и форма съезжала под пальцем; текст ошибки сохранения — целиком */
-      .save-state { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .save-state.wrap { white-space: normal; }
+      /* одна строка: «Сохранено · 12:04», «Изменено в другой вкладке» длиннее «Сохранено» и уходили на новую строку — шапка
+         росла на 25 px и форма съезжала под пальцем. База 7em, не 0: с нулевой индикатор сжимался в полоску в 1–3 px;
+         текст ошибки сохранения — целиком и своей строкой */
+      .save-state { flex: 1 1 7em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .save-state.wrap { white-space: normal; flex-basis: 100%; }
       .card { padding: 12px; }
       /* панель в две строки, а не в три: кнопки — первой, предупреждения — рядом со статусом (липкая панель на телефоне
          постоянно занимает экран, лишняя строка — ~25 px полей) */
