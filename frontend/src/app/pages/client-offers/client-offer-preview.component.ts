@@ -16,11 +16,11 @@ import { ApiService } from '../../services/api.service';
     <div class="pv-state" *ngIf="loading && !pages.length">Собираю предпросмотр…</div>
     <div class="error-banner" *ngIf="error">{{ error }} <button type="button" class="btn btn-line" (click)="load()">Повторить</button></div>
     <div class="pv-pages" [class.stale]="loading && pages.length">
-      <button type="button" class="pv-page" *ngFor="let p of pages; let i = index" (click)="zoom = p" [attr.aria-label]="'Страница ' + (i + 1) + ' крупно'">
+      <button type="button" class="pv-page" *ngFor="let p of pages; let i = index" (click)="openZoom(p)" [attr.aria-label]="'Страница ' + (i + 1) + ' крупно'">
         <img [src]="p" [alt]="'Страница ' + (i + 1)" />
       </button>
     </div>
-    <div class="pv-zoom" *ngIf="zoom" (click)="zoom = null" role="dialog" aria-label="Страница крупно">
+    <div class="pv-zoom" *ngIf="zoom" (click)="closeZoom()" role="dialog" aria-label="Страница крупно">
       <img [src]="zoom" alt="Страница крупно" />
     </div>
   `,
@@ -43,6 +43,8 @@ export class ClientOfferPreviewComponent implements OnChanges, OnDestroy {
   @Input() active = true;
   /** crowded из последнего пришедшего предпросмотра: таблица тесная, кегль уменьшен. */
   @Output() crowded = new EventEmitter<boolean>();
+  /** Страница открыта крупно: редактор поднимает липкую панель предпросмотра над своей нижней панелью только на это время. */
+  @Output() zoomChange = new EventEmitter<boolean>();
 
   pages: string[] = [];
   loading = false;
@@ -67,9 +69,17 @@ export class ClientOfferPreviewComponent implements OnChanges, OnDestroy {
     this.sub?.unsubscribe();
   }
 
+  openZoom(page: string) {
+    this.zoom = page;
+    this.zoomChange.emit(true);
+  }
+
   @HostListener('document:keydown.escape')
   closeZoom() {
-    if (this.zoom) { this.zoom = null; this.cdr.detectChanges(); }
+    if (!this.zoom) return;
+    this.zoom = null;
+    this.zoomChange.emit(false);
+    this.cdr.detectChanges();
   }
 
   load() {

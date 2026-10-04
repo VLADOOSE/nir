@@ -39,12 +39,20 @@ const MAX_MARKUP = 1000;
             OfferTermsEditorComponent, OfferColumnsEditorComponent],
   template: `
     <div class="editor" *ngIf="offer as o; else stateTpl">
+      <!-- место под плашку конфликта есть всегда, нулевой высоты: плашка ложится поверх шапки, а не сдвигает форму под курсором
+           (иначе на месте первого ряда полей оказывалось «Обновить»); липкая — видна при любой прокрутке -->
+      <div class="conflict-slot">
+        <div class="error-banner conflict" *ngIf="conflict" role="alert">
+          КП изменено в другой вкладке — правки этой вкладки не сохранены. <button type="button" class="btn btn-line" (click)="reload()">Обновить</button>
+        </div>
+      </div>
       <header class="ed-top">
         <a routerLink="/client-offers" class="back">← КП клиентам</a>
         <div class="ed-title">
           <h2>КП № {{ o.number }} от {{ dateText(o.offerDate) }}</h2>
           <span class="st" [attr.data-status]="o.status">{{ statusLabel(o.status) }}</span>
-          <span class="save-state" [class.err]="!!saveError || conflict" aria-live="polite">{{ saveText() }}</span>
+          <span class="save-state" [class.err]="!!saveError || conflict" [class.wrap]="!!saveError && !conflict" [attr.title]="saveText()"
+                aria-live="polite">{{ saveText() }}</span>
           <button type="button" class="btn btn-line" *ngIf="saveError && !conflict" (click)="save()">Повторить</button>
         </div>
         <span class="ed-menu" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
@@ -56,10 +64,6 @@ const MAX_MARKUP = 1000;
           </span>
         </span>
       </header>
-
-      <div class="error-banner conflict" *ngIf="conflict">
-        КП изменено в другой вкладке — правки этой вкладки не сохранены. <button type="button" class="btn btn-line" (click)="reload()">Обновить</button>
-      </div>
 
       <div class="tabs" role="tablist">
         <button type="button" role="tab" [class.on]="tab === 'edit'" [attr.aria-selected]="tab === 'edit'" (click)="tab = 'edit'">Редактор</button>
@@ -157,8 +161,9 @@ const MAX_MARKUP = 1000;
           </fieldset>
         </section>
 
-        <aside class="pane-preview" [class.off]="tab !== 'preview'">
-          <app-client-offer-preview [offerId]="o.id" [tick]="previewTick" [active]="previewActive()" (crowded)="onCrowded($event)"></app-client-offer-preview>
+        <aside class="pane-preview" [class.off]="tab !== 'preview'" [class.zoomed]="zoomed">
+          <app-client-offer-preview [offerId]="o.id" [tick]="previewTick" [active]="previewActive()" (crowded)="onCrowded($event)"
+                                    (zoomChange)="zoomed = $event"></app-client-offer-preview>
         </aside>
       </div>
 
@@ -196,14 +201,21 @@ const MAX_MARKUP = 1000;
     .save-state.err { color: var(--danger-text); }
     .ed-menu { position: relative; }
     .row-menu button:disabled { color: var(--text-muted); cursor: default; }
-    .conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 0; }
+    /* нулевая высота и минус зазор колонки (12 px): место под плашку не меняет раскладку ни до конфликта, ни при нём;
+       липкая граница — край содержимого прокрутки (как у нижней панели), поэтому минус отступ main.content */
+    .conflict-slot { position: sticky; top: -24px; z-index: 5; height: 0; margin-bottom: -12px; }
+    /* поверх шапки: тот же тинт kit, но непрозрачный — сквозь плашку не просвечивает то, что под ней */
+    .conflict { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0;
+                background: color-mix(in srgb, var(--danger) 15%, var(--surface)); box-shadow: var(--shadow); }
     .tabs { display: none; gap: 6px; }
     .tabs button { flex: 1; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 8px; font-size: 14px; cursor: pointer; }
     .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
     .ed-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 44%); gap: 16px; align-items: start; }
     .pane-edit { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-    /* липкая панель создаёт свой слой: z-index выше нижней панели (5) — иначе крупная страница (fixed внутри) уходила бы под неё */
-    .pane-preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); z-index: 6; max-height: calc(100vh - 150px); overflow: auto; }
+    .pane-preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 150px); overflow: auto; }
+    /* липкая панель — свой слой, и крупная страница (fixed внутри) уходила бы под нижнюю панель (5). Поднимать панель всегда
+       нельзя: пока она не прилипла, её низ заходит на нижнюю панель и закрывает кнопки — поэтому только пока страница крупно */
+    .pane-preview.zoomed { z-index: 6; }
     fieldset { border: none; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
     .card h3 { margin: 0 0 10px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
@@ -251,10 +263,15 @@ const MAX_MARKUP = 1000;
     @media (max-width: 900px) {
       .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); }
       .ed-title h2 { font-size: 17px; }
+      /* одна строка рядом со статусом: «Сохранено · 12:04», «Изменено в другой вкладке» длиннее «Сохранено» и уходили
+         на новую строку — шапка росла на 25 px и форма съезжала под пальцем; текст ошибки сохранения — целиком */
+      .save-state { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .save-state.wrap { white-space: normal; }
       .card { padding: 12px; }
       /* панель в две строки, а не в три: кнопки — первой, предупреждения — рядом со статусом (липкая панель на телефоне
          постоянно занимает экран, лишняя строка — ~25 px полей) */
       .ed-bar { bottom: -12px; }
+      .conflict-slot { top: -12px; }
       .ed-bar > .btn { order: 1; }
       .warns { order: 2; flex: 1 1 140px; margin-right: 0; }
       .status { order: 3; }
@@ -288,6 +305,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   /** Значение списка статусов: при отказе возвращается к статусу КП (o.status меняет только ответ сервера). */
   statusSel: OfferStatus = 'DRAFT';
   menuOpen = false;
+  /** Страница предпросмотра открыта крупно — только тогда липкая панель предпросмотра выше нижней панели. */
+  zoomed = false;
   shareFile: File | null = null;
   readonly canShare = canShareFiles();
   readonly statuses: OfferStatus[] = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED'];
@@ -374,6 +393,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.savedAt = null;
     this.shareFile = null;
     this.menuOpen = false;
+    this.zoomed = false;   // предпросмотр пересоздаётся вместе с КП — крупной страницы больше нет
     this.crowded = false;
     this.crowdedLandscape = null;
     if (!Number.isInteger(id) || id <= 0) { this.loadError = 'КП не найдено'; return; }
@@ -395,8 +415,12 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** «Обновить» после 409 выбрасывает правки этой вкладки — при несохранённых сперва спросить. */
   reload() {
-    this.open(this.id);
+    if (!this.dirty) { this.open(this.id); return; }
+    this.confirm.ask('Правки этой вкладки не сохранены и пропадут. Обновить?', undefined, { danger: true, confirmLabel: 'Обновить' })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(ok => { if (ok) this.open(this.id); });
   }
 
   /**
@@ -583,15 +607,21 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.flushThen(() => {
       const o = this.offer!;
       const gen = this.gen;
+      const seq = this.changeSeq;   // поля во время сборки остаются живыми
       this.busy = true;
       this.sharePreparing = true;
       this.render();
       this.api.downloadClientOfferPdf(o.id).subscribe({
         next: blob => {
           if (gen !== this.gen) return;
-          this.shareFile = new File([blob], o.fileBaseName + '.pdf', { type: 'application/pdf' });
           this.busy = false;
           this.sharePreparing = false;
+          // правка во время сборки: PDF старше экрана — не отдаём его клиенту, кнопка остаётся «Поделиться»
+          if (this.changeSeq !== seq || this.dirty) {
+            this.notify.info('КП изменилось, пока собирался PDF — нажмите «Поделиться» ещё раз');
+          } else {
+            this.shareFile = new File([blob], o.fileBaseName + '.pdf', { type: 'application/pdf' });
+          }
           this.render();
         },
         error: e => {
