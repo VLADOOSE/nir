@@ -10,11 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,6 +29,7 @@ class ClientOfferPersistenceTest {
     @Autowired CompanyProfileRepository profiles;
     @Autowired ClientOfferRepository offers;
     @Autowired EntityManager em;
+    @Autowired JdbcTemplate jdbc;
 
     @AfterEach
     void clearMarket() {
@@ -124,5 +128,45 @@ class ClientOfferPersistenceTest {
                 .extracting(ClientOffer::getId).contains(offer.getId());
         assertThat(offers.searchJournal(statuses, "%нет-такого%", null, PageRequest.of(0, 300)))
                 .extracting(ClientOffer::getId).doesNotContain(offer.getId());
+    }
+
+    /**
+     * Флаги КП, собранного без явных значений, — те же, что DEFAULT колонок V23: с НДС, детали к наименованию, сумма
+     * прописью и разбивка НДС включены, остальное выключено (раньше сборщик сущности давал КП без НДС).
+     */
+    @Test
+    void builderFlagsMatchTheMigrationDefaults() {
+        ClientOffer o = ClientOffer.builder().build();
+        Map<String, Boolean> builder = new LinkedHashMap<>();
+        builder.put("vat_enabled", o.isVatEnabled());
+        builder.put("details_in_name", o.isDetailsInName());
+        builder.put("show_amount_in_words", o.isShowAmountInWords());
+        builder.put("show_vat_breakdown", o.isShowVatBreakdown());
+        builder.put("landscape", o.isLandscape());
+        builder.put("signoff_contacts", o.isSignoffContacts());
+        builder.put("with_stamp", o.isWithStamp());
+        for (Map.Entry<String, Boolean> e : builder.entrySet()) {
+            String dflt = jdbc.queryForObject("SELECT column_default FROM information_schema.columns "
+                    + "WHERE table_name = 'client_offer' AND column_name = ?", String.class, e.getKey());
+            assertThat(e.getValue()).as(e.getKey() + " (V23: DEFAULT " + dflt + ")").isEqualTo(Boolean.parseBoolean(dflt));
+        }
+    }
+
+    /**
+     * JSON-колонки (колонки таблицы, условия) читаются и с полем, которого класс не знает, — например, записанным новой
+     * версией перед откатом: иначе КП не открылось бы вовсе.
+     */
+    @Test
+    void jsonColumnsTolerateUnknownFields() {
+        MarketContext.set(Market.KZ);
+        ClientOffer offer = offers.saveAndFlush(ClientOfferTestData.newOffer(905));
+        jdbc.update("UPDATE client_offer SET table_columns = ?::jsonb, terms = ?::jsonb WHERE id = ?",
+                "[{\"key\":\"NAME\",\"label\":\"Наименование\",\"width\":40}]",
+                "[{\"label\":\"Срок\",\"value\":\"10 дней\",\"bold\":true}]", offer.getId());
+        em.clear();
+        ClientOffer back = offers.findById(offer.getId()).orElseThrow();
+        assertThat(back.getTableColumns()).extracting(OfferColumn::getKey, OfferColumn::getLabel)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("NAME", "Наименование"));
+        assertThat(back.getTerms()).extracting(OfferTerm::getValue).containsExactly("10 дней");
     }
 }

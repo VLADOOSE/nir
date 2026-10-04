@@ -132,6 +132,17 @@ class ImageProcessorTest {
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("PNG или JPEG");
     }
 
+    /**
+     * Скан, на котором декодер ImageIO падает непроверяемым исключением (здесь — цветной JPEG с профилем серого; у
+     * сканеров бывает и CMMException от ICC-профиля), — 400 с советом пересохранить, а не 500.
+     */
+    @Test
+    void scanThatBreaksTheDecoderIsRejectedWithAdvice() {
+        assertThatThrownBy(() -> processor.process(KpTestSupport.jpegWithGrayProfile(), true))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Картинку не удалось прочитать — сохраните скан как JPEG или PNG и загрузите снова");
+    }
+
     @Test
     void rejectsEmptyAndTooBig() {
         assertThatThrownBy(() -> processor.process(new byte[0], true)).isInstanceOf(BadRequestException.class);

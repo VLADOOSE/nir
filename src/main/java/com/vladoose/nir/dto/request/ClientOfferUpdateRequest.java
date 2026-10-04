@@ -26,6 +26,7 @@ public class ClientOfferUpdateRequest {
     @Size(max = 4000) private String intro;
     private boolean vatEnabled = true;
     @NotNull @DecimalMin(value = "-100", message = "Наценка — от −100%") @DecimalMax(value = "1000", message = "Наценка — до 1000%")
+    @Digits(integer = 15, fraction = 10, message = ClientOfferItemDto.DIGITS)   // см. ClientOfferItemDto.DIGITS
     private BigDecimal defaultMarkupPct;
     @NotNull private OfferRounding rounding;
     @NotNull private List<OfferColumn> columns;

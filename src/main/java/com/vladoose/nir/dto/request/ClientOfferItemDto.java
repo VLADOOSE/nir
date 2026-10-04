@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.vladoose.nir.entity.ClientOfferItemKind;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.service.offer.ItemCalc;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -16,6 +17,13 @@ import java.math.BigDecimal;
  */
 @Data
 public class ClientOfferItemDto {
+    /**
+     * Числа — не длиннее 15 цифр до запятой и 10 после (проверка тела, до округления до точности колонок): округление
+     * (setScale) числа вроде 1e200000000 или 1e-200000000 заняло бы процессор на минуты. 15, а не 13 цифр денежных колонок:
+     * чуть большие суммы получают от сервиса ошибку с номером позиции.
+     */
+    public static final String DIGITS = "Слишком длинное число: до 15 цифр до запятой и 10 после";
+
     private Long id;
     @Size(max = 64) private String key;
     private Integer lineNo;
@@ -25,14 +33,14 @@ public class ClientOfferItemDto {
     @Size(max = 500) private String manufacturer;
     @Size(max = 200) private String country;
     @Size(max = 30) private String unit;
-    private BigDecimal quantity;
-    private BigDecimal purchasePrice;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal quantity;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchasePrice;
     private Boolean purchaseVatSame;
-    private BigDecimal purchaseVatRate;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchaseVatRate;
     @Size(max = 255) private String supplierName;
-    private BigDecimal markupPct;
-    private BigDecimal priceOverride;
-    private BigDecimal vatRate;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal markupPct;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal priceOverride;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal vatRate;
     private OfferRegistrationStatus registrationStatus;
     @Size(max = 1000) private String registrationText;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)

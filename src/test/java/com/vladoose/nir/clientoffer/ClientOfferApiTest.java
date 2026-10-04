@@ -31,6 +31,7 @@ import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -38,7 +39,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -155,6 +158,87 @@ class ClientOfferApiTest {
                 .content("{\"status\":\"SENT\"}")).andExpect(status().isForbidden());
     }
 
+    /**
+     * Автосохранение — только администратору: оператор с правильным телом получает 403, и КП не меняется. Тело правильное
+     * нарочно: неправильное отбила бы проверка тела (400) раньше прав.
+     */
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void operatorCannotSaveAnOffer() throws Exception {
+        JsonNode o = json(kz(post("/api/client-offers")).with(user("admin").roles("ADMIN")));
+        long id = o.get("id").asLong();
+        ObjectNode body = bodyOf(o);
+        body.put("subject", "Правка оператора");
+        mvc.perform(putOffer(id, body)).andExpect(status().isForbidden());
+        JsonNode stored = json(kz(get("/api/client-offers/" + id)));
+        assertThat(stored.get("version").asInt()).isZero();
+        assertThat(textOrNull(stored.get("subject"))).isNull();
+    }
+
+    /** КП другого рынка — 404 и на автосохранение, и на смену статуса; само КП не меняется. */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void saveAndStatusOfAnotherMarketAreNotFound() throws Exception {
+        JsonNode o = create();
+        long id = o.get("id").asLong();
+        ObjectNode body = bodyOf(o);
+        body.put("subject", "Правка из другого рынка");
+        mvc.perform(put("/api/client-offers/" + id).header("X-Market", "RF")
+                .contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isNotFound());
+        mvc.perform(post("/api/client-offers/" + id + "/status").header("X-Market", "RF")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SENT\"}")).andExpect(status().isNotFound());
+        JsonNode stored = json(kz(get("/api/client-offers/" + id)));
+        assertThat(stored.get("status").asText()).isEqualTo("DRAFT");
+        assertThat(stored.get("version").asInt()).isZero();
+        assertThat(textOrNull(stored.get("subject"))).isNull();
+    }
+
+    /** Клиент своего рынка сохраняется: в ответе его название, и имя файла КП — по нему. */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void clientOfTheSameMarketIsSaved() throws Exception {
+        MarketContext.set(Market.KZ);
+        Facility kz = facilities.save(Facility.builder().name("Клиника KZ " + UUID.randomUUID()).build());
+        MarketContext.clear();
+        JsonNode o = create();
+        ObjectNode body = bodyOf(o);
+        body.put("facilityId", kz.getId());
+        JsonNode r = save(o.get("id").asLong(), body);
+        assertThat(r.get("facilityId").asLong()).isEqualTo(kz.getId());
+        assertThat(r.get("facilityName").asText()).isEqualTo(kz.getName());
+        assertThat(r.get("fileBaseName").asText()).endsWith(" — " + kz.getName());
+    }
+
+    /**
+     * Ставку убрали из настроек рынка — сохранённая с ней строка остаётся, и КП сохраняется дальше; новой строке эту
+     * ставку уже не выбрать (400). 16 % убираются в транзакции теста — она откатывается.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void savedLineKeepsARateRemovedFromTheMarketButANewLineCannotTakeIt() throws Exception {
+        JsonNode o = create();
+        long id = o.get("id").asLong();
+        ObjectNode body = bodyOf(o);
+        body.putArray("items").add(item("k1", "Гигрометр", 1, 100, 16));
+        JsonNode saved = save(id, body);
+        profiles.findByMarket(Market.KZ).orElseThrow()
+                .setVatRates(new ArrayList<>(Arrays.asList(new BigDecimal("5"), null)));   // 16 % в списке больше нет
+
+        ObjectNode next = bodyOf(saved);
+        ((ObjectNode) next.get("items").get(0)).put("quantity", 2);
+        JsonNode r = save(id, next);
+        assertThat(r.get("items").get(0).get("vatRate").decimalValue()).isEqualByComparingTo("16");
+        assertThat(r.get("items").get(0).get("quantity").decimalValue()).isEqualByComparingTo("2");
+
+        ObjectNode added = bodyOf(r);
+        ((ArrayNode) added.get("items")).add(item("k2", "Термоконтейнер", 1, 100, 16));
+        rejected(id, added, "Ставки НДС «16%» нет в настройках рынка");
+
+        ObjectNode switched = bodyOf(r);   // сохранённая строка держит только свою ставку — на другую вне списка не сменить
+        ((ObjectNode) switched.get("items").get(0)).put("vatRate", 12);
+        rejected(id, switched, "Ставки НДС «12%» нет в настройках рынка");
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void createTakesMarketDefaultsAndNextNumber() throws Exception {
@@ -244,6 +328,11 @@ class ClientOfferApiTest {
 
         body.putArray("items").add(item("k1", "А", 0, 100, 5));
         rejected(id, body, "Количество");
+
+        ObjectNode noQuantity = item("k1", "А", 1, 100, 5);   // у позиции количество обязательно (спека §12: больше нуля)
+        noQuantity.putNull("quantity");
+        body.putArray("items").add(noQuantity);
+        rejected(id, body, "Количество должно быть больше нуля — позиция № 1 «А»");
 
         ObjectNode confirmed = item("k1", "А", 1, 100, 5);
         confirmed.put("registrationStatus", "CONFIRMED");
@@ -571,6 +660,42 @@ class ClientOfferApiTest {
         qty.put("priceOverride", 0);
         body.putArray("items").add(qty);
         rejected(id, body, "Количество больше");
+    }
+
+    /**
+     * Числа длиннее 15 цифр до запятой или 10 после — 400 проверкой тела, до округления: округление (setScale) числа вроде
+     * 1e200000000 заняло бы процессор на минуты, 1e-20 молча стало бы нулём. Причина — в ошибке поля.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void numbersWithTooManyDigitsAreRejectedBeforeRounding() throws Exception {
+        JsonNode o = create();
+        long id = o.get("id").asLong();
+        ObjectNode body = bodyOf(o);
+        ObjectNode markup = item("k1", "Пульсоксиметр", 1, 100, 5);
+        markup.put("markupPct", new BigDecimal("1E-20"));
+        body.putArray("items").add(markup);
+        tooManyDigits(id, body, "items[0].markupPct");
+
+        ObjectNode price = item("k1", "Пульсоксиметр", 1, null, 5);
+        price.put("priceOverride", new BigDecimal("1E+20"));
+        body.putArray("items").add(price);
+        tooManyDigits(id, body, "items[0].priceOverride");
+
+        ObjectNode huge = item("k1", "Пульсоксиметр", 1, 100, 5);
+        huge.put("quantity", new BigDecimal("1E+200000000"));
+        body.putArray("items").add(huge);
+        assertTimeout(Duration.ofSeconds(5), () -> tooManyDigits(id, body, "items[0].quantity"));
+
+        ObjectNode offerMarkup = bodyOf(o);
+        offerMarkup.put("defaultMarkupPct", new BigDecimal("1E-200000000"));
+        assertTimeout(Duration.ofSeconds(5), () -> tooManyDigits(id, offerMarkup, "defaultMarkupPct"));
+    }
+
+    private void tooManyDigits(long id, ObjectNode body, String field) throws Exception {
+        mvc.perform(putOffer(id, body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors['" + field + "']").value(containsString("Слишком длинное число")));
     }
 
     /**

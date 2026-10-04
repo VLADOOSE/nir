@@ -201,6 +201,19 @@ class CompanyProfileApiTest {
         assertThat(storedCounter(Market.KZ)).isEqualTo(original + 1);
     }
 
+    /** Скан, на котором падает декодер (чужой ICC-профиль), — 400 с советом, а не 500; печать не меняется. */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void scanThatBreaksTheDecoderIsA400() throws Exception {
+        boolean hadStamp = repository.findByMarket(Market.KZ).orElseThrow().getStampPng() != null;
+        MockMultipartFile file = new MockMultipartFile("file", "stamp.jpg", "image/jpeg", KpTestSupport.jpegWithGrayProfile());
+        mvc.perform(multipart("/api/company-profile/images/stamp").file(file).header("X-Market", "KZ"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Картинку не удалось прочитать — сохраните скан как JPEG или PNG и загрузите снова"));
+        mvc.perform(get("/api/company-profile").header("X-Market", "KZ"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.hasStamp").value(hadStamp));
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void adminUploadsStampSeesItAndDeletes() throws Exception {

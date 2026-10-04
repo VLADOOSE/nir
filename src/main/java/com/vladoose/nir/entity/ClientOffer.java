@@ -64,7 +64,8 @@ public class ClientOffer implements MarketScoped {
     private String intro;
 
     @Column(name = "vat_enabled", nullable = false)
-    private boolean vatEnabled;
+    @Builder.Default
+    private boolean vatEnabled = true;
 
     @Column(name = "default_markup_pct", nullable = false, precision = 7, scale = 2)
     private BigDecimal defaultMarkupPct;
@@ -80,7 +81,8 @@ public class ClientOffer implements MarketScoped {
     private List<OfferColumn> tableColumns = new ArrayList<>();
 
     @Column(name = "details_in_name", nullable = false)
-    private boolean detailsInName;
+    @Builder.Default
+    private boolean detailsInName = true;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
@@ -93,10 +95,12 @@ public class ClientOffer implements MarketScoped {
     private TermsStyle termsStyle = TermsStyle.LIST;
 
     @Column(name = "show_amount_in_words", nullable = false)
-    private boolean showAmountInWords;
+    @Builder.Default
+    private boolean showAmountInWords = true;
 
     @Column(name = "show_vat_breakdown", nullable = false)
-    private boolean showVatBreakdown;
+    @Builder.Default
+    private boolean showVatBreakdown = true;
 
     @Column(nullable = false)
     private boolean landscape;

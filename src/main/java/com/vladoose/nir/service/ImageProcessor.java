@@ -1,6 +1,8 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.exception.BadRequestException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
@@ -27,6 +29,8 @@ import java.util.Set;
 @Component
 public class ImageProcessor {
 
+    private static final Logger log = LoggerFactory.getLogger(ImageProcessor.class);
+
     public static final int MAX_BYTES = 5 * 1024 * 1024;
     public static final int MAX_SIDE_IN = 5000;
     public static final int MAX_SIDE_OUT = 1200;
@@ -34,13 +38,31 @@ public class ImageProcessor {
     /** Отличие от цвета бумаги (макс. по каналам): ≤ NEAR — прозрачно, ≥ FAR — непрозрачно, между — край. */
     static final int NEAR = 28;
     static final int FAR = 80;
+    /** Ответ на любую нечитаемую картинку — битый файл или сбой декодера на скане: что делать оператору. */
+    static final String UNREADABLE = "Картинку не удалось прочитать — сохраните скан как JPEG или PNG и загрузите снова";
 
     public byte[] process(byte[] input, boolean removeBackground) {
         if (input == null || input.length == 0) throw new BadRequestException("Файл пустой");
         if (input.length > MAX_BYTES) throw new BadRequestException("Картинка больше 5 МБ");
-        BufferedImage image = toArgb(read(input));
+        BufferedImage image = decode(input);
         if (removeBackground && !hasTransparency(image)) removeBackground(image);
         return png(scaleDown(trim(image)));
+    }
+
+    /**
+     * Картинка → ARGB. Декодер ImageIO на сканах бросает и непроверяемые исключения — ICC-профиль сканера, который не
+     * применить к пикселям (IllegalArgumentException, CMMException), битые данные: это тоже «не удалось прочитать», 400
+     * с советом, а не 500. Свои BadRequestException (формат, размеры) уходят как есть.
+     */
+    private static BufferedImage decode(byte[] input) {
+        try {
+            return toArgb(read(input));
+        } catch (BadRequestException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("Картинка не декодирована: {}", e.toString());
+            throw new BadRequestException(UNREADABLE);
+        }
     }
 
     private static BufferedImage read(byte[] input) {
@@ -63,7 +85,7 @@ public class ImageProcessor {
                 reader.dispose();
             }
         } catch (IOException e) {
-            throw new BadRequestException("Картинку не удалось прочитать");
+            throw new BadRequestException(UNREADABLE);
         }
     }
 

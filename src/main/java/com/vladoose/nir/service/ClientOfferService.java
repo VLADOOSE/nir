@@ -379,7 +379,7 @@ public class ClientOfferService {
         if (q != null && q.compareTo(MAX_QUANTITY) > 0) {
             throw new BadRequestException("Количество больше " + DocFormat.qty(MAX_QUANTITY) + " — позиция " + row);
         }
-        if (q != null && q.signum() <= 0) throw new BadRequestException("Количество должно быть больше нуля — позиция " + row);
+        if (q == null || q.signum() <= 0) throw new BadRequestException("Количество должно быть больше нуля — позиция " + row);
         money(dto.getPurchasePrice(), "Цена закупки", row);
         money(dto.getPriceOverride(), "Цена клиенту", row);
         BigDecimal m = dto.getMarkupPct();
