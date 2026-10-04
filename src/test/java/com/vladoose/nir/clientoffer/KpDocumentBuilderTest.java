@@ -242,15 +242,27 @@ class KpDocumentBuilderTest {
         ClientOfferItem section = ClientOfferTestData.item(o, 2, "Расходные материалы", null, null);
         section.setKind(ClientOfferItemKind.SECTION);
         o.getItems().add(1, section);
+        ClientOfferItem included = ClientOfferTestData.item(o, 5, "Доставка до склада заказчика", null, null);
+        included.setKind(ClientOfferItemKind.INCLUDED);
+        o.getItems().add(4, included);   // перед термоконтейнером
         List<KpDocument.Row> rows = KpFixtures.document(o, KpFixtures.profileKz()).rows();
         assertThat(rows).extracting(KpDocument.Row::kind).containsExactly(KpDocument.RowKind.ITEM,
-                KpDocument.RowKind.SECTION, KpDocument.RowKind.ITEM, KpDocument.RowKind.ITEM, KpDocument.RowKind.ITEM);
+                KpDocument.RowKind.SECTION, KpDocument.RowKind.ITEM, KpDocument.RowKind.ITEM, KpDocument.RowKind.INCLUDED,
+                KpDocument.RowKind.ITEM);
         assertThat(rows.get(1).cells()).isEmpty();
         assertThat(rows).filteredOn(r -> r.kind() == KpDocument.RowKind.ITEM).allSatisfy(r -> {
             assertThat(r.cells()).hasSize(8);
             assertThat(r.spanFrom()).isEqualTo(8);
             assertThat(r.spanLines()).isEmpty();
         });
+        // позиция после раздела и после «включено» печатает СВОЙ расчёт — расчёт строк идёт по месту строки в КП, а не
+        // по номеру позиции: гигрометр — 4 × 13 515,00 = 54 060,00, НДС 16 %; термоконтейнер — 4 × 83 725,00 = 334 900,00
+        assertThat(rows.get(2).cells().get(1)).containsExactly("Гигрометр психрометрический ВИТ-2");
+        assertThat(rows.get(2).cells().get(5)).containsExactly("16%");
+        assertThat(nb(rows.get(2).cells().get(6).get(0))).isEqualTo("54 060,00");
+        assertThat(rows.get(5).cells().get(1)).containsExactly("Термоконтейнер для холодовой цепи ТМ-4");
+        assertThat(rows.get(5).cells().get(5)).containsExactly("16%");
+        assertThat(nb(rows.get(5).cells().get(6).get(0))).isEqualTo("334 900,00");
     }
 
     @Test
@@ -259,11 +271,13 @@ class KpDocumentBuilderTest {
         assertThat(KpFixtures.document(o, KpFixtures.profileKz()).columns()).extracting(KpDocument.Column::percent)
                 .containsExactly(5, 31, 7, 7, 12, 8, 13, 17);
 
-        // + «Страна» (и дубль «Суммы» — не печатается): остальным тесно, 78 > 75 — их доли сжимаются, а наименованию
-        // остаётся не меньше четверти (при округлении долей к ближайшему ему доставалось 23 %)
+        // + «Страна» (и дубль «Суммы» — не печатается): остальным тесно (доли вместе 78 > 75 %) — таблица мельчает до
+        // 9,5 pt, где доли (× 0,95) помещаются, а наименованию остаётся не меньше четверти
         o.getTableColumns().add(new OfferColumn("COUNTRY", null));
         o.getTableColumns().add(new OfferColumn("SUM", "Сумма ещё раз"));
-        List<KpDocument.Column> columns = KpFixtures.document(o, KpFixtures.profileKz()).columns();
+        KpDocument withCountry = KpFixtures.document(o, KpFixtures.profileKz());
+        assertThat(withCountry.tableFontPt()).isEqualTo(9.5);
+        List<KpDocument.Column> columns = withCountry.columns();
         assertThat(columns).extracting(KpDocument.Column::key)
                 .containsExactly("NUM", "NAME", "UNIT", "QTY", "PRICE", "VAT_RATE", "SUM", "REGISTRATION", "COUNTRY");
         assertThat(columns.stream().mapToInt(KpDocument.Column::percent).sum()).isEqualTo(100);
@@ -704,6 +718,17 @@ class KpDocumentBuilderTest {
         assertThat(lh.logoPng()).containsExactly(7);
         assertThat(lh.brandText()).isNull();
         assertThat(lh.lines()).containsExactly("г. Уральск,", "ул. Мухита 121-21", "БИК: TSESKZKA", "Тел. 87770752770");
+    }
+
+    /** ФИО, набранное уже с инициалами, печатается как набрано: «Ширяев И.В.», а не «Ширяев И.». */
+    @Test
+    void directorNameTypedWithInitialsIsKept() {
+        CompanyProfile p = KpFixtures.profileKz();
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        for (String typed : List.of("Ширяев И.В.", "Ширяев И. В.")) {
+            p.setDirectorName(typed);
+            assertThat(KpFixtures.document(o, p).signoff().nameLine()).as(typed).isEqualTo(typed);
+        }
     }
 
     @Test

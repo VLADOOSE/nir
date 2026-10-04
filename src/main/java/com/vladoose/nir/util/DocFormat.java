@@ -20,7 +20,7 @@ public final class DocFormat {
 
     private static DecimalFormat format(String pattern) {
         DecimalFormatSymbols symbols = new DecimalFormatSymbols(Locale.ROOT);
-        symbols.setGroupingSeparator(' ');
+        symbols.setGroupingSeparator('\u00A0');
         symbols.setDecimalSeparator(',');
         DecimalFormat f = new DecimalFormat(pattern, symbols);
         f.setRoundingMode(RoundingMode.HALF_UP);

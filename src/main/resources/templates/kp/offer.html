@@ -25,14 +25,26 @@
     /* предмет и вводная — сырой текст оператора: его переводы строк (абзацы) сохраняются */
     .subject { text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 2mm; white-space: pre-line; }
     .intro { margin: 2mm 0; white-space: pre-line; }
+    /* Рамки таблиц условий и позиций (0,5 pt) — в раздельной модели без промежутков: каждая черта целиком внутри своей
+       ячейки (у каждой — справа и снизу, у первой в строке — слева, у шапки и первой строки условий — сверху). В модели
+       collapse внешняя половина крайних черт лежит за краем таблицы, то есть за полем листа, и openhtmltopdf её срезает:
+       крайние рамки выходили вдвое тоньше внутренних, так же — верх повторённой шапки на следующем листе и низ строки
+       у конца листа. Обёртка .ruled отодвигает таблицы от краёв набора на KpPageGeometry.TABLE_INSET_MM (≥ точки
+       предпросмотра 110 dpi): предпросмотр режет лист по целым точкам, и черта вровень с полем теряла часть точки —
+       правая рамка пропадала. Доли колонок — от ширины обёртки. */
+    .ruled { padding: 0 0.25mm; }
+    .terms-table, .items { border-collapse: separate; border-spacing: 0; }
     .terms-table { width: 100%; margin: 2mm 0 4mm 0; }
-    .terms-table td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: top; font-size: 10.5pt; }
+    .terms-table td { border-right: 0.5pt solid #000; border-bottom: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: top; font-size: 10.5pt; }
+    .terms-table tr:first-child td { border-top: 0.5pt solid #000; }
+    .terms-table td:first-child { border-left: 0.5pt solid #000; }
     .terms-table .term-label { font-weight: bold; width: 45%; }
     /* кегль таблицы — у самой таблицы (th:style, KpDocument.tableFontPt): в тесной таблице мельче, ячейки наследуют */
     .items { width: 100%; table-layout: fixed; -fs-table-paginate: paginate; margin-top: 2mm; }
     .items thead { display: table-header-group; }
-    .items th, .items td { border: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: middle; word-wrap: break-word; }
-    .items th { font-weight: bold; text-align: center; }
+    .items th, .items td { border-right: 0.5pt solid #000; border-bottom: 0.5pt solid #000; padding: 1.2mm 1.5mm; vertical-align: middle; word-wrap: break-word; }
+    .items th:first-child, .items td:first-child { border-left: 0.5pt solid #000; }
+    .items th { font-weight: bold; text-align: center; border-top: 0.5pt solid #000; }
     .items tr { page-break-inside: avoid; }
     .a-left { text-align: left; }
     .a-center { text-align: center; }
@@ -92,14 +104,14 @@
   <div class="subject" th:if="${doc.subject() != null}" th:text="${doc.subject()}">предмет</div>
   <p class="intro" th:if="${doc.intro() != null}" th:text="${doc.intro()}">вводная</p>
 
-  <table class="terms-table" th:if="${!doc.termsTable().isEmpty()}">
+  <div class="ruled" th:if="${!doc.termsTable().isEmpty()}"><table class="terms-table">
     <tr th:each="t : ${doc.termsTable()}">
       <td class="term-label" th:text="${t.label()}">условие</td>
       <td><th:block th:each="l, s : ${t.valueLines()}"><span th:text="${l}">значение</span><br th:unless="${s.last}"/></th:block></td>
     </tr>
-  </table>
+  </table></div>
 
-  <table class="items" th:style="${tableStyle}">
+  <div class="ruled"><table class="items" th:style="${tableStyle}">
     <colgroup><col th:each="c : ${doc.columns()}" th:style="${'width: ' + c.percent() + '%'}"/></colgroup>
     <thead>
       <tr><th th:each="c : ${doc.columns()}" th:text="${c.label()}">колонка</th></tr>
@@ -110,7 +122,7 @@
         <td class="span-cell" th:if="${r.spanFrom() < doc.columns().size()}" th:colspan="${doc.columns().size() - r.spanFrom()}"><th:block th:each="l, s : ${r.spanLines()}"><span th:text="${l}">объединено</span><br th:unless="${s.last}"/></th:block></td>
       </tr>
     </tbody>
-  </table>
+  </table></div>
 
   <div class="totals">
     <div th:each="t, s : ${doc.totalLines()}" th:class="${s.first ? 'total-main' : 'total-line'}" th:text="${t}">Итого</div>

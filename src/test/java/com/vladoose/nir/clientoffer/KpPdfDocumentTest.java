@@ -2,12 +2,17 @@ package com.vladoose.nir.clientoffer;
 
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.service.document.KpDocument;
+import com.vladoose.nir.service.document.KpPageGeometry;
+import com.vladoose.nir.service.document.KpPreviewRenderer;
 import com.vladoose.nir.service.offer.ColumnAlign;
 import com.vladoose.nir.service.offer.OfferColumnKey;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,15 +33,19 @@ class KpPdfDocumentTest {
                     KpTestSupport.find(pdf, "с ограниченной ответственностью").right());
         }
 
-        /** Левый и правый край колонок [from, to] таблицы позиций — по долям из модели документа. */
+        /**
+         * Левый и правый край колонок [from, to] таблицы позиций — по долям из модели документа; таблица отодвинута от
+         * краёв набора на KpPageGeometry.TABLE_INSET_MM с каждой стороны.
+         */
         float[] columns(List<KpDocument.Column> cols, String from, String to) {
-            float width = right - left, before = 0, at = 0, end = 0;
+            float inset = (float) KpPageGeometry.TABLE_INSET_MM, start = left + inset, width = right - left - 2 * inset;
+            float before = 0, at = 0, end = 0;
             for (KpDocument.Column c : cols) {
                 if (c.key().equals(from)) at = before;
                 before += c.percent();
                 if (c.key().equals(to)) end = before;
             }
-            return new float[] {left + width * at / 100, left + width * end / 100};
+            return new float[] {start + width * at / 100, start + width * end / 100};
         }
     }
 
@@ -164,6 +173,61 @@ class KpPdfDocumentTest {
         Edges landscape = Edges.of(KpFixtures.pdf(o, KpFixtures.profileKz()));
         assertThat(landscape.left()).isCloseTo(15f, within(0.2f));
         assertThat(landscape.right()).isCloseTo(297f - 15f, within(0.2f));
+    }
+
+    /**
+     * Ни одна черта не срезана полями листа: рамки таблиц условий и позиций целиком внутри области набора — слева и
+     * справа, сверху повторённой шапки на следующем листе, снизу строки у конца листа. Раньше (модель border-collapse)
+     * внешняя половина крайних рамок лежала за краем таблицы во всю ширину набора, и openhtmltopdf срезал её по полю листа:
+     * крайние рамки выходили вдвое тоньше внутренних. Книжный и альбомный лист; вводная в 0–7 строк сдвигает таблицу, и
+     * конец листа приходится на разные места строки.
+     */
+    @Test
+    void noLineIsCutByThePageMargins() {
+        for (boolean landscape : new boolean[] {false, true}) {
+            for (int extra = 0; extra < 8; extra++) {
+                ClientOffer o = KpFixtures.offer2409();
+                o.setLandscape(landscape);
+                o.setTermsStyle(TermsStyle.TABLE);
+                o.setIntro("Вводная" + "\nстрока".repeat(extra));
+                for (int i = 0; i < 40; i++) {
+                    KpFixtures.line(o, "Доп. позиция " + i, 1, "1000.00", "5", OfferRegistrationStatus.UNCHECKED, null);
+                }
+                byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+                String as = (landscape ? "альбомная" : "книжная") + ", вводная +" + extra + " строк";
+                assertThat(KpTestSupport.pageTexts(pdf)).as(as).hasSizeGreaterThan(1);
+                assertThat(KpTestSupport.shapes(pdf)).as(as + ": срезано полем листа").filteredOn(s -> s.cut(0.02f)).isEmpty();
+            }
+        }
+    }
+
+    /**
+     * В предпросмотре (110 dpi) крайние рамки таблицы позиций видны целиком, как внутренние: «чернил» на ряд точек не
+     * меньше 80 % одной черты 0,5 pt (0,5 pt × 110 / 72 ≈ 0,76 точки). Раньше правая пропадала вовсе: от неё оставалась
+     * половина черты, и та ложилась в точку, которую предпросмотр отрезает по полю листа. Внутренняя рамка — между ценой
+     * (прижата вправо) и ставкой (по центру): в этой полосе текста нет, и тот же замер видит там целую черту.
+     */
+    @Test
+    void outerBordersShowInThePreviewLikeInnerOnes() throws Exception {
+        float dpi = KpPreviewRenderer.DPI;
+        double line = 0.5 * dpi / 72;
+        for (boolean landscape : new boolean[] {false, true}) {
+            ClientOffer o = KpFixtures.offer2409();
+            o.setLandscape(landscape);
+            byte[] pdf = KpFixtures.pdf(o, KpFixtures.profileKz());
+            BufferedImage page = ImageIO.read(new ByteArrayInputStream(new KpPreviewRenderer().pages(pdf, 1).get(0)));
+            Edges text = Edges.of(pdf);
+            KpTestSupport.Placed price = KpTestSupport.find(pdf, "105 600,00");   // строка 1: ряды точек — внутри неё
+            KpTestSupport.Placed rate = KpTestSupport.find(pdf, "5%");
+            float top = price.top(), bottom = price.bottom();
+            String as = landscape ? "альбомная" : "книжная";
+            assertThat(KpTestSupport.ink(page, dpi, price.right() + 0.3f, rate.left() - 0.3f, top, bottom))
+                    .as(as + ": внутренняя рамка — черта есть, текста нет").isBetween(0.8 * line, 1.5);
+            assertThat(KpTestSupport.ink(page, dpi, text.left() - 1, text.left() + 1.4f, top, bottom))
+                    .as(as + ": левая рамка").isGreaterThanOrEqualTo(0.8 * line);
+            assertThat(KpTestSupport.ink(page, dpi, text.right() - 1.4f, text.right() + 1, top, bottom))
+                    .as(as + ": правая рамка").isGreaterThanOrEqualTo(0.8 * line);
+        }
     }
 
     /** «Кому» — справа, первой строкой напротив «Исх. №» (спека §6.1 п.2). */
@@ -330,6 +394,19 @@ class KpPdfDocumentTest {
         for (String word : List.of("упаковка", "100", "штук", "коробке")) {
             assertThat(lines).as("«" + word + "» — целым словом").anySatisfy(l -> assertThat(l).containsPattern("(^|\\s)" + word + "(\\s|$)"));
         }
+    }
+
+    /**
+     * Свободно набранная ед. изм. (строка длиннее двух долей — переносится) в тесной книжной таблице сжимается, как текст.
+     * Раньше в шагах 2–3 подбора она держала ширину самого длинного слова, таблица уходила в шаг 4 — пропорциональное
+     * сжатие, — и цены печатались поверх соседних ячеек.
+     */
+    @Test
+    void longFreeTypedUnitInACrowdedTableKeepsNumbersInsideTheirCells() {
+        ClientOffer o = KpFixtures.offer2409();
+        o.getItems().get(0).setUnit("упаковка по 100 штук в коробке");
+        for (String k : new String[] {"PRICE_NET", "VAT_SUM", "SUM_NET", "COUNTRY"}) o.getTableColumns().add(new OfferColumn(k, null));
+        assertMoneyInsideItsCells(o);
     }
 
     /** Текст — в одну строку и внутри своей колонки; из вхождений берётся то, чья середина в колонке (число бывает и в сумме). */

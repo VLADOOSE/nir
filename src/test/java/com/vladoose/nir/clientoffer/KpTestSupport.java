@@ -209,13 +209,31 @@ final class KpTestSupport {
      * верхнего угла листа. Точки пути PDFBox уже переводит текущей матрицей в координаты страницы.
      */
     static List<Box> shapeBoxes(byte[] pdf) {
+        return shapes(pdf).stream().map(Shape::drawn).toList();
+    }
+
+    /**
+     * Нарисованная фигура и область отсечения, в которой её рисовали (clip: openhtmltopdf отсекает всё по области
+     * набора листа — лист без полей), — в мм от левого верхнего угла листа.
+     */
+    record Shape(Box drawn, Box clip) {
+        /** Часть фигуры шире tolerance мм — за краем области отсечения: её на листе не видно. */
+        boolean cut(float tolerance) {
+            return drawn.left() < clip.left() - tolerance || drawn.right() > clip.right() + tolerance
+                    || drawn.top() < clip.top() - tolerance || drawn.bottom() > clip.bottom() + tolerance;
+        }
+    }
+
+    /** Фигуры, как {@link #shapeBoxes}, — каждая вместе с областью отсечения на момент рисования. */
+    static List<Shape> shapes(byte[] pdf) {
         try (PDDocument d = Loader.loadPDF(pdf)) {
-            List<Box> boxes = new ArrayList<>();
+            List<Shape> shapes = new ArrayList<>();
             for (int i = 0; i < d.getNumberOfPages(); i++) {
                 int page = i;
                 float height = d.getPage(i).getMediaBox().getHeight();
                 PDFGraphicsStreamEngine engine = new PDFGraphicsStreamEngine(d.getPage(i)) {
                     private final GeneralPath path = new GeneralPath();
+                    private int clipRule = -1;   // «W n»: путь становится отсечением, когда его закроют (endPath)
 
                     @Override
                     public void appendRectangle(Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
@@ -253,6 +271,11 @@ final class KpTestSupport {
 
                     @Override
                     public void endPath() {
+                        if (clipRule >= 0) {
+                            path.setWindingRule(clipRule);
+                            getGraphicsState().intersectClippingPath(path);
+                            clipRule = -1;
+                        }
                         path.reset();
                     }
 
@@ -273,6 +296,7 @@ final class KpTestSupport {
 
                     @Override
                     public void clip(int windingRule) {
+                        clipRule = windingRule;
                     }
 
                     @Override
@@ -285,16 +309,20 @@ final class KpTestSupport {
 
                     private void emit() {
                         if (path.getCurrentPoint() != null) {
-                            Rectangle2D r = path.getBounds2D();
-                            boxes.add(new Box(page, mm((float) r.getMinX()), mm(height - (float) r.getMaxY()),
-                                    mm((float) r.getMaxX()), mm(height - (float) r.getMinY())));
+                            shapes.add(new Shape(box(path.getBounds2D()),
+                                    box(getGraphicsState().getCurrentClippingPath().getBounds2D())));
                         }
                         path.reset();
+                    }
+
+                    private Box box(Rectangle2D r) {
+                        return new Box(page, mm((float) r.getMinX()), mm(height - (float) r.getMaxY()),
+                                mm((float) r.getMaxX()), mm(height - (float) r.getMinY()));
                     }
                 };
                 engine.processPage(d.getPage(i));
             }
-            return boxes;
+            return shapes;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -302,6 +330,25 @@ final class KpTestSupport {
 
     private static float mm(float pt) {
         return pt * 25.4f / 72f;
+    }
+
+    /**
+     * «Чернила» картинки страницы (предпросмотр при dpi) в полосе от x0 до x1 мм: сумма затемнения точек ряда (1 — одна
+     * чёрная точка), средняя по рядам от top до bottom мм. Сглаживание сохраняет площадь черты, поэтому сумма не зависит
+     * от того, как черта легла на сетку точек: черта 0,5 pt при 110 dpi — около 0,75.
+     */
+    static double ink(BufferedImage page, float dpi, float x0, float x1, float top, float bottom) {
+        double pxPerMm = dpi / 25.4;
+        int c0 = (int) Math.floor(x0 * pxPerMm), c1 = (int) Math.ceil(x1 * pxPerMm);
+        int r0 = (int) Math.ceil(top * pxPerMm), r1 = (int) Math.floor(bottom * pxPerMm);
+        double total = 0;
+        for (int y = r0; y <= r1; y++) {
+            for (int x = c0; x <= c1; x++) {
+                int rgb = page.getRGB(x, y);
+                total += 1 - ((rgb >> 16 & 255) + (rgb >> 8 & 255) + (rgb & 255)) / (3 * 255.0);
+            }
+        }
+        return total / Math.max(1, r1 - r0 + 1);
     }
 
     /** Сколько растровых картинок нарисовано на страницах (с вложенными формами). */
@@ -379,6 +426,30 @@ final class KpTestSupport {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        return out.toByteArray();
+    }
+
+    /**
+     * Цветной JPEG-скан с чужим ICC-профилем — профилем серого (APP2 «ICC_PROFILE» сразу за SOI). Профиль читается, но
+     * применить его к трём каналам декодер ImageIO не может и бросает непроверяемое исключение (IllegalArgumentException
+     * «Numbers of source Raster bands and source color space components do not match») — как сканеры с кривым профилем.
+     */
+    static byte[] jpegWithGrayProfile() {
+        byte[] jpeg = circleOnWhiteJpeg(200);
+        byte[] profile = java.awt.color.ICC_Profile.getInstance(java.awt.color.ColorSpace.CS_GRAY).getData();
+        byte[] tag = "ICC_PROFILE\0".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        int length = 2 + tag.length + 2 + profile.length;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(jpeg, 0, 2);                                                     // SOI
+        out.write(0xFF);
+        out.write(0xE2);
+        out.write(length >> 8);
+        out.write(length & 0xFF);
+        out.write(tag, 0, tag.length);
+        out.write(1);                                                              // часть 1 из 1
+        out.write(1);
+        out.write(profile, 0, profile.length);
+        out.write(jpeg, 2, jpeg.length - 2);
         return out.toByteArray();
     }
 

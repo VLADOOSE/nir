@@ -652,6 +652,25 @@ class KpDocxRendererTest {
         }
     }
 
+    /**
+     * Крайние рамки таблиц позиций и условий — те же 0,5 pt, что внутренние. Word рамку по полю листа не режет (в PDF
+     * openhtmltopdf срезал внешнюю половину крайних рамок — KpPdfDocumentTest.noLineIsCutByThePageMargins), поэтому
+     * в Word достаточно, чтобы крайние рамки были заданы той же чертой.
+     */
+    @Test
+    void outerTableBordersAreAsThickAsInnerOnes() throws Exception {
+        ClientOffer o = KpFixtures.offer2409();
+        o.setTermsStyle(TermsStyle.TABLE);
+        try (XWPFDocument d = open(docx(o, KpFixtures.profileKz()))) {
+            for (XWPFTable t : List.of(itemsTable(d), table(d, "Порядок оплаты"))) {
+                assertThat(List.of(t.getTopBorderType(), t.getBottomBorderType(), t.getLeftBorderType(), t.getRightBorderType(),
+                        t.getInsideHBorderType(), t.getInsideVBorderType())).containsOnly(XWPFTable.XWPFBorderType.SINGLE);
+                assertThat(List.of(t.getTopBorderSize(), t.getBottomBorderSize(), t.getLeftBorderSize(), t.getRightBorderSize(),
+                        t.getInsideHBorderSize(), t.getInsideVBorderSize())).containsOnly(4);
+            }
+        }
+    }
+
     /** Бланк — как в PDF: название вместо логотипа 30 pt жирным по центру, строки бланка по центру жирным, под ними черта 2,5 pt. */
     @Test
     void letterheadMirrorsThePdf() throws Exception {

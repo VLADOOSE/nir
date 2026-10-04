@@ -47,6 +47,12 @@ class KpPageGeometryTest {
         assertThat(declaration(css, ".terms-table td", "padding")).isEqualTo(padding);
     }
 
+    /** Отступ таблиц от краёв набора в шаблоне — тот, что знает геометрия (по нему тесты PDF считают края колонок). */
+    @Test
+    void templateTableInsetIsTheGeometry() throws IOException {
+        assertThat(declaration(template(), ".ruled", "padding")).isEqualTo("0 " + mm(KpPageGeometry.TABLE_INSET_MM));
+    }
+
     /** Размеры подписи в шаблоне — те же, по которым строит подпись Word (KpDocxRenderer). */
     @Test
     void templateSignoffSizesAreTheGeometry() throws IOException {
