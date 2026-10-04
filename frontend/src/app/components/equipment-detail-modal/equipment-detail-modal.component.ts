@@ -1,7 +1,9 @@
 import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgIf, NgFor, NgClass } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { CompanyProfileService, DEFAULT_VAT_HINTS, VatHints } from '../../services/company-profile.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 
 @Component({
@@ -53,8 +55,8 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       <div class="reg-row">
         <span class="reg-label">Статус</span>
         <span class="reg-badge" [class]="'rb-' + reg.status">{{ regStatusLabel(reg.status) }}</span>
-        <span class="reg-vat" *ngIf="reg.status === 'REGISTERED'">НДС-льгота</span>
-        <span class="reg-vat reg-vat-no" *ngIf="reg.status === 'NOT_REGISTERED' || reg.status === 'NOT_MEDICAL'">облагается НДС 12%</span>
+        <span class="reg-vat" *ngIf="reg.status === 'REGISTERED'">{{ vat.registered }}</span>
+        <span class="reg-vat reg-vat-no" *ngIf="reg.status === 'NOT_REGISTERED' || reg.status === 'NOT_MEDICAL'">{{ vat.standard }}</span>
       </div>
       <div class="reg-row" *ngIf="reg.regNumber"><span class="reg-label">№ РУ</span><span>{{ reg.regNumber }}</span></div>
       <div class="reg-row" *ngIf="reg.producer"><span class="reg-label">Держатель</span><span>{{ reg.producer }}</span></div>
@@ -405,8 +407,13 @@ export class EquipmentDetailModalComponent implements OnChanges {
 
   stats: any = null;
   loading = false;
+  vat: VatHints = DEFAULT_VAT_HINTS;
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef) {}
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private companyProfiles: CompanyProfileService) {
+    // markForCheck, не detectChanges: из кеша значение приходит синхронно ещё в конструкторе (CLAUDE.md §14)
+    this.companyProfiles.vatHints$().pipe(takeUntilDestroyed())
+      .subscribe({ next: v => { this.vat = v; this.cdr.markForCheck(); }, error: () => {} });
+  }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['equipment']) {

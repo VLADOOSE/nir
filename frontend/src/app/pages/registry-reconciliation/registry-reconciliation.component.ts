@@ -1,8 +1,10 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { CompanyProfileService, DEFAULT_VAT_HINTS, VatHints } from '../../services/company-profile.service';
 import { NotificationService } from '../../services/notification.service';
 
 @Component({
@@ -14,7 +16,7 @@ import { NotificationService } from '../../services/notification.service';
       <header class="page-head">
         <div>
           <h1>Сверка с реестром РК</h1>
-          <p class="sub">Привязка позиций каталога к № РУ (НЦЭЛС). Зелёный = зарегистрировано (НДС-льгота).</p>
+          <p class="sub">Привязка позиций каталога к № РУ (НЦЭЛС). Зелёный = зарегистрировано (льготная ставка НДС).</p>
         </div>
         <button class="btn-refresh" (click)="onRefresh()" [disabled]="refreshing">
           ↻ {{ refreshing ? 'Обновляю…' : 'Обновить реестр' }}
@@ -47,8 +49,8 @@ import { NotificationService } from '../../services/notification.service';
               <td data-label="Производитель">{{ r.manufact }}</td>
               <td data-label="Статус">
                 <span class="badge" [class]="'b-' + r.status">{{ statusLabel(r.status) }}</span>
-                <span class="vat" *ngIf="r.status === 'REGISTERED'">НДС-льгота</span>
-                <span class="vat vat-no" *ngIf="r.status === 'NOT_REGISTERED' || r.status === 'NOT_MEDICAL'">НДС 12%</span>
+                <span class="vat" *ngIf="r.status === 'REGISTERED'">{{ vat.registered }}</span>
+                <span class="vat vat-no" *ngIf="r.status === 'NOT_REGISTERED' || r.status === 'NOT_MEDICAL'">{{ vat.standard }}</span>
               </td>
               <td class="top" data-label="Топ-кандидат">
                 <span *ngIf="r.candidates?.length">{{ r.candidates[0].producer }} · {{ r.candidates[0].score | number:'1.2-2' }}</span>
@@ -152,7 +154,7 @@ import { NotificationService } from '../../services/notification.service';
          сильно выше ориентира 140). Стало:
            ▸  ПОЗИЦИЯ КАТАЛОГА (2 строки, «…»)
            ▸  производитель
-           ▸  [статус] НДС-льгота
+           ▸  [статус] ставка НДС
            ▸  топ-кандидат · score
          Ничего не скрыто: на этом экране оператор принимает решение по РУ, и
          обрезать тут нечего. Каждая строка во всю ширину, а не парами: бейдж
@@ -214,9 +216,11 @@ export class RegistryReconciliationComponent {
   statusFilter = 'UNCHECKED';
   expanded: Record<number, boolean> = {};
   focusId: number | null = null;
+  vat: VatHints = DEFAULT_VAT_HINTS;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private route: ActivatedRoute, private notify: NotificationService) {
+              private route: ActivatedRoute, private notify: NotificationService,
+              private companyProfiles: CompanyProfileService) {
     this.route.queryParams.subscribe(p => {
       if (p['focus']) {
         this.focusId = +p['focus'];
@@ -225,6 +229,9 @@ export class RegistryReconciliationComponent {
       }
       this.load();
     });
+    // markForCheck, не detectChanges: из кеша значение приходит синхронно ещё в конструкторе (CLAUDE.md §14)
+    this.companyProfiles.vatHints$().pipe(takeUntilDestroyed())
+      .subscribe({ next: v => { this.vat = v; this.cdr.markForCheck(); }, error: () => {} });
   }
 
   load() {

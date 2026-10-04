@@ -1,7 +1,9 @@
 import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, HostListener } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgIf, NgFor } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { CompanyProfileService, DEFAULT_VAT_HINTS, VatHints } from '../../services/company-profile.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { RouterLink } from '@angular/router';
@@ -61,7 +63,7 @@ import { fullDateTime } from '../../shared/relative-time';
                   <td data-label="Реестр НЦЭЛС">
                     <div class="reg-block" *ngIf="l.registrationStatus === 'REGISTERED'; else notFound">
                       <span class="badge b-REGISTERED">Зарегистрировано</span>
-                      <span class="vat">НДС-льгота</span>
+                      <span class="vat">{{ vat.registered }}</span>
                       <div class="reg-meta" *ngIf="l.topCandidate as c">
                         № РУ {{ c.regNumber }}<span *ngIf="c.producer"> · {{ c.producer }}</span><span *ngIf="c.country"> · {{ c.country }}</span>
                       </div>
@@ -242,7 +244,7 @@ import { fullDateTime } from '../../shared/relative-time';
     .b-REGISTERED { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .b-NOT_FOUND { background: var(--surface-2); color: var(--text); }
     .b-status { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-    /* НДС-льгота — просто подпись без подложки, поэтому текстовый токен */
+    /* ставка НДС — просто подпись без подложки, поэтому текстовый токен */
     .vat { margin-left: 8px; font-size: 11px; color: var(--success-text); font-weight: 600; }
     .reg-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
@@ -427,8 +429,14 @@ export class PrivateRequestCardComponent implements OnChanges {
   editLines: any[] = [];
   editError = '';
   saving = false;
+  vat: VatHints = DEFAULT_VAT_HINTS;
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService,
+              private companyProfiles: CompanyProfileService) {
+    // markForCheck, не detectChanges: из кеша значение приходит синхронно ещё в конструкторе (CLAUDE.md §14)
+    this.companyProfiles.vatHints$().pipe(takeUntilDestroyed())
+      .subscribe({ next: v => { this.vat = v; this.cdr.markForCheck(); }, error: () => {} });
+  }
 
   leadSource(source: string): string { return source === 'manual' ? 'внесено вручную' : source; }
   leadDate(iso: string): string { return fullDateTime(iso); }
