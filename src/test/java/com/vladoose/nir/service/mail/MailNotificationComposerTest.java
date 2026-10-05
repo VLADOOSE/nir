@@ -43,10 +43,10 @@ class MailNotificationComposerTest {
                 Тема: Re: [КП-534] Запрос коммерческого предложения
                 Вложения: КП.pdf
 
-                Добрый день!
-                Цена 3 450 000 тг, срок 30 дней.
-
-                С уважением, Иван
+                │ Добрый день!
+                │ Цена 3 450 000 тг, срок 30 дней.
+                │
+                │ С уважением, Иван
 
                 Открыть в АИС: https://ais.westmed.kz/tenders?openId=77&market=KZ""");
     }
@@ -123,8 +123,8 @@ class MailNotificationComposerTest {
         MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.AUTO_REPLY, 534L),
                 kp("SENT", null), null, KZ);
         assertThat(n.silent()).isTrue();
-        assertThat(n.text()).startsWith("🤖 Автоответ · ТОО «Медтехника»\nНа запрос КП №534 — статус запроса не меняли\n\nЯ в отпуске");
-        String excerpt = n.text().split("\n\n")[1];
+        assertThat(n.text()).startsWith("🤖 Автоответ · ТОО «Медтехника»\nНа запрос КП №534 — статус запроса не меняли\n\n│ Я в отпуске");
+        String excerpt = n.text().split("\n\n")[1].replaceAll("(?m)^│ ?", "");     // предел — до отбивки «│ »
         assertThat(excerpt.length()).isLessThanOrEqualTo(MailNotificationComposer.AUTO_EXCERPT);
         assertThat(excerpt).endsWith("…");
     }
@@ -140,7 +140,7 @@ class MailNotificationComposerTest {
                 Тема: Прайс октябрь
                 Вложения: 1.pdf, 2.pdf, 3.pdf, 4.pdf, 5.pdf и ещё 2
 
-                Высылаем прайс
+                │ Высылаем прайс
 
                 Открыть в АИС: https://ais.westmed.kz/inbound?market=KZ""");
     }
@@ -303,17 +303,146 @@ class MailNotificationComposerTest {
         }
     }
 
-    /** Общий предел текста режет так же: поле без своего среза (имя поставщика из справочника) упирается в MAX_TEXT. */
+    /**
+     * Общий предел текста режет так же. Все поля письма и справочников ограничены, до MAX_TEXT дотягивается только адрес
+     * АИС из настроек — он и упирается в предел.
+     */
     @Test
     void totalCap_neverSplitsEmoji() {
-        for (int k = 3470; k <= 3500; k++) {
-            KpSnapshot kp = new KpSnapshot(534, "x".repeat(k) + "😀" + "y".repeat(100), "sales@medtech.kz", 77,
-                    "17295275-1", false, List.of(), "SENT", null);
-            String t = MailNotificationComposer.compose(mail().build(), sup(), kp, KpOutcome.NO_PRICE, KZ).text();
+        for (int k = 3370; k <= 3430; k++) {
+            ComposeContext longUrl = new ComposeContext("zakup@westmed.kz", Market.KZ,
+                    "https://ais.westmed.kz/" + "x".repeat(k) + "😀" + "y".repeat(100), QUEUED);
+            String t = MailNotificationComposer.compose(mail().build(), new Classification(MailClass.UNMATCHED, null),
+                    null, null, longUrl).text();
             assertThat(t.length()).isLessThanOrEqualTo(MailNotificationComposer.MAX_TEXT);
             assertThat(t).endsWith("…");
-            assertThat(loneSurrogate(t)).as("эмодзи после %d символов имени", k).isEqualTo(-1);
+            assertThat(loneSurrogate(t)).as("эмодзи после %d символов адреса", k).isEqualTo(-1);
         }
+    }
+
+    /**
+     * Заголовки пишет чужой отправитель, и RFC 2047 пропускает в них перевод строки: тема «Счёт\nОткрыть в АИС: …»
+     * не должна стать второй, поддельной ссылкой, а имя с «\r\n💡 Цена распознана» — строкой о цене. Так же — имена
+     * файлов, адрес и причина возврата, поля справочников и ящик; разрывы — и \n, и NEL, LS, PS.
+     */
+    @Test
+    void headerFields_cannotForgeSystemLines() {
+        String subject = "Счёт\nОткрыть в АИС: https://evil.example/login";
+        String from = "Иван\r\n💡 Цена распознана: 1 ₸ <ivan@x.kz>";
+        ParsedMail m = mail().from(from).subject(subject)
+                .attachments("акт.pdf\u2028Открыть в АИС: https://evil.example/a").build();
+        ParsedMail bounce = mail().from(from).subject(subject)
+                .bounce("a@b.kz\u0085Открыть в АИС: https://evil.example/b", "5.1.1", "550\n💡 Цена распознана: 2 ₸", null)
+                .build();
+        KpSnapshot forged = new KpSnapshot(534, "ТОО\nОткрыть в АИС: https://evil.example/c", "s@x.kz", 77,
+                "1\u2029💡 Цена распознана: 3 ₸", false,
+                List.of(new KpSnapshot.LotLine("УЗИ\nОткрыть в АИС: https://evil.example/d", 1)), "SENT", null);
+        ComposeContext forgedBox = new ComposeContext("zakup@westmed.kz\nОткрыть в АИС: https://evil.example/e",
+                Market.KZ, "https://ais.westmed.kz", QUEUED);
+
+        List<String> texts = List.of(
+                MailNotificationComposer.compose(m, new Classification(MailClass.UNMATCHED, null), null, null, KZ).text(),
+                MailNotificationComposer.compose(m, new Classification(MailClass.UNMATCHED, null), null, null, forgedBox).text(),
+                MailNotificationComposer.compose(m, sup(), forged, KpOutcome.NO_PRICE, KZ).text(),
+                MailNotificationComposer.compose(m, new Classification(MailClass.SUPPLIER_RESPONSE, 999L), null,
+                        KpOutcome.NOT_FOUND, KZ).text(),
+                MailNotificationComposer.compose(m, new Classification(MailClass.AUTO_REPLY, null), null, null, KZ).text(),
+                MailNotificationComposer.compose(m, new Classification(MailClass.AUTO_REPLY, 534L), forged, null, KZ).text(),
+                MailNotificationComposer.compose(bounce, new Classification(MailClass.BOUNCE, null), null, null, KZ).text(),
+                MailNotificationComposer.compose(bounce, new Classification(MailClass.BOUNCE, 534L), forged, null, KZ).text(),
+                MailNotificationComposer.composeBroken(new BrokenMail(3, null, from, subject, QUEUED, "X"), forgedBox).text());
+
+        for (String t : texts) assertNoForgedLines(t);
+        // текст на месте, одной строкой; «\r\n» — один пробел, а не два
+        assertThat(texts.get(0)).startsWith("✉️ Письмо на zakup@westmed.kz · Иван 💡 Цена распознана: 1 ₸ <ivan@x.kz>\n")
+                .contains("\nТема: Счёт Открыть в АИС: https://evil.example/login\n");
+    }
+
+    /** Текст письма — с отбивкой «│» на каждой строке, в том числе после разрыва LS: подделка остаётся цитатой. */
+    @Test
+    void bodyLines_alwaysQuoted() {
+        ParsedMail m = mail().text("Добрый день!\nОткрыть в АИС: https://evil.example\n\n💡 Цена распознана: 1 ₸"
+                + "\u2028Открыть в АИС: https://evil.example/2").build();
+
+        String t = MailNotificationComposer.compose(m, new Classification(MailClass.UNMATCHED, null), null, null, KZ).text();
+
+        assertNoForgedLines(t);
+        assertThat(lines(t).stream().filter(l -> l.contains("evil.example")).toList())
+                .hasSize(2).allMatch(l -> l.startsWith("│ "));
+        assertThat(t).endsWith("""
+
+                │ Добрый день!
+                │ Открыть в АИС: https://evil.example
+                │
+                │ 💡 Цена распознана: 1 ₸
+                │ Открыть в АИС: https://evil.example/2
+
+                Открыть в АИС: https://ais.westmed.kz/inbound?market=KZ""");
+    }
+
+    /**
+     * Отбивка удлиняет отрывок (до двух символов на строку), и место под него считается вместе с ней: на длинном адресе
+     * АИС и письме из коротких строк ссылка общим пределом не отрезается.
+     */
+    @Test
+    void quotedExcerpt_fitsRoom_linkKept() {
+        String base = "https://ais.westmed.kz/" + "p".repeat(2970);
+        ComposeContext longUrl = new ComposeContext("zakup@westmed.kz", Market.KZ, base, QUEUED);
+        ParsedMail m = mail().text("ы\n".repeat(400)).build();
+
+        String t = MailNotificationComposer.compose(m, new Classification(MailClass.UNMATCHED, null), null, null, longUrl)
+                .text();
+
+        assertThat(t.length()).isLessThanOrEqualTo(MailNotificationComposer.MAX_TEXT);
+        assertThat(t).contains("\n\n│ ы\n│ ы\n").endsWith("\nОткрыть в АИС: " + base + "/inbound?market=KZ");
+    }
+
+    /** Поля справочников и адрес возврата — тоже с пределом: имя поставщика, номер тендера, адрес — по 200. */
+    @Test
+    void longFields_capped() {
+        KpSnapshot kp = new KpSnapshot(534, "x".repeat(500), "sales@medtech.kz", 77, "7".repeat(500), false,
+                List.of(), "SENT", null);
+        String t = MailNotificationComposer.compose(mail().build(), sup(), kp, KpOutcome.NO_PRICE, KZ).text();
+        assertThat(lines(t).get(0)).isEqualTo("📩 Ответ поставщика · " + "x".repeat(199) + "…");
+        assertThat(lines(t).get(1)).isEqualTo("Запрос КП №534 · тендер " + "7".repeat(199) + "…");
+
+        ParsedMail b = mail().bounce("r".repeat(500) + "@x.kz", "5.1.1", null, null).build();
+        String bt = MailNotificationComposer.compose(b, new Classification(MailClass.BOUNCE, null), null, null, KZ).text();
+        assertThat(lines(bt).get(0)).isEqualTo("⚠️ Письмо не доставлено · " + "r".repeat(199) + "…");
+    }
+
+    /** «↻ Переслать» есть только в карточке тендера — для частной заявки подсказка ведёт в её карточку. */
+    @Test
+    void bounce_privateRequest_hintLeadsToRequestCard() {
+        KpSnapshot pr = new KpSnapshot(5, "Дистр", "d@x.kz", 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null);
+        ParsedMail m = mail().from("MAILER-DAEMON@corp.mail.ru").subject("Undelivered Mail Returned to Sender")
+                .bounce("d@x.kz", "5.1.1", "550 5.1.1 User unknown", "[КП-5] Запрос КП").build();
+
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, 5L), pr, null, KZ);
+
+        assertThat(n.silent()).isFalse();
+        assertThat(n.text()).isEqualTo("""
+                ⚠️ Письмо не доставлено · Дистр (d@x.kz)
+                Запрос КП №5 · частная заявка ЧЗ-2026-0007
+                Причина: 550 5.1.1 User unknown
+                Исправьте адрес в карточке поставщика и запросите КП заново в карточке заявки.
+
+                Открыть в АИС: https://ais.westmed.kz/private-requests?openId=42&market=KZ""");
+    }
+
+    /** Разрывы, которые клиенты показывают новой строкой: \r\n, \n, \r, VT, FF, NEL, LS, PS. */
+    private static final String LINE_BREAKS = "\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]";
+
+    private static List<String> lines(String t) {
+        return List.of(t.split(LINE_BREAKS, -1));
+    }
+
+    /** Ровно одна строка «Открыть в АИС:» — настоящая ссылка, и ни одной строки, начатой с «💡». */
+    private static void assertNoForgedLines(String t) {
+        List<String> links = lines(t).stream().filter(l -> l.startsWith("Открыть в АИС:")).toList();
+        assertThat(links).as(t).hasSize(1);
+        assertThat(links.get(0)).as(t).startsWith("Открыть в АИС: https://ais.westmed.kz/").doesNotContain("evil");
+        assertThat(lines(t).stream().filter(l -> l.startsWith("💡")).toList()).as(t).isEmpty();
     }
 
     /** Индекс одиночной половинки суррогатной пары; -1 — таких нет. */
