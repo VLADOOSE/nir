@@ -19,6 +19,7 @@ export interface OfferTerm { label: string; value: string; }
  */
 export interface PreviewPages { pages: string[]; crowded: boolean; }
 
+/** cost / costTotal — закупка за единицу и на количество: НДС поставщика не вычитается (решение оператора 2026-10-05). */
 export interface ItemCalc {
   cost: number | null; costTotal: number | null; markupPct: number | null; priceNet: number | null;
   price: number | null; sum: number | null; vatSum: number | null; sumNet: number | null;
@@ -36,7 +37,12 @@ export interface OfferItem {
   country?: string | null;
   unit: string;
   quantity: number | null;
+  /** цена закупки за единицу — как в счёте поставщика */
   purchasePrice: number | null;
+  /**
+   * Пометка «НДС в цене закупки» — с 2026-10-05 расчёт её не читает и экран не показывает (НДС поставщика не учитывается);
+   * поля API — для совместимости: строка отправляет их такими, какими пришли, новая — «как у продажи».
+   */
   purchaseVatSame: boolean;
   purchaseVatRate: number | null;
   supplierName?: string | null;
@@ -55,6 +61,7 @@ export interface OfferItem {
 
 export interface VatLine { rate: number; amount: number; }
 
+/** cost = purchase (НДС поставщика не вычитается, поле — для совместимости); markupAvg — от закупки, по суммам с НДС. */
 export interface OfferTotals {
   sum: number; vat: VatLine[]; vatTotal: number; purchase: number; cost: number; revenueNet: number;
   profit: number; markupAvg: number | null; itemCount: number; noPurchaseCount: number; unconfirmedRegistrationCount: number;

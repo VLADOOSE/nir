@@ -112,6 +112,10 @@ const MAX_MARKUP = 1000;
                   <select [(ngModel)]="o.rounding" (ngModelChange)="changed()"><option *ngFor="let r of roundings" [ngValue]="r.v">{{ r.l }}</option></select></label>
                 <label class="check"><input type="checkbox" [(ngModel)]="o.vatEnabled" (ngModelChange)="changed()" /> Цены с НДС</label>
               </div>
+              <!-- решение оператора 2026-10-05 (спека §5.1): наценка закладывает наш НДС, НДС поставщика не учитывается -->
+              <p class="hint vat-note">{{ o.vatEnabled
+                ? 'НДС — только наш и уже внутри цены: цена клиенту = закупка + наценка. НДС поставщика не учитывается.'
+                : 'Цена клиенту = закупка + наценка. НДС поставщика не учитывается.' }}</p>
             </div>
 
             <div class="card">
@@ -152,8 +156,8 @@ const MAX_MARKUP = 1000;
               <h3>Маржа <span class="hint">только для вас — в документ не попадает</span></h3>
               <dl class="margin">
                 <div><dt>Закупка</dt><dd>{{ money(o.totals.purchase) }}</dd></div>
-                <div><dt>Себестоимость</dt><dd>{{ money(o.totals.cost) }}</dd></div>
                 <div><dt>Выручка без НДС</dt><dd>{{ money(o.totals.revenueNet) }}</dd></div>
+                <div><dt>НДС с продажи</dt><dd>{{ money(o.totals.vatTotal) }}</dd></div>
                 <div><dt>Прибыль</dt><dd [class.neg]="o.totals.profit < 0">{{ money(o.totals.profit) }}</dd></div>
                 <div><dt>Средняя наценка</dt><dd>{{ o.totals.markupAvg == null ? '—' : numText(o.totals.markupAvg) + '%' }}</dd></div>
               </dl>
@@ -244,6 +248,7 @@ const MAX_MARKUP = 1000;
     .orient { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; }
     .hint { font-size: 12px; color: var(--text-muted); font-weight: 400; }
     .hint.warn { color: var(--warn-text); }
+    .vat-note { margin: 8px 0 0; }
     /* по ширине карточки, а не окна: рядом предпросмотр, и при окне 1280 px карточке достаётся ~500 px */
     .margin { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 0 0 8px; }
     .margin dt { font-size: 12px; color: var(--text-muted); }

@@ -64,7 +64,7 @@ const MAX_MARKUP = 1000;
       <span class="c-sel"><input type="checkbox" [checked]="allSelected()" [indeterminate]="someSelected()" (change)="selectAll($any($event.target).checked)"
                                  [disabled]="readonly" aria-label="Выбрать все строки" /></span>
       <span class="c-num">№</span><span class="c-name">Наименование</span><span class="c-qty r">Кол-во</span>
-      <span class="c-buy r">Закупка</span><span class="c-mk r">Наценка, %</span><span class="c-price r">Цена клиенту</span>
+      <span class="c-buy r" [title]="BUY_HINT">Закупка</span><span class="c-mk r">Наценка, %</span><span class="c-price r">Цена клиенту</span>
       <span class="c-vat">НДС</span><span class="c-sum r">Сумма</span><span class="c-menu"></span>
     </div>
 
@@ -100,9 +100,10 @@ const MAX_MARKUP = 1000;
               <label class="c-qty"><span class="cap">Кол-во</span>
                 <input inputmode="decimal" [value]="numText(it.quantity)" (change)="setQty(it, $event)" [disabled]="readonly"
                        [attr.aria-label]="'Количество, строка ' + (i + 1)" /></label>
-              <label class="c-buy"><span class="cap">Закупка</span>
+              <!-- подсказка — на подписи, не на всей ячейке: title строки («Нет цены закупки…») над полем остаётся -->
+              <label class="c-buy"><span class="cap" [title]="BUY_HINT">Закупка</span>
                 <input inputmode="decimal" [value]="numText(it.purchasePrice)" (change)="setPurchase(it, $event)" [disabled]="readonly"
-                       placeholder="—" [attr.aria-label]="'Цена закупки за единицу, строка ' + (i + 1)" /></label>
+                       placeholder="—" [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1)" /></label>
               <label class="c-mk"><span class="cap">Наценка, %</span>
                 <input inputmode="decimal" [value]="markupText(it)" [placeholder]="it.priceOverride != null ? '—' : numText(offer.defaultMarkupPct)"
                        [disabled]="readonly || it.priceOverride != null" (change)="setMarkup(it, $event)"
@@ -160,12 +161,6 @@ const MAX_MARKUP = 1000;
           <label>Страна <input [(ngModel)]="it.country" (ngModelChange)="emit()" [disabled]="readonly" maxlength="200" /></label>
           <label>Ед. изм. <input [(ngModel)]="it.unit" (ngModelChange)="emit()" [disabled]="readonly" maxlength="30" [attr.list]="'units-' + it.key" /></label>
           <datalist [id]="'units-' + it.key"><option *ngFor="let u of units" [value]="u"></option></datalist>
-          <label>НДС в цене закупки
-            <select [ngModel]="purchaseVatKey(it)" (ngModelChange)="setPurchaseVat(it, $event)" [disabled]="readonly">
-              <option value="same">как у продажи</option>
-              <option *ngFor="let r of purchaseRates(it)" [value]="'r:' + r">{{ vatLabel(r) }}</option>
-              <option value="none">без НДС</option>
-            </select></label>
           <label>Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
           <label class="wide">Регистрация
             <span class="reg">
@@ -182,8 +177,8 @@ const MAX_MARKUP = 1000;
               <span class="muted" *ngIf="it.registrationStatus === 'CONFIRMED' || it.registrationStatus === 'NOT_REQUIRED'">{{ it.registrationText }}</span>
             </span></label>
           <label class="wide">Примечание <textarea rows="2" [(ngModel)]="it.note" (ngModelChange)="emit()" [disabled]="readonly" maxlength="4000"></textarea></label>
+          <!-- «Себестоимость» строки убрана (2026-10-05): НДС поставщика не вычитается, она всегда равна закупке в этой же строке -->
           <div class="profit wide">
-            <span>Себестоимость: <b>{{ money(it.calc?.cost) || '—' }}</b></span>
             <span>Прибыль: <b [class.neg]="(it.calc?.profit ?? 0) < 0">{{ money(it.calc?.profit) || '—' }}</b></span>
             <span class="muted">только для вас</span>
           </div>
@@ -344,6 +339,11 @@ export class ClientOfferItemsComponent {
    */
   private editingPriceKey: string | null = null;
   private editingPriceText = '';
+  /**
+   * Подсказка к «Закупке»: для подписи длиннее одного слова в колонке (104 px) места нет. НДС поставщика не вычитается — решение оператора
+   * 2026-10-05 (спека §5.1); пометки «НДС в цене закупки» у строки больше нет, расчёт её не читает.
+   */
+  readonly BUY_HINT = 'Цена закупки за единицу — как в счёте поставщика';
   readonly units = UNIT_SUGGESTIONS;
   money = money;
   numText = numText;
@@ -354,10 +354,6 @@ export class ClientOfferItemsComponent {
 
   get rates(): (number | null)[] {
     return this.profile?.vatRates ?? [];
-  }
-
-  get numericRates(): number[] {
-    return this.rates.filter((r): r is number => r != null);
   }
 
   @HostListener('document:click')
@@ -600,23 +596,6 @@ export class ClientOfferItemsComponent {
   /** Ставки рынка + сохранённая ставка строки, если её уже нет в настройках (старое КП): иначе список показал бы пусто. */
   vatOptions(it: OfferItem): (number | null)[] {
     return this.hasRate(it.vatRate) ? this.rates : [...this.rates, it.vatRate];
-  }
-
-  purchaseRates(it: OfferItem): number[] {
-    const r = it.purchaseVatRate;
-    return it.purchaseVatSame || r == null || this.numericRates.includes(r) ? this.numericRates : [...this.numericRates, r];
-  }
-
-  purchaseVatKey(it: OfferItem): string {
-    if (it.purchaseVatSame) return 'same';
-    return it.purchaseVatRate == null ? 'none' : 'r:' + it.purchaseVatRate;
-  }
-
-  setPurchaseVat(it: OfferItem, key: string) {
-    if (key === 'same') { it.purchaseVatSame = true; it.purchaseVatRate = null; }
-    else if (key === 'none') { it.purchaseVatSame = false; it.purchaseVatRate = null; }
-    else { it.purchaseVatSame = false; it.purchaseVatRate = Number(key.slice(2)); }
-    this.emit();
   }
 
   /** РУ указано → ставка «подтверждённого РУ»; «не подлежит» → её ставка (настройки рынка, как в КП отца: 5% / 16%). */
