@@ -65,6 +65,12 @@ tasks.named('test') {
     systemProperty 'chats.whatsapp.waha.hmac-key', 'test-hmac-key'
 }
 
+// Локальная почта для живой проверки приёма (не тест): GreenMail SMTP 3025 / IMAP 3143, ящик zakup@westmed.kz / secret
+tasks.register('devMail', JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.vladoose.nir.mail.DevMailServer'
+}
+
 // Детерминированное имя fat-JAR для Docker-образа (COPY build/libs/app.jar). Плейн-JAR не нужен.
 tasks.named('bootJar') {
     archiveFileName = 'app.jar'
