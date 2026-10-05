@@ -75,6 +75,31 @@ class TelegramClientTest {
     }
 
     @Test
+    void serverDescriptionEchoingToken_masked() {
+        stub.enqueue(TelegramStubServer.Reply.error(400, "Bad Request: /bot" + TOKEN + "/sendMessage not found"));
+        assertThatThrownBy(() -> client("77").sendMail("x", false))
+                .isInstanceOf(TelegramException.class).hasMessageContaining("***").hasMessageNotContaining("SECRET");
+
+        // двоеточие экранировано (%3A) — секретная часть после «:» всё равно вычищается
+        stub.enqueue(TelegramStubServer.Reply.error(404, "Not Found: /bot" + TOKEN.replace(":", "%3A") + "/sendMessage"));
+        assertThatThrownBy(() -> client("77").sendMail("x", false))
+                .isInstanceOf(TelegramException.class).hasMessageNotContaining("SECRET");
+
+        // токен на границе обрезки в 200 символов: вычищается ДО обрезки, иначе уцелел бы его обрывок
+        stub.enqueue(TelegramStubServer.Reply.error(400, "a".repeat(180) + "/bot" + TOKEN + "/sendMessage"));
+        assertThatThrownBy(() -> client("77").sendMail("x", false))
+                .isInstanceOf(TelegramException.class).hasMessageNotContaining("SECRET");
+    }
+
+    @Test
+    void longDescription_cutTo200_emojiNotSplit() {
+        stub.enqueue(TelegramStubServer.Reply.error(400, "x".repeat(199) + "😀 tail"));   // эмодзи на 200-м символе
+        assertThatThrownBy(() -> client("77").sendMail("x", false))
+                .isInstanceOfSatisfying(TelegramException.class,
+                        e -> assertThat(e.getMessage()).endsWith(" — " + "x".repeat(199)));
+    }
+
+    @Test
     void serverErrorNonJson_noToken() {
         stub.enqueue(new TelegramStubServer.Reply(502, "<html>Bad Gateway</html>", 0));
         assertThatThrownBy(() -> client("77").sendMail("x", false))
