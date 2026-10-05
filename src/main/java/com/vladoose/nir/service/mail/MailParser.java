@@ -108,9 +108,7 @@ public final class MailParser {
             return;
         }
         if (part.isMimeType("message/rfc822")) {
-            try (InputStream in = part.getInputStream()) {
-                w.originalSubject = new MimeMessage((Session) null, in).getSubject();
-            }
+            w.originalSubject = nestedSubject(part);
             String name = decode(part.getFileName());
             if (name != null) w.attachments.add(name);
             return;
@@ -138,6 +136,20 @@ public final class MailParser {
             append(w.text, text(part));
         } else if (part.isMimeType("text/html")) {
             append(w.html, text(part));
+        }
+    }
+
+    /**
+     * Тема вложенного письма (исходное письмо в возврате) — сначала как у вложенного Message: по IMAP это конверт из
+     * BODYSTRUCTURE (письмо целиком не качается), из байтов — разобранный MimeMessage. Только поток части не годится:
+     * по IMAP это BODY[n] части, и сервер может отдать лишь ТЕЛО вложенного письма без заголовков (так делает
+     * GreenMail) — тема терялась, и возврат не привязывался к запросу КП. Поток — запасной путь, если содержимое
+     * не письмо.
+     */
+    private static String nestedSubject(Part part) throws MessagingException, IOException {
+        if (part.getContent() instanceof Message nested) return nested.getSubject();
+        try (InputStream in = part.getInputStream()) {
+            return new MimeMessage((Session) null, in).getSubject();
         }
     }
 

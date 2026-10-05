@@ -3,6 +3,7 @@ package com.vladoose.nir.service.mail;
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.ServerSetupTest;
+import jakarta.mail.MessagingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -143,12 +144,71 @@ class ImapMailboxConnectorTest {
         }
     }
 
+    /**
+     * Возврат, прочитанный по IMAP, сохраняет тему исходного письма — по её метке [КП-id] возврат привязывается к запросу
+     * КП. Поток части message/rfc822 для этого не годится: GreenMail отдаёт по BODY[n] только ТЕЛО вложенного письма,
+     * без заголовков (прямой разбор MIME в тестах разбора этого не видит).
+     */
+    @Test
+    void bounceOverImap_keepsOriginalSubject() throws Exception {
+        user.deliver(TestMimes.dsn("[КП-123] Запрос КП", "b@x.kz", "550 5.1.1 User unknown"));
+        user.deliver(TestMimes.dsnHeadersOnly("[КП-124] Запрос КП"));
+
+        try (MailboxSession s = connector().open()) {
+            List<Long> uids = s.uidsAfter(0, 10);
+            assertThat(s.fetch(uids.get(0)).bounce().originalSubject()).isEqualTo("[КП-123] Запрос КП");
+            assertThat(s.fetch(uids.get(1)).bounce().originalSubject()).isEqualTo("[КП-124] Запрос КП");
+        }
+    }
+
     @Test
     void isAlive_falseAfterClose() throws Exception {
         MailboxSession s = connector().open();
         assertThat(s.isAlive()).isTrue();
         s.close();
         assertThat(s.isAlive()).isFalse();
+    }
+
+    /**
+     * Сервер оборвал связь посреди прохода: чтение письма падает, папка это замечает (isAlive — false), а конверт не
+     * бросает — отдаёт пустые поля. По isAlive проход отличает обрыв (стоп, курсор на месте) от битого письма.
+     */
+    @Test
+    void serverDrop_fetchThrows_notAlive_envelopeEmpty() throws Exception {
+        user.deliver(TestMimes.plain("Иван <ivan@x.kz>", "До обрыва", "1"));
+        try (MailboxSession s = connector().open()) {
+            long uid = s.uidsAfter(0, 10).get(0);
+            assertThat(s.isAlive()).isTrue();
+
+            greenMail.stop();                                   // повторная остановка в afterEach ничего не делает
+
+            assertThatThrownBy(() -> s.fetch(uid)).isInstanceOf(Exception.class);
+            assertThat(s.isAlive()).isFalse();
+            BrokenMail b = s.envelope(uid, new MessagingException("обрыв"));
+            assertThat(b.uid()).isEqualTo(uid);
+            assertThat(b.from()).isNull();
+            assertThat(b.subject()).isNull();
+            assertThat(b.messageId()).isNull();
+            assertThat(b.receivedAt()).isNotNull();
+            assertThat(b.errorClass()).isEqualTo("MessagingException");
+        }
+    }
+
+    /**
+     * Живая папка остаётся живой, даже если почта отклонит НОВЫЙ вход (здесь — пароль сменили посреди сессии; на Mail.ru —
+     * лимит соединений или сбой авторизации). Проверка хранилища в Angus брала бы второе соединение со входом и при
+     * отказе закрывала бы и папку: битое письмо приняли бы за обрыв связи, проход вставал бы на нём каждый раз.
+     */
+    @Test
+    void isAlive_secondLoginRefused_folderStillServes() throws Exception {
+        user.deliver(TestMimes.plain("s@x.kz", "Письмо", "1"));
+        try (MailboxSession s = connector().open()) {
+            long uid = s.uidsAfter(0, 10).get(0);
+            greenMail.setUser(USER, USER, "пароль сменили");    // текущая сессия уже вошла, новый вход отклонят
+
+            assertThat(s.isAlive()).isTrue();
+            assertThat(s.fetch(uid).subject()).isEqualTo("Письмо");
+        }
     }
 
     @Test
