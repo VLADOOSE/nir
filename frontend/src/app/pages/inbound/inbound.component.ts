@@ -37,7 +37,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
               {{ typeLabel(r.type) }}
             </span>
             <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='AUTO_REPLY') && r.matchedPriceRequestId"
-                  class="muted"> · КП #{{ r.matchedPriceRequestId }}</span>
+                  class="muted kp-ref"> · КП #{{ r.matchedPriceRequestId }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
           <td>
@@ -122,6 +122,8 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     .b-bounce { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
     .b-auto { background: var(--surface-2); color: var(--text-muted); font-style: italic; }
     .muted { color: var(--text-muted); font-size: 12px; }
+    /* «· КП #416» — одной строкой: у короткого бейджа («Автоответ») перенос шёл посреди метки, «КП» и «#416» на разных строках */
+    .kp-ref { white-space: nowrap; }
     .when { white-space: nowrap; color: var(--text); font-size: 12px; }
     .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; background: var(--surface); }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
@@ -209,6 +211,9 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
         grid-area: type; justify-content: flex-start; flex-wrap: nowrap;
         gap: 4px; overflow: hidden;
       }
+      /* на карточке метке КП можно переноситься: ячейка обрезает лишнее (overflow: hidden), и на 320px метка
+         одной строкой не влезла бы рядом с бейджем «Ответ поставщика» */
+      .inbound-list .kp-ref { white-space: normal; }
       .inbound-list td[data-label="Статус"] { display: none; }
       .inbound-list td:not([data-label]) { grid-area: act; justify-content: flex-end; }
     }
