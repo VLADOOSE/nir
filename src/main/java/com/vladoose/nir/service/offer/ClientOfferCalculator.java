@@ -15,26 +15,26 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Единственное место формул КП (спека client-kp-constructor §5). Наценка — «с учётом НДС» (решение оператора
- * 2026-10-02): себестоимость = закупка без входного НДС, если строку продаём с НДС; если без НДС — входной НДС
- * к зачёту не идёт и остаётся в себестоимости. Цена = себестоимость × (1 + наценка) × (1 + наш НДС) → округление.
- * Ручная цена фиксируется, наценка выводится обратно. НДС выделяется из суммы («в т.ч.»), суммы — HALF_UP до 0,01.
- * Всё, что округляется (цена, себестоимость строки, наценка ручной цены), считается ОДНОЙ точной дробью — одно деление,
- * одно округление (§5.1–5.2). Не делить себестоимость «до N знаков» и умножать обратно: шум ±1e-10 на точной
- * «половинке» уводил HALF_UP вниз (1 080 + 25% «до 100» давало 1 300 вместо 1 400).
+ * Единственное место формул КП (спека client-kp-constructor §5). Решение оператора 2026-10-05: наценка закладывает наш
+ * НДС, НДС поставщика не учитывается (вычет — задача бухгалтерии). Себестоимость = закупка (как в счёте поставщика), цена
+ * клиенту = закупка × (100 + наценка) / 100 → округление — с нашим НДС уже внутри. Пометку «НДС в цене закупки» строки
+ * (purchaseVatSame / purchaseVatRate) расчёт не читает — поля остались для совместимости. Ручная цена фиксируется,
+ * наценка выводится обратно от закупки. НДС выделяется из суммы («в т.ч.»), суммы — HALF_UP до 0,01.
+ * Всё, что округляется (цена, суммы, НДС, наценка ручной цены), считается ОДНОЙ точной дробью — одно деление, одно
+ * округление (§5.1–5.2). Не делить «до N знаков» и умножать обратно: шум ±1e-10 на точной «половинке» уводил HALF_UP
+ * вниз (1 080 + 25% «до 100» давало 1 300 вместо 1 400).
  */
 @Component
 public class ClientOfferCalculator {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal TEN = BigDecimal.TEN;
-    private static final BigDecimal TEN_THOUSAND = BigDecimal.valueOf(10_000);
 
     public OfferCalculation calculate(ClientOffer offer) {
         List<ItemCalc> items = new ArrayList<>(offer.getItems().size());
         Map<BigDecimal, BigDecimal> vatByRate = new TreeMap<>();
-        BigDecimal sum = zero(), vatTotal = zero(), purchase = zero(), cost = zero(), revenueNet = zero(), profit = zero();
-        BigDecimal costWithProfit = zero(), netWithProfit = zero();
+        BigDecimal sum = zero(), vatTotal = zero(), purchase = zero(), revenueNet = zero(), profit = zero();
+        BigDecimal markedSum = zero(), markedPurchase = zero();
         int itemCount = 0, noPurchase = 0, unconfirmed = 0;
 
         for (ClientOfferItem item : offer.getItems()) {
@@ -46,7 +46,6 @@ public class ClientOfferCalculator {
             OfferRegistrationStatus reg = item.getRegistrationStatus();
             if (reg == OfferRegistrationStatus.UNCHECKED || reg == OfferRegistrationStatus.SUGGESTED) unconfirmed++;
             if (item.getPurchasePrice() == null) noPurchase++;
-            else purchase = purchase.add(item.getPurchasePrice().multiply(qty(item)));
 
             ItemCalc c = calculateItem(offer, item);
             items.add(c);
@@ -56,21 +55,27 @@ public class ClientOfferCalculator {
                 revenueNet = revenueNet.add(c.sumNet());
                 if (c.effectiveVatRate() != null) vatByRate.merge(c.effectiveVatRate(), c.vatSum(), BigDecimal::add);
             }
-            if (c.costTotal() != null) cost = cost.add(c.costTotal());
-            if (c.profit() != null) {
+            if (c.costTotal() != null) {
+                // закупка строки уже до 0,01 — итог «Закупка» = Σ закупок строк, и прибыль = выручка без НДС − закупка
+                purchase = purchase.add(c.costTotal());
                 profit = profit.add(c.profit());
-                costWithProfit = costWithProfit.add(c.costTotal());
-                netWithProfit = netWithProfit.add(c.sumNet());
+                // средняя наценка — только где закупка больше нуля: у закупки 0 наценки нет («—»)
+                if (item.getPurchasePrice().signum() > 0) {
+                    markedSum = markedSum.add(c.sum());
+                    markedPurchase = markedPurchase.add(c.costTotal());
+                }
             }
         }
 
         List<VatLine> vat = new ArrayList<>();
         vatByRate.forEach((rate, amount) -> vat.add(new VatLine(rate, amount)));
-        BigDecimal markupAvg = costWithProfit.signum() > 0
-                ? netWithProfit.subtract(costWithProfit).multiply(HUNDRED).divide(costWithProfit, 2, RoundingMode.HALF_UP)
+        // от закупки, по суммам с НДС: одна наценка 20 % у всех строк — средняя 20 %, при любых ставках НДС
+        BigDecimal markupAvg = markedPurchase.signum() > 0
+                ? markedSum.subtract(markedPurchase).multiply(HUNDRED).divide(markedPurchase, 2, RoundingMode.HALF_UP)
                 : null;
-        OfferTotals totals = new OfferTotals(sum, vat, vatTotal, purchase.setScale(2, RoundingMode.HALF_UP), cost,
-                revenueNet, profit, markupAvg, itemCount, noPurchase, unconfirmed);
+        // cost (себестоимость) = purchase: НДС поставщика не вычитается; поле оставлено для совместимости API
+        OfferTotals totals = new OfferTotals(sum, vat, vatTotal, purchase, purchase, revenueNet, profit, markupAvg,
+                itemCount, noPurchase, unconfirmed);
         return new OfferCalculation(items, totals);
     }
 
@@ -78,28 +83,17 @@ public class ClientOfferCalculator {
         BigDecimal q = qty(item);
         BigDecimal v = offer.isVatEnabled() ? item.getVatRate() : null;
         boolean taxable = v != null;
-        BigDecimal p = item.isPurchaseVatSame() ? v : item.getPurchaseVatRate();
-
-        // Себестоимость за единицу — точной дробью costNum / costDen (без деления): входной НДС вычитается, только если
-        // строку продаём с НДС и ставка закупки известна; иначе он остаётся в себестоимости.
-        BigDecimal costNum = null;
-        BigDecimal costDen = null;
-        if (item.getPurchasePrice() != null) {
-            boolean excludeInputVat = taxable && p != null;
-            costNum = excludeInputVat ? item.getPurchasePrice().multiply(HUNDRED) : item.getPurchasePrice();
-            costDen = excludeInputVat ? HUNDRED.add(p) : BigDecimal.ONE;
-        }
+        BigDecimal p = item.getPurchasePrice();   // за единицу, как в счёте поставщика: его НДС не вычитается
 
         BigDecimal price;
         BigDecimal markup;
         if (item.getPriceOverride() != null) {
             price = item.getPriceOverride().setScale(2, RoundingMode.HALF_UP);
-            markup = costNum != null && costNum.signum() > 0 ? manualMarkup(price, v, costNum, costDen) : null;
-        } else if (costNum != null) {
+            markup = p != null && p.signum() > 0 ? manualMarkup(price, p) : null;
+        } else if (p != null) {
             BigDecimal m = item.getMarkupPct() != null ? item.getMarkupPct() : offer.getDefaultMarkupPct();
-            // цена = себестоимость × (100 + m) / 100 × (100 + v) / 100; без НДС — без последнего множителя
-            BigDecimal num = costNum.multiply(HUNDRED.add(m)).multiply(taxable ? HUNDRED.add(v) : HUNDRED);
-            price = round(num, costDen.multiply(TEN_THOUSAND), offer.getRounding());
+            // цена = закупка × (100 + m) / 100 — наш НДС уже внутри (наценка его закладывает), сверху не начисляется
+            price = round(p.multiply(HUNDRED.add(m)), HUNDRED, offer.getRounding());
             markup = m.setScale(2, RoundingMode.HALF_UP);
         } else {
             return new ItemCalc(null, null, item.getMarkupPct(), null, null, null, null, null, null, v);
@@ -111,24 +105,17 @@ public class ClientOfferCalculator {
                 : BigDecimal.ZERO.setScale(2);
         BigDecimal sumNet = sum.subtract(vatSum);
         BigDecimal priceNet = taxable ? price.multiply(HUNDRED).divide(HUNDRED.add(v), 2, RoundingMode.HALF_UP) : price;
-        BigDecimal cost = costNum == null ? null : costNum.divide(costDen, 2, RoundingMode.HALF_UP);
-        BigDecimal costTotal = costNum == null ? null : costNum.multiply(q).divide(costDen, 2, RoundingMode.HALF_UP);
-        // Прибыль — остаток уже округлённых сумм: в каждой строке прибыль + себестоимость строки = сумма без НДС.
+        BigDecimal cost = p == null ? null : p.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal costTotal = p == null ? null : p.multiply(q).setScale(2, RoundingMode.HALF_UP);
+        // Прибыль — остаток уже округлённых сумм: то, что остаётся после уплаты нашего НДС; прибыль + закупка строки =
+        // сумма без НДС.
         BigDecimal profit = costTotal == null ? null : sumNet.subtract(costTotal);
         return new ItemCalc(cost, costTotal, markup, priceNet, price, sum, vatSum, sumNet, profit, v);
     }
 
-    /**
-     * Наценка ручной цены одной дробью: m = net / себестоимость × 100 − 100, где net = цена × 100 / (100 + v)
-     * (без НДС — сама цена). Когда входной НДС вычитается (строка с НДС, ставка закупки p известна), это
-     * цена × (100 + p) × 100 / ((100 + v) × закупка) − 100.
-     */
-    private static BigDecimal manualMarkup(BigDecimal price, BigDecimal v, BigDecimal costNum, BigDecimal costDen) {
-        BigDecimal netNum = v != null ? price.multiply(HUNDRED) : price;
-        BigDecimal netDen = v != null ? HUNDRED.add(v) : BigDecimal.ONE;
-        BigDecimal den = netDen.multiply(costNum);
-        return netNum.multiply(costDen).multiply(HUNDRED).subtract(den.multiply(HUNDRED))
-                .divide(den, 2, RoundingMode.HALF_UP);
+    /** Наценка ручной цены одной дробью: m = (цена / закупка − 1) × 100 = (цена − закупка) × 100 / закупка. */
+    private static BigDecimal manualMarkup(BigDecimal price, BigDecimal purchase) {
+        return price.subtract(purchase).multiply(HUNDRED).divide(purchase, 2, RoundingMode.HALF_UP);
     }
 
     /** Цена num / den по правилу КП (§5.2): одно деление точной дроби с HALF_UP; результат — с двумя знаками. */

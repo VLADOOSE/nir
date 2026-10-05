@@ -35,6 +35,7 @@ public class ClientOfferItemDto {
     @Size(max = 30) private String unit;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal quantity;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchasePrice;
+    /** Расчёт с 2026-10-05 не читает (НДС поставщика не учитывается, спека §5.1); поля — для совместимости. */
     private Boolean purchaseVatSame;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchaseVatRate;
     @Size(max = 255) private String supplierName;

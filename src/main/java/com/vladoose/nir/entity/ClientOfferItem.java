@@ -51,6 +51,10 @@ public class ClientOfferItem {
     @Column(name = "purchase_price", precision = 15, scale = 2)
     private BigDecimal purchasePrice;
 
+    /**
+     * Пометка «НДС в цене закупки» (+ purchaseVatRate) — с 2026-10-05 расчёт её не читает: НДС поставщика не учитывается
+     * (решение оператора, спека §5.1). Колонки оставлены для совместимости — старые КП и API их по-прежнему несут.
+     */
     @Column(name = "purchase_vat_same", nullable = false)
     @Builder.Default
     private boolean purchaseVatSame = true;

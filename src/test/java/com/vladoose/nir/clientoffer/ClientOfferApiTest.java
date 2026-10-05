@@ -279,8 +279,14 @@ class ClientOfferApiTest {
         assertThat(first.get("key").asText()).isEqualTo("k1");
         assertThat(first.get("lineNo").asInt()).isEqualTo(1);
         assertThat(first.get("calc").get("price").decimalValue()).isEqualByComparingTo("126000.00");
-        assertThat(r.get("totals").get("sum").decimalValue()).isEqualByComparingTo("378000.00");
-        assertThat(r.get("totals").get("profit").decimalValue()).isEqualByComparingTo("60000.00");
+        // панель «Маржа» читает эти поля итогов: закупка 3 × 105 000, без НДС 360 000, НДС с продажи 18 000 — весь к уплате
+        JsonNode totals = r.get("totals");
+        assertThat(totals.get("sum").decimalValue()).isEqualByComparingTo("378000.00");
+        assertThat(totals.get("purchase").decimalValue()).isEqualByComparingTo("315000.00");
+        assertThat(totals.get("revenueNet").decimalValue()).isEqualByComparingTo("360000.00");
+        assertThat(totals.get("vatTotal").decimalValue()).isEqualByComparingTo("18000.00");
+        assertThat(totals.get("profit").decimalValue()).isEqualByComparingTo("45000.00");
+        assertThat(totals.get("markupAvg").decimalValue()).isEqualByComparingTo("20.00");
         assertThat(r.get("version").asInt()).isEqualTo(1);
         Map<String, Object> links = jdbc.queryForMap("select distributor_id, tender_lot_id, price_request_item_id, "
                 + "med_equipment_id from client_offer_item where id = ?", first.get("id").asLong());
@@ -569,7 +575,10 @@ class ClientOfferApiTest {
         rejected(id, body, "Пустая строка");
     }
 
-    /** Ставка НДС строки и НДС закупки — только от 0 и меньше 100: на −100 расчёт делил бы на ноль (500). */
+    /**
+     * Ставка НДС строки — только от 0 и меньше 100: на −100 расчёт делил бы на ноль (500). НДС закупки расчёт с 2026-10-05
+     * не читает (НДС поставщика не учитывается), но поле хранится — проверка та же, чтобы в колонку не легло бессмысленное.
+     */
     @Test
     @WithMockUser(roles = "ADMIN")
     void vatRatesOutsideZeroToHundredAreRejected() throws Exception {
