@@ -169,9 +169,15 @@ public final class MailParser {
         }
     }
 
+    /**
+     * Части тела — через перевод строки: встык «Количество 2» и «1 500 000 тг» (Apple Mail режет текст на части вокруг
+     * вставленного файла) прочитались бы как одно число. Срез по пределу не разрезает эмодзи
+     * ({@link MailText#safeCut}).
+     */
     private static void append(StringBuilder sb, String s) {
-        if (s == null || sb.length() >= MAX_TEXT) return;
-        sb.append(s, 0, Math.min(s.length(), MAX_TEXT - sb.length()));
+        if (s == null || s.isEmpty() || sb.length() >= MAX_TEXT) return;
+        if (sb.length() > 0) sb.append('\n');
+        sb.append(MailText.safeCut(s, MAX_TEXT - sb.length()));
     }
 
     static String decode(String s) {
@@ -222,7 +228,7 @@ public final class MailParser {
             if (finalRecipient == null) finalRecipient = afterType(f.get("original-recipient"));
             status = f.get("status");
             diagnostic = afterType(f.get("diagnostic-code"));
-            if (diagnostic != null && diagnostic.length() > 200) diagnostic = diagnostic.substring(0, 200);
+            if (diagnostic != null) diagnostic = MailText.safeCut(diagnostic, 200);
         }
 
         ParsedMail.Bounce bounce() {

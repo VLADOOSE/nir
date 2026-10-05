@@ -32,4 +32,12 @@ public record ParsedMail(long uid, String messageId, String from, String fromAdd
     public String body() {
         return !text.isBlank() ? text : MailText.htmlToText(html);
     }
+
+    /**
+     * Сырое тело: text/plain, а если его нет — HTML как есть, без перевода в текст. Вход для разбора ответа поставщика
+     * (цена, отказ): как в прежнем приёме — у них свой разбор HTML.
+     */
+    public String rawBody() {
+        return !text.isBlank() ? text : html;
+    }
 }

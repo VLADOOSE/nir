@@ -44,6 +44,17 @@ class MailParserTest {
     }
 
     @Test
+    void rawBody_htmlOnlyGivesRawHtml_plainGivesText() throws Exception {
+        String source = "<p>Цена <b>1 500 000</b> тг</p>";
+        ParsedMail htmlOnly = MailParser.parse(roundTrip(html("s@x.kz", "Re: [КП-534] Запрос", source)), 1);
+        ParsedMail plainOnly = MailParser.parse(
+                roundTrip(plain("s@x.kz", "Re: [КП-534] Запрос", "Цена 1 500 000 тг")), 1);
+
+        assertThat(htmlOnly.rawBody()).isEqualTo(source);
+        assertThat(plainOnly.rawBody()).isEqualTo("Цена 1 500 000 тг");
+    }
+
+    @Test
     void nestedAlternativeWithEncodedExcel_textExcelAndName() throws Exception {
         MimeMultipart alt = new MimeMultipart("alternative");
         MimeBodyPart t = new MimeBodyPart();
@@ -108,6 +119,34 @@ class MailParserTest {
 
         assertThat(p.attachmentNames()).containsExactly("КП.pdf");
         assertThat(p.body()).contains("Цена в файле");
+    }
+
+    @Test
+    void textPartsAroundAttachment_joinedWithLineBreak() throws Exception {
+        // так пишет Apple Mail, когда файл вставлен посреди текста: текст, вложение, текст. Встык части дали бы
+        // «Количество 21 500 000 тг» — для разбора цены одно число
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        MimeBodyPart first = new MimeBodyPart();
+        first.setText("Количество 2", "UTF-8");
+        MimeBodyPart pdf = new MimeBodyPart();
+        pdf.setDataHandler(new DataHandler(new ByteArrayDataSource(new byte[]{4, 5}, "application/pdf")));
+        pdf.setFileName(MimeUtility.encodeText("КП.pdf", "UTF-8", "B"));
+        pdf.setDisposition(MimeBodyPart.ATTACHMENT);
+        MimeBodyPart second = new MimeBodyPart();
+        second.setText("1 500 000 тг за единицу", "UTF-8");
+        mixed.addBodyPart(first);
+        mixed.addBodyPart(pdf);
+        mixed.addBodyPart(second);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("s@x.kz"));
+        m.setSubject("Re: [КП-534] Запрос", "UTF-8");
+        m.setContent(mixed);
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(p.text()).contains("Количество 2\n1 500 000 тг").doesNotContain("21 500 000");
+        assertThat(p.attachmentNames()).containsExactly("КП.pdf");
     }
 
     @Test

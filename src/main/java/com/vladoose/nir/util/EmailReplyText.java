@@ -25,7 +25,20 @@ public final class EmailReplyText {
     /** HTML снят + всё от начала цитаты нашего письма отброшено. null → "". */
     public static String stripToReply(String rawBody) {
         if (rawBody == null) return "";
-        return stripQuote(stripHtml(rawBody));
+        return cutQuote(stripHtml(rawBody));
+    }
+
+    /**
+     * Только отрез цитаты нашего письма — для уже готового текста: без снятия HTML. В готовом тексте {@code <} и
+     * {@code >} — обычные символы ({@code срок <30 дней}, {@code Анна <anna@x.kz>}), и снятие «тегов» съело бы всё
+     * между ними вместе с маркером цитаты. null → "".
+     */
+    public static String cutQuote(String text) {
+        if (text == null) return "";
+        int cut = firstMatchStart(QUOTE_BOUNDARY, text);
+        int attr = firstMatchStart(ATTRIBUTION, text);
+        if (attr >= 0 && (cut < 0 || attr < cut)) cut = attr;
+        return cut >= 0 ? text.substring(0, cut) : text;
     }
 
     private static String stripHtml(String s) {
@@ -33,13 +46,6 @@ public final class EmailReplyText {
         String noTags = HTML_TAG.matcher(s).replaceAll(" ");
         return noTags.replace("&nbsp;", " ").replace("&amp;", "&")
                 .replace("&lt;", "<").replace("&gt;", ">").replaceAll("&#\\d+;", " ");
-    }
-
-    private static String stripQuote(String s) {
-        int cut = firstMatchStart(QUOTE_BOUNDARY, s);
-        int attr = firstMatchStart(ATTRIBUTION, s);
-        if (attr >= 0 && (cut < 0 || attr < cut)) cut = attr;
-        return cut >= 0 ? s.substring(0, cut) : s;
     }
 
     private static int firstMatchStart(Pattern p, String s) {
