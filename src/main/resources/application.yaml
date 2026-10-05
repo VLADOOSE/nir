@@ -79,6 +79,23 @@ mail:
     initial-delay-ms: ${MAIL_IMAP_INITIAL_DELAY_MS:20000}
     # окно ПЕРВОГО запуска (нет курсора / сменился UIDVALIDITY): письма старше не обрабатываются, дальше — курсор по UID
     since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}
+    # Excel без метки [КП-…] → «Письмо клиники» (ящик info@). Для ящика закупок zakup@ — false: там это прайс поставщика
+    client-requests: ${MAIL_IMAP_CLIENT_REQUESTS:true}
+
+# Уведомления о письмах ящика в Telegram: бот @West_Med_bot сайта, группа «Заявки», тема «Почта zakup@»
+# (спека docs/superpowers/specs/2026-10-05-zakup-mail-telegram-design.md §5). Токен стоит в ПУТИ адреса Bot API —
+# адреса запросов нигде не печатать.
+notify:
+  telegram:
+    enabled: ${TELEGRAM_ENABLED:false}
+    api-url: ${TELEGRAM_API_URL:https://api.telegram.org}
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:}
+    mail-thread-id: ${TELEGRAM_MAIL_THREAD_ID:}
+
+# Публичный адрес АИС — для ссылок «Открыть в АИС» в уведомлениях (прод — application-prod.yaml). Пусто — без ссылок.
+ais:
+  public-url: ${AIS_PUBLIC_URL:http://localhost:4200}
 
 goszakup:
   api:

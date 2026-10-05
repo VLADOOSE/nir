@@ -67,14 +67,14 @@ public class MailPollScheduler {
         try {
             return f.get(manualWait.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            return message("Проверка почты ещё идёт — обновите страницу через минуту");
+            return message("Проверка почты ещё идёт — обновите страницу через минуту", true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return message("Проверка почты прервана");
+            return message("Проверка почты прервана", false);
         } catch (ExecutionException e) {
             // RuntimeException проход ловит сам — сюда доходит только Error
             log.warn("Проход приёма почты упал", e.getCause());
-            return message("Ошибка проверки почты: " + e.getCause().getClass().getSimpleName());
+            return message("Ошибка проверки почты: " + e.getCause().getClass().getSimpleName(), false);
         }
     }
 
@@ -84,15 +84,21 @@ public class MailPollScheduler {
             return mailReceiveService.poll();
         } catch (RuntimeException e) {
             log.warn("Проход приёма почты упал", e);
-            return message("Ошибка проверки почты: " + e.getClass().getSimpleName());
+            return message("Ошибка проверки почты: " + e.getClass().getSimpleName(), false);
         } finally {
             MarketContext.clear();
         }
     }
 
-    private PollResultResponse message(String text) {
+    /**
+     * Ответ без итога прохода: ok — всегда false. pending — проход не дождались, он ещё идёт (страница покажет это
+     * нейтрально, а не как ошибку); иначе проход упал или ожидание прервано.
+     */
+    private PollResultResponse message(String text, boolean pending) {
         PollResultResponse r = new PollResultResponse();
         r.setEnabled(enabled);
+        r.setOk(false);
+        r.setPending(pending);
         r.setMessage(text);
         return r;
     }

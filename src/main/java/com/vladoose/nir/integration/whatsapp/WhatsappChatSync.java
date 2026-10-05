@@ -7,23 +7,16 @@ import com.vladoose.nir.integration.westmed.WestmedClient;
 import com.vladoose.nir.integration.westmed.WestmedProductLookup;
 import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
 import com.vladoose.nir.service.ChatIngestWriter;
+import com.vladoose.nir.util.InfrastructureFailure;
 import com.vladoose.nir.util.SiteCartMessageParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.dao.RecoverableDataAccessException;
-import org.springframework.dao.TransientDataAccessException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.CannotCreateTransactionException;
 
-import java.sql.SQLException;
-import java.sql.SQLRecoverableException;
-import java.sql.SQLTransientException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -44,10 +37,6 @@ public class WhatsappChatSync {
      * личные сообщения, выкидывала бы очередь по одному (перепроверка ревью 2026-09-28).
      */
     static final int DROP_FUSE = 3;
-    /** Предел глубины цепочки причин — от циклов, которые не самоссылка. */
-    private static final int MAX_CAUSE_DEPTH = 32;
-    /** Классы SQLSTATE: 08 соединение, 40 откат (deadlock), 53 ресурсы (диск/память), 57 вмешательство, 58 система. */
-    private static final Set<String> INFRA_SQLSTATE_CLASSES = Set.of("08", "40", "53", "57", "58");
 
     private final WhatsappSource source;
     private final ChatIngestWriter writer;
@@ -149,19 +138,7 @@ public class WhatsappChatSync {
 
     /** Сбой инфраструктуры (база, диск, соединение), а не битое уведомление — по всей цепочке причин. */
     public static boolean isInfrastructureFailure(Throwable e) {
-        int depth = 0;
-        for (Throwable t = e; t != null && depth++ < MAX_CAUSE_DEPTH; t = t.getCause() == t ? null : t.getCause()) {
-            if (t instanceof DataAccessResourceFailureException || t instanceof CannotCreateTransactionException
-                    || t instanceof TransientDataAccessException || t instanceof RecoverableDataAccessException
-                    || t instanceof SQLTransientException || t instanceof SQLRecoverableException) {
-                return true;
-            }
-            if (t instanceof SQLException sql && sql.getSQLState() != null && sql.getSQLState().length() >= 2
-                    && INFRA_SQLSTATE_CLASSES.contains(sql.getSQLState().substring(0, 2))) {
-                return true;
-            }
-        }
-        return false;
+        return InfrastructureFailure.test(e);
     }
 
     private void handle(ParsedNotification p, int attempt) {

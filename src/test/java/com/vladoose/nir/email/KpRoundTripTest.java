@@ -7,6 +7,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.mail.MailIntegrationTest;
 import com.vladoose.nir.repository.DistributorRepository;
+import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.MailReceiveService;
@@ -15,7 +16,9 @@ import jakarta.mail.Message;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Механика доставки/поллинга переиспользована из рабочего MailReceiveServiceIntegrationTest
  * (GreenMail IMAP :3143, общий контекст {@link MailIntegrationTest} + greenMail.setUser + user.deliver),
  * а не ReflectionTestUtils/SMTP_IMAP из наброска брифа. spring.mail.username в общем контексте задан
- * адресом отправки, чтобы поле sendFrom сервиса совпало с From «своего» письма.
+ * адресом отправки, чтобы «своё» письмо узнавалось при записи (MailIngestWriter: From = адрес отправки КП).
  */
 @MailIntegrationTest
 class KpRoundTripTest {
@@ -42,6 +45,18 @@ class KpRoundTripTest {
     @Autowired TenderRepository tenderRepository;
     @Autowired PriceRequestRepository priceRequestRepository;
     @Autowired DistributorRepository distributorRepository;
+    @Autowired MailCursorRepository cursorRepository;
+    @Autowired EntityManager em;
+
+    /**
+     * Курсор ящика удаляется в транзакции теста: живая проверка на этой базе могла оставить закоммиченную строку
+     * курсора, и тогда проход пошёл бы от чужого UID (откат вернёт её после теста).
+     */
+    @BeforeEach
+    void freshCursor() {
+        cursorRepository.findById("zakup@westmed.kz").ifPresent(cursorRepository::delete);
+        em.flush();
+    }
 
     @AfterEach
     void clear() { MarketContext.clear(); }

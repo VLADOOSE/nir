@@ -1,9 +1,15 @@
 package com.vladoose.nir.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.Market;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.List;
@@ -19,6 +25,22 @@ import static org.mockito.Mockito.*;
 class MailPollSchedulerTest {
 
     MailReceiveService service = mock(MailReceiveService.class);
+    /** Логи планировщика — в список, а не в вывод сборки: тесты нарочно роняют проход, WARN со стеком там ожидаемы. */
+    Logger logger = (Logger) LoggerFactory.getLogger(MailPollScheduler.class);
+    ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    @BeforeEach
+    void captureLogs() {
+        logs.start();
+        logger.addAppender(logs);
+        logger.setAdditive(false);
+    }
+
+    @AfterEach
+    void releaseLogs() {
+        logger.detachAppender(logs);
+        logger.setAdditive(true);
+    }
 
     PollResultResponse result(String msg) {
         PollResultResponse r = new PollResultResponse();
@@ -95,6 +117,7 @@ class MailPollSchedulerTest {
         verify(service, times(2)).poll();
     }
 
+    /** Не дождались — не ошибка и не успех: pending, страница покажет это нейтрально (R20). */
     @Test
     void run_timeout_returnsStillRunningMessage() {
         when(service.getMailboxMarket()).thenReturn(Market.KZ);
@@ -103,6 +126,8 @@ class MailPollSchedulerTest {
         PollResultResponse r = new MailPollScheduler(service, true, Duration.ofMillis(200)).run();
 
         assertThat(r.getMessage()).contains("ещё идёт");
+        assertThat(r.isPending()).isTrue();
+        assertThat(r.isOk()).isFalse();
     }
 
     @Test
@@ -111,8 +136,48 @@ class MailPollSchedulerTest {
         when(service.poll()).thenThrow(new IllegalStateException("boom")).thenReturn(result("ok"));
         MailPollScheduler s = new MailPollScheduler(service, true);
 
-        assertThat(s.run().getMessage()).contains("IllegalStateException");
+        PollResultResponse failed = s.run();
+        assertThat(failed.getMessage()).contains("IllegalStateException");
+        assertThat(failed.isOk()).isFalse();
+        assertThat(failed.isPending()).isFalse();
         assertThat(s.run().getMessage()).isEqualTo("ok");
+    }
+
+    /** Error прохода (OutOfMemoryError на вложении) доходит до run() через Future: провал, а не «ещё идёт». */
+    @Test
+    void run_passError_notOk_notPending() {
+        when(service.getMailboxMarket()).thenReturn(Market.KZ);
+        when(service.poll()).thenThrow(new PassError());
+
+        PollResultResponse r = new MailPollScheduler(service, true).run();
+
+        assertThat(r.getMessage()).isEqualTo("Ошибка проверки почты: PassError");
+        assertThat(r.isOk()).isFalse();
+        assertThat(r.isPending()).isFalse();
+    }
+
+    /** Ожидание прервано (поток запроса прерывают при остановке сервера): провал, флаг прерывания возвращён. */
+    @Test
+    void run_interrupted_notOk_notPending_keepsInterruptFlag() throws Exception {
+        when(service.getMailboxMarket()).thenReturn(Market.KZ);
+        CountDownLatch release = new CountDownLatch(1);
+        // проход держим, иначе он успел бы кончиться до get(), и get() вернул бы итог, не глядя на прерывание
+        when(service.poll()).thenAnswer(inv -> { release.await(2, TimeUnit.SECONDS); return result("поздно"); });
+        MailPollScheduler s = new MailPollScheduler(service, true);
+
+        Thread.currentThread().interrupt();
+        PollResultResponse r = s.run();
+        boolean interruptKept = Thread.interrupted();           // и снять флаг — не задеть следующие тесты
+        release.countDown();
+
+        assertThat(interruptKept).isTrue();
+        assertThat(r.getMessage()).isEqualTo("Проверка почты прервана");
+        assertThat(r.isOk()).isFalse();
+        assertThat(r.isPending()).isFalse();
+    }
+
+    /** Свой Error: ветка та же, что у OutOfMemoryError, но настоящий OOM уронил бы воркер gradle (CLAUDE.md §14). */
+    static class PassError extends Error {
     }
 
     /** Флаг «проход идёт» снимается и после упавшего прохода — иначе приём молча встал бы навсегда. */

@@ -6,20 +6,27 @@ import com.icegreen.greenmail.util.ServerSetupTest;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.telegram.TelegramStubServer;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.MailReceiveService;
+import com.vladoose.nir.service.mail.ImapTestSupport;
+import com.vladoose.nir.service.mail.TestMimes;
 import com.vladoose.nir.util.KpToken;
 import jakarta.mail.Message;
 import jakarta.mail.Session;
 import jakarta.mail.internet.*;
+import jakarta.persistence.EntityManager;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.ByteArrayOutputStream;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +43,18 @@ class MailReceiveServiceIntegrationTest {
     @Autowired TenderRepository tenderRepository;
     @Autowired FacilityRepository facilityRepository;
     @Autowired DistributorRepository distributorRepository;
+    @Autowired MailCursorRepository cursorRepository;
+    @Autowired EntityManager em;
+
+    /**
+     * Курсор ящика удаляется в транзакции теста: живая проверка на этой базе могла оставить закоммиченную строку
+     * курсора, и тогда проход пошёл бы от чужого UID (откат вернёт её после теста).
+     */
+    @BeforeEach
+    void freshCursor() {
+        cursorRepository.findById("zakup@westmed.kz").ifPresent(cursorRepository::delete);
+        em.flush();
+    }
 
     @AfterEach
     void clearCtx() { MarketContext.clear(); }
@@ -77,7 +96,7 @@ class MailReceiveServiceIntegrationTest {
 
         long count = inboundEmailRepository.count();
         MarketContext.set(Market.KZ);
-        mailReceiveService.poll();   // повторный опрос: письма прочитаны (SEEN) → не задваивает
+        mailReceiveService.poll();   // повторный опрос: курсор по UID → не задваивает
         assertThat(inboundEmailRepository.count()).isEqualTo(count);
     }
 
@@ -255,5 +274,116 @@ class MailReceiveServiceIntegrationTest {
                 .anyMatch(e -> ("Нужен облучатель " + tag).equals(e.getSubject()))
                 .noneMatch(e -> e.getExcerpt() != null && e.getExcerpt().contains(tag)
                         && e.getSubject() != null && e.getSubject().endsWith("— westmed.kz"));
+    }
+
+    @Test
+    void poll_doesNotMarkLettersSeen() throws Exception {
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.plain("s@x.kz", "ZZSEEN письмо", "текст"));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        assertThat(ImapTestSupport.seen("ZZSEEN письмо")).isFalse();
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> "ZZSEEN письмо".equals(e.getSubject()));
+    }
+
+    @Test
+    void firstRun_skipsOldLetter_thenCatchesUpOldDatedLetterAfterCursor() throws Exception {
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        ImapTestSupport.appendWithReceivedDate("ZZOLD до включения", Instant.now().minus(Duration.ofHours(3)));
+        user.deliver(TestMimes.plain("s@x.kz", "ZZFRESH свежее", "текст"));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();                               // первый запуск: только окно 60 мин
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> "ZZFRESH свежее".equals(e.getSubject()))
+                .noneMatch(e -> "ZZOLD до включения".equals(e.getSubject()));
+
+        ImapTestSupport.appendWithReceivedDate("ZZGAP пришло во время простоя", Instant.now().minus(Duration.ofHours(2)));
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();                               // курсор есть: окно больше не действует
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> "ZZGAP пришло во время простоя".equals(e.getSubject()));
+    }
+
+    @Test
+    void newUidValidity_doesNotDuplicate() throws Exception {
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.plain("s@x.kz", "ZZUV письмо", "текст"));
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+        long count = inboundEmailRepository.count();
+
+        MailCursor c = cursorRepository.findById("zakup@westmed.kz").orElseThrow();
+        long realValidity = c.getUidValidity();
+        c.setUidValidity(realValidity + 1000);                  // как будто ящик пересоздан
+        cursorRepository.save(c);
+        em.flush();
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();                               // первый запуск снова, но Message-ID уже записан
+
+        assertThat(inboundEmailRepository.count()).isEqualTo(count);
+        assertThat(cursorRepository.findById("zakup@westmed.kz").orElseThrow().getUidValidity()).isEqualTo(realValidity);
+    }
+
+    @Test
+    void bounceEndToEnd_keepsRequestSent() throws Exception {
+        MarketContext.set(Market.KZ);
+        Distributor dist = distributorRepository.save(Distributor.builder().name("ZZBNC Дистр " + System.nanoTime()).email("b@x.kz").build());
+        Tender tender = tenderRepository.save(Tender.builder().tenderNumber("ZZBNC-T1").status("NEW").source(Source.PUBLIC_TENDER).build());
+        PriceRequest pr = priceRequestRepository.save(PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build());
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.dsn(KpToken.subjectToken(pr.getId()) + " Запрос КП", "b@x.kz", "550 5.1.1 User unknown"));
+
+        MarketContext.set(Market.KZ);
+        PollResultResponse res = mailReceiveService.poll();
+
+        assertThat(res.getBounces()).isEqualTo(1);
+        assertThat(priceRequestRepository.findById(pr.getId()).orElseThrow().getStatus()).isEqualTo("SENT");
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> e.getType() == InboundType.BOUNCE
+                && pr.getId().equals(e.getMatchedPriceRequestId()));
+    }
+
+    @Test
+    void autoReplyEndToEnd_keepsRequestSent() throws Exception {
+        MarketContext.set(Market.KZ);
+        Distributor dist = distributorRepository.save(Distributor.builder().name("ZZAUTO Дистр " + System.nanoTime()).email("a@x.kz").build());
+        Tender tender = tenderRepository.save(Tender.builder().tenderNumber("ZZAUTO-T1").status("NEW").source(Source.PUBLIC_TENDER).build());
+        PriceRequest pr = priceRequestRepository.save(PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build());
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.autoReply("a@x.kz", "Re: " + KpToken.subjectToken(pr.getId()) + " Запрос",
+                "Я в отпуске до 12.10", "Auto-Submitted", "auto-replied"));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        assertThat(priceRequestRepository.findById(pr.getId()).orElseThrow().getStatus()).isEqualTo("SENT");
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> e.getType() == InboundType.AUTO_REPLY);
+    }
+
+    @Test
+    void telegramEndToEnd_sendsToThread_marksSent() throws Exception {
+        em.createNativeQuery("update inbound_email set notify_status = 'SENT' where notify_status = 'PENDING'").executeUpdate();
+        try (TelegramStubServer stub = TelegramStubServer.start(7798)) {
+            GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+            user.deliver(TestMimes.plain("Иван <ivan@x.kz>", "ZZTG Прайс октябрь", "Высылаем прайс"));
+
+            MarketContext.set(Market.KZ);
+            PollResultResponse res = mailReceiveService.poll();
+
+            assertThat(res.getTelegramSent()).isEqualTo(1);
+            assertThat(stub.requests()).hasSize(1);
+            assertThat(stub.requests().get(0).path()).isEqualTo("/bot123456:TEST-TOKEN-SECRET/sendMessage");
+            assertThat(stub.requests().get(0).body()).contains("\"message_thread_id\":77")
+                    .contains("✉️ Письмо на zakup@westmed.kz · Иван <ivan@x.kz>")
+                    .contains("https://ais.example/inbound?market=KZ");
+            em.flush();
+            em.clear();
+            InboundEmail row = inboundEmailRepository.findAll().stream()
+                    .filter(e -> "ZZTG Прайс октябрь".equals(e.getSubject())).findFirst().orElseThrow();
+            assertThat(row.getNotifyStatus()).isEqualTo(NotifyStatus.SENT);
+        }
     }
 }

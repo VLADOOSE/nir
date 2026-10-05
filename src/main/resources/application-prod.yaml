@@ -14,3 +14,7 @@ logging:
 passkeys:
   rp-id: ais.westmed.kz
   allowed-origins: https://ais.westmed.kz
+
+# Ссылки «Открыть в АИС» в уведомлениях Telegram (спека zakup-mail-telegram §5.2).
+ais:
+  public-url: https://ais.westmed.kz

@@ -1,80 +1,72 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.dto.response.PollResultResponse;
-import com.vladoose.nir.entity.*;
-import com.vladoose.nir.repository.InboundEmailRepository;
-import com.vladoose.nir.repository.PriceRequestRepository;
-import com.vladoose.nir.util.KpToken;
-import com.vladoose.nir.util.SupplierReplyDeclineDetector;
-import com.vladoose.nir.util.SupplierReplyPriceParser;
-import jakarta.mail.*;
-import jakarta.mail.internet.MimeBodyPart;
-import jakarta.mail.search.FlagTerm;
+import com.vladoose.nir.entity.MailCursor;
+import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.repository.MailCursorRepository;
+import com.vladoose.nir.service.mail.*;
+import com.vladoose.nir.util.InfrastructureFailure;
+import jakarta.mail.MessagingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.io.InputStream;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
-import java.util.Properties;
 
+/**
+ * Приём почты ящика АИС (спека 2026-10-05-zakup-mail-telegram §3): ящик только на чтение, курсор по UID, разбор ВНЕ
+ * транзакции, запись — по письму в {@link MailIngestWriter}, после писем — уведомления в Telegram.
+ * НЕ @Transactional: транзакция на всё время IMAP держала бы соединение с базой. Рынок ставит вызывающий
+ * (MailPollScheduler/тест): MarketContext.set(рынок ящика) до вызова.
+ */
 @Service
 public class MailReceiveService {
 
     private static final Logger log = LoggerFactory.getLogger(MailReceiveService.class);
+    static final int MAX_PER_PASS = 100;
+    /** Причина остановки прохода — свой текст для ответа «Проверить почту» (спека §3.4). */
+    private static final String CONNECTION_LOST = "связь с почтой оборвалась";
 
-    private final PriceRequestRepository priceRequestRepository;
-    private final InboundEmailRepository inboundEmailRepository;
+    private final MailboxConnector connector;
+    private final MailIngestWriter writer;
+    private final MailCursorRepository cursorRepository;
+    private final MailTelegramNotifier notifier;
     private final boolean enabled;
-    private final String host;
-    private final int port;
-    private final String username;
-    private final String password;
-    private final String protocol;
     private final Market mailboxMarket;
     private final long sinceMinutes;
-    /** Наш адрес отправки КП (spring.mail.username) — письмо с этим From считаем «своим» эхом. */
-    private final String sendFrom;
-    /** От кого сайт westmed.kz шлёт уведомления о заявках — их пропускаем (заявки берём через API сайта). */
-    private final String siteNotificationFrom;
+    private final Clock clock;
 
-    public MailReceiveService(PriceRequestRepository priceRequestRepository,
-                              InboundEmailRepository inboundEmailRepository,
+    @Autowired
+    public MailReceiveService(MailboxConnector connector, MailIngestWriter writer, MailCursorRepository cursorRepository,
+                              MailTelegramNotifier notifier,
                               @Value("${mail.imap.enabled:false}") boolean enabled,
-                              @Value("${mail.imap.host:localhost}") String host,
-                              @Value("${mail.imap.port:3143}") int port,
-                              @Value("${mail.imap.username:}") String username,
-                              @Value("${mail.imap.password:}") String password,
-                              @Value("${mail.imap.protocol:imap}") String protocol,
                               @Value("${mail.imap.market:KZ}") String market,
-                              @Value("${mail.imap.since-minutes:60}") long sinceMinutes,
-                              @Value("${spring.mail.username:}") String sendFrom,
-                              @Value("${leads.westmed.notification-from:info@westmed.kz}") String siteNotificationFrom) {
-        this.priceRequestRepository = priceRequestRepository;
-        this.inboundEmailRepository = inboundEmailRepository;
+                              @Value("${mail.imap.since-minutes:60}") long sinceMinutes) {
+        this(connector, writer, cursorRepository, notifier, enabled, Market.fromHeader(market), sinceMinutes, Clock.systemUTC());
+    }
+
+    MailReceiveService(MailboxConnector connector, MailIngestWriter writer, MailCursorRepository cursorRepository,
+                       MailTelegramNotifier notifier, boolean enabled, Market mailboxMarket, long sinceMinutes, Clock clock) {
+        this.connector = connector;
+        this.writer = writer;
+        this.cursorRepository = cursorRepository;
+        this.notifier = notifier;
         this.enabled = enabled;
-        this.host = host;
-        this.port = port;
-        this.username = username;
-        this.password = password;
-        this.protocol = protocol;
-        this.mailboxMarket = Market.fromHeader(market);
+        this.mailboxMarket = mailboxMarket;
         this.sinceMinutes = sinceMinutes;
-        this.sendFrom = sendFrom == null ? "" : sendFrom.trim().toLowerCase();
-        this.siteNotificationFrom = siteNotificationFrom == null ? "" : siteNotificationFrom.trim().toLowerCase();
+        this.clock = clock;
     }
 
     public Market getMailboxMarket() {
         return mailboxMarket;
     }
 
-    /** Предполагает, что MarketContext уже установлен вызывающим (планировщик/контроллер). */
-    @Transactional
     public PollResultResponse poll() {
         PollResultResponse result = new PollResultResponse();
         if (!enabled) {
@@ -83,213 +75,152 @@ public class MailReceiveService {
             return result;
         }
         result.setEnabled(true);
-        Store store = null;
-        Folder inbox = null;
-        try {
-            Properties props = new Properties();
-            Session session = Session.getInstance(props);
-            store = session.getStore(protocol);
-            store.connect(host, port, username, password);
-            inbox = store.getFolder("INBOX");
-            inbox.open(Folder.READ_WRITE);
-
-            long cutoffMs = System.currentTimeMillis() - sinceMinutes * 60_000L;
-            Message[] messages = inbox.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
-            int skippedOld = 0;
-            for (Message msg : messages) {
-                java.util.Date received = msg.getReceivedDate();
-                if (received != null && received.getTime() < cutoffMs) {
-                    skippedOld++;   // старое непрочитанное письмо — не трогаем (не помечаем SEEN, не ингестим)
-                    continue;
-                }
-                if (isSiteNotification(msg)) {
-                    msg.setFlag(Flags.Flag.SEEN, true);
-                    result.setSkippedSiteNotifications(result.getSkippedSiteNotifications() + 1);
-                    continue;
-                }
-                handle(msg, result);
-                msg.setFlag(Flags.Flag.SEEN, true);
-                result.setFetched(result.getFetched() + 1);
-            }
-            result.setMessage("Обработано свежих писем (за " + sinceMinutes + " мин): " + result.getFetched()
-                    + (skippedOld > 0 ? "; пропущено старых: " + skippedOld : "")
-                    + (result.getSkippedSiteNotifications() > 0
-                        ? "; уведомлений сайта о заявках пропущено: " + result.getSkippedSiteNotifications() : ""));
+        String imapError = null;                                    // ящик не открылся или не ответил
+        String stopped = null;                                      // проход остановлен сбоем (§3.4)
+        try (MailboxSession session = connector.open()) {
+            stopped = pass(session, result);
         } catch (Exception e) {
-            log.warn("Ошибка приёма почты: {}", e.getMessage());
-            result.setMessage("Ошибка подключения к почте: " + e.getMessage());
-        } finally {
-            try { if (inbox != null && inbox.isOpen()) inbox.close(false); } catch (Exception ignored) {}
-            try { if (store != null) store.close(); } catch (Exception ignored) {}
+            if (InfrastructureFailure.test(e)) {                   // курсор не прочитался или не встал — это база
+                stopped = dbDown(e);
+                log.warn("База недоступна — проход приёма почты остановлен, повтор следующим: {}", e.getClass().getSimpleName());
+            } else {
+                imapError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                log.warn("Ошибка приёма почты: {}", imapError);
+            }
         }
+        MailTelegramNotifier.FlushResult tg = flush();              // и при недоступной почте: очередь не ждёт IMAP
+        result.setTelegramSent(tg.sent());
+        result.setTelegramPending(tg.pending());
+        result.setOk(imapError == null && stopped == null);
+        result.setMessage(summary(result, imapError, stopped, tg));
         return result;
     }
 
-    /**
-     * Письмо-уведомление westmed.kz о заявке с сайта («Новая заявка…», «Запрос КП…», «WhatsApp-обращение…
-     * — westmed.kz»). Заявки АИС получает через API сайта (спека обращений §11) — письмо было бы дублем.
-     */
-    private boolean isSiteNotification(Message msg) throws MessagingException {
-        if (siteNotificationFrom.isBlank()) return false;
-        String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? decode(msg.getFrom()[0].toString()) : "";
-        String subject = msg.getSubject() == null ? "" : msg.getSubject().strip();
-        return addressPart(from).equalsIgnoreCase(siteNotificationFrom) && subject.endsWith("— westmed.kz");
-    }
-
-    private void handle(Message msg, PollResultResponse result) throws Exception {
-        String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? decode(msg.getFrom()[0].toString()) : "";
-        String subject = msg.getSubject() == null ? "" : msg.getSubject();
-
-        Extracted ex = new Extracted();
-        collect(msg, ex);
-        // HTML-only письма: text/plain пуст → берём собранный text/html (парсер/эксцерпт снимут теги)
-        String bodyText = ex.text.length() > 0 ? ex.text.toString() : ex.html.toString();
-        byte[] attachment = ex.attachment;
-        String attachmentName = ex.attachmentName;
-
-        Optional<Long> kp = KpToken.parse(subject);
-        boolean ownEcho = !sendFrom.isBlank() && addressPart(from).equalsIgnoreCase(sendFrom);
-        InboundType type;
-        Long matchedId = null;
-        if (kp.isPresent() && !ownEcho) {
-            type = InboundType.SUPPLIER_RESPONSE;
-            matchedId = matchSupplierResponse(kp.get(), bodyText);
-            result.setSupplierResponses(result.getSupplierResponses() + 1);
-        } else if (attachment != null && !ownEcho) {
-            type = InboundType.CLIENT_REQUEST;
-            result.setClientRequests(result.getClientRequests() + 1);
-        } else {
-            type = InboundType.UNMATCHED;
-            result.setUnmatched(result.getUnmatched() + 1);
-        }
-
-        InboundEmail ie = InboundEmail.builder()
-                .fromAddress(trunc(from, 320))
-                .subject(trunc(subject, 998))
-                .receivedAt(receivedDate(msg))
-                .type(type)
-                .matchedPriceRequestId(matchedId)
-                .attachmentName(type == InboundType.CLIENT_REQUEST ? attachmentName : null)
-                .attachment(type == InboundType.CLIENT_REQUEST ? attachment : null)
-                .excerpt(trunc(bodyText, 2000))
-                .status(InboundStatus.NEW)
-                .build();
-        inboundEmailRepository.save(ie);  // @PrePersist стампит market из MarketContext
-    }
-
-    /** Время получения письма: дата с сервера (получено) → дата отправки → сейчас. */
-    private static OffsetDateTime receivedDate(Message msg) {
-        try {
-            java.util.Date d = msg.getReceivedDate();
-            if (d == null) d = msg.getSentDate();
-            if (d != null) return d.toInstant().atOffset(ZoneOffset.UTC);
-        } catch (Exception ignored) {
-        }
-        return OffsetDateTime.now(ZoneOffset.UTC);
-    }
-
-    /** Найти PriceRequest по id из токена и пометить RESPONDED. Возвращает id, если сопоставлено. */
-    private Long matchSupplierResponse(Long priceRequestId, String body) {
-        Optional<PriceRequest> opt = priceRequestRepository.findById(priceRequestId);
-        if (opt.isEmpty()) {
-            log.info("Ответ с токеном [КП-{}], но КП не найден в активном рынке (другой рынок/удалён)", priceRequestId);
+    /** null — проход дошёл до конца; иначе — почему остановлен. */
+    private String pass(MailboxSession s, PollResultResponse result) throws MessagingException {
+        long uidValidity = s.uidValidity();
+        Optional<MailCursor> cursor = cursorRepository.findById(writer.mailbox())
+                .filter(c -> c.getUidValidity() == uidValidity);
+        if (cursor.isPresent()) {
+            for (long uid : s.uidsAfter(cursor.get().getLastUid(), MAX_PER_PASS)) {
+                String stopped = processOne(s, uidValidity, uid, result);
+                if (stopped != null) return stopped;
+            }
             return null;
         }
-        PriceRequest pr = opt.get();
-        // Понижаем до RESPONDED только из открытых статусов — не затираем ACCEPTED/REJECTED/CLOSED/уже-RESPONDED
-        String st = pr.getStatus();
-        if ("CREATED".equals(st) || "SENT".equals(st)) {
-            pr.setResponseDate(LocalDate.now());
-            pr.setNote(trunc(body, 4000));
-            // ч.3b: авто-парс цены для одно-лотового КП (не затираем ручной ввод)
-            boolean priceFilled = false;
-            if (pr.getItems().size() == 1) {
-                PriceRequestItem item = pr.getItems().get(0);
-                if (item.getResponsePrice() != null) {
-                    priceFilled = true;                                 // цена уже введена вручную
-                } else {
-                    Optional<SupplierReplyPriceParser.ParsedPrice> pp =
-                            SupplierReplyPriceParser.parse(body, pr.getMarket());
-                    if (pp.isPresent()) {
-                        item.setResponsePrice(pp.get().price());
-                        item.setResponseNote("💡 Цена распознана автоматически, проверьте."
-                                + (pp.get().term() != null ? " Срок: " + pp.get().term() + "." : "")
-                                + (pp.get().matchedSnippet() != null ? " Контекст: «" + pp.get().matchedSnippet() + "»." : ""));
-                        priceFilled = true;
-                    }
-                }
-            }
-            // цена есть → RESPONDED; иначе явный отказ поставщика → DECLINED; иначе ответ на ручную проверку
-            if (priceFilled) {
-                pr.setStatus("RESPONDED");
-            } else if (SupplierReplyDeclineDetector.isDecline(body)) {
-                pr.setStatus("DECLINED");
-            } else {
-                pr.setStatus("RESPONDED");
-            }
-            priceRequestRepository.save(pr);   // cascade ALL сохранит правку item
+        // Первый запуск: только окно since-minutes, затем курсор — на последнее письмо, снятое ДО окна (письмо,
+        // пришедшее во время прохода, получит UID больше и уйдёт следующим проходом, а не перепрыгнется).
+        long max = s.maxUid();
+        for (long uid : s.uidsReceivedSince(clock.instant().minus(Duration.ofMinutes(sinceMinutes)), MAX_PER_PASS)) {
+            if (uid > max) continue;
+            String stopped = processOne(s, uidValidity, uid, result);
+            if (stopped != null) return stopped;
         }
-        return priceRequestId;
+        writer.moveCursorTo(uidValidity, max);
+        return null;
     }
 
-    private static String trunc(String s, int max) {
-        if (s == null) return null;
-        return s.length() <= max ? s : s.substring(0, max);
-    }
-
-    /** Адресная часть из "Имя <a@b>" или "a@b" — нижним регистром, без угловых скобок. */
-    private static String addressPart(String from) {
-        if (from == null) return "";
-        String s = from.trim();
-        int lt = s.lastIndexOf('<'), gt = s.lastIndexOf('>');
-        if (lt >= 0 && gt > lt) s = s.substring(lt + 1, gt);
-        return s.trim().toLowerCase();
-    }
-
-    /** Рекурсивно обходит части письма (в т.ч. вложенные multipart): собирает text/plain
-     *  и ПЕРВОЕ Excel-вложение; имя файла декодируется из MIME (RFC 2047), тип распознаётся
-     *  и по расширению, и по Content-Type. */
-    private void collect(Part part, Extracted ex) throws Exception {
-        if (part.isMimeType("multipart/*")) {
-            Multipart mp = (Multipart) part.getContent();
-            for (int i = 0; i < mp.getCount(); i++) {
-                collect(mp.getBodyPart(i), ex);
-            }
-            return;
-        }
-        String fileName = decode(part.getFileName());
-        boolean excel = (fileName != null
-                && (fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xls")))
-                || part.isMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                || part.isMimeType("application/vnd.ms-excel");
-        if (ex.attachment == null && excel) {
-            try (InputStream is = part.getInputStream()) {
-                ex.attachment = is.readAllBytes();
-            }
-            ex.attachmentName = fileName != null ? fileName : "attachment.xlsx";
-        } else if (part.isMimeType("text/plain")) {
-            Object c = part.getContent();
-            if (c != null) ex.text.append(c);
-        } else if (part.isMimeType("text/html")) {
-            Object c = part.getContent();
-            if (c != null) ex.html.append(c);
-        }
-    }
-
-    /** Декод MIME-encoded-words (RFC 2047) в заголовках (имя файла, From). */
-    private static String decode(String s) {
-        if (s == null) return null;
+    /**
+     * null — дальше; иначе проход остановить (спека §3.4): связь с ящиком оборвалась, база недоступна или письмо не
+     * записалось даже коротко. Курсор при этом стоит на последнем записанном письме — повтор следующим проходом.
+     */
+    private String processOne(MailboxSession s, long uidValidity, long uid, PollResultResponse result) {
+        ParsedMail m;
         try {
-            return jakarta.mail.internet.MimeUtility.decodeText(s);
+            m = s.fetch(uid);
         } catch (Exception e) {
-            return s;
+            if (!s.isAlive()) {
+                log.warn("Связь с ящиком оборвалась на письме UID {}: {}", uid, e.getClass().getSimpleName());
+                return CONNECTION_LOST;
+            }
+            log.warn("Письмо UID {} не разобрано — записываю коротко", uid, e);
+            return writeBroken(s.envelope(uid, e), uidValidity, result);
+        }
+        if (m == null) return null;                                 // письмо удалили между поиском и чтением
+        MailIngestWriter.WriteResult written;
+        try {
+            written = writer.write(m, uidValidity);
+        } catch (RuntimeException e) {
+            if (InfrastructureFailure.test(e)) {
+                log.warn("База недоступна на письме UID {} — проход остановлен, повтор следующим: {}", uid, e.getClass().getSimpleName());
+                return dbDown(e);
+            }
+            log.warn("Письмо UID {} не записано — записываю коротко", uid, e);
+            return writeBroken(new BrokenMail(uid, m.messageId(), m.from(), m.subject(), m.receivedAt(),
+                    e.getClass().getSimpleName()), uidValidity, result);
+        }
+        count(result, written);                                     // вне try: записанное письмо коротко не пишем
+        return null;
+    }
+
+    private String writeBroken(BrokenMail b, long uidValidity, PollResultResponse result) {
+        try {
+            writer.writeBroken(b, uidValidity);
+            result.setBroken(result.getBroken() + 1);
+            result.setFetched(result.getFetched() + 1);
+            return null;
+        } catch (RuntimeException e) {
+            log.warn("Письмо UID {} не записано даже коротко — проход остановлен: {}", b.uid(), e.getClass().getSimpleName());
+            return InfrastructureFailure.test(e) ? dbDown(e) : "письмо не записалось (" + e.getClass().getSimpleName() + ")";
         }
     }
 
-    private static class Extracted {
-        final StringBuilder text = new StringBuilder();
-        final StringBuilder html = new StringBuilder();
-        byte[] attachment;
-        String attachmentName;
+    private static String dbDown(Exception e) {
+        return "база данных недоступна (" + e.getClass().getSimpleName() + ")";
+    }
+
+    /**
+     * Отправка очереди уведомлений. Её сбой (очередь — строки «Входящих», то есть база) не должен съесть итог прохода
+     * по почте; в лог — только класс: проход повторяется раз в минуту.
+     */
+    private MailTelegramNotifier.FlushResult flush() {
+        try {
+            return notifier.flush();
+        } catch (RuntimeException e) {
+            log.warn("Очередь уведомлений в Telegram недоступна: {}", e.getClass().getSimpleName());
+            return new MailTelegramNotifier.FlushResult(0, 0, "Telegram: очередь недоступна (" + e.getClass().getSimpleName() + ")");
+        }
+    }
+
+    private static void count(PollResultResponse r, MailIngestWriter.WriteResult w) {
+        if (w.duplicate()) return;
+        switch (w.mailClass()) {
+            case SITE_NOTIFICATION -> {
+                r.setSkippedSiteNotifications(r.getSkippedSiteNotifications() + 1);
+                return;
+            }
+            case SUPPLIER_RESPONSE -> r.setSupplierResponses(r.getSupplierResponses() + 1);
+            case BOUNCE -> r.setBounces(r.getBounces() + 1);
+            case AUTO_REPLY -> r.setAutoReplies(r.getAutoReplies() + 1);
+            case CLIENT_REQUEST -> r.setClientRequests(r.getClientRequests() + 1);
+            default -> r.setUnmatched(r.getUnmatched() + 1);
+        }
+        r.setFetched(r.getFetched() + 1);
+    }
+
+    static String summary(PollResultResponse r, String imapError, String stopped, MailTelegramNotifier.FlushResult tg) {
+        StringBuilder s = new StringBuilder();
+        if (imapError != null) {
+            s.append("Ошибка подключения к почте: ").append(imapError);
+        } else {
+            s.append("Новых писем: ").append(r.getFetched());
+            List<String> parts = new ArrayList<>();
+            if (r.getSupplierResponses() > 0) parts.add("ответов поставщиков — " + r.getSupplierResponses());
+            if (r.getBounces() > 0) parts.add("не доставлено — " + r.getBounces());
+            if (r.getAutoReplies() > 0) parts.add("автоответов — " + r.getAutoReplies());
+            if (r.getClientRequests() > 0) parts.add("писем клиник — " + r.getClientRequests());
+            if (r.getUnmatched() > 0) parts.add("прочих — " + r.getUnmatched());
+            if (r.getBroken() > 0) parts.add("не разобрано — " + r.getBroken());
+            if (!parts.isEmpty()) s.append(" (").append(String.join(", ", parts)).append(')');
+            if (r.getSkippedSiteNotifications() > 0) {
+                s.append("; уведомлений сайта о заявках пропущено: ").append(r.getSkippedSiteNotifications());
+            }
+            if (stopped != null) s.append("; проход остановлен: ").append(stopped).append(" — повтор следующим проходом");
+        }
+        if (tg.sent() > 0 || tg.pending() > 0 || tg.lastError() != null) {
+            s.append("; Telegram: отправлено ").append(tg.sent()).append(", ждут ").append(tg.pending());
+            if (tg.lastError() != null) s.append(" — ").append(tg.lastError());
+        }
+        return s.toString();
     }
 }
