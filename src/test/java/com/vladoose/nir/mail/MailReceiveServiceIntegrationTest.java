@@ -18,30 +18,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@Transactional
-@TestPropertySource(properties = {
-        "mail.imap.enabled=true",
-        "mail.imap.host=127.0.0.1",
-        "mail.imap.port=3143",
-        "mail.imap.username=zakup@westmed.kz",
-        "mail.imap.password=secret",
-        "mail.imap.protocol=imap",
-        "mail.imap.market=KZ"
-})
+@MailIntegrationTest
 class MailReceiveServiceIntegrationTest {
 
     @RegisterExtension
-    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.IMAP);
+    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.IMAP).withPerMethodLifecycle(true);
 
     @Autowired MailReceiveService mailReceiveService;
     @Autowired PriceRequestRepository priceRequestRepository;

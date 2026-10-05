@@ -75,8 +75,9 @@ mail:
     password: ${MAIL_IMAP_PASSWORD:}
     protocol: ${MAIL_IMAP_PROTOCOL:imap}
     market: ${MAIL_IMAP_MARKET:KZ}
-    poll-ms: ${MAIL_IMAP_POLL_MS:300000}
-    # обрабатывать только письма за последние N минут (не трогаем старый бэклог ящика)
+    poll-ms: ${MAIL_IMAP_POLL_MS:60000}
+    initial-delay-ms: ${MAIL_IMAP_INITIAL_DELAY_MS:20000}
+    # окно ПЕРВОГО запуска (нет курсора / сменился UIDVALIDITY): письма старше не обрабатываются, дальше — курсор по UID
     since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}
 
 goszakup:

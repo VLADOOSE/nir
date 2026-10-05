@@ -5,6 +5,7 @@ import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.mail.MailIntegrationTest;
 import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.TenderRepository;
@@ -18,9 +19,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,26 +28,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ответ поставщика. Реальный ответ (другой From, тот же токен) → RESPONDED как прежде.
  *
  * Механика доставки/поллинга переиспользована из рабочего MailReceiveServiceIntegrationTest
- * (GreenMail IMAP :3143, @TestPropertySource + greenMail.setUser + user.deliver), а не
- * ReflectionTestUtils/SMTP_IMAP из наброска брифа. spring.mail.username задан адресом
- * отправки, чтобы поле sendFrom сервиса совпало с From «своего» письма.
+ * (GreenMail IMAP :3143, общий контекст {@link MailIntegrationTest} + greenMail.setUser + user.deliver),
+ * а не ReflectionTestUtils/SMTP_IMAP из наброска брифа. spring.mail.username в общем контексте задан
+ * адресом отправки, чтобы поле sendFrom сервиса совпало с From «своего» письма.
  */
-@SpringBootTest
-@Transactional
-@TestPropertySource(properties = {
-        "mail.imap.enabled=true",
-        "mail.imap.host=127.0.0.1",
-        "mail.imap.port=3143",
-        "mail.imap.username=zakup@westmed.kz",
-        "mail.imap.password=secret",
-        "mail.imap.protocol=imap",
-        "mail.imap.market=KZ",
-        "spring.mail.username=zakup@westmed.kz"
-})
+@MailIntegrationTest
 class KpRoundTripTest {
 
     @RegisterExtension
-    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.IMAP);
+    static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.IMAP).withPerMethodLifecycle(true);
 
     @Autowired MailReceiveService mailReceiveService;
     @Autowired TenderRepository tenderRepository;
