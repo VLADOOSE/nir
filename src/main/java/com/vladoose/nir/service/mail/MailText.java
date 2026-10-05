@@ -88,10 +88,16 @@ public final class MailText {
         return s.substring(0, end);
     }
 
-    /** NBSP → пробел, пробелы в строке схлопнуты, строки обрезаны, подряд — не больше одной пустой строки. */
+    /**
+     * NBSP → пробел, U+0000 выброшен, пробелы в строке схлопнуты, строки обрезаны, подряд — не больше одной пустой
+     * строки. U+0000 сюда приносит jsoup: {@code &#0;} и {@code &#x0;} в HTML-письме он раскрывает в этот символ,
+     * а PostgreSQL его в text не хранит (SQLSTATE 22021) — ответ поставщика не записывался целиком и уходил короткой
+     * строкой, без цены. Строки письма вычищает сам разбор (MailParser.noNul), но HTML раскрывается позже — здесь.
+     */
     static String normalize(String s) {
         if (s == null) return "";
-        String[] lines = s.replace('\u00A0', ' ').replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+        String[] lines = s.replace("\0", "").replace('\u00A0', ' ').replace("\r\n", "\n").replace('\r', '\n')
+                .split("\n", -1);
         StringBuilder out = new StringBuilder();
         int blank = 0;
         for (String line : lines) {

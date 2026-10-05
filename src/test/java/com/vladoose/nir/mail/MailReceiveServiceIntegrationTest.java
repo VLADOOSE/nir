@@ -309,6 +309,50 @@ class MailReceiveServiceIntegrationTest {
         assertThat(cursorRepository.findById("zakup@westmed.kz").orElseThrow().getLastUid()).isEqualTo(maxUid);
     }
 
+    /**
+     * HTML-ответ поставщика с «&#0;»: jsoup раскрывает его в U+0000, и символ, который PostgreSQL в text не хранит
+     * (22021), попадал в заметку запроса КП, отрывок «Входящих» и текст уведомления. Письмо не записывалось целиком —
+     * уходило короткой строкой «не удалось разобрать», цена не ставилась (живая проверка 2026-10-06). Теперь —
+     * обычный ответ поставщика с распознанной ценой.
+     */
+    @Test
+    void htmlReplyWithNulReference_appliedAsSupplierResponse() throws Exception {
+        MarketContext.set(Market.KZ);
+        Facility fac = facilityRepository.save(Facility.builder().name("ZZHTMLNUL Клиника").build());
+        Distributor dist = distributorRepository.save(
+                Distributor.builder().name("ZZHTMLNUL Дистр").email("hn@x.kz").build());
+        Tender tender = Tender.builder()
+                .tenderNumber("ZZHTMLNUL-T1").facility(fac).status("NEW")
+                .source(Source.PUBLIC_TENDER).build();
+        tender.getLots().add(TenderLot.builder().tender(tender).equipName("Аппарат").quantity(1).build());
+        tender = tenderRepository.save(tender);
+        PriceRequest pr = PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build();
+        pr.getItems().add(PriceRequestItem.builder()
+                .priceRequest(pr).tenderLot(tender.getLots().get(0)).requestedQuantity(1).build());
+        Long prId = priceRequestRepository.save(pr).getId();
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.html("supplier@x.kz", "Re: " + KpToken.subjectToken(prId),
+                "<p>Добрый день!&#0;</p><p>Цена 3 900 000 тг, срок 25 дней.</p>"));
+
+        MarketContext.set(Market.KZ);
+        PollResultResponse res = mailReceiveService.poll();
+        em.flush();
+        em.clear();
+
+        assertThat(res.isOk()).isTrue();
+        assertThat(res.getBroken()).isZero();
+        assertThat(res.getSupplierResponses()).isEqualTo(1);
+        PriceRequest reloaded = priceRequestRepository.findById(prId).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo("RESPONDED");
+        assertThat(reloaded.getItems().get(0).getResponsePrice()).isEqualByComparingTo("3900000");
+        assertThat(reloaded.getNote()).contains("Добрый день!").doesNotContain("\0");
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> e.getType() == InboundType.SUPPLIER_RESPONSE
+                && prId.equals(e.getMatchedPriceRequestId())
+                && e.getExcerpt() != null && e.getExcerpt().contains("Цена 3 900 000 тг")
+                && e.getNotifyText() != null && !e.getNotifyText().contains("\0"));
+    }
+
     @Test
     void poll_doesNotMarkLettersSeen() throws Exception {
         GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");

@@ -135,6 +135,15 @@ class MailTextTest {
     }
 
     @Test
+    void htmlToText_andReplyText_dropNulFromNumericReference() {
+        // jsoup раскрывает «&#0;» и «&#x0;» в U+0000, а PostgreSQL его в text не хранит (SQLSTATE 22021): ответ поставщика
+        // HTML-письмом с таким символом не записывался целиком — цена не ставилась, письмо уходило короткой строкой
+        String html = "<p>Добрый день!&#0;</p><p>Цена&#x0; 3 900 000 тг</p>";
+        assertThat(MailText.htmlToText(html)).isEqualTo("Добрый день!\nЦена 3 900 000 тг");
+        assertThat(MailText.replyText(mail("", html))).isEqualTo("Добрый день!\nЦена 3 900 000 тг");
+    }
+
+    @Test
     void normalize_collapsesBlankLinesAndNbsp() {
         assertThat(MailText.normalize("\n\nа\u00A0\u00A0б\n\n\n\nв  \n")).isEqualTo("а б\n\nв");
     }
