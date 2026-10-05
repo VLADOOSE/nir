@@ -310,4 +310,32 @@ class MailIngestWriterTest {
         assertThat(back.getItems().get(0).getResponsePrice()).isEqualByComparingTo("2500000");
         assertThat(rows().get(0).getNotifyText()).contains("Цена в АИС уже введена: 2\u00A0500\u00A0000,00 ₸");
     }
+
+    /**
+     * КП обоих рынков уходят с одного ящика: ответ поставщика Регион-Мед (РФ) приходит в ящик West-Med. Запрос КП
+     * находится по id в любом рынке и правится, строка «Входящих» — рынка ящика, уведомление — по рынку запроса:
+     * рубли, часовой пояс Самары в «Получено» и ссылка с market=RF, которая откроет тендер РФ.
+     */
+    @Test
+    void otherMarketRequest_updated_notificationInRequestMarket() {
+        MarketContext.set(Market.RF);
+        PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
+        MarketContext.set(Market.KZ);
+
+        MailIngestWriter.WriteResult r = writer().write(mail().subject("Re: " + KpToken.subjectToken(p.getId()))
+                .text("Цена 120 000 руб.").build(), 5);
+
+        assertThat(r.outcome()).isEqualTo(KpOutcome.PRICE_PARSED);
+        PriceRequest back = prRepo.findById(p.getId()).orElseThrow();
+        assertThat(back.getMarket()).isEqualTo(Market.RF);
+        assertThat(back.getStatus()).isEqualTo("RESPONDED");
+        assertThat(back.getItems().get(0).getResponsePrice()).isEqualByComparingTo("120000");
+        InboundEmail e = rows().get(0);
+        assertThat(e.getMarket()).isEqualTo(Market.KZ);
+        assertThat(e.getMatchedPriceRequestId()).isEqualTo(p.getId());
+        assertThat(e.getNotifyText()).contains("💡 Цена распознана: 120\u00A0000,00 ₽")
+                .contains("Получено: 05.10 13:00")
+                .endsWith("/tenders?openId=" + p.getTender().getId() + "&market=RF")
+                .doesNotContain("₸").doesNotContain("market=KZ");
+    }
 }

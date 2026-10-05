@@ -23,7 +23,8 @@ import java.util.Optional;
 /**
  * Запись письма (спека §3.3): классификация, правки запроса КП, строка «Входящих» с готовым текстом уведомления и
  * сдвиг курсора — ОДНОЙ транзакцией на письмо. Сеть сюда не заходит: письмо уже разобрано (ParsedMail).
- * Рынок ставит вызывающий (MarketContext) — по нему стампится строка и ищется запрос КП.
+ * Рынок ставит вызывающий (MarketContext) — это рынок ящика: им стампится строка «Входящих», по нему ищутся дубли.
+ * Запрос КП ищется по id в любом рынке (см. {@link #write}), и уведомление о нём собирается по рынку запроса.
  */
 @Service
 public class MailIngestWriter {
@@ -70,6 +71,9 @@ public class MailIngestWriter {
             moveCursor(uidValidity, m.uid());
             return new WriteResult(c.mailClass(), null, null, false);
         }
+        // Без гарда рынка — намеренно: КП обоих рынков уходят с одного ящика (spring.mail.username, Reply-To zakup@),
+        // и ответы поставщиков Регион-Мед приходят сюда же. findById (em.find) фильтр рынка не применяет — запрос
+        // находится по id в любом рынке, как в прежнем приёме; NOT_FOUND — только когда запроса с таким id нет вовсе.
         PriceRequest pr = c.kpId() == null ? null : priceRequestRepo.findById(c.kpId()).orElse(null);
         KpOutcome outcome = null;
         if (c.mailClass() == MailClass.SUPPLIER_RESPONSE) {
@@ -94,9 +98,9 @@ public class MailIngestWriter {
                 .build();
         if (c.mailClass() != MailClass.OWN && telegram.isConfigured()) {
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-            queue(e, MailNotificationComposer.compose(m, c, pr == null ? null : snapshot(pr), outcome, context(now)), now);
+            queue(e, MailNotificationComposer.compose(m, c, pr == null ? null : snapshot(pr), outcome, context(now, pr)), now);
         }
-        inboundRepo.save(e);                                   // @PrePersist стампит market из MarketContext
+        inboundRepo.save(e);                                   // @PrePersist стампит market ящика из MarketContext
         moveCursor(uidValidity, m.uid());
         return new WriteResult(c.mailClass(), outcome, e.getId(), false);
     }
@@ -113,7 +117,7 @@ public class MailIngestWriter {
                 .build();
         if (telegram.isConfigured()) {
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-            queue(e, MailNotificationComposer.composeBroken(b, context(now)), now);
+            queue(e, MailNotificationComposer.composeBroken(b, context(now, null)), now);
         }
         inboundRepo.save(e);
         moveCursor(uidValidity, b.uid());
@@ -191,8 +195,14 @@ public class MailIngestWriter {
                 t.getId(), t.getTenderNumber(), t.getSource() == Source.PRIVATE_REQUEST, lots, pr.getStatus(), price);
     }
 
-    private ComposeContext context(OffsetDateTime now) {
-        return new ComposeContext(mailbox, MarketContext.get(), publicUrl, now);
+    /**
+     * Контекст текста уведомления. Рынок — запроса КП, если он найден: ответ поставщика Регион-Мед приходит в ящик
+     * West-Med, а валюта, часовой пояс «Получено» и ?market= в ссылке должны быть рынка запроса — иначе ссылка не
+     * откроет его тендер. Запроса нет — рынок ящика.
+     */
+    private ComposeContext context(OffsetDateTime now, PriceRequest pr) {
+        Market market = pr != null && pr.getMarket() != null ? pr.getMarket() : MarketContext.get();
+        return new ComposeContext(mailbox, market, publicUrl, now);
     }
 
     private static void queue(InboundEmail e, MailNotification n, OffsetDateTime now) {
