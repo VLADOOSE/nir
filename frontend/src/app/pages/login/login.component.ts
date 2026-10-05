@@ -95,13 +95,21 @@ export class LoginComponent implements OnInit {
   constructor(private auth: AuthService, private api: ApiService, private passkeys: PasskeyService,
               private router: Router, private route: ActivatedRoute, private cdr: ChangeDetectorRef) {
     if (this.auth.isLoggedIn()) {
-      this.router.navigateByUrl(this.target());
+      this.goToTarget();
     }
   }
 
   /** Куда после входа: страница из ссылки (returnUrl), иначе главная. */
   private target(): string {
     return safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl')) ?? '/dashboard';
+  }
+
+  /**
+   * Переход после входа — ЗАМЕНОЙ записи истории: со страницей входа в истории «Назад» с открытой карточки
+   * возвращал на вход, а вошедшего вход тут же отправлял обратно — из ссылки уведомления было не уйти назад.
+   */
+  private goToTarget() {
+    this.router.navigateByUrl(this.target(), { replaceUrl: true });
   }
 
   ngOnInit() {
@@ -120,7 +128,7 @@ export class LoginComponent implements OnInit {
     this.auth.login(username, password).subscribe({
       next: () => {
         this.loading = false;
-        this.router.navigateByUrl(this.target());
+        this.goToTarget();
       },
       error: (err) => {
         this.loading = false;
@@ -141,7 +149,7 @@ export class LoginComponent implements OnInit {
         this.auth.loadCurrentUser().subscribe(user => {
           this.passkeyBusy = false;
           if (user) {
-            this.router.navigateByUrl(this.target());
+            this.goToTarget();
           } else {
             this.passkeyError = 'Не удалось войти по ключу. Попробуйте ещё раз или войдите паролем.';
             this.cdr.detectChanges();
