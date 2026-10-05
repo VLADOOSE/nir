@@ -169,3 +169,66 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090   # 200
 - ⚠️ Том `ais-waha-sessions` = доступ к рабочему WhatsApp: не выкладывать, в бэкапы — только осознанно.
 - **Запасной провайдер Green-API:** `WHATSAPP_PROVIDER=greenapi` + `WHATSAPP_API_URL` / `WHATSAPP_ID_INSTANCE` / `WHATSAPP_API_TOKEN` (инстанс Business, адрес вебхука в кабинете — ПУСТОЙ; один инстанс — один потребитель очереди) → `docker compose up -d`; затем `docker compose stop ais-waha` и отвязать устройство WAHA в телефоне. Пока провайдер не `waha`, события WAHA АИС принимает, но в очередь не пишет — иначе при возврате на WAHA проиграла бы давние звонки и правки. Дублей при переключении нет: id сообщения WhatsApp у обоих шлюзов один.
 - **Номер на сайте westmed.kz** (отдельный репозиторий `~/IdeaProjects/westmed`, отдельный деплой): три места — `frontend/src/components/shared/WhatsAppButton.tsx` (`PHONE`), `frontend/src/components/shared/Footer.tsx`, `frontend/src/app/[locale]/(storefront)/contacts/page.tsx`.
+
+---
+
+## 8. Почта zakup@ и Telegram
+Каждое письмо во «Входящих» zakup@westmed.kz — уведомлением в тему «Почта zakup@» группы «Заявки» (бот сайта @West_Med_bot): ответ поставщика на запрос КП — с тендером, поставщиком и распознанной ценой или отказом; возврат «не доставлено», «доставка задерживается», автоответ, прочее. Спека — `docs/superpowers/specs/2026-10-05-zakup-mail-telegram-design.md` (§10 — раскатка, в конце — «Решения при реализации»), механика — CLAUDE.md §8 «Почта zakup@ → Telegram» и §9. Код приезжает обычным деплоем (V24: курсор ящика `mail_cursor` и очередь уведомлений в строках `inbound_email`); пока в `.env` нет ключей ниже, поведение прода не меняется — приём (`MAIL_IMAP_ENABLED`) и Telegram (`TELEGRAM_ENABLED`) выключены. Ящик АИС только читает (IMAP EXAMINE + `BODY.PEEK`): отметки «прочитано» у людей не трогает.
+- **Включение** (агент — только после явного «да» оператора на SSH; секреты на экран и в чат не выводить):
+  1. **Оператор:** в группе «Заявки» — новая тема «Почта zakup@» → ссылка на неё (`https://t.me/c/4352219740/<id>`): `<id>` — это `TELEGRAM_MAIL_THREAD_ID`, только цифры (не число — каждая отправка падает «TELEGRAM_MAIL_THREAD_ID должен быть числом»; без темы сообщения уходили бы в «Общую»).
+  2. **Оператор, рекомендуется:** новый пароль приложения zakup@ (Mail.ru → Безопасность → «Пароли для внешних приложений», доступ IMAP + SMTP; прежний светился в переписке) → `~/.config/ais/zakup-mailru.pass` на Mac (600), в чат не вставлять. Он идёт в ОБА ключа: `MAIL_IMAP_PASSWORD` (приём) и `MAIL_PASSWORD` (отправка КП). Старый пароль в Mail.ru удалять только после шага 5 — иначе отправка КП встанет.
+  3. **Оператор:** `! git push origin main` — код с ВЫКЛЮЧЕННЫМ приёмом (V24 накатывается). Включение — отдельным шагом: старый код ни разу не должен открыть zakup@ (он помечал письма прочитанными), а откат остаётся чисто настройкой. Агент проверяет, что бэкенд поднялся.
+  4. **`.env`** — на сервере, `cd /srv/ais`: копия, затем ключи (`set_env` меняет строку или дописывает новую; первая строка заодно добавляет перевод строки в конец файла, если его нет — иначе дописанное приклеилось бы к последней строке):
+     ```bash
+     cp -p .env .env.bak-$(date +%F) && umask 077 && { [ -z "$(tail -c1 .env)" ] || echo >> .env; }
+     set_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi; }
+     set_env MAIL_IMAP_ENABLED true; set_env MAIL_IMAP_HOST imap.mail.ru; set_env MAIL_IMAP_PORT 993; set_env MAIL_IMAP_PROTOCOL imaps
+     set_env MAIL_IMAP_USERNAME zakup@westmed.kz; set_env MAIL_IMAP_MARKET KZ; set_env MAIL_IMAP_SINCE_MINUTES 60
+     set_env MAIL_IMAP_POLL_MS 60000; set_env MAIL_IMAP_CLIENT_REQUESTS false
+     set_env TELEGRAM_ENABLED true; set_env TELEGRAM_CHAT_ID -1004352219740
+     set_env TELEGRAM_MAIL_THREAD_ID ID_ТЕМЫ    # ← подставить id темы из шага 1
+     ```
+     Токен бота — из настроек сайта (`app_settings.telegram_bot_token` в БД контейнера `westmed-postgres`) прямо в `.env`, значение на экран не попадает:
+     ```bash
+     echo "select trim(value) from app_settings where key = 'telegram_bot_token'" \
+       | docker exec -i westmed-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' \
+       | { T=$(cat); if [ -n "$T" ]; then grep -v '^TELEGRAM_BOT_TOKEN=' .env > .env.new; printf 'TELEGRAM_BOT_TOKEN=%s\n' "$T" >> .env.new; cat .env.new > .env; rm -f .env.new; else echo 'токена в БД сайта нет — .env не тронут'; fi; }
+     ```
+     Новый пароль приложения (шаг 2) — с Mac, тем же приёмом, в оба ключа:
+     ```bash
+     ssh root@185.125.46.26 'cd /srv/ais && umask 077 && V=$(cat) && if [ -n "$V" ]; then for k in MAIL_IMAP_PASSWORD MAIL_PASSWORD; do grep -v "^$k=" .env > .env.new; printf "%s=%s\n" "$k" "$V" >> .env.new; cat .env.new > .env; done; rm -f .env.new; else echo "файл пароля пуст — .env не тронут"; fi' < ~/.config/ais/zakup-mailru.pass
+     ```
+     Проверка без секретов — каждый ключ ровно один раз, секреты — звёздочками, `TELEGRAM_API_URL` нет (пустое значение умолчанием не заменяется — ни одно уведомление не уйдёт):
+     `grep -E '^(MAIL_IMAP_|MAIL_PASSWORD=|TELEGRAM_)' .env | sed -E 's/^((MAIL_IMAP_PASSWORD|MAIL_PASSWORD|TELEGRAM_BOT_TOKEN)=).+/\1***/'`
+  5. `docker compose up -d --force-recreate ais-backend` — `.env` перечитывается только при пересоздании контейнера (`restart` его не видит); сессии сбрасываются (одно касание Face ID). Через минуту `docker compose logs --since 5m ais-backend | grep -E 'не настроен|Ошибка приёма почты|не отправлено'` — пусто (иначе: «Telegram включён … но не настроен» — нет токена или чата; остальное — раздел «Тост» ниже).
+
+  Первый проход (через 20 с после старта) — «первый запуск»: письма за последние 60 минут (`MAIL_IMAP_SINCE_MINUTES`) придут в тему, более старые — нет; курсор встаёт на последнее письмо ящика, дальше — всё новое по порядку, в том числе пришедшее, пока бэкенд лежал.
+- **Приёмка:**
+  - письмо с личного адреса на zakup@ → за ~1 мин в теме «Почта zakup@» сообщение «✉️ Письмо на zakup@westmed.kz · …» (без звука);
+  - в веб-почте Mail.ru письмо осталось непрочитанным;
+  - во «Входящих» АИС (рынок KZ) оно есть — «Прочее»; «Проверить почту» — зелёный тост («Новых писем: 0» или сводка с «Telegram: отправлено N, ждут M»);
+  - ссылка «Открыть в АИС» из Telegram: встроенный браузер Telegram — новое устройство для калитки (как иконка АИС на экране «Домой», §6) → запрос → «Допустить» в «Система → Устройства» → вход → открыть ссылку ещё раз (первый переход через калитку её теряет) → «Входящие» на KZ;
+  - по желанию — запрос КП из АИС поставщику с личным адресом оператора и ответ на него с ценой («Цена 100 000 тг») → «📩 Ответ поставщика …» со звуком, «💡 Цена распознана: … — проверьте», запрос — «Ответ получен»;
+  - по желанию — то, что локально не проверить (настоящий возврат Mail.ru: формат его отчёта о доставке и тема вложенного письма по его IMAP): из веб-почты zakup@ — письмо на заведомо несуществующий адрес (например, несуществующий ящик @westmed.kz) с темой «[КП-<id существующего запроса>] проверка возврата» → «⚠️ Письмо не доставлено · <поставщик запроса> (<адрес>)» с причиной от сервера; статус запроса не меняется.
+- **Очередь уведомлений** (`notify_status`: `PENDING` — ждёт, `SENT`, `FAILED` — не ушло за сутки; пусто — Telegram был выключен, своё письмо или строка до V24): `docker compose exec -T ais-postgres sh -c 'psql -U "$POSTGRES_USER" -d nirdb -c "select notify_status, count(*) from inbound_email group by 1"'` (через `sh -c`, как бэкап в §4: `$POSTGRES_USER` есть только внутри контейнера). Последние ошибки и курсор ящика:
+  ```bash
+  docker compose exec -T ais-postgres sh -c 'psql -U "$POSTGRES_USER" -d nirdb' <<'SQL'
+  select id, notify_status, notify_attempts, notify_error from inbound_email where notify_status in ('PENDING','FAILED') order by id desc limit 10;
+  select mailbox, uid_validity, last_uid, updated_at from mail_cursor;
+  SQL
+  ```
+  `PENDING` не должен копиться: первый же сбой Telegram останавливает пачку до следующего прохода (раз в минуту, до 20 сообщений), на 429 — пауза до `retry_after`, за сутки не ушло — `FAILED` + WARN (письмо остаётся во «Входящих» и в Mail.ru). Отдельного экрана очереди нет — состояние видно в тосте «Проверить почту», в логе и здесь.
+- **Тост «Проверить почту» — что делать.** Красный: «Ошибка подключения к почте: …» (например, `AUTHENTICATIONFAILED`) — пароль приложения или выключен доступ по IMAP в Mail.ru; «… — проход остановлен, повтор следующим проходом» с причиной «связь с почтой оборвалась» или «база данных недоступна (…)» — повтор сам; «письмо UID N не записалось (…)» — поломка кода на этом письме, ящик стоит на нём: `docker compose logs ais-backend | grep 'UID N'`. Зелёный, но «Telegram: … ждут N — <ошибка>»: «HTTP 400 — Bad Request: message thread not found» — не тот `TELEGRAM_MAIL_THREAD_ID`; «Bad Request: chat not found» или «HTTP 403 — Forbidden: …» — не тот чат или бота убрали из группы; «HTTP 401 — Unauthorized» — токен перевыпущен на сайте → заново токен (шаг 4) и шаг 5; «адрес API или токен в настройках некорректны» — пустой `TELEGRAM_API_URL=` в `.env` или пробел внутри токена; «Telegram недоступен …» / «не ответил за 15 с» — сеть, уйдёт само.
+- **Откат настройкой:** `TELEGRAM_ENABLED=false` (приём работает, новые уведомления не ставятся; стоящие в очереди ждут — включили обратно в течение суток — уйдут) или `MAIL_IMAP_ENABLED=false` (как было: ни приёма, ни отправки очереди) → `docker compose up -d --force-recreate ais-backend`.
+- ⚠️ **Кодом «просто откатить» нельзя:** старый бэкенд не прочитает строки `inbound_email` с типами `BOUNCE` / `AUTO_REPLY` / `DELAYED` (`@Enumerated(STRING)` → «Входящие» отвечают 500). Перед откатом кода (§3) — `MAIL_IMAP_ENABLED=false` (старый код помечал бы письма прочитанными) и:
+  ```bash
+  docker compose exec -T ais-postgres sh -c 'psql -U "$POSTGRES_USER" -d nirdb' <<'SQL'
+  update inbound_email set type = 'UNMATCHED' where type in ('BOUNCE','AUTO_REPLY','DELAYED');
+  SQL
+  ```
+  Колонки и таблица V24 старому коду не мешают: Flyway пропускает неизвестную ему «будущую» миграцию (как V20 при откате passkeys).
+- ⚠️ **Токен бота общий с сайтом:** перевыпустили его на сайте — АИС получает 401, пока не обновить токен в `.env` (шаг 4) и не пересоздать бэкенд (шаг 5). Пароль zakup@ тоже в двух ключах — `MAIL_IMAP_PASSWORD` и `MAIL_PASSWORD`.
+- ⚠️ **Группа «Заявки» общая с vital-spb.kz:** тема отдельная, но переписку с поставщиками видят все участники группы.
+- ⚠️ **Первый переход по ссылке через калитку ссылку теряет** (после допуска — главная); допущенный и вошедший браузер открывает ссылку сразу и на нужном рынке (`?market=` в ссылке).
+- ⚠️ **Письма, которые правила Mail.ru перекладывают из «Входящих»** в другие папки, АИС не видит: читается только INBOX (папку «Спам» тоже не читает).
+- `MAIL_IMAP_MARKET` на ходу не менять: строки «Входящих», дедуп по Message-ID и очередь привязаны к рынку ящика — старые строки выпадут из дедупа, а `PENDING` прежнего рынка не уйдут никогда.
