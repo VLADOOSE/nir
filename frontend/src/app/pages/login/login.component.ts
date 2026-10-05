@@ -107,9 +107,12 @@ export class LoginComponent implements OnInit {
   /**
    * Переход после входа — ЗАМЕНОЙ записи истории: со страницей входа в истории «Назад» с открытой карточки
    * возвращал на вход, а вошедшего вход тут же отправлял обратно — из ссылки уведомления было не уйти назад.
+   * Адреса такого раздела нет (ссылка старого уведомления после переименования, испорченная ссылка) — на главную:
+   * иначе вошедший оставался на форме входа, и вход выглядел несостоявшимся.
    */
   private goToTarget() {
-    this.router.navigateByUrl(this.target(), { replaceUrl: true });
+    this.router.navigateByUrl(this.target(), { replaceUrl: true })
+      .catch(() => this.router.navigateByUrl('/dashboard', { replaceUrl: true }));
   }
 
   ngOnInit() {
