@@ -148,6 +148,32 @@ class MailIngestWriterTest {
                 .contains("Причина: 550 5.1.1 User unknown");
     }
 
+    /**
+     * Отложенная доставка (Action: delayed) — свой вид «Задерживается», а не «Не доставлено»: запрос КП не трогается,
+     * связь с ним есть, уведомление — «⏳ Доставка задерживается», без звука.
+     */
+    @Test
+    void delayedDsn_ownKind_keepsRequestSent_silent() {
+        PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
+        MailIngestWriter.WriteResult r = writer().write(mail().from("MAILER-DAEMON@corp.mail.ru")
+                .subject("Delayed Mail (still being retried)")
+                .contentType("multipart/report; report-type=delivery-status; boundary=x")
+                .bounce("sales@zzw.kz", "4.4.1", "421 4.4.1 Connection timed out",
+                        KpToken.subjectToken(p.getId()) + " Запрос КП", "delayed").build(), 5);
+
+        assertThat(r.mailClass()).isEqualTo(MailClass.DELAYED);
+        PriceRequest back = prRepo.findById(p.getId()).orElseThrow();
+        assertThat(back.getStatus()).isEqualTo("SENT");
+        assertThat(back.getResponseDate()).isNull();
+        assertThat(back.getNote()).isNull();
+        InboundEmail e = rows().get(0);
+        assertThat(e.getType()).isEqualTo(InboundType.DELAYED);
+        assertThat(e.getMatchedPriceRequestId()).isEqualTo(p.getId());
+        assertThat(e.getNotifyStatus()).isEqualTo(NotifyStatus.PENDING);
+        assertThat(e.isNotifySilent()).isTrue();
+        assertThat(e.getNotifyText()).startsWith("⏳ Доставка задерживается · ZZW Дистр").contains("(sales@zzw.kz)");
+    }
+
     @Test
     void undeliverableSubjectFromPostmaster_isBounce_notResponded() {
         PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);

@@ -25,7 +25,7 @@ public final class MailClassifier {
         if (!r.ownAddress().isBlank() && from.equalsIgnoreCase(r.ownAddress())) {
             return new Classification(MailClass.OWN, null);
         }
-        if (isBounce(m)) return new Classification(MailClass.BOUNCE, bounceToken(m));
+        if (isBounce(m)) return new Classification(isDelayed(m) ? MailClass.DELAYED : MailClass.BOUNCE, bounceToken(m));
         Long token = KpToken.parse(m.subject()).orElse(null);
         if (isAutoReply(m)) return new Classification(MailClass.AUTO_REPLY, token);
         if (token != null) return new Classification(MailClass.SUPPLIER_RESPONSE, token);
@@ -40,6 +40,16 @@ public final class MailClassifier {
         String addr = m.fromAddress();
         int at = addr.indexOf('@');
         return DAEMONS.contains(at > 0 ? addr.substring(0, at) : addr);
+    }
+
+    /**
+     * Отложенная доставка: отчёт о доставке с Action: delayed (RFC 3464) — сервер получателя ещё повторяет попытки.
+     * Только по полю Action, не по коду статуса: итоговый отказ серверы шлют и с последним временным кодом (Postfix
+     * после срока очереди — Action: failed и Status: 4.4.1, Exchange — 4.4.7 QUEUE.Expired), и такой отказ — «не
+     * доставлено». Один признак и на вид письма, и на текст уведомления ({@link MailNotificationComposer}).
+     */
+    static boolean isDelayed(ParsedMail m) {
+        return m.bounce() != null && "delayed".equals(m.bounce().action());
     }
 
     /** Метка запроса КП в возврате: тема исходного письма → тема возврата → текст возврата. */

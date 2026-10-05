@@ -25,7 +25,8 @@ public final class MailNotificationComposer {
     static final int MAX_TEXT = 3500;         // предел Telegram — 4096
     static final int EXCERPT = 700;
     static final int AUTO_EXCERPT = 300;
-    static final Duration DELAYED = Duration.ofMinutes(15);
+    /** Письмо пришло раньше записи больше чем на это (догонка после простоя) — в тексте строка «Получено: …». */
+    static final Duration RECEIVED_LATE = Duration.ofMinutes(15);
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("dd.MM HH:mm");
     private static final Pattern SPACES = Pattern.compile(" {2,}");
     /** Всё, что клиенты показывают новой строкой: \r\n, \n, \r, VT, FF, NEL, LS, PS. */
@@ -39,7 +40,7 @@ public final class MailNotificationComposer {
     public static MailNotification compose(ParsedMail m, Classification c, KpSnapshot kp, KpOutcome outcome, ComposeContext ctx) {
         return switch (c.mailClass()) {
             case SUPPLIER_RESPONSE -> supplierResponse(m, c, kp, outcome, ctx);
-            case BOUNCE -> bounce(m, kp, ctx);
+            case BOUNCE, DELAYED -> bounce(m, kp, ctx);
             case AUTO_REPLY -> autoReply(m, kp, ctx);
             default -> other(m, ctx);
         };
@@ -50,7 +51,7 @@ public final class MailNotificationComposer {
         head.append("✉️ Письмо на ").append(line(ctx.mailbox(), 200)).append(" · ")
                 .append(blankTo(line(b.from(), 200), "отправитель не прочитан")).append('\n');
         head.append("Тема: ").append(blankTo(line(b.subject(), 300), "(тема не прочитана)")).append('\n');
-        delayed(head, b.receivedAt(), ctx);
+        receivedLate(head, b.receivedAt(), ctx);
         head.append("Письмо не удалось разобрать — откройте его в почте Mail.ru.\n");
         return new MailNotification(finish(head, "", 0, link(ctx, "/inbound")), true);
     }
@@ -68,19 +69,21 @@ public final class MailNotificationComposer {
         String line = outcomeLine(outcome, kp, c.kpId(), ctx.market());
         if (!line.isEmpty()) head.append(line).append('\n');
         sender(head, m);
-        delayed(head, m.receivedAt(), ctx);
+        receivedLate(head, m.receivedAt(), ctx);
         String link = kp != null ? kpLink(kp, ctx) : link(ctx, "/inbound");
         return new MailNotification(finish(head, MailText.replyText(m), EXCERPT, link), false);
     }
 
     /**
-     * Возврат. Отчёт с Action: delayed — доставка задерживается: сервер получателя ещё повторяет попытки, поэтому не
-     * «не доставлено», без звука и без совета исправить адрес — адрес, может быть, верный. Всё остальное (failed,
-     * отчёт без Action, возврат без частей DSN, любой код статуса) — «не доставлено», со звуком.
+     * Возврат (виды BOUNCE и DELAYED). Отчёт с Action: delayed — доставка задерживается: сервер получателя ещё
+     * повторяет попытки, поэтому не «не доставлено», без звука и без совета исправить адрес — адрес, может быть,
+     * верный. Всё остальное (failed, отчёт без Action, возврат без частей DSN, любой код статуса) — «не доставлено»,
+     * со звуком. Признак — {@link MailClassifier#isDelayed}, тот же, что даёт вид DELAYED: уведомление, бейдж
+     * «Входящих» и сводка «Проверить почту» не расходятся.
      */
     private static MailNotification bounce(ParsedMail m, KpSnapshot kp, ComposeContext ctx) {
         ParsedMail.Bounce b = m.bounce();
-        boolean retrying = stillRetrying(b);
+        boolean retrying = MailClassifier.isDelayed(m);
         String recipient = line(b != null && b.finalRecipient() != null ? b.finalRecipient()
                 : (kp != null ? kp.supplierEmail() : null), 200);
         StringBuilder head = new StringBuilder(retrying ? "⏳ Доставка задерживается · " : "⚠️ Письмо не доставлено · ");
@@ -102,17 +105,8 @@ public final class MailNotificationComposer {
                     ? "Исправьте адрес в карточке поставщика и запросите КП заново в карточке заявки.\n"
                     : "Исправьте адрес в карточке поставщика и нажмите «Переслать» в запросах КП тендера.\n");
         }
-        delayed(head, m.receivedAt(), ctx);
+        receivedLate(head, m.receivedAt(), ctx);
         return new MailNotification(finish(head, "", 0, kp != null ? kpLink(kp, ctx) : link(ctx, "/inbound")), retrying);
-    }
-
-    /**
-     * Отложенная доставка — только по полю Action отчёта (RFC 3464), не по коду статуса: итоговый отказ серверы шлют
-     * и с последним временным кодом (Postfix после срока очереди — Action: failed и Status: 4.4.1, Exchange —
-     * 4.4.7 QUEUE.Expired), и такой отказ должен прийти как «не доставлено», со звуком.
-     */
-    private static boolean stillRetrying(ParsedMail.Bounce b) {
-        return b != null && "delayed".equals(b.action());
     }
 
     private static MailNotification autoReply(ParsedMail m, KpSnapshot kp, ComposeContext ctx) {
@@ -124,7 +118,7 @@ public final class MailNotificationComposer {
         } else {
             head.append("Тема: ").append(blankTo(line(m.subject(), 300), "(без темы)")).append('\n');
         }
-        delayed(head, m.receivedAt(), ctx);
+        receivedLate(head, m.receivedAt(), ctx);
         String link = kp != null ? kpLink(kp, ctx) : link(ctx, "/inbound");
         return new MailNotification(finish(head, MailText.replyText(m), AUTO_EXCERPT, link), true);
     }
@@ -134,7 +128,7 @@ public final class MailNotificationComposer {
                 .append(blankTo(line(m.from(), 200), "отправитель не указан")).append('\n');
         head.append("Тема: ").append(blankTo(line(m.subject(), 300), "(без темы)")).append('\n');
         if (!m.attachmentNames().isEmpty()) head.append("Вложения: ").append(attachments(m.attachmentNames())).append('\n');
-        delayed(head, m.receivedAt(), ctx);
+        receivedLate(head, m.receivedAt(), ctx);
         return new MailNotification(finish(head, MailText.replyText(m), EXCERPT, link(ctx, "/inbound")), true);
     }
 
@@ -187,9 +181,9 @@ public final class MailNotificationComposer {
     }
 
     /** Пришло заметно раньше записи (догонка после простоя) — время получения по часовому поясу рынка. */
-    private static void delayed(StringBuilder head, OffsetDateTime receivedAt, ComposeContext ctx) {
+    private static void receivedLate(StringBuilder head, OffsetDateTime receivedAt, ComposeContext ctx) {
         if (receivedAt == null || ctx.queuedAt() == null) return;
-        if (Duration.between(receivedAt, ctx.queuedAt()).compareTo(DELAYED) > 0) {
+        if (Duration.between(receivedAt, ctx.queuedAt()).compareTo(RECEIVED_LATE) > 0) {
             head.append("Получено: ").append(receivedAt.atZoneSameInstant(zone(ctx.market())).format(WHEN)).append('\n');
         }
     }

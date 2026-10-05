@@ -222,6 +222,7 @@ public class MailReceiveService {
             }
             case SUPPLIER_RESPONSE -> r.setSupplierResponses(r.getSupplierResponses() + 1);
             case BOUNCE -> r.setBounces(r.getBounces() + 1);
+            case DELAYED -> r.setDelayed(r.getDelayed() + 1);
             case AUTO_REPLY -> r.setAutoReplies(r.getAutoReplies() + 1);
             case CLIENT_REQUEST -> r.setClientRequests(r.getClientRequests() + 1);
             default -> r.setUnmatched(r.getUnmatched() + 1);
@@ -242,6 +243,7 @@ public class MailReceiveService {
             List<String> parts = new ArrayList<>();
             if (r.getSupplierResponses() > 0) parts.add("ответов поставщиков — " + r.getSupplierResponses());
             if (r.getBounces() > 0) parts.add("не доставлено — " + r.getBounces());
+            if (r.getDelayed() > 0) parts.add("задерживается — " + r.getDelayed());
             if (r.getAutoReplies() > 0) parts.add("автоответов — " + r.getAutoReplies());
             if (r.getClientRequests() > 0) parts.add("писем клиник — " + r.getClientRequests());
             if (r.getUnmatched() > 0) parts.add("прочих — " + r.getUnmatched());

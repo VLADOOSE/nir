@@ -1,11 +1,21 @@
 // Заглушка Telegram Bot API для живой проверки уведомлений о почте (слушает только 127.0.0.1:7709).
-// sendMessage → {ok:true}; GET /__messages — что пришло; POST /__fail/<код> — следующий ответ с этим кодом
-// (429 — с retry_after 30). Токен из пути НЕ печатается.
+// sendMessage → {ok:true} (тело — не объект JSON → 400, заглушка не падает); GET /__messages — что пришло;
+// POST /__fail/<код> — следующий ответ с этим кодом (429 — с retry_after 30). Токен из пути НЕ печатается.
 import http from 'node:http';
 
 const messages = [];
 let failNext = null;
 let nextId = 1;
+
+/** Тело sendMessage — объект JSON; иначе null: ответ 400, а не исключение, которое уронило бы заглушку. */
+function parseJson(body) {
+  try {
+    const m = JSON.parse(body || '{}');
+    return m !== null && typeof m === 'object' ? m : null;
+  } catch {
+    return null;
+  }
+}
 
 http.createServer((req, res) => {
   let body = '';
@@ -32,7 +42,12 @@ http.createServer((req, res) => {
         console.log(new Date().toISOString(), path, '→', code);
         return res.end(JSON.stringify(payload));
       }
-      const m = JSON.parse(body || '{}');
+      const m = parseJson(body);
+      if (!m) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        console.log(new Date().toISOString(), path, '→ 400 (тело — не объект JSON)');
+        return res.end(JSON.stringify({ ok: false, error_code: 400, description: 'stub: bad json' }));
+      }
       messages.push({ at: new Date().toISOString(), chat_id: m.chat_id, thread: m.message_thread_id,
         silent: !!m.disable_notification, text: m.text });
       console.log(new Date().toISOString(), path, 'thread', m.message_thread_id, m.disable_notification ? '(тихо)' : '(звук)');

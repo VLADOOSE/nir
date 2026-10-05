@@ -424,4 +424,22 @@ class MailReceiveServiceTest {
         assertThat(r.getMessage()).isEqualTo("Новых писем: 2 (ответов поставщиков — 1, не доставлено — 1); "
                 + "уведомлений сайта о заявках пропущено: 1; Telegram: отправлено 1, ждут 1 — Telegram: HTTP 400 — Bad Request");
     }
+
+    /** Отложенная доставка — свой счётчик и своя часть сводки после «не доставлено»; в «не доставлено» не входит. */
+    @Test
+    void delayed_countedSeparatelyFromBounces() throws Exception {
+        cursorAt(7, 10);
+        when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
+        when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
+        when(writer.write(withUid(11), anyLong())).thenReturn(ok(MailClass.BOUNCE));
+        when(writer.write(withUid(12), anyLong())).thenReturn(ok(MailClass.DELAYED));
+
+        PollResultResponse r = service(true).poll();
+
+        assertThat(r.getFetched()).isEqualTo(2);
+        assertThat(r.getBounces()).isEqualTo(1);
+        assertThat(r.getDelayed()).isEqualTo(1);
+        assertThat(r.getUnmatched()).isZero();
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 2 (не доставлено — 1, задерживается — 1)");
+    }
 }

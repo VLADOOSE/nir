@@ -55,6 +55,56 @@ class MailClassifierTest {
         assertThat(c.kpId()).isEqualTo(12L);
     }
 
+    /**
+     * Отчёт об отложенной доставке (Action: delayed — сервер получателя ещё повторяет попытки) — свой вид, а не
+     * «не доставлено». Метка запроса — из темы исходного письма, как у возврата.
+     */
+    @Test
+    void delayedDsn_isDelayed_tokenFromOriginalSubject() {
+        Classification c = MailClassifier.classify(mail().from("MAILER-DAEMON@corp.mail.ru")
+                .subject("Delayed Mail (still being retried)")
+                .contentType("multipart/report; report-type=delivery-status; boundary=\"x\"")
+                .bounce("sales@x.kz", "4.4.1", "421 4.4.1 Connection timed out", "[КП-534] Запрос КП", "delayed")
+                .build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.DELAYED);
+        assertThat(c.kpId()).isEqualTo(534L);
+    }
+
+    /**
+     * Итоговый отказ Postfix после срока очереди: Action: failed с последним ВРЕМЕННЫМ кодом 4.4.1. Задержку решает
+     * Action, а не код статуса, — это возврат.
+     */
+    @Test
+    void failedDsnWithTemporaryCode_isBounce() {
+        Classification c = MailClassifier.classify(mail().from("MAILER-DAEMON@corp.mail.ru")
+                .subject("Undelivered Mail Returned to Sender")
+                .contentType("multipart/report; report-type=delivery-status; boundary=\"x\"")
+                .bounce("sales@x.kz", "4.4.1", "connect to mx.x.kz: Connection timed out", "[КП-534] Запрос КП", "failed")
+                .build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.BOUNCE);
+    }
+
+    /** Отчёт без поля Action, даже с временным кодом, — возврат: счесть провал задержкой хуже, чем лишний раз позвать. */
+    @Test
+    void dsnWithoutAction_isBounce() {
+        Classification c = MailClassifier.classify(mail().from("postmaster@x.kz").subject("Mail failure")
+                .contentType("multipart/report; report-type=delivery-status; boundary=\"x\"")
+                .bounce("a@b.kz", "4.4.1", null, "[КП-7] Запрос КП", null).build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.BOUNCE);
+    }
+
+    /**
+     * Задержка — вид ВОЗВРАТА. Письмо, которое возвратом не признано (обычный отправитель, не multipart/report),
+     * с частью delivery-status внутри — поставщик приложил отчёт своего сервера — идёт по своим правилам.
+     */
+    @Test
+    void delayedStatusPartInOrdinaryLetter_notDelayed() {
+        Classification c = MailClassifier.classify(mail().subject("Re: [КП-9] Запрос КП")
+                .bounce("a@b.kz", "4.4.1", null, null, "delayed").build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.SUPPLIER_RESPONSE);
+        assertThat(c.kpId()).isEqualTo(9L);
+    }
+
     @Test
     void autoSubmitted_withToken_isAutoReply() {
         Classification c = MailClassifier.classify(mail().subject("Re: [КП-9] Запрос")

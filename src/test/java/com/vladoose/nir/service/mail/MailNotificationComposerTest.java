@@ -196,8 +196,8 @@ class MailNotificationComposerTest {
     }
 
     /**
-     * Отчёт об отложенной доставке (Action: delayed — сервер получателя ещё повторяет попытки) — не «не доставлено»:
-     * без звука и без совета исправить адрес — адрес, может быть, верный.
+     * Отчёт об отложенной доставке (Action: delayed — сервер получателя ещё повторяет попытки; вид письма DELAYED) —
+     * не «не доставлено»: без звука и без совета исправить адрес — адрес, может быть, верный.
      */
     @Test
     void delayedDsn_withRequest_notUndelivered_silent() {
@@ -205,7 +205,7 @@ class MailNotificationComposerTest {
                 .bounce("sales@medtech.kz", "4.4.1", "421 4.4.1 Connection timed out", "[КП-534] Запрос КП", "delayed")
                 .build();
 
-        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, 534L),
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.DELAYED, 534L),
                 kp("SENT", null), null, KZ);
 
         assertThat(n.silent()).isTrue();
@@ -227,7 +227,7 @@ class MailNotificationComposerTest {
         ParsedMail m = mail().from("postmaster@x.kz").subject("Delivery delayed")
                 .bounce("a@b.kz", "4.7.1", null, null, "delayed").build();
 
-        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, null), null, null, KZ);
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.DELAYED, null), null, null, KZ);
 
         assertThat(n.silent()).isTrue();
         assertThat(n.text()).isEqualTo("""

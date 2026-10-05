@@ -422,6 +422,31 @@ class MailReceiveServiceIntegrationTest {
                 && pr.getId().equals(e.getMatchedPriceRequestId()));
     }
 
+    /**
+     * Отчёт об отложенной доставке (Action: delayed) из настоящих байтов по IMAP — свой вид DELAYED и свой счётчик,
+     * а не «не доставлено»; запрос КП остаётся SENT.
+     */
+    @Test
+    void delayedDsnEndToEnd_ownKind_keepsRequestSent() throws Exception {
+        MarketContext.set(Market.KZ);
+        Distributor dist = distributorRepository.save(Distributor.builder().name("ZZDLY Дистр " + System.nanoTime()).email("dl@x.kz").build());
+        Tender tender = tenderRepository.save(Tender.builder().tenderNumber("ZZDLY-T1").status("NEW").source(Source.PUBLIC_TENDER).build());
+        PriceRequest pr = priceRequestRepository.save(PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build());
+
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(TestMimes.delayedDsn(KpToken.subjectToken(pr.getId()) + " Запрос КП", "dl@x.kz",
+                "421 4.4.1 Connection timed out"));
+
+        MarketContext.set(Market.KZ);
+        PollResultResponse res = mailReceiveService.poll();
+
+        assertThat(res.getDelayed()).isEqualTo(1);
+        assertThat(res.getBounces()).isZero();
+        assertThat(priceRequestRepository.findById(pr.getId()).orElseThrow().getStatus()).isEqualTo("SENT");
+        assertThat(inboundEmailRepository.findAll()).anyMatch(e -> e.getType() == InboundType.DELAYED
+                && pr.getId().equals(e.getMatchedPriceRequestId()));
+    }
+
     @Test
     void autoReplyEndToEnd_keepsRequestSent() throws Exception {
         MarketContext.set(Market.KZ);

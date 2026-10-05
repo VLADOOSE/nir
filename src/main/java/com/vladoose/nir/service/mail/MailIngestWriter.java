@@ -82,6 +82,7 @@ public class MailIngestWriter {
         InboundType type = switch (c.mailClass()) {
             case SUPPLIER_RESPONSE -> InboundType.SUPPLIER_RESPONSE;
             case BOUNCE -> InboundType.BOUNCE;
+            case DELAYED -> InboundType.DELAYED;
             case AUTO_REPLY -> InboundType.AUTO_REPLY;
             case CLIENT_REQUEST -> InboundType.CLIENT_REQUEST;
             default -> InboundType.UNMATCHED;

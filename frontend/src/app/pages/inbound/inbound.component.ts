@@ -33,10 +33,12 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
           <td data-label="Тип">
             <span class="badge" [class.b-sup]="r.type==='SUPPLIER_RESPONSE'"
                   [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'"
-                  [class.b-bounce]="r.type==='BOUNCE'" [class.b-auto]="r.type==='AUTO_REPLY'">
+                  [class.b-bounce]="r.type==='BOUNCE'" [class.b-delayed]="r.type==='DELAYED'"
+                  [class.b-auto]="r.type==='AUTO_REPLY'">
               {{ typeLabel(r.type) }}
             </span>
-            <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='AUTO_REPLY') && r.matchedPriceRequestId"
+            <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='DELAYED' || r.type==='AUTO_REPLY')
+                         && r.matchedPriceRequestId"
                   class="muted kp-ref"> · КП #{{ r.matchedPriceRequestId }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
@@ -120,6 +122,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     .b-cli { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .b-unm { background: var(--surface-2); color: var(--text-muted); }
     .b-bounce { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .b-delayed { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
     .b-auto { background: var(--surface-2); color: var(--text-muted); font-style: italic; }
     .muted { color: var(--text-muted); font-size: 12px; }
     /* «· КП #416» — одной строкой: у короткого бейджа («Автоответ») перенос шёл посреди метки, «КП» и «#416» на разных строках */
@@ -273,6 +276,7 @@ export class InboundComponent {
     return t === 'SUPPLIER_RESPONSE' ? 'Ответ поставщика'
       : t === 'CLIENT_REQUEST' ? 'Письмо клиники'
       : t === 'BOUNCE' ? 'Не доставлено'
+      : t === 'DELAYED' ? 'Задерживается'
       : t === 'AUTO_REPLY' ? 'Автоответ' : 'Прочее';
   }
 

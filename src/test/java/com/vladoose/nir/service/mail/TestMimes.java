@@ -80,10 +80,28 @@ public final class TestMimes {
 
     /** Возврат почтового сервера (RFC 3464): пояснение + message/delivery-status + исходное письмо message/rfc822. */
     public static MimeMessage dsn(String originalSubject, String recipient, String diagnostic) throws Exception {
-        MimeMessage m = base("Mail Delivery System <MAILER-DAEMON@corp.mail.ru>", "Undelivered Mail Returned to Sender");
+        return deliveryReport("Undelivered Mail Returned to Sender", "Your message could not be delivered.",
+                originalSubject, recipient, "failed", "5.1.1", diagnostic);
+    }
+
+    /**
+     * Отчёт об отложенной доставке (RFC 3464, Action: delayed): сервер получателя ещё повторяет попытки — как
+     * предупреждение Postfix «Delayed Mail (still being retried)» с временным кодом 4.4.1.
+     */
+    public static MimeMessage delayedDsn(String originalSubject, String recipient, String diagnostic) throws Exception {
+        return deliveryReport("Delayed Mail (still being retried)",
+                "THIS IS A WARNING ONLY. YOU DO NOT NEED TO RESEND YOUR MESSAGE.\n\n"
+                        + "Your message could not be delivered for more than 4 hour(s).\n"
+                        + "It will be retried until it is 5 day(s) old.",
+                originalSubject, recipient, "delayed", "4.4.1", diagnostic);
+    }
+
+    private static MimeMessage deliveryReport(String subject, String explanation, String originalSubject,
+                                              String recipient, String action, String status, String diagnostic) throws Exception {
+        MimeMessage m = base("Mail Delivery System <MAILER-DAEMON@corp.mail.ru>", subject);
         MimeMultipart report = new MimeMultipart("report; report-type=delivery-status");
-        report.addBodyPart(human());
-        report.addBodyPart(deliveryStatus(recipient, diagnostic));
+        report.addBodyPart(human(explanation));
+        report.addBodyPart(deliveryStatus(recipient, action, status, diagnostic));
 
         ByteArrayOutputStream raw = new ByteArrayOutputStream();
         plain("zakup@westmed.kz", originalSubject, "Здравствуйте! Просим коммерческое предложение.").writeTo(raw);
@@ -101,8 +119,8 @@ public final class TestMimes {
     public static MimeMessage dsnHeadersOnly(String originalSubject) throws Exception {
         MimeMessage m = base("postmaster@mx.example.kz", "Delivery Status Notification (Failure)");
         MimeMultipart report = new MimeMultipart("report; report-type=delivery-status");
-        report.addBodyPart(human());
-        report.addBodyPart(deliveryStatus("sales@x.kz", "550 5.1.1 User unknown"));
+        report.addBodyPart(human("Your message could not be delivered."));
+        report.addBodyPart(deliveryStatus("sales@x.kz", "failed", "5.1.1", "550 5.1.1 User unknown"));
         String headers = "From: zakup@westmed.kz\r\nTo: sales@x.kz\r\nSubject: "
                 + MimeUtility.encodeText(originalSubject, "UTF-8", "B") + "\r\n\r\n";
         MimeBodyPart h = new MimeBodyPart();
@@ -142,20 +160,21 @@ public final class TestMimes {
         }
     }
 
-    private static MimeBodyPart human() throws Exception {
+    private static MimeBodyPart human(String explanation) throws Exception {
         MimeBodyPart p = new MimeBodyPart();
-        p.setText("This is the mail system at host mx.mail.ru.\n\nYour message could not be delivered.", "UTF-8");
+        p.setText("This is the mail system at host mx.mail.ru.\n\n" + explanation, "UTF-8");
         return p;
     }
 
-    private static MimeBodyPart deliveryStatus(String recipient, String diagnostic) throws Exception {
-        String status = "Reporting-MTA: dns; mx.mail.ru\r\n\r\n"
+    private static MimeBodyPart deliveryStatus(String recipient, String action, String status, String diagnostic)
+            throws Exception {
+        String fields = "Reporting-MTA: dns; mx.mail.ru\r\n\r\n"
                 + "Final-Recipient: rfc822; " + recipient + "\r\n"
-                + "Action: failed\r\n"
-                + "Status: 5.1.1\r\n"
+                + "Action: " + action + "\r\n"
+                + "Status: " + status + "\r\n"
                 + "Diagnostic-Code: smtp; " + diagnostic + "\r\n";
         MimeBodyPart p = new MimeBodyPart();
-        p.setDataHandler(new DataHandler(new ByteArrayDataSource(status.getBytes(StandardCharsets.US_ASCII), "message/delivery-status")));
+        p.setDataHandler(new DataHandler(new ByteArrayDataSource(fields.getBytes(StandardCharsets.US_ASCII), "message/delivery-status")));
         p.setHeader("Content-Type", "message/delivery-status");
         return p;
     }

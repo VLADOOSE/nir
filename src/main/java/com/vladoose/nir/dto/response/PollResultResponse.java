@@ -21,8 +21,13 @@ public class PollResultResponse {
     private int supplierResponses;
     private int clientRequests;
     private int unmatched;
-    /** «Письмо не доставлено» — возвраты почтовых серверов. */
+    /** «Письмо не доставлено» — возвраты почтовых серверов (отложенная доставка — отдельно, {@link #delayed}). */
     private int bounces;
+    /**
+     * «Доставка задерживается» — отчёты о доставке с Action: delayed: сервер получателя ещё повторяет попытки, письмо
+     * может дойти.
+     */
+    private int delayed;
     private int autoReplies;
     /** Письма, которые не разобрались или не записались (записаны короткой строкой). */
     private int broken;
