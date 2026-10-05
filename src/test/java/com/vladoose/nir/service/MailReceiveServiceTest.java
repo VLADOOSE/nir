@@ -12,9 +12,11 @@ import jakarta.mail.MessagingException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.InvalidDataAccessResourceUsageException;
 
 import java.time.*;
 import java.util.List;
@@ -178,8 +180,8 @@ class MailReceiveServiceTest {
         verify(writer, never()).writeBroken(any(), anyLong());
         verify(session, never()).fetch(12L);
         assertThat(r.isOk()).isFalse();
-        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; проход остановлен: связь с почтой оборвалась"
-                + " — повтор следующим проходом");
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; связь с почтой оборвалась"
+                + " — проход остановлен, повтор следующим проходом");
     }
 
     @Test
@@ -194,8 +196,8 @@ class MailReceiveServiceTest {
         verify(writer, never()).writeBroken(any(), anyLong());
         verify(session, never()).fetch(12L);
         assertThat(r.isOk()).isFalse();
-        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; проход остановлен: база данных недоступна"
-                + " (DataAccessResourceFailureException) — повтор следующим проходом");
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; база данных недоступна"
+                + " (DataAccessResourceFailureException) — проход остановлен, повтор следующим проходом");
         // база лежит — проход повторяется раз в минуту: в лог только класс, без стека и текста исключения
         assertThat(logs.list).isNotEmpty().allSatisfy(ev -> {
             assertThat(ev.getThrowableProxy()).isNull();
@@ -217,20 +219,104 @@ class MailReceiveServiceTest {
         verify(writer).write(argThat(m -> m.uid() == 12), eq(7L));
     }
 
+    /**
+     * Короткая строка с полями письма не записалась (не база): в полях и бывает причина (символ, который база не хранит),
+     * поэтому ещё раз — минимальная строка без них. Записалась — письмо пройдено, следующее идёт дальше (R21).
+     */
     @Test
-    void writeBrokenFails_stopsPass() throws Exception {
+    void shortRowFailsOnce_minimalRowWritten_nextUidProcessed() throws Exception {
+        cursorAt(7, 10);
+        when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
+        when(session.fetch(11L)).thenThrow(new MessagingException("bad mime"));
+        when(session.fetch(12L)).thenReturn(mail().uid(12).build());
+        OffsetDateTime at = OffsetDateTime.parse("2026-10-05T08:30:00Z");
+        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, "<x@y.kz>", "a@b.kz", "S", at, "MessagingException"));
+        doThrow(new IllegalStateException("bad value")).doNothing().when(writer).writeBroken(any(), anyLong());
+
+        PollResultResponse r = service(true).poll();
+
+        ArgumentCaptor<BrokenMail> rows = ArgumentCaptor.forClass(BrokenMail.class);
+        verify(writer, times(2)).writeBroken(rows.capture(), eq(7L));
+        assertThat(rows.getAllValues().get(1)).isEqualTo(new BrokenMail(11, null, null, null, at, "MessagingException"));
+        verify(writer).write(argThat(m -> m.uid() == 12), eq(7L));
+        assertThat(r.getBroken()).isEqualTo(1);
+        assertThat(r.isOk()).isTrue();
+        assertThat(logs.list).anySatisfy(ev -> assertThat(ev.getThrowableProxy()).isNotNull());   // разовый сбой — со стеком
+    }
+
+    /** Без даты получения минимальная строка получает «сейчас». */
+    @Test
+    void minimalRow_withoutReceivedAt_usesNow() throws Exception {
+        cursorAt(7, 10);
+        when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L));
+        when(session.fetch(11L)).thenThrow(new MessagingException("bad mime"));
+        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, null, "a@b.kz", "S", null, "MessagingException"));
+        doThrow(new IllegalStateException("bad value")).doNothing().when(writer).writeBroken(any(), anyLong());
+
+        service(true).poll();
+
+        verify(writer).writeBroken(new BrokenMail(11, null, null, null, OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC),
+                "MessagingException"), 7L);
+    }
+
+    /**
+     * Не записалась и минимальная строка — проход стоп, в ответе — UID письма. То же письмо упадёт и на следующем
+     * проходе (раз в минуту), поэтому в лог — без стека: класс и UID.
+     */
+    @Test
+    void shortRowAndMinimalRowFail_stopsPass_namesUid_logWithoutStack() throws Exception {
         cursorAt(7, 10);
         when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
         when(session.fetch(11L)).thenThrow(new MessagingException("bad"));
-        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, null, null, null, OffsetDateTime.now(), "X"));
+        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, null, "a@b.kz", "S", OffsetDateTime.now(), "X"));
         doThrow(new IllegalStateException("db")).when(writer).writeBroken(any(), anyLong());
 
         PollResultResponse r = service(true).poll();
 
+        verify(writer, times(2)).writeBroken(any(), anyLong());
         verify(session, never()).fetch(12L);
         assertThat(r.isOk()).isFalse();
-        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; проход остановлен: письмо не записалось"
-                + " (IllegalStateException) — повтор следующим проходом");
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; письмо UID 11 не записалось (IllegalStateException)"
+                + " — проход остановлен, повтор следующим проходом");
+        assertThat(logs.list).isNotEmpty().allSatisfy(ev -> assertThat(ev.getThrowableProxy()).isNull());
+        assertThat(logs.list).anySatisfy(ev -> assertThat(ev.getFormattedMessage())
+                .contains("UID 11").contains("IllegalStateException"));
+    }
+
+    /** Короткая строка не записалась из-за базы — без второй попытки: стоп с текстом про базу. */
+    @Test
+    void shortRowInfraFailure_stopsWithDbText_noRetry() throws Exception {
+        cursorAt(7, 10);
+        when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
+        when(session.fetch(11L)).thenThrow(new MessagingException("bad"));
+        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, null, "a@b.kz", "S", OffsetDateTime.now(), "X"));
+        doThrow(new DataAccessResourceFailureException("db down")).when(writer).writeBroken(any(), anyLong());
+
+        PollResultResponse r = service(true).poll();
+
+        verify(writer, times(1)).writeBroken(any(), anyLong());
+        verify(session, never()).fetch(12L);
+        assertThat(r.isOk()).isFalse();
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; база данных недоступна"
+                + " (DataAccessResourceFailureException) — проход остановлен, повтор следующим проходом");
+    }
+
+    /** База легла на второй, минимальной попытке — тоже стоп с текстом про базу. */
+    @Test
+    void minimalRowInfraFailure_stopsWithDbText() throws Exception {
+        cursorAt(7, 10);
+        when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
+        when(session.fetch(11L)).thenThrow(new MessagingException("bad"));
+        when(session.envelope(eq(11L), any())).thenReturn(new BrokenMail(11, null, "a@b.kz", "S", OffsetDateTime.now(), "X"));
+        doThrow(new IllegalStateException("bad value")).doThrow(new DataAccessResourceFailureException("db down"))
+                .when(writer).writeBroken(any(), anyLong());
+
+        PollResultResponse r = service(true).poll();
+
+        verify(writer, times(2)).writeBroken(any(), anyLong());
+        verify(session, never()).fetch(12L);
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; база данных недоступна"
+                + " (DataAccessResourceFailureException) — проход остановлен, повтор следующим проходом");
     }
 
     @Test
@@ -273,8 +359,26 @@ class MailReceiveServiceTest {
 
         verify(writer, never()).write(any(), anyLong());
         assertThat(r.isOk()).isFalse();
-        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; проход остановлен: база данных недоступна"
-                + " (DataAccessResourceFailureException) — повтор следующим проходом");
+        assertThat(r.getMessage()).isEqualTo("Новых писем: 0; база данных недоступна"
+                + " (DataAccessResourceFailureException) — проход остановлен, повтор следующим проходом");
+    }
+
+    /**
+     * Внутренняя ошибка прохода (не почта и не база): в ответ — свой текст, без текста исключения (в нём бывают SQL,
+     * значения, адреса); подробности — в логе (спека §3.4).
+     */
+    @Test
+    void passInternalError_ownText_noRawText() throws Exception {
+        when(cursors.findById(anyString())).thenThrow(
+                new InvalidDataAccessResourceUsageException("bad SQL grammar [select * from mail_cursor where secret]"));
+
+        PollResultResponse r = service(true).poll();
+
+        assertThat(r.isOk()).isFalse();
+        assertThat(r.getMessage()).isEqualTo("Ошибка приёма почты: внутренняя ошибка"
+                + " (InvalidDataAccessResourceUsageException) — подробности в логе сервера");
+        assertThat(logs.list).anySatisfy(ev -> assertThat(ev.getFormattedMessage())
+                .contains("InvalidDataAccessResourceUsageException").contains("bad SQL grammar"));
     }
 
     /** Сбой самой очереди Telegram (база) не съедает итог прохода по почте (R18); в лог — только класс. */

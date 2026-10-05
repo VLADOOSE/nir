@@ -10,6 +10,8 @@ import com.vladoose.nir.integration.telegram.TelegramStubServer;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.MailReceiveService;
 import com.vladoose.nir.service.mail.ImapTestSupport;
+import com.vladoose.nir.service.mail.MailboxConnector;
+import com.vladoose.nir.service.mail.MailboxSession;
 import com.vladoose.nir.service.mail.TestMimes;
 import com.vladoose.nir.util.KpToken;
 import jakarta.mail.Message;
@@ -44,6 +46,7 @@ class MailReceiveServiceIntegrationTest {
     @Autowired FacilityRepository facilityRepository;
     @Autowired DistributorRepository distributorRepository;
     @Autowired MailCursorRepository cursorRepository;
+    @Autowired MailboxConnector mailboxConnector;
     @Autowired EntityManager em;
 
     /**
@@ -274,6 +277,36 @@ class MailReceiveServiceIntegrationTest {
                 .anyMatch(e -> ("Нужен облучатель " + tag).equals(e.getSubject()))
                 .noneMatch(e -> e.getExcerpt() != null && e.getExcerpt().contains(tag)
                         && e.getSubject() != null && e.getSubject().endsWith("— westmed.kz"));
+    }
+
+    /**
+     * U+0000 в теме, имени отправителя и тексте (RFC 2047 «=?UTF-8?B?…AA…?=») PostgreSQL в text не хранит (SQLSTATE
+     * 22021): такое письмо не записывалось ни целиком, ни коротко, проход вставал на нём каждую минуту, и вся следующая
+     * почта стояла — а прислать его может кто угодно. Символ вычищается при разборе: записаны оба письма, курсор прошёл оба.
+     */
+    @Test
+    void nulCharacterLetter_writtenAndDoesNotStallMailbox() throws Exception {
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        MimeMessage nul = TestMimes.plain("x@x.kz", "x", "Текст\0 с нулём");
+        nul.setHeader("From", TestMimes.encodedWord("Иван\0 Петров") + " <nul@x.kz>");
+        nul.setHeader("Subject", TestMimes.encodedWord("ZZNUL\0 тема"));
+        user.deliver(nul);
+        user.deliver(TestMimes.plain("s@x.kz", "ZZNUL следом", "текст"));
+
+        MarketContext.set(Market.KZ);
+        PollResultResponse res = mailReceiveService.poll();
+
+        assertThat(res.isOk()).isTrue();
+        assertThat(res.getFetched()).isEqualTo(2);
+        assertThat(inboundEmailRepository.findAll())
+                .anyMatch(e -> "ZZNUL тема".equals(e.getSubject()) && "Иван Петров <nul@x.kz>".equals(e.getFromAddress())
+                        && e.getExcerpt() != null && e.getExcerpt().contains("Текст с нулём"))
+                .anyMatch(e -> "ZZNUL следом".equals(e.getSubject()));
+        long maxUid;
+        try (MailboxSession s = mailboxConnector.open()) {
+            maxUid = s.maxUid();
+        }
+        assertThat(cursorRepository.findById("zakup@westmed.kz").orElseThrow().getLastUid()).isEqualTo(maxUid);
     }
 
     @Test

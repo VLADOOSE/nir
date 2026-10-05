@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -75,8 +76,8 @@ public class MailReceiveService {
             return result;
         }
         result.setEnabled(true);
-        String imapError = null;                                    // ящик не открылся или не ответил
-        String stopped = null;                                      // проход остановлен сбоем (§3.4)
+        String failed = null;                                       // ящик не открылся или проход упал — весь текст
+        String stopped = null;                                      // проход остановлен сбоем (§3.4) — причина
         try (MailboxSession session = connector.open()) {
             stopped = pass(session, result);
         } catch (Exception e) {
@@ -84,15 +85,19 @@ public class MailReceiveService {
                 stopped = dbDown(e);
                 log.warn("База недоступна — проход приёма почты остановлен, повтор следующим: {}", e.getClass().getSimpleName());
             } else {
-                imapError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                log.warn("Ошибка приёма почты: {}", imapError);
+                log.warn("Ошибка приёма почты: {}: {}", e.getClass().getSimpleName(), e.getMessage());
+                // в ответ — свои тексты (§3.4): текст ПОЧТЫ («AUTHENTICATIONFAILED», «Couldn't connect…») — можно,
+                // текст чужого исключения — нет: в нём бывают SQL, значения, адреса
+                failed = e instanceof MessagingException
+                        ? "Ошибка подключения к почте: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName())
+                        : "Ошибка приёма почты: внутренняя ошибка (" + e.getClass().getSimpleName() + ") — подробности в логе сервера";
             }
         }
         MailTelegramNotifier.FlushResult tg = flush();              // и при недоступной почте: очередь не ждёт IMAP
         result.setTelegramSent(tg.sent());
         result.setTelegramPending(tg.pending());
-        result.setOk(imapError == null && stopped == null);
-        result.setMessage(summary(result, imapError, stopped, tg));
+        result.setOk(failed == null && stopped == null);
+        result.setMessage(summary(result, failed, stopped, tg));
         return result;
     }
 
@@ -133,8 +138,7 @@ public class MailReceiveService {
                 log.warn("Связь с ящиком оборвалась на письме UID {}: {}", uid, e.getClass().getSimpleName());
                 return CONNECTION_LOST;
             }
-            log.warn("Письмо UID {} не разобрано — записываю коротко", uid, e);
-            return writeBroken(s.envelope(uid, e), uidValidity, result);
+            return writeBroken(s.envelope(uid, e), e, "не разобрано", uidValidity, result);
         }
         if (m == null) return null;                                 // письмо удалили между поиском и чтением
         MailIngestWriter.WriteResult written;
@@ -145,23 +149,50 @@ public class MailReceiveService {
                 log.warn("База недоступна на письме UID {} — проход остановлен, повтор следующим: {}", uid, e.getClass().getSimpleName());
                 return dbDown(e);
             }
-            log.warn("Письмо UID {} не записано — записываю коротко", uid, e);
             return writeBroken(new BrokenMail(uid, m.messageId(), m.from(), m.subject(), m.receivedAt(),
-                    e.getClass().getSimpleName()), uidValidity, result);
+                    e.getClass().getSimpleName()), e, "не записано", uidValidity, result);
         }
         count(result, written);                                     // вне try: записанное письмо коротко не пишем
         return null;
     }
 
-    private String writeBroken(BrokenMail b, long uidValidity, PollResultResponse result) {
-        try {
-            writer.writeBroken(b, uidValidity);
+    /**
+     * Короткая строка вместо письма, которое не разобралось или не записалось (cause). Не записалась и она (не база) —
+     * ещё раз, минимальная: без отправителя, темы и Message-ID — в полях письма и бывает причина (символ, который база
+     * не хранит). Записалась — письмо пройдено, сбой разовый: в лог со стеком. Не записалась — проход стоп, курсор на
+     * месте: то же письмо упадёт и на следующем проходе, раз в минуту, поэтому в лог без стека — классы и UID.
+     */
+    private String writeBroken(BrokenMail b, Exception cause, String what, long uidValidity, PollResultResponse result) {
+        RuntimeException withFields = tryWriteBroken(b, uidValidity);
+        RuntimeException failure = withFields;
+        if (withFields != null && !InfrastructureFailure.test(withFields)) {
+            failure = tryWriteBroken(new BrokenMail(b.uid(), null, null, null,
+                    b.receivedAt() != null ? b.receivedAt() : OffsetDateTime.now(clock), b.errorClass()), uidValidity);
+        }
+        if (failure == null) {
+            if (withFields == null) {
+                log.warn("Письмо UID {} {} — записано коротко", b.uid(), what, cause);
+            } else {
+                log.warn("Письмо UID {} {} — записано коротко, без полей письма (с ними не записалось: {})",
+                        b.uid(), what, withFields.getClass().getSimpleName(), cause);
+            }
             result.setBroken(result.getBroken() + 1);
             result.setFetched(result.getFetched() + 1);
             return null;
+        }
+        log.warn("Письмо UID {} {} ({}), короткая строка не записалась ({}) — проход остановлен, повтор следующим",
+                b.uid(), what, cause.getClass().getSimpleName(), failure.getClass().getSimpleName());
+        return InfrastructureFailure.test(failure) ? dbDown(failure)
+                : "письмо UID " + b.uid() + " не записалось (" + failure.getClass().getSimpleName() + ")";
+    }
+
+    /** null — записано; иначе — чем не записалось. */
+    private RuntimeException tryWriteBroken(BrokenMail b, long uidValidity) {
+        try {
+            writer.writeBroken(b, uidValidity);
+            return null;
         } catch (RuntimeException e) {
-            log.warn("Письмо UID {} не записано даже коротко — проход остановлен: {}", b.uid(), e.getClass().getSimpleName());
-            return InfrastructureFailure.test(e) ? dbDown(e) : "письмо не записалось (" + e.getClass().getSimpleName() + ")";
+            return e;
         }
     }
 
@@ -198,10 +229,14 @@ public class MailReceiveService {
         r.setFetched(r.getFetched() + 1);
     }
 
-    static String summary(PollResultResponse r, String imapError, String stopped, MailTelegramNotifier.FlushResult tg) {
+    /**
+     * Ответ «Проверить почту»: failed — проход не состоялся (текст целиком, без счётчиков); иначе счётчики и, если проход
+     * остановлен, его причина; в конце — Telegram, если там что-то было.
+     */
+    static String summary(PollResultResponse r, String failed, String stopped, MailTelegramNotifier.FlushResult tg) {
         StringBuilder s = new StringBuilder();
-        if (imapError != null) {
-            s.append("Ошибка подключения к почте: ").append(imapError);
+        if (failed != null) {
+            s.append(failed);
         } else {
             s.append("Новых писем: ").append(r.getFetched());
             List<String> parts = new ArrayList<>();
@@ -215,7 +250,7 @@ public class MailReceiveService {
             if (r.getSkippedSiteNotifications() > 0) {
                 s.append("; уведомлений сайта о заявках пропущено: ").append(r.getSkippedSiteNotifications());
             }
-            if (stopped != null) s.append("; проход остановлен: ").append(stopped).append(" — повтор следующим проходом");
+            if (stopped != null) s.append("; ").append(stopped).append(" — проход остановлен, повтор следующим проходом");
         }
         if (tg.sent() > 0 || tg.pending() > 0 || tg.lastError() != null) {
             s.append("; Telegram: отправлено ").append(tg.sent()).append(", ждут ").append(tg.pending());

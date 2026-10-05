@@ -28,7 +28,7 @@ public final class MailParser {
 
     public static ParsedMail parse(Message msg, long uid) throws MessagingException, IOException {
         String from = from(msg);
-        String subject = msg.getSubject();
+        String subject = subject(msg);
         Walk w = new Walk();
         walk(msg, w, 0);
         return new ParsedMail(uid, header(msg, "Message-ID"), from, addressPart(from),
@@ -45,8 +45,8 @@ public final class MailParser {
             Address[] a = msg.getFrom();
             if (a == null || a.length == 0) return "";
             if (a[0] instanceof InternetAddress ia) {
-                String name = ia.getPersonal();
-                String addr = ia.getAddress() == null ? "" : ia.getAddress();
+                String name = noNul(ia.getPersonal());
+                String addr = ia.getAddress() == null ? "" : noNul(ia.getAddress());
                 return name == null || name.isBlank() ? addr : name.strip() + " <" + addr + ">";
             }
             return decode(a[0].toString());
@@ -54,6 +54,20 @@ public final class MailParser {
             String raw = header(msg, "From");
             return raw == null ? "" : decode(raw);
         }
+    }
+
+    /** Тема (RFC 2047 декодирован) без U+0000 ({@link #noNul}); null — темы нет. */
+    static String subject(Message msg) throws MessagingException {
+        return noNul(msg.getSubject());
+    }
+
+    /**
+     * Строка без U+0000. PostgreSQL не хранит его в text (SQLSTATE 22021), а прислать его может кто угодно — например,
+     * RFC 2047 «=?UTF-8?B?AA==?=» в теме: письмо не записалось бы ни целиком, ни коротко, и проход вставал бы на нём
+     * каждую минуту. Поэтому каждая строка, которая приходит из Jakarta Mail в разбор, проходит через этот срез.
+     */
+    static String noNul(String s) {
+        return s == null || s.indexOf('\0') < 0 ? s : s.replace("\0", "");
     }
 
     /** Адресная часть «Имя <a@b>» → «a@b», нижним регистром. */
@@ -78,11 +92,11 @@ public final class MailParser {
 
     static String header(Part p, String name) throws MessagingException {
         String[] v = p.getHeader(name);
-        return v == null || v.length == 0 ? null : v[0].trim();
+        return v == null || v.length == 0 ? null : noNul(v[0]).trim();
     }
 
     private static String contentType(Message msg) throws MessagingException {
-        String ct = msg.getContentType();
+        String ct = noNul(msg.getContentType());
         return ct == null ? "" : ct.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
     }
 
@@ -143,13 +157,16 @@ public final class MailParser {
      * Тема вложенного письма (исходное письмо в возврате) — сначала как у вложенного Message: по IMAP это конверт из
      * BODYSTRUCTURE (письмо целиком не качается), из байтов — разобранный MimeMessage. Только поток части не годится:
      * по IMAP это BODY[n] части, и сервер может отдать лишь ТЕЛО вложенного письма без заголовков (так делает
-     * GreenMail) — тема терялась, и возврат не привязывался к запросу КП. Поток — запасной путь, если содержимое
-     * не письмо.
+     * GreenMail) — тема терялась, и возврат не привязывался к запросу КП. Поток — запасной путь: содержимое не письмо
+     * или у конверта нет темы (NIL).
      */
     private static String nestedSubject(Part part) throws MessagingException, IOException {
-        if (part.getContent() instanceof Message nested) return nested.getSubject();
+        if (part.getContent() instanceof Message nested) {
+            String s = noNul(nested.getSubject());
+            if (s != null) return s;
+        }
         try (InputStream in = part.getInputStream()) {
-            return new MimeMessage((Session) null, in).getSubject();
+            return noNul(new MimeMessage((Session) null, in).getSubject());
         }
     }
 
@@ -169,7 +186,7 @@ public final class MailParser {
     private static String text(Part part) throws MessagingException, IOException {
         try {
             Object c = part.getContent();
-            return c instanceof String s ? s : readText(part, MAX_TEXT);
+            return c instanceof String s ? noNul(s) : readText(part, MAX_TEXT);
         } catch (UnsupportedEncodingException e) {    // неизвестная кодировка — байты как UTF-8, письмо не теряем
             return readText(part, MAX_TEXT);
         }
@@ -177,7 +194,7 @@ public final class MailParser {
 
     private static String readText(Part part, int max) throws MessagingException, IOException {
         try (InputStream in = part.getInputStream()) {
-            return new String(in.readNBytes(max), StandardCharsets.UTF_8);
+            return noNul(new String(in.readNBytes(max), StandardCharsets.UTF_8));
         }
     }
 
@@ -192,12 +209,13 @@ public final class MailParser {
         sb.append(MailText.safeCut(s, MAX_TEXT - sb.length()));
     }
 
+    /** RFC 2047 → текст без U+0000 ({@link #noNul}); битое кодирование — исходная строка (тоже без U+0000). */
     static String decode(String s) {
         if (s == null) return null;
         try {
-            return MimeUtility.decodeText(s);
+            return noNul(MimeUtility.decodeText(s));
         } catch (Exception e) {
-            return s;
+            return noNul(s);
         }
     }
 

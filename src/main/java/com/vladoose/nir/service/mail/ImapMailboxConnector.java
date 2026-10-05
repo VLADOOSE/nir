@@ -150,9 +150,9 @@ public class ImapMailboxConnector implements MailboxConnector {
             OffsetDateTime at = null;
             try {
                 Message m = uids.getMessageByUID(uid);
-                if (m != null) {
+                if (m != null) {                             // поля — без U+0000, как при разборе (MailParser.noNul)
                     try { from = MailParser.from(m); } catch (Exception ignored) { }
-                    try { subject = m.getSubject(); } catch (Exception ignored) { }
+                    try { subject = MailParser.subject(m); } catch (Exception ignored) { }
                     try { messageId = MailParser.header(m, "Message-ID"); } catch (Exception ignored) { }
                     at = MailParser.receivedAt(m);
                 }

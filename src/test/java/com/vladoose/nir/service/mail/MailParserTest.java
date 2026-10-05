@@ -7,7 +7,12 @@ import jakarta.mail.internet.*;
 import jakarta.mail.util.ByteArrayDataSource;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.lang.reflect.RecordComponent;
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 import static com.vladoose.nir.service.mail.TestMimes.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -236,5 +241,103 @@ class MailParserTest {
         assertThat(MailParser.addressPart("Иван <Ivan@X.kz>")).isEqualTo("ivan@x.kz");
         assertThat(MailParser.addressPart("a@b.kz")).isEqualTo("a@b.kz");
         assertThat(MailParser.addressPart(null)).isEmpty();
+    }
+
+    /**
+     * U+0000 (RFC 2047 «=?UTF-8?B?…AA…?=», нулевой байт в теле или заголовке) PostgreSQL в text не хранит (SQLSTATE 22021):
+     * письмо не записалось бы ни целиком, ни коротко и стопорило бы ящик на каждом проходе. Разбор вычищает символ
+     * из каждой строки письма — тема, отправитель, Message-ID, текст, HTML, имена вложений, заголовки автоответа.
+     */
+    @Test
+    void nulCharacter_strippedFromEveryParsedString() throws Exception {
+        MimeMultipart alt = new MimeMultipart("alternative");
+        MimeBodyPart text = new MimeBodyPart();
+        text.setText("Цена\0 100 тенге", "UTF-8");
+        MimeBodyPart html = new MimeBodyPart();
+        html.setContent("<p>Цена\0 100 тенге</p>", "text/html; charset=UTF-8");
+        alt.addBodyPart(text);
+        alt.addBodyPart(html);
+        MimeBodyPart altPart = new MimeBodyPart();
+        altPart.setContent(alt);
+        MimeBodyPart excel = new MimeBodyPart();
+        excel.setDataHandler(new DataHandler(new ByteArrayDataSource(new byte[]{1, 2}, "application/octet-stream")));
+        excel.setHeader("Content-Disposition", "attachment; filename=\"" + encodedWord("прайс\0.xlsx") + "\"");
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        mixed.addBodyPart(altPart);
+        mixed.addBodyPart(excel);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setContent(mixed);
+        m.saveChanges();
+        m.setHeader("From", encodedWord("Иван\0 Петров") + " <ivan@x.kz>");
+        m.setHeader("Subject", encodedWord("Re: [КП-5]\0 Запрос"));
+        m.setHeader("Message-ID", "<nul\0id@x.kz>");                 // после saveChanges — иначе перезапишется
+        m.setHeader("X-Autoreply", "yes\0");
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(allStrings(p)).isNotEmpty().noneMatch(s -> s.indexOf('\0') >= 0);
+        assertThat(p.subject()).isEqualTo("Re: [КП-5] Запрос");
+        assertThat(p.from()).isEqualTo("Иван Петров <ivan@x.kz>");
+        assertThat(p.messageId()).isEqualTo("<nulid@x.kz>");
+        assertThat(p.text()).contains("Цена 100 тенге");
+        assertThat(p.html()).contains("Цена 100 тенге");
+        assertThat(p.excelName()).isEqualTo("прайс.xlsx");
+        assertThat(p.autoHeaders()).containsEntry("x-autoreply", "yes");
+    }
+
+    /** Возврат с U+0000 в теме исходного письма, адресате и диагностике — поля возврата тоже без него. */
+    @Test
+    void nulCharacter_strippedFromBounceFields() throws Exception {
+        ParsedMail p = MailParser.parse(roundTrip(dsn("[КП-9]\0 Запрос КП", "b\0@x.kz", "550\0 5.1.1 User unknown")), 1);
+
+        assertThat(allStrings(p)).noneMatch(s -> s.indexOf('\0') >= 0);
+        assertThat(p.bounce().originalSubject()).isEqualTo("[КП-9] Запрос КП");
+        assertThat(p.bounce().finalRecipient()).isEqualTo("b@x.kz");
+        assertThat(p.bounce().diagnostic()).isEqualTo("550 5.1.1 User unknown");
+    }
+
+    /**
+     * Конверт вложенного письма без темы (NIL у IMAP-сервера) — тема берётся из потока части, как до перехода на конверт.
+     * Часть подменена: её содержимое — письмо без темы, а поток — исходное письмо с темой.
+     */
+    @Test
+    void bounce_nestedEnvelopeWithoutSubject_fallsBackToPartStream() throws Exception {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        plain("zakup@westmed.kz", "[КП-7] Запрос КП", "Просим коммерческое предложение.").writeTo(raw);
+        MimeMessage withoutSubject = new MimeMessage((Session) null);
+        withoutSubject.setText("x");
+        MimeBodyPart original = new MimeBodyPart() {
+            @Override public Object getContent() { return withoutSubject; }
+            @Override public InputStream getInputStream() { return new ByteArrayInputStream(raw.toByteArray()); }
+        };
+        original.setHeader("Content-Type", "message/rfc822");
+        MimeBodyPart human = new MimeBodyPart();
+        human.setText("Your message could not be delivered.", "UTF-8");
+        MimeMultipart report = new MimeMultipart("report; report-type=delivery-status");
+        report.addBodyPart(human);
+        report.addBodyPart(original);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("MAILER-DAEMON@corp.mail.ru"));
+        m.setSubject("Undelivered Mail Returned to Sender");
+        m.setContent(report);
+        m.setHeader("Content-Type", report.getContentType());       // без saveChanges: подменённая часть — как есть
+
+        ParsedMail p = MailParser.parse(m, 1);
+
+        assertThat(p.bounce()).isNotNull();
+        assertThat(p.bounce().originalSubject()).isEqualTo("[КП-7] Запрос КП");
+    }
+
+    /** Все строки записи — по её компонентам, вложенные записи тоже: новое поле попадёт в проверку само. */
+    static List<String> allStrings(Object record) throws Exception {
+        List<String> out = new ArrayList<>();
+        for (RecordComponent c : record.getClass().getRecordComponents()) {
+            Object v = c.getAccessor().invoke(record);
+            if (v instanceof String s) out.add(s);
+            else if (v instanceof Collection<?> col) col.forEach(o -> out.add(String.valueOf(o)));
+            else if (v instanceof Map<?, ?> map) map.forEach((k, val) -> { out.add(String.valueOf(k)); out.add(String.valueOf(val)); });
+            else if (v != null && v.getClass().isRecord()) out.addAll(allStrings(v));
+        }
+        return out;
     }
 }

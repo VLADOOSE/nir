@@ -13,12 +13,21 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
 
 /** Письма в MIME для тестов разбора и приёма: как их собирают настоящие почтовые клиенты и серверы. */
 public final class TestMimes {
 
     private TestMimes() {}
+
+    /**
+     * Слово RFC 2047 (B, UTF-8) — так почтовые программы передают кириллицу в заголовках; внутри может оказаться что
+     * угодно, включая U+0000. Ставится в заголовок как есть: setHeader(«Subject», encodedWord(…)).
+     */
+    public static String encodedWord(String s) {
+        return "=?UTF-8?B?" + Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8)) + "?=";
+    }
 
     /** «Имя <адрес>» или «адрес» → InternetAddress с UTF-8 именем. */
     public static InternetAddress addr(String s) throws Exception {

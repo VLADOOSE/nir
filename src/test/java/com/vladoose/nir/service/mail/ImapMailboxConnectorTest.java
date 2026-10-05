@@ -4,6 +4,7 @@ import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -158,6 +159,25 @@ class ImapMailboxConnectorTest {
             List<Long> uids = s.uidsAfter(0, 10);
             assertThat(s.fetch(uids.get(0)).bounce().originalSubject()).isEqualTo("[КП-123] Запрос КП");
             assertThat(s.fetch(uids.get(1)).bounce().originalSubject()).isEqualTo("[КП-124] Запрос КП");
+        }
+    }
+
+    /**
+     * Конверт письма, которое не разобралось, идёт в короткую строку «Входящих»: U+0000 в имени отправителя и теме
+     * (RFC 2047) PostgreSQL не примет — конверт отдаёт поля без него.
+     */
+    @Test
+    void envelope_stripsNulFromSenderAndSubject() throws Exception {
+        MimeMessage m = TestMimes.plain("s@x.kz", "x", "1");
+        m.setHeader("From", TestMimes.encodedWord("Иван\0 Петров") + " <ivan@x.kz>");
+        m.setHeader("Subject", TestMimes.encodedWord("Тема\0 с нулём"));
+        user.deliver(m);
+
+        try (MailboxSession s = connector().open()) {
+            BrokenMail b = s.envelope(s.uidsAfter(0, 10).get(0), new IllegalStateException("x"));
+            assertThat(b.from()).isEqualTo("Иван Петров <ivan@x.kz>");
+            assertThat(b.subject()).isEqualTo("Тема с нулём");
+            assertThat(b.messageId()).isNotNull().doesNotContain("\0");
         }
     }
 
