@@ -220,6 +220,7 @@ public final class MailParser {
         String status;
         String diagnostic;
         String originalSubject;
+        String action;
 
         void deliveryStatus(String s) {
             dsn = true;
@@ -229,11 +230,13 @@ public final class MailParser {
             status = f.get("status");
             diagnostic = afterType(f.get("diagnostic-code"));
             if (diagnostic != null) diagnostic = MailText.safeCut(diagnostic, 200);
+            String a = f.get("action");
+            action = a == null || a.isBlank() ? null : a.strip().toLowerCase(Locale.ROOT);
         }
 
         ParsedMail.Bounce bounce() {
             if (!dsn && originalSubject == null) return null;
-            return new ParsedMail.Bounce(finalRecipient, status, diagnostic, originalSubject);
+            return new ParsedMail.Bounce(finalRecipient, status, diagnostic, originalSubject, action);
         }
     }
 }

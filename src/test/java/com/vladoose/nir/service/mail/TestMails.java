@@ -45,7 +45,10 @@ public final class TestMails {
         public Builder attachments(String... v) { attachments = List.of(v); return this; }
         public Builder excel(String name) { excel = new byte[]{1, 2, 3}; excelName = name; attachments = List.of(name); return this; }
         public Builder bounce(String recipient, String status, String diagnostic, String originalSubject) {
-            bounce = new ParsedMail.Bounce(recipient, status, diagnostic, originalSubject);
+            return bounce(recipient, status, diagnostic, originalSubject, null);
+        }
+        public Builder bounce(String recipient, String status, String diagnostic, String originalSubject, String action) {
+            bounce = new ParsedMail.Bounce(recipient, status, diagnostic, originalSubject, action);
             return this;
         }
 

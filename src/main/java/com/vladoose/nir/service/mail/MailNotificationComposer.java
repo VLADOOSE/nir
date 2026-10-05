@@ -67,9 +67,9 @@ public final class MailNotificationComposer {
     }
 
     /**
-     * Возврат. Код статуса 4.x.x — отчёт об отложенной доставке: сервер получателя ещё повторяет попытки, поэтому не
-     * «не доставлено», без звука и без совета исправить адрес — адрес, может быть, верный. 5.x.x и возврат без кода —
-     * «не доставлено», со звуком.
+     * Возврат. Отчёт с Action: delayed — доставка задерживается: сервер получателя ещё повторяет попытки, поэтому не
+     * «не доставлено», без звука и без совета исправить адрес — адрес, может быть, верный. Всё остальное (failed,
+     * отчёт без Action, возврат без частей DSN, любой код статуса) — «не доставлено», со звуком.
      */
     private static MailNotification bounce(ParsedMail m, KpSnapshot kp, ComposeContext ctx) {
         ParsedMail.Bounce b = m.bounce();
@@ -97,12 +97,12 @@ public final class MailNotificationComposer {
     }
 
     /**
-     * Status 4.x.x (RFC 3463 — временный сбой): отчёт «доставка задерживается». ⚠️ Поле Action разбор не читает,
-     * поэтому итоговый отказ, который сервер шлёт с последним временным кодом (Postfix после срока очереди —
-     * Action: failed и Status: 4.4.1), тоже прочитается как задержка.
+     * Отложенная доставка — только по полю Action отчёта (RFC 3464), не по коду статуса: итоговый отказ серверы шлют
+     * и с последним временным кодом (Postfix после срока очереди — Action: failed и Status: 4.4.1, Exchange —
+     * 4.4.7 QUEUE.Expired), и такой отказ должен прийти как «не доставлено», со звуком.
      */
     private static boolean stillRetrying(ParsedMail.Bounce b) {
-        return b != null && b.status() != null && b.status().strip().startsWith("4.");
+        return b != null && "delayed".equals(b.action());
     }
 
     private static MailNotification autoReply(ParsedMail m, KpSnapshot kp, ComposeContext ctx) {

@@ -163,7 +163,35 @@ class MailParserTest {
         assertThat(p.bounce().status()).isEqualTo("5.1.1");
         assertThat(p.bounce().diagnostic()).contains("550 5.1.1").contains("User unknown");
         assertThat(p.bounce().originalSubject()).isEqualTo("[КП-534] Запрос КП");
+        assertThat(p.bounce().action()).isEqualTo("failed");
         assertThat(p.text()).contains("could not be delivered").doesNotContain("Просим коммерческое");
+    }
+
+    /** Отчёт об отложенной доставке: Action читается нижним регистром — RFC 3464 регистр значения не задаёт. */
+    @Test
+    void dsnDelayed_actionLowercased() throws Exception {
+        String fields = "Reporting-MTA: dns; mx.mail.ru\r\n\r\n"
+                + "Final-Recipient: rfc822; sales@x.kz\r\n"
+                + "Action: Delayed\r\n"
+                + "Status: 4.4.1\r\n"
+                + "Diagnostic-Code: smtp; 421 4.4.1 Connection timed out\r\n";
+        MimeBodyPart status = new MimeBodyPart();
+        status.setDataHandler(new DataHandler(new ByteArrayDataSource(fields.getBytes(StandardCharsets.US_ASCII),
+                "message/delivery-status")));
+        status.setHeader("Content-Type", "message/delivery-status");
+        MimeMultipart report = new MimeMultipart("report; report-type=delivery-status");
+        report.addBodyPart(status);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("MAILER-DAEMON@corp.mail.ru"));
+        m.setSubject("Delayed Mail (still being retried)");
+        m.setContent(report);
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(p.bounce()).isNotNull();
+        assertThat(p.bounce().action()).isEqualTo("delayed");
+        assertThat(p.bounce().status()).isEqualTo("4.4.1");
     }
 
     @Test

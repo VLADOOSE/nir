@@ -25,8 +25,11 @@ public record ParsedMail(long uid, String messageId, String from, String fromAdd
                          String text, String html, List<String> attachmentNames,
                          byte[] excelBytes, String excelName, Bounce bounce) {
 
-    /** Возврат: адресат, код статуса, диагностика сервера, тема исходного письма (декодирована). */
-    public record Bounce(String finalRecipient, String status, String diagnostic, String originalSubject) {}
+    /**
+     * Возврат: адресат, код статуса, диагностика сервера, тема исходного письма (декодирована) и действие из отчёта —
+     * поле Action (RFC 3464: failed, delayed…) нижним регистром; null — поля нет.
+     */
+    public record Bounce(String finalRecipient, String status, String diagnostic, String originalSubject, String action) {}
 
     /** Текст письма: text/plain, а если его нет — HTML, переведённый в текст. */
     public String body() {

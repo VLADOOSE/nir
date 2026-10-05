@@ -196,13 +196,14 @@ class MailNotificationComposerTest {
     }
 
     /**
-     * Отчёт об отложенной доставке (Status 4.x.x: сервер получателя ещё повторяет попытки) — не «не доставлено»:
+     * Отчёт об отложенной доставке (Action: delayed — сервер получателя ещё повторяет попытки) — не «не доставлено»:
      * без звука и без совета исправить адрес — адрес, может быть, верный.
      */
     @Test
     void delayedDsn_withRequest_notUndelivered_silent() {
         ParsedMail m = mail().from("MAILER-DAEMON@corp.mail.ru").subject("Delayed Mail (still being retried)")
-                .bounce("sales@medtech.kz", "4.4.1", "421 4.4.1 Connection timed out", "[КП-534] Запрос КП").build();
+                .bounce("sales@medtech.kz", "4.4.1", "421 4.4.1 Connection timed out", "[КП-534] Запрос КП", "delayed")
+                .build();
 
         MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, 534L),
                 kp("SENT", null), null, KZ);
@@ -223,7 +224,8 @@ class MailNotificationComposerTest {
 
     @Test
     void delayedDsn_withoutRequest_silent_linkToInbound() {
-        ParsedMail m = mail().from("postmaster@x.kz").subject("Delivery delayed").bounce("a@b.kz", "4.7.1", null, null).build();
+        ParsedMail m = mail().from("postmaster@x.kz").subject("Delivery delayed")
+                .bounce("a@b.kz", "4.7.1", null, null, "delayed").build();
 
         MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, null), null, null, KZ);
 
@@ -235,6 +237,43 @@ class MailNotificationComposerTest {
                 Сервер получателя ещё повторяет доставку — если не получится, придёт отдельное уведомление.
 
                 Открыть в АИС: https://ais.westmed.kz/inbound?market=KZ""");
+    }
+
+    /**
+     * Итоговый отказ Postfix после срока очереди: Action: failed с последним ВРЕМЕННЫМ кодом 4.4.1. Задержку решает
+     * Action, а не код, — это «не доставлено», со звуком и с советом исправить адрес.
+     */
+    @Test
+    void postfixFinalBounce_failedWith4xx_undelivered_withSound() {
+        ParsedMail m = mail().from("MAILER-DAEMON@corp.mail.ru").subject("Undelivered Mail Returned to Sender")
+                .bounce("sales@medtech.kz", "4.4.1", "connect to mx.medtech.kz[203.0.113.5]:25: Connection timed out",
+                        "[КП-534] Запрос КП", "failed").build();
+
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, 534L),
+                kp("SENT", null), null, KZ);
+
+        assertThat(n.silent()).isFalse();
+        assertThat(n.text()).startsWith("⚠️ Письмо не доставлено")
+                .contains("Исправьте адрес")
+                .doesNotContain("задерживается");
+        assertThat(n.text()).isEqualTo("""
+                ⚠️ Письмо не доставлено · ТОО «Медтехника» (sales@medtech.kz)
+                Запрос КП №534 · тендер 17295275-1
+                Причина: connect to mx.medtech.kz[203.0.113.5]:25: Connection timed out
+                Исправьте адрес в карточке поставщика и нажмите «Переслать» в запросах КП тендера.
+
+                Открыть в АИС: https://ais.westmed.kz/tenders?openId=77&market=KZ""");
+    }
+
+    /** Код 4.x.x без поля Action — тоже отказ, а не задержка: молча пропустить провал хуже, чем лишний раз позвать. */
+    @Test
+    void temporaryCodeWithoutAction_undelivered_withSound() {
+        ParsedMail m = mail().from("postmaster@x.kz").subject("Mail failure").bounce("a@b.kz", "4.4.1", null, null).build();
+
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, null), null, null, KZ);
+
+        assertThat(n.silent()).isFalse();
+        assertThat(n.text()).startsWith("⚠️ Письмо не доставлено · a@b.kz\n").doesNotContain("повторяет доставку");
     }
 
     /** Возврат без кода статуса (узнан по отправителю, частей DSN нет) — «не доставлено», со звуком, адрес — из запроса. */
