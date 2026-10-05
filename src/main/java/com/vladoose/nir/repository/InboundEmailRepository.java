@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long> {
     List<InboundEmail> findAllByOrderByReceivedAtDesc();
+
+    boolean existsByMailboxAndMessageId(String mailbox, String messageId);
 }
