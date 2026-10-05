@@ -1,11 +1,12 @@
 import { Component, ChangeDetectorRef, OnInit } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { ApiService } from '../../services/api.service';
 import { PasskeyService } from '../../services/passkey.service';
 import { APP_NAME, APP_TAGLINE } from '../../services/market.service';
+import { safeReturnUrl } from '../../shared/return-url';
 
 @Component({
   selector: 'app-login',
@@ -92,10 +93,15 @@ export class LoginComponent implements OnInit {
   passkeyHint = '';
 
   constructor(private auth: AuthService, private api: ApiService, private passkeys: PasskeyService,
-              private router: Router, private cdr: ChangeDetectorRef) {
+              private router: Router, private route: ActivatedRoute, private cdr: ChangeDetectorRef) {
     if (this.auth.isLoggedIn()) {
-      this.router.navigate(['/dashboard']);
+      this.router.navigateByUrl(this.target());
     }
+  }
+
+  /** Куда после входа: страница из ссылки (returnUrl), иначе главная. */
+  private target(): string {
+    return safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl')) ?? '/dashboard';
   }
 
   ngOnInit() {
@@ -114,7 +120,7 @@ export class LoginComponent implements OnInit {
     this.auth.login(username, password).subscribe({
       next: () => {
         this.loading = false;
-        this.router.navigate(['/dashboard']);
+        this.router.navigateByUrl(this.target());
       },
       error: (err) => {
         this.loading = false;
@@ -135,7 +141,7 @@ export class LoginComponent implements OnInit {
         this.auth.loadCurrentUser().subscribe(user => {
           this.passkeyBusy = false;
           if (user) {
-            this.router.navigate(['/dashboard']);
+            this.router.navigateByUrl(this.target());
           } else {
             this.passkeyError = 'Не удалось войти по ключу. Попробуйте ещё раз или войдите паролем.';
             this.cdr.detectChanges();

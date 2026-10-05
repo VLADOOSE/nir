@@ -21,6 +21,13 @@
       if(v!=='dark'&&v!=='light')v=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
       document.documentElement.setAttribute('data-theme',v);}catch(e){}})();
   </script>
+  <!-- рынок из ссылки (?market=KZ|RF, уведомления Telegram): до старта Angular, иначе новый браузер откроется на РФ.
+       Параметр убирается из адреса: смена рынка в шапке перезагружает ТЕКУЩИЙ адрес, и оставшийся ?market= вернул бы прежний рынок -->
+  <script>
+    (function(){try{var u=new URL(location.href),m=u.searchParams.get('market');
+      if(m==='KZ'||m==='RF')localStorage.setItem('ais.market',m);
+      if(m!==null){u.searchParams.delete('market');history.replaceState(history.state,'',u.pathname+u.search+u.hash);}}catch(e){}})();
+  </script>
 </head>
 <body>
   <app-root></app-root>

@@ -14,6 +14,7 @@ import { SmartMatchComponent } from '../../components/smart-match/smart-match.co
 import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
 import { kpToastFromResults } from '../../shared/kp-toast';
+import { mailPollToast } from '../../shared/mail-poll-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 import { TenderLotsComponent } from './tender-lots.component';
 
@@ -1103,7 +1104,11 @@ export class TendersComponent {
 
   checkKpResponses() {
     this.api.pollInbound().subscribe({
-      next: () => { this.notify.success('Почта проверена'); this.loadPriceRequests(); },
+      next: (r) => {
+        const t = mailPollToast(r);
+        this.notify.show(t.message, t.type);
+        if (t.reload) this.loadPriceRequests();
+      },
       error: (e) => this.notify.error('Проверка почты: ' + (e.error?.message || e.message)),
     });
   }

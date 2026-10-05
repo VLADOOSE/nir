@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
+import { mailPollToast } from '../../shared/mail-poll-toast';
 
 @Component({
   selector: 'app-inbound',
@@ -15,7 +16,7 @@ import { buildImportLines } from '../../shared/import-lines';
     <div class="head">
       <div>
         <h1>Входящие письма</h1>
-        <p class="sub">Входящие запросы клиентов с почты info@westmed.kz — письма с таблицами оборудования.</p>
+        <p class="sub">Почта АИС: ответы поставщиков на запросы КП, возвраты и автоответы, письма клиник с таблицами, прочее.</p>
       </div>
       <button class="btn-primary" [disabled]="polling" (click)="poll()">⟳ Проверить почту</button>
     </div>
@@ -31,10 +32,12 @@ import { buildImportLines } from '../../shared/import-lines';
           <td class="when" data-label="Получено">{{ formatReceived(r.receivedAt) }}</td>
           <td data-label="Тип">
             <span class="badge" [class.b-sup]="r.type==='SUPPLIER_RESPONSE'"
-                  [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'">
+                  [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'"
+                  [class.b-bounce]="r.type==='BOUNCE'" [class.b-auto]="r.type==='AUTO_REPLY'">
               {{ typeLabel(r.type) }}
             </span>
-            <span *ngIf="r.type==='SUPPLIER_RESPONSE' && r.matchedPriceRequestId" class="muted"> · КП #{{ r.matchedPriceRequestId }}</span>
+            <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='AUTO_REPLY') && r.matchedPriceRequestId"
+                  class="muted"> · КП #{{ r.matchedPriceRequestId }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
           <td>
@@ -116,6 +119,8 @@ import { buildImportLines } from '../../shared/import-lines';
     .b-sup { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .b-cli { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .b-unm { background: var(--surface-2); color: var(--text-muted); }
+    .b-bounce { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .b-auto { background: var(--surface-2); color: var(--text-muted); font-style: italic; }
     .muted { color: var(--text-muted); font-size: 12px; }
     .when { white-space: nowrap; color: var(--text); font-size: 12px; }
     .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; background: var(--surface); }
@@ -246,12 +251,9 @@ export class InboundComponent {
     this.api.pollInbound().subscribe({
       next: (r: any) => {
         this.polling = false;
-        if (r && r.enabled === false) {
-          this.notify.error(r.message || 'Приём почты выключен');
-        } else {
-          this.notify.success((r && r.message) || 'Почта проверена');
-          this.load();
-        }
+        const t = mailPollToast(r);
+        this.notify.show(t.message, t.type);
+        if (t.reload) this.load();
         this.cdr.detectChanges();
       },
       error: (e: any) => {
@@ -264,7 +266,9 @@ export class InboundComponent {
 
   typeLabel(t: string): string {
     return t === 'SUPPLIER_RESPONSE' ? 'Ответ поставщика'
-      : t === 'CLIENT_REQUEST' ? 'Письмо клиники' : 'Прочее';
+      : t === 'CLIENT_REQUEST' ? 'Письмо клиники'
+      : t === 'BOUNCE' ? 'Не доставлено'
+      : t === 'AUTO_REPLY' ? 'Автоответ' : 'Прочее';
   }
 
   formatReceived(iso: string): string {
