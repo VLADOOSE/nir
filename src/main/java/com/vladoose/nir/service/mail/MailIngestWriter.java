@@ -60,7 +60,7 @@ public class MailIngestWriter {
 
     @Transactional
     public WriteResult write(ParsedMail m, long uidValidity) {
-        String messageId = cut(m.messageId(), 998);
+        String messageId = messageIdOf(m.messageId());
         if (messageId != null && inboundRepo.existsByMailboxAndMessageId(mailbox, messageId)) {
             moveCursor(uidValidity, m.uid());                 // уже записано (сброс курсора, повторная доставка)
             return new WriteResult(null, null, null, true);
@@ -105,7 +105,7 @@ public class MailIngestWriter {
     @Transactional
     public void writeBroken(BrokenMail b, long uidValidity) {
         InboundEmail e = InboundEmail.builder()
-                .mailbox(mailbox).imapUid(b.uid()).messageId(cut(b.messageId(), 998))
+                .mailbox(mailbox).imapUid(b.uid()).messageId(messageIdOf(b.messageId()))
                 .fromAddress(cut(b.from(), 320)).subject(cut(b.subject(), 998)).receivedAt(b.receivedAt())
                 .type(InboundType.UNMATCHED)
                 .excerpt("Письмо не удалось разобрать (" + b.errorClass() + ") — откройте его в почте")
@@ -141,8 +141,9 @@ public class MailIngestWriter {
      * Ответ поставщика (логика прежнего MailReceiveService.matchSupplierResponse без изменений): только из CREATED/SENT;
      * одно-лотовый — авторазбор цены (ручную не затираем); иначе явный отказ → DECLINED; иначе RESPONDED.
      * Цену и отказ ищут в сыром теле (parseInput: text/plain, а без него — HTML как есть), как прежде: у разбора своё
-     * снятие тегов, а в готовом тексте «<» и «>» — обычные символы («срок <30 дней», «Анна <anna@x.kz>»), и разбор
-     * выбросил бы всё между ними вместе с ценой. Заметка запроса — текст для людей (displayText).
+     * снятие тегов, а в готовом тексте {@code <} и {@code >} — обычные символы ({@code срок <30 дней},
+     * {@code Анна <anna@x.kz>}), и разбор выбросил бы всё между ними вместе с ценой. Заметка запроса — текст для людей
+     * (displayText).
      */
     private KpOutcome applySupplierResponse(PriceRequest pr, String parseInput, String displayText) {
         String st = pr.getStatus();
@@ -202,6 +203,15 @@ public class MailIngestWriter {
     }
 
     private static String lower(String s) { return s == null ? "" : s.trim().toLowerCase(Locale.ROOT); }
+
+    /**
+     * Message-ID для дедупа: пустой заголовок или {@code <>} — как отсутствующий (null), иначе все такие письма после
+     * первого считались бы повтором и пропадали без строки и уведомления.
+     */
+    private static String messageIdOf(String raw) {
+        String id = cut(raw, 998);
+        return id == null || id.replace("<", "").replace(">", "").isBlank() ? null : id;
+    }
 
     /** Срез под длину колонки; эмодзи пополам не режет ({@link MailText#safeCut}). */
     private static String cut(String s, int max) {

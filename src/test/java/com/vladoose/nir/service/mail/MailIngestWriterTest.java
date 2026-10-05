@@ -191,6 +191,22 @@ class MailIngestWriterTest {
         assertThat(cursorRepo.findById(box).orElseThrow().getLastUid()).isEqualTo(2);
     }
 
+    /**
+     * Пустой заголовок Message-ID (или {@code <>}) — как отсутствующий: иначе все такие письма после первого ушли бы
+     * в «дубль» без строки и уведомления.
+     */
+    @Test
+    void blankMessageId_notADuplicate() {
+        writer().write(mail().uid(1).messageId("").build(), 5);
+        MailIngestWriter.WriteResult r = writer().write(mail().uid(2).messageId("").build(), 5);
+        MailIngestWriter.WriteResult r2 = writer().write(mail().uid(3).messageId("<>").build(), 5);
+        MailIngestWriter.WriteResult r3 = writer().write(mail().uid(4).messageId("<>").build(), 5);
+        assertThat(r.duplicate()).isFalse();
+        assertThat(r2.duplicate()).isFalse();
+        assertThat(r3.duplicate()).isFalse();
+        assertThat(rows()).hasSize(4).allSatisfy(e -> assertThat(e.getMessageId()).isNull());
+    }
+
     @Test
     void siteNotification_noRow_cursorMoves() {
         MailIngestWriter.WriteResult r = writer().write(mail().uid(3).from("WestMed.kz <info@westmed.kz>")
@@ -254,7 +270,7 @@ class MailIngestWriterTest {
 
     /**
      * Ответ поставщика только в HTML: цену и отказ ищут в сыром HTML, как прежде, — у разбора своё снятие тегов.
-     * В готовом тексте «<30 дней … Анна <anna@zzw.kz>» — обычные символы, но разбор принял бы их за один тег и
+     * В готовом тексте {@code <30 дней … Анна <anna@zzw.kz>} — обычные символы, но разбор принял бы их за один тег и
      * выбросил вместе с ценой. Заметка запроса — текст для людей, без тегов.
      */
     @Test
@@ -270,7 +286,7 @@ class MailIngestWriterTest {
         assertThat(back.getNote()).isEqualTo("Срок поставки <30 дней\nЦена 1 500 000 тг\nМенеджер: Анна <anna@zzw.kz>");
     }
 
-    /** То же для отказа: формула отказа между «<» и «>» готового текста пропала бы вместе с ними. */
+    /** То же для отказа: формула отказа между {@code <} и {@code >} готового текста пропала бы вместе с ними. */
     @Test
     void htmlOnlySupplierRefusal_declineFromRawHtml() {
         PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
