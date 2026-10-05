@@ -4,8 +4,8 @@ import { ApiService } from './api.service';
 
 export interface VatHints { registered: string; standard: string; }
 
-/** Пока профиль не пришёл — без чисел: устаревшая ставка хуже, чем никакой (были «НДС 12%» при 16%). */
-export const DEFAULT_VAT_HINTS: VatHints = { registered: 'льготная ставка НДС', standard: 'облагается НДС' };
+/** Пока профиль не пришёл — без чисел: устаревшая ставка хуже, чем никакой (зашитое число уже расходилось со ставкой рынка). */
+export const DEFAULT_VAT_HINTS: VatHints = { registered: 'льготная\u00A0ставка\u00A0НДС', standard: 'облагается\u00A0НДС' };
 
 /**
  * Реквизиты рынка: ставки НДС и умолчания КП (спека §7). Кешируется до сохранения на «Реквизитах и печати»;
@@ -30,15 +30,18 @@ export class CompanyProfileService {
     this.cache$ = null;
   }
 
-  /** «льготная ставка НДС 5%» / «НДС 16%» — из настроек рынка, а не зашитым числом. */
+  /**
+   * «льготная ставка НДС 5%» / «НДС 16%» — из настроек рынка, а не зашитым числом. Пробелы внутри — неразрывные: фраза
+   * не рвётся посередине (было «Зарегистрировано без» / «НДС», одинокое «5%» на телефоне).
+   */
   vatHints$(): Observable<VatHints> {
     return this.profile$().pipe(map(p => ({
-      registered: hint(p.vatRegistered, 'льготная ставка НДС '),
-      standard: hint(p.vatNotRegistrable, 'НДС '),
+      registered: hint(p.vatRegistered, 'льготная\u00A0ставка\u00A0НДС\u00A0'),
+      standard: hint(p.vatNotRegistrable, 'НДС\u00A0'),
     })));
   }
 }
 
 function hint(rate: number | null | undefined, prefix: string): string {
-  return rate == null ? 'без НДС' : prefix + String(rate).replace('.', ',') + '%';
+  return rate == null ? 'без\u00A0НДС' : prefix + String(rate).replace('.', ',') + '%';
 }

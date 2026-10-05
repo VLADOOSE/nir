@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, DestroyRef, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -16,6 +16,11 @@ type ImageKind = 'logo' | 'stamp' | 'signature';
 
 /** Предел сервера (ImageProcessor.MAX_BYTES). Проверяем до запроса: сервер ответил бы 400, а выше ~10 МБ — 500 multipart. */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * До какой длинной стороны страница сама уменьшает картинку перед загрузкой, px: фото печати с телефона (24 Мп — 5712 px)
+ * больше предела сервера 5000 px (ImageProcessor.MAX_SIDE_IN) и часто больше 5 МБ. Сервер всё равно ужимает до 1200 px.
+ */
+const CLIENT_MAX_SIDE = 2400;
 /** Ставка НДС: 0 ≤ ставка < 100, не больше двух знаков после запятой (подсказки ставок на сервере — NUMERIC(5,2)). */
 const RATE_TEXT = /^\d{1,2}([.,]\d{1,2})?$/;
 
@@ -66,7 +71,8 @@ const RATE_TEXT = /^\d{1,2}([.,]\d{1,2})?$/;
 
           <section class="card">
             <h3>Логотип, печать, подпись</h3>
-            <p class="hint">Скан на белом листе: белый фон уберётся сам. Готовый PNG с прозрачностью не меняется. PNG или JPEG до 5 МБ.</p>
+            <p class="hint">Скан на белом листе: белый фон уберётся сам. Готовый PNG с прозрачностью не меняется. PNG или JPEG до 5 МБ;
+              большое фото с телефона страница уменьшит сама.</p>
             <div class="images">
               <div class="img-card" *ngFor="let k of kinds">
                 <div class="img-title">{{ k.label }}</div>
@@ -74,13 +80,15 @@ const RATE_TEXT = /^\d{1,2}([.,]\d{1,2})?$/;
                   <img *ngIf="images[k.kind]" [src]="images[k.kind]" [alt]="k.label" />
                   <span class="img-empty" *ngIf="!images[k.kind]">{{ !hasImage(k.kind) ? 'не загружено' : imageFailed[k.kind] ? 'не удалось показать' : 'загружаю…' }}</span>
                 </div>
-                <label class="check"><input type="checkbox" [(ngModel)]="removeBg[k.kind]" /> убрать белый фон</label>
+                <!-- три одинаковых набора: имя у каждого — с названием картинки («Загрузить: Печать»), иначе диктор их не различит -->
+                <label class="check"><input type="checkbox" [(ngModel)]="removeBg[k.kind]" [attr.aria-label]="'Убрать белый фон: ' + k.label" />
+                  убрать белый фон</label>
                 <div class="img-actions">
                   <input #file type="file" accept="image/png,image/jpeg" (change)="upload(k.kind, $event)" hidden />
-                  <button type="button" class="btn btn-line" [disabled]="uploading !== null" (click)="file.click()">
-                    {{ uploading === k.kind ? 'Загружаю…' : hasImage(k.kind) ? 'Заменить' : 'Загрузить' }}</button>
+                  <button type="button" class="btn btn-line" [disabled]="uploading !== null" (click)="file.click()"
+                          [attr.aria-label]="uploadLabel(k.kind) + ': ' + k.label">{{ uploadLabel(k.kind) }}</button>
                   <button type="button" class="btn btn-line" *ngIf="hasImage(k.kind)" [disabled]="uploading !== null"
-                          (click)="removeImage(k.kind, k.label)">Удалить</button>
+                          (click)="removeImage(k.kind, k.label)" [attr.aria-label]="'Удалить: ' + k.label">Удалить</button>
                 </div>
               </div>
             </div>
@@ -169,13 +177,14 @@ const RATE_TEXT = /^\d{1,2}([.,]\d{1,2})?$/;
     .img-title { font-weight: 600; font-size: 13px; color: var(--text); }
     /* Подложка «лист»: печать и подпись ложатся на белую бумагу, поэтому она светлая в ЛЮБОЙ теме — на тёмной
        подложке чёрная подпись с убранным фоном пропала бы. Клетка показывает, что белый фон действительно убран.
-       Не хекс и не токен темы, а системные цвета светлой схемы: Canvas — лист, CanvasText — чернила. */
+       Токены --paper (лист) и --paper-ink (чернила) объявлены в styles.scss только на :root и тёмной темой не
+       переопределяются — поэтому «лист» светлый и в тёмной теме. */
     .img-box { height: 110px; display: flex; align-items: center; justify-content: center; border-radius: 6px;
-      border: 1px solid var(--border); color-scheme: light; background-color: Canvas; background-size: 16px 16px;
-      background-image: conic-gradient(color-mix(in srgb, CanvasText 7%, Canvas) 25%, transparent 0 50%,
-                                       color-mix(in srgb, CanvasText 7%, Canvas) 0 75%, transparent 0); }
+      border: 1px solid var(--border); background-color: var(--paper); background-size: 16px 16px;
+      background-image: conic-gradient(color-mix(in srgb, var(--paper-ink) 7%, var(--paper)) 25%, transparent 0 50%,
+                                       color-mix(in srgb, var(--paper-ink) 7%, var(--paper)) 0 75%, transparent 0); }
     .img-box img { max-width: 100%; max-height: 100px; }
-    .img-empty { font-size: 12px; color: color-mix(in srgb, CanvasText 62%, Canvas); }
+    .img-empty { font-size: 12px; color: color-mix(in srgb, var(--paper-ink) 62%, var(--paper)); }
     .img-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .rates { display: flex; flex-wrap: wrap; gap: 6px; }
     .rate { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;
@@ -195,6 +204,9 @@ const RATE_TEXT = /^\d{1,2}([.,]\d{1,2})?$/;
       /* 16px — iOS не зумит поле при фокусе; локальные 14px сильнее глобального правила, поэтому повтор здесь */
       input:not([type="checkbox"]), textarea, select { font-size: 16px; }
       .rate-add input { flex: 1 1 120px; }
+      /* тач-цели 40 px: галочка «убрать белый фон» — вся подпись, «×» ставки — во всю ширину цели */
+      label.check { min-height: 40px; }
+      .rate button { min-width: 40px; }
     }
   `],
 })
@@ -226,7 +238,7 @@ export class CompanyProfileComponent implements OnInit, OnDestroy {
 
   constructor(private api: ApiService, private notify: NotificationService, private confirm: ConfirmService,
               private market: MarketService, private profiles: CompanyProfileService, private cdr: ChangeDetectorRef,
-              private destroyRef: DestroyRef) {}
+              private destroyRef: DestroyRef, private zone: NgZone) {}
 
   get marketLabel() { return this.market.companyLabel(); }
 
@@ -240,6 +252,10 @@ export class CompanyProfileComponent implements OnInit, OnDestroy {
   /** Незавершённые запросы снимает takeUntilDestroyed; адреса уже показанных картинок освобождаем здесь. */
   ngOnDestroy() {
     for (const k of this.kinds) this.revoke(k.kind);
+  }
+
+  uploadLabel(kind: ImageKind): string {
+    return this.uploading === kind ? 'Загружаю…' : this.hasImage(kind) ? 'Заменить' : 'Загрузить';
   }
 
   hasImage(kind: ImageKind): boolean {
@@ -275,25 +291,37 @@ export class CompanyProfileComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Большое фото сперва уменьшается здесь (shrinkImage), затем — предел 5 МБ и загрузка. Исход промиса — через .then, а
+   * запрос — в зоне Angular (CLAUDE.md §14: код после нативного промиса может идти мимо зоны — тосты бы не появились).
+   */
   upload(kind: ImageKind, ev: Event) {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) { this.notify.error('Файл больше 5 МБ — уменьшите скан'); return; }
     this.uploading = kind;
-    this.api.uploadCompanyImage(kind, file, this.removeBg[kind]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: p => {
+    this.cdr.detectChanges();
+    shrinkImage(file, CLIENT_MAX_SIDE).then(r => this.zone.run(() => {
+      if (r.file.size > MAX_IMAGE_BYTES) {
         this.uploading = null;
-        this.applyImageResponse(p);
-        this.loadImage(kind);
-        this.profiles.invalidate();
-        this.loadSample();
-        this.notify.success('Картинка загружена');
+        this.notify.error('Файл больше 5 МБ — уменьшите скан');
         this.cdr.detectChanges();
-      },
-      error: e => { this.uploading = null; this.notify.error('Не загружено: ' + errorText(e)); this.cdr.detectChanges(); },
-    });
+        return;
+      }
+      this.api.uploadCompanyImage(kind, r.file, this.removeBg[kind]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: p => {
+          this.uploading = null;
+          this.applyImageResponse(p);
+          this.loadImage(kind);
+          this.profiles.invalidate();
+          this.loadSample();
+          this.notify.success(r.resized ? 'Картинка загружена — фото уменьшено до ' + CLIENT_MAX_SIDE + ' px' : 'Картинка загружена');
+          this.cdr.detectChanges();
+        },
+        error: e => { this.uploading = null; this.notify.error('Не загружено: ' + errorText(e)); this.cdr.detectChanges(); },
+      });
+    }));
   }
 
   removeImage(kind: ImageKind, label: string) {
@@ -317,7 +345,7 @@ export class CompanyProfileComponent implements OnInit, OnDestroy {
   }
 
   addRate() {
-    const text = (this.newRate || '').replace(/[\s %]/g, '');
+    const text = (this.newRate || '').replace(/[\s%]/g, '');   // \s — и неразрывные пробелы
     const v = RATE_TEXT.test(text) ? parseNum(text) : null;
     if (v == null) { this.notify.error('Ставка НДС — от 0 до 99,99%: меньше 100, не больше двух знаков после запятой'); return; }
     if (this.p.vatRates.some((r: number | null) => r === v)) { this.notify.error('Такая ставка уже есть'); return; }
@@ -408,6 +436,34 @@ export class CompanyProfileComponent implements OnInit, OnDestroy {
     if (url) URL.revokeObjectURL(url);
     this.images[kind] = null;
   }
+}
+
+/**
+ * Картинка длиннее maxSide по большей стороне → уменьшенная копия, повёрнутая по EXIF (createImageBitmap
+ * с imageOrientation 'from-image': фото с телефона иначе легло бы на бок — сервер EXIF выбрасывает). PNG остаётся PNG
+ * (прозрачность), остальное — JPEG 0,92. Не длиннее предела, браузер не умеет или файл не картинка — как есть: решит сервер.
+ */
+function shrinkImage(file: File, maxSide: number): Promise<{ file: File; resized: boolean }> {
+  const asIs = { file, resized: false };
+  if (typeof createImageBitmap !== 'function') return Promise.resolve(asIs);
+  return createImageBitmap(file, { imageOrientation: 'from-image' }).then(bitmap => {
+    const longSide = Math.max(bitmap.width, bitmap.height);
+    const canvas = longSide > maxSide ? document.createElement('canvas') : null;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) { bitmap.close(); return asIs; }
+    const k = maxSide / longSide;
+    canvas.width = Math.max(1, Math.round(bitmap.width * k));
+    canvas.height = Math.max(1, Math.round(bitmap.height * k));
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const png = file.type === 'image/png';
+    return new Promise<{ file: File; resized: boolean }>(resolve => canvas.toBlob(blob => {
+      if (!blob) { resolve(asIs); return; }
+      const name = file.name.replace(/\.[^.]*$/, '') + (png ? '.png' : '.jpg');
+      resolve({ file: new File([blob], name, { type: blob.type }), resized: true });
+    }, png ? 'image/png' : 'image/jpeg', 0.92));
+  }).catch(() => asIs);
 }
 
 function errorText(e: any): string {

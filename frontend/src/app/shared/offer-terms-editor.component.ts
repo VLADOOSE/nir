@@ -16,8 +16,11 @@ import { OfferTerm, TERM_SUGGESTIONS, longDateText } from './client-offer';
         <button type="button" class="grip" cdkDragHandle aria-label="Перетащить условие" title="Перетащить">
           <svg lucideIcon="grip-vertical" [size]="16"></svg>
         </button>
-        <input class="t-label" [(ngModel)]="t.label" (ngModelChange)="changed.emit()" placeholder="Название (можно пусто)" aria-label="Название условия" />
-        <textarea class="t-value" rows="1" [(ngModel)]="t.value" (ngModelChange)="changed.emit()" placeholder="Значение" aria-label="Значение условия"></textarea>
+        <!-- maxlength — пределы сервера (OfferSettingsValidator.terms): длиннее — каждое автосохранение получало бы 400 -->
+        <input class="t-label" [(ngModel)]="t.label" (ngModelChange)="changed.emit()" placeholder="Название (можно пусто)" maxlength="300"
+               aria-label="Название условия" />
+        <textarea class="t-value" rows="1" [(ngModel)]="t.value" (ngModelChange)="changed.emit()" placeholder="Значение" maxlength="2000"
+                  aria-label="Значение условия"></textarea>
         <button type="button" class="t-del" (click)="remove(i)" aria-label="Удалить условие" title="Удалить">×</button>
       </div>
     </div>

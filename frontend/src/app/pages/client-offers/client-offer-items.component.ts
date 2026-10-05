@@ -23,7 +23,8 @@ const MAX_MARKUP = 1000;
  *
  * Раскладка — по ширине самого блока (@container kp-items), а не окна: в редакторе рядом предпросмотр, и при окне 1280 px
  * строкам достаётся ~500 px. ≥ 960 px — одна линия под шапкой колонок; уже — наименование, под ним числа с подписями.
- * Телефон (≤ 900 px окна) — карточка «№ 1 · 3 шт × 105 600,00 = 316 800,00», тап — поля и «Подробнее».
+ * Телефон (≤ 900 px окна) — карточка: номер и «3 шт × 105 600,00 = 316 800,00», тап — поля и «Подробнее».
+ * Подсветка строки (спека §5.4): убыток (прибыль строки ≤ 0) и строка без цены закупки — и в свёрнутой строке, и в карточке.
  */
 @Component({
   selector: 'app-client-offer-items',
@@ -71,7 +72,8 @@ const MAX_MARKUP = 1000;
       <!-- превью перетаскивания — в этом же списке, а не в body: иначе до него не дошла бы раскладка по ширине блока -->
       <div class="row" *ngFor="let it of offer.items; let i = index; trackBy: trackKey"
            cdkDrag [cdkDragDisabled]="readonly" cdkDragLockAxis="y" cdkDragPreviewContainer="parent"
-           [attr.data-key]="it.key" [attr.data-kind]="it.kind" [class.sel]="it._sel" [class.open]="it._open" [class.warn]="noPrice(it)">
+           [attr.data-key]="it.key" [attr.data-kind]="it.kind" [class.sel]="it._sel" [class.open]="it._open"
+           [class.flag-loss]="flag(it) === 'loss'" [class.flag-nobuy]="flag(it) === 'nobuy'" [attr.title]="flagText(it)">
         <div class="line">
           <!-- с клавиатуры порядок меняют «⋯ → Выше / Ниже»: ручка без клавиатурного перетаскивания — лишняя остановка Tab -->
           <button type="button" class="c-grip grip" cdkDragHandle [disabled]="readonly" tabindex="-1"
@@ -86,6 +88,7 @@ const MAX_MARKUP = 1000;
               <textarea rows="1" class="name" [(ngModel)]="it.name" (ngModelChange)="emit()" [disabled]="readonly" maxlength="4000"
                         placeholder="Наименование" [attr.aria-label]="'Наименование, строка ' + (i + 1)"></textarea>
               <span class="chip-warn" *ngIf="needsReg(it)">РУ не указано</span>
+              <span class="sr" *ngIf="flag(it)">{{ flagText(it) }}</span>
             </div>
             <button type="button" class="c-summary" (click)="toggleOpen(it)" [attr.aria-expanded]="!!it._open">
               <span class="s-no">№ {{ number(i) }}</span>
@@ -213,8 +216,15 @@ const MAX_MARKUP = 1000;
     .rows { display: flex; flex-direction: column; gap: 6px; }
     .row { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid transparent; border-radius: 8px; padding: 6px 8px; }
     .row[data-kind="SECTION"] { background: var(--surface-2); }
+    /* подсветка ОБЛАСТИ (спека §5.4, правило kit): убыток и строка без закупки — 8% тинта поверх --surface и цветная
+       кромка; выбранная строка — своим тинтом, но кромка слева остаётся сигналом */
+    .row.flag-loss { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-color: var(--danger); }
+    .row.flag-nobuy { background: color-mix(in srgb, var(--warn) 8%, var(--surface)); border-color: var(--warn); }
     .row.sel { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: var(--accent); }
-    .row.warn { border-left-color: var(--warn); }
+    .row.sel.flag-loss { border-left-color: var(--danger); }
+    .row.sel.flag-nobuy { border-left-color: var(--warn); }
+    /* причина подсветки — экранному диктору (зрячим — title строки) */
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .c-grip { grid-area: grip; }
     .c-sel { grid-area: sel; display: flex; align-items: center; justify-content: center; cursor: pointer; }
     .c-sel:has(input:disabled) { cursor: default; }
@@ -282,7 +292,7 @@ const MAX_MARKUP = 1000;
       .details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
-    /* Телефон: строка — карточка. Свёрнута — «№ 1 · 3 шт × 105 600,00 = 316 800,00», тап — поля и «Подробнее» (спека §8.2).
+    /* Телефон: строка — карточка. Свёрнута — номер и «3 шт × 105 600,00 = 316 800,00», тап — поля и «Подробнее» (спека §8.2).
        Галочка — под ручкой, рядом со сводкой: наименованию достаются две колонки (~210 px вместо ~165 px на 390 px). */
     @media (max-width: 900px) {
       .head { display: none; }
@@ -625,8 +635,20 @@ export class ClientOfferItemsComponent {
     this.emit();
   }
 
-  noPrice(it: OfferItem): boolean {
-    return it.kind === 'ITEM' && it.priceOverride == null && it.purchasePrice == null;
+  /**
+   * Подсветка позиции (спека §5.4): «нет закупки» — цены закупки нет (и при ручной цене: прибыль не посчитать; как
+   * totals.noPurchaseCount сервера), «убыток» — прибыль строки ноль или меньше. Числа — сервера (calc), своих формул нет.
+   */
+  flag(it: OfferItem): 'loss' | 'nobuy' | null {
+    if (it.kind !== 'ITEM') return null;
+    if (it.purchasePrice == null) return 'nobuy';
+    const profit = it.calc?.profit;
+    return profit != null && profit <= 0 ? 'loss' : null;
+  }
+
+  flagText(it: OfferItem): string | null {
+    const f = this.flag(it);
+    return f === 'loss' ? 'Убыток: прибыль строки — ноль или меньше' : f === 'nobuy' ? 'Нет цены закупки — прибыль не посчитана' : null;
   }
 
   needsReg(it: OfferItem): boolean {

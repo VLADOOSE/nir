@@ -17,8 +17,9 @@ import { COLUMN_CATALOG, OfferColumn, columnInfo, defaultColumnLabel } from './c
           <svg lucideIcon="grip-vertical" [size]="16"></svg>
         </button>
         <span class="c-name">{{ defaultLabel(c.key) }}</span>
+        <!-- maxlength — предел сервера (OfferSettingsValidator.columns): длиннее — каждое автосохранение получало бы 400 -->
         <input class="c-label" [(ngModel)]="c.label" (ngModelChange)="changed.emit()" [placeholder]="'Подпись: ' + defaultLabel(c.key)"
-               [attr.aria-label]="'Своя подпись колонки ' + defaultLabel(c.key)" />
+               maxlength="120" [attr.aria-label]="'Своя подпись колонки ' + defaultLabel(c.key)" />
         <span class="c-note" *ngIf="!vatEnabled && vatOnly(c.key)">без НДС не печатается</span>
         <button type="button" class="c-del" *ngIf="c.key !== 'NAME'" (click)="remove(i)"
                 [attr.aria-label]="'Убрать колонку ' + defaultLabel(c.key)" title="Убрать">×</button>

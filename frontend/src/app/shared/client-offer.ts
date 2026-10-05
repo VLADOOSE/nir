@@ -144,12 +144,12 @@ export function numText(v: number | null | undefined): string {
 }
 
 /**
- * Число из поля: пробелы между разрядами (в т.ч. неразрывный U+00A0 и узкий U+202F — их ставит Intl ru-RU),
+ * Число из поля: пробелы между разрядами (\s ловит и неразрывный U+00A0, и узкий U+202F — их ставит Intl ru-RU),
  * запятая или точка. Пусто или мусор — null.
  */
 export function parseNum(text: string | null | undefined): number | null {
   if (text == null) return null;
-  const t = String(text).replace(/[\s  ]/g, '').replace(',', '.');
+  const t = String(text).replace(/\s/g, '').replace(',', '.');
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;

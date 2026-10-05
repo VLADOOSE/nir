@@ -29,7 +29,8 @@ const MAX_MARKUP = 1000;
  *
  * Автосохранение (§8.3): правка → через 600 мс PUT; одновременно идёт один запрос, меняющий версию (PUT или статус);
  * из ответа берётся только вычисляемое (merge) — набираемое не затирается; правки за время запроса уходят следующим PUT.
- * 409 — плашка и блокировка вкладки. Выгрузка, статус и копия сперва дожидаются сохранения (flushThen).
+ * 409 — плашка и блокировка вкладки (меню «⋯» закрывается). Выгрузка, статус и копия сперва дожидаются сохранения
+ * (flushThen): пока выгрузка ждёт, её кнопки недоступны; смена статуса в очереди одна — с последним выбранным статусом.
  * Маршрут на другое КП (копия, «назад») переиспользует компонент — прежнее КП дописывается без экрана (leave).
  */
 @Component({
@@ -140,7 +141,8 @@ const MAX_MARKUP = 1000;
                   </select></label>
                 <label class="check"><input type="checkbox" [(ngModel)]="o.signoffContacts" (ngModelChange)="changed()" /> Контакты под подписью</label>
                 <label class="check stamp">
-                  <input type="checkbox" [(ngModel)]="o.withStamp" (ngModelChange)="changed()" [disabled]="!profile?.hasStamp" />
+                  <!-- без печати галочку не поставить, но уже стоящую можно снять (печать удалили после того, как её отметили) -->
+                  <input type="checkbox" [(ngModel)]="o.withStamp" (ngModelChange)="changed()" [disabled]="!profile?.hasStamp && !o.withStamp" />
                   <span><b>Подпись и печать</b><span class="hint" *ngIf="profile && !profile.hasStamp"> — загрузите печать в «Реквизитах и печати»</span></span>
                 </label>
               </div>
@@ -173,9 +175,9 @@ const MAX_MARKUP = 1000;
           <span *ngIf="o.totals.noPurchaseCount">без закупки: {{ o.totals.noPurchaseCount }}</span>
           <span *ngIf="regWarnings()">без регистрации: {{ regWarnings() }}</span>
         </span>
-        <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
-        <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict">Word</button>
-        <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShare()" [disabled]="busy || conflict">
+        <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict || exportQueued"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
+        <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict || exportQueued">Word</button>
+        <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShare()" [disabled]="busy || conflict || exportQueued">
           <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю PDF…' : 'Поделиться' }}</button>
         <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить PDF</button>
         <select *ngIf="auth.isAdmin()" class="status" [ngModel]="statusSel" (ngModelChange)="setStatus($event)"
@@ -263,10 +265,11 @@ const MAX_MARKUP = 1000;
     @media (max-width: 900px) {
       .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); }
       .ed-title h2 { font-size: 17px; }
-      /* одна строка: «Сохранено · 12:04», «Изменено в другой вкладке» длиннее «Сохранено» и уходили на новую строку — шапка
-         росла на 25 px и форма съезжала под пальцем. База 7em, не 0: с нулевой индикатор сжимался в полоску в 1–3 px;
-         текст ошибки сохранения — целиком и своей строкой */
-      .save-state { flex: 1 1 7em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* высота шапки не зависит от состояния: «Сохранено · 12:04», «Изменено в другой вкладке» длиннее «Сохранено», и без
+         общей базы шапка росла на 25 px — форма съезжала под пальцем. База 9,5em: «Сохранено · 12:04» и «Только просмотр»
+         целиком (при 7em — «Сохранено · …» на 375–392 px), при 0 индикатор сжимался в полоску в 1–3 px; текст ошибки
+         сохранения — целиком и своей строкой */
+      .save-state { flex: 1 1 9.5em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .save-state.wrap { white-space: normal; flex-basis: 100%; }
       .card { padding: 12px; }
       /* панель в две строки, а не в три: кнопки — первой, предупреждения — рядом со статусом (липкая панель на телефоне
@@ -282,6 +285,11 @@ const MAX_MARKUP = 1000;
       .btn-more { min-width: 40px; }
       /* 16px — iOS не зумит поле при фокусе; локальные 13–14px сильнее глобального правила, поэтому повтор здесь */
       .card input:not([type="checkbox"]), .card select, .card textarea, .status { font-size: 16px; }
+    }
+    /* iPad вертикально (688–900 px): места хватает — ошибка остаётся на строке чипа, а не своей строкой (шапка 40 → 95 px,
+       и форма прыгала на каждом «Повторить») */
+    @media (min-width: 688px) and (max-width: 900px) {
+      .save-state.wrap { flex-basis: 12em; }
     }
   `],
 })
@@ -303,6 +311,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   busy = false;
   sharePreparing = false;
   statusBusy = false;
+  /** Выгрузка (PDF, Word, «Поделиться») ждёт сохранения: кнопки недоступны — второе нажатие скачало бы файл дважды. */
+  exportQueued = false;
   /** Значение списка статусов: при отказе возвращается к статусу КП (o.status меняет только ответ сервера). */
   statusSel: OfferStatus = 'DRAFT';
   menuOpen = false;
@@ -325,6 +335,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   private gen = 0;
   private changeSeq = 0;
   private sentSeq = 0;
+  /**
+   * Смена статуса, ждущая сохранения: в очереди не больше одной — с последним выбранным статусом (две ушли бы разом,
+   * и вторая получила бы 409). null — не ждёт.
+   */
+  private pendingStatus: OfferStatus | null = null;
   private timer: any = null;
   private afterSave: (() => void)[] = [];
   /** КП, с которого ушли, пока шёл его запрос с версией: правки после него дописываются из ответа (нужна версия). */
@@ -391,6 +406,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.dirty = false;
     this.busy = false;
     this.sharePreparing = false;
+    this.exportQueued = false;
+    this.pendingStatus = null;
     this.savedAt = null;
     this.shareFile = null;
     this.menuOpen = false;
@@ -432,6 +449,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     clearTimeout(this.timer);
     this.gen++;
     this.afterSave = [];
+    this.exportQueued = false;
+    this.pendingStatus = null;
     const o = this.offer;
     if (!o || !this.dirty || this.conflict || !this.auth.isAdmin()) return;
     if (this.saving || this.statusBusy) {
@@ -491,9 +510,12 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         this.saving = false;
         const waiting = this.afterSave.length > 0;
         this.afterSave = [];
+        this.exportQueued = false;
+        this.pendingStatus = null;
         this.statusSel = o.status;   // смена статуса ждала этого сохранения — список обратно к настоящему
         if (e.status === 409) {
           this.conflict = true;
+          this.menuOpen = false;     // иначе «Удалить черновик» в открытом меню удалил бы КП, изменённое другой вкладкой
         } else {
           this.saveError = errorText(e);
           if (waiting) this.notify.error('Правки не сохранены: ' + this.saveError);
@@ -582,7 +604,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   }
 
   download(kind: 'pdf' | 'docx') {
+    if (this.busy || this.exportQueued) return;
+    this.exportQueued = true;
+    this.render();
     this.flushThen(() => {
+      this.exportQueued = false;
       const o = this.offer!;
       const gen = this.gen;
       this.busy = true;
@@ -605,7 +631,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
 
   /** «Поделиться» в два нажатия: браузер требует, чтобы share шёл прямо из нажатия, а скачивание PDF его «съедает». */
   prepareShare() {
+    if (this.busy || this.exportQueued) return;
+    this.exportQueued = true;
+    this.render();
     this.flushThen(() => {
+      this.exportQueued = false;
       const o = this.offer!;
       const gen = this.gen;
       const seq = this.changeSeq;   // поля во время сборки остаются живыми
@@ -636,21 +666,31 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Отмена в окне «Поделиться» — AbortError, это не ошибка; любая другая — тост с причиной (.then, не await). */
   sendShare() {
     const file = this.shareFile;
     if (!file) return;
-    (navigator as any).share({ files: [file], title: file.name }).then(() => {}, () => {});
+    (navigator as any).share({ files: [file], title: file.name }).then(() => {}, (e: any) => {
+      if (e?.name === 'AbortError') return;
+      this.notify.error('Не удалось поделиться: ' + (e?.message || 'браузер отказал') + ' — скачайте PDF');
+      this.render();
+    });
   }
 
   setStatus(status: OfferStatus) {
     const o = this.offer!;
     this.statusSel = status;
+    if (this.pendingStatus !== null) { this.pendingStatus = status; return; }   // уже ждёт сохранения — берём последний выбор
     if (status === o.status) return;
+    this.pendingStatus = status;
     this.flushThen(() => {
+      const target = this.pendingStatus;
+      this.pendingStatus = null;
+      if (target === null || target === o.status) { this.statusSel = o.status; this.render(); return; }   // вернули прежний
       const gen = this.gen;
       this.statusBusy = true;
       this.render();
-      this.api.setClientOfferStatus(o.id, status).subscribe({
+      this.api.setClientOfferStatus(o.id, target).subscribe({
         next: r => {
           if (gen !== this.gen) { this.finishAway(o, r.version); return; }
           this.statusBusy = false;
@@ -711,7 +751,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.confirm.ask(`Удалить черновик КП № ${o.number}?`, 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(ok => {
-        if (!ok || o !== this.offer) return;
+        if (!ok || o !== this.offer || this.conflict) return;
         clearTimeout(this.timer);
         this.api.deleteClientOffer(o.id).subscribe({
           next: () => {
