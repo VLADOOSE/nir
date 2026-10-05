@@ -161,7 +161,7 @@ const MAX_MARKUP = 1000;
           <label>Страна <input [(ngModel)]="it.country" (ngModelChange)="emit()" [disabled]="readonly" maxlength="200" /></label>
           <label>Ед. изм. <input [(ngModel)]="it.unit" (ngModelChange)="emit()" [disabled]="readonly" maxlength="30" [attr.list]="'units-' + it.key" /></label>
           <datalist [id]="'units-' + it.key"><option *ngFor="let u of units" [value]="u"></option></datalist>
-          <label>Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
+          <label class="wide">Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
           <label class="wide">Регистрация
             <span class="reg">
               <select [ngModel]="it.registrationStatus" (ngModelChange)="setRegStatus(it, $event)" [disabled]="readonly">
