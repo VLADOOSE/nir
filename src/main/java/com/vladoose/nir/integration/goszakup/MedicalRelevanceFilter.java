@@ -1,54 +1,50 @@
 package com.vladoose.nir.integration.goszakup;
 
+import com.vladoose.nir.integration.LotText;
+import com.vladoose.nir.integration.MedicalGoodsVocabulary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Релевантность тендера goszakup: оставляем медицинские ТОВАРЫ (аппараты + расходка),
  * отсеиваем услуги (медотходы, медосмотр, обучение, ремонт) и не-медицину (дроны, «аппарат акима»).
- * Ступень 2 импорта — судим по названиям ЛОТОВ, а не по имени объявления.
- * Правило: лот — медтовар, если POSITIVE ∧ ¬NEGATIVE; тендер релевантен при ≥1 медтоварном лоте.
+ * Судим по ЛОТАМ, а не по имени объявления; тендер релевантен при ≥1 медтоварном лоте.
+ * Термины — общий словарь {@link MedicalGoodsVocabulary} (только {@code DEVICE_STRONG}; общие слова
+ * «аппарат»/«система» goszakup не использует, лекарственного вето нет).
  */
 public final class MedicalRelevanceFilter {
 
-    /** Медицинский товар: виды МИ + расходка/изделия. Термины — стемами, чтобы падежи/мн.ч. матчились. */
-    private static final List<String> POSITIVE = List.of(
-            "узи", "ультразвук", "эхокардиограф", "рентген", "флюорограф", "маммограф", "ангиограф",
-            "томограф", "мрт", "ивл", "вентиляц", "наркоз", "анестезиолог",
-            "анализатор", "гематологич", "биохимич", "коагулометр", "центрифуг", "микроскоп",
-            "стерилизатор", "автоклав", "эндоскоп", "гастроскоп", "колоноскоп", "бронхоскоп", "лапароскоп",
-            "дефибрил", "монитор пациента", "прикроватн монитор", "кардиограф", "электрокардиограф", "экг",
-            "спирометр", "инкубатор", "облучател", "рециркулятор", "бактерицидн", "физиотерап",
-            "электрофорез", "магнитотерап", "отсасыватель", "аспиратор", "оксиметр", "пульсоксиметр",
-            "тонометр", "глюкометр", "коагулятор", "ингалятор", "небулайзер", "негатоскоп", "дозатор",
-            "концентратор кислород", "кислородн концентратор", "весы медицин", "холодильник медицин",
-            "кровать функционал", "кушетк медицин",
-            "стоматологическ", "дентальн", "хирургическ", "операционн стол", "операционн светильник",
-            "перчат", "шприц", "катетер", "зонд медицин", "бинт", "пластыр", "электрод", "реагент",
-            "тест-систем", "изделие медицинск", "изделия медицинск", "медицинского назначения",
-            "расходн материал", "имплант", "протез", "шовн материал", "игл", "скальпел", "пробирк");
-
-    /** Услуга/работы/не-медицина — лот НЕ товар. */
-    private static final List<String> NEGATIVE = List.of(
-            "услуг", "работы по", "обучен", "осмотр", "утилизац", "удаление", "отход", "ремонт",
-            "монтаж", "обслуживан", "замер", "аренд", "страхован", "пошив", "стирк", "поверк", "метролог",
-            "летательн", "беспилотн", "дрон", "потолок");
+    private static final Logger log = LoggerFactory.getLogger(MedicalRelevanceFilter.class);
 
     private MedicalRelevanceFilter() {}
 
     /** Тендер релевантен, если ≥1 лот — медтовар. Пустые лоты (сеть/404) → судим по имени объявления. */
-    public static boolean isRelevant(String announcementName, List<String> lotTexts) {
-        if (lotTexts != null && !lotTexts.isEmpty()) {
-            return lotTexts.stream().anyMatch(MedicalRelevanceFilter::isMedicalGoods);
-        }
-        return isMedicalGoods(announcementName);
+    public static boolean isRelevant(String announcementName, List<LotText> lots) {
+        if (lots != null && !lots.isEmpty()) return lots.stream().anyMatch(MedicalRelevanceFilter::isMedicalLot);
+        return isMedicalLot(new LotText(announcementName, null));
     }
 
-    /** Текст — медицинский товар: содержит POSITIVE и НЕ содержит NEGATIVE. */
-    static boolean isMedicalGoods(String text) {
-        if (text == null || text.isBlank()) return false;
-        String t = text.toLowerCase(Locale.ROOT);
-        if (NEGATIVE.stream().anyMatch(t::contains)) return false;
-        return POSITIVE.stream().anyMatch(t::contains);
+    /**
+     * Маркеры услуг — только в НАЗВАНИИ лота: описание поставки изделия обычно перечисляет «монтаж, обучение
+     * персонала» и раньше убивало лот. Термины изделий — в названии и описании вместе (стемы многословного
+     * терма могут стоять в разных полях: «Тележка» / «медицинская»). Сильный маркер услуги отсекает всегда,
+     * слабый — только без термина изделия в названии.
+     */
+    public static boolean isMedicalLot(LotText lot) {
+        if (lot == null) return false;
+        String name = lot.name() == null ? "" : lot.name();
+        String descr = lot.description() == null ? "" : lot.description();
+        boolean deviceInName = MedicalGoodsVocabulary.hasDeviceStrong(name);
+        if (MedicalGoodsVocabulary.hasServiceStrong(name)) {
+            if (deviceInName) log.info("goszakup: лот «{}» — изделие и услуга, считаем услугой", name);
+            return false;
+        }
+        if (MedicalGoodsVocabulary.hasServiceWeak(name)) {
+            if (!deviceInName) return false;
+            log.info("goszakup: лот «{}» — изделие и слабый маркер услуги, считаем изделием", name);
+        }
+        return deviceInName || MedicalGoodsVocabulary.hasDeviceStrong((name + " " + descr).trim());
     }
 }

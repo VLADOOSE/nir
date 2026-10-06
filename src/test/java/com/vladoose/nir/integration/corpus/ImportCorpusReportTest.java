@@ -1,5 +1,6 @@
 package com.vladoose.nir.integration.corpus;
 
+import com.vladoose.nir.integration.LotText;
 import com.vladoose.nir.integration.corpus.ImportCorpus.CorpusLot;
 import com.vladoose.nir.integration.corpus.ImportCorpus.CorpusTender;
 import com.vladoose.nir.integration.goszakup.MedicalRelevanceFilter;
@@ -28,18 +29,15 @@ class ImportCorpusReportTest {
     static final String SK = "/import-corpus/sk-first5.jsonl.gz";
     static final String GOLDEN = "/import-corpus/golden-lots.tsv";
 
-    // ---- новые предикаты (пока те же, что старые) ----
+    // ---- новые предикаты (goszakup — новый фильтр с Task 2, СК — пока старый) ----
 
     static boolean newGoszakup(CorpusTender t) {
         return MedicalRelevanceFilter.isRelevant(t.name(),
-                t.lots().stream().map(LegacyRelevanceFilters::lotText).toList());
+                t.lots().stream().map(l -> new LotText(l.name(), l.description())).toList());
     }
 
     static boolean newGoszakupLot(String name, String description) {
-        // Task 2 заменит: MedicalRelevanceFilter.isMedicalLot(new LotText(name, description)).
-        // Пока — текущий isMedicalGoods(name + " " + description) через публичный isRelevant с одним лотом.
-        String text = ((name == null ? "" : name) + " " + (description == null ? "" : description)).trim();
-        return MedicalRelevanceFilter.isRelevant("", List.of(text));
+        return MedicalRelevanceFilter.isMedicalLot(new LotText(name, description));
     }
 
     static boolean newSk(CorpusTender t) {

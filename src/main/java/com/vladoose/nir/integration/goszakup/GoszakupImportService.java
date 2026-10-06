@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.entity.Facility;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.integration.LotText;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
@@ -138,9 +139,8 @@ public class GoszakupImportService {
         try {
             SubjectDto subj = client.fetchSubject(d.effectiveBin());
             List<LotDto> lots = client.fetchLots(d.getNumberAnno());
-            List<String> lotTexts = lots.stream()
-                    .map(l -> ((l.getNameRu() == null ? "" : l.getNameRu()) + " "
-                             + (l.getDescriptionRu() == null ? "" : l.getDescriptionRu())).trim())
+            List<LotText> lotTexts = lots.stream()
+                    .map(l -> new LotText(l.getNameRu(), l.getDescriptionRu()))
                     .toList();
             if (!MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts)) {
                 sum.setSkipped(sum.getSkipped() + 1); // лоты — не медтовар (лекарства/еда/хозтовары/услуги)
