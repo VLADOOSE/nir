@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,7 +55,7 @@ class ImportPreservesLotWorkTest {
         l.setLotNumber(number);
         l.setNameRu(name);
         l.setDescriptionRu(descr);
-        l.setCount(1);
+        l.setCount(BigDecimal.ONE);
         return l;
     }
 
@@ -135,7 +136,7 @@ class ImportPreservesLotWorkTest {
         writer.upsertOne(trdBuy(anno), null, List.of(lot("87197521-ОИ2", "Центрифуга", "лабораторная")));
 
         LotDto updated = lot("87197521-ОИ2", "Центрифуга лабораторная", "лабораторная охлаждаемая");
-        updated.setCount(7);
+        updated.setCount(new BigDecimal("7"));
         writer.upsertOne(trdBuy(anno), null, List.of(updated));
 
         TenderLot kept = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);

@@ -62,7 +62,7 @@ class GoszakupImportServiceTest {
     private static LotDto lot(String name, String descr) {
         LotDto l = new LotDto();
         l.setLotNumber("1"); l.setNameRu(name); l.setDescriptionRu(descr);
-        l.setAmount(new BigDecimal("6000000")); l.setCount(1);
+        l.setAmount(new BigDecimal("6000000")); l.setCount(BigDecimal.ONE);
         return l;
     }
 
@@ -86,6 +86,31 @@ class GoszakupImportServiceTest {
         assertThat(t.getSource()).isEqualTo(Source.PUBLIC_TENDER);
         assertThat(t.getRegion()).isEqualTo(REGION);            // регион из реестра, не от заказчика
         assertThat(t.getFacility()).isNull();
+    }
+
+    /**
+     * B3: дробное количество и нулевая сумма лота — тендер всё равно записывается (раньше 0 ушёл бы
+     * в CHECK max_cost &gt; 0 / количество обрезалось бы), количество и цена пусты, сырое — в пометке.
+     */
+    @Test
+    void fractionalCountAndZeroAmount_writtenEmptyWithNote() {
+        hospital("Больница Д", "BIN9");
+        fake.orgPage("BIN9", FakeGoszakupClient.buy("B3-1", "Приобретение изделий", 230, "BIN9",
+                "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        LotDto l = lot("Аппарат УЗИ портативный", "Портативный, с конвексным датчиком");
+        l.setCount(new BigDecimal("0.5"));
+        l.setAmount(BigDecimal.ZERO);
+        fake.lotsByAnno.put("B3-1", List.of(l));
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isZero();
+        assertThat(s.getCreated()).isEqualTo(1);
+        var lot = tenderRepository.findBySourceExtId("B3-1").orElseThrow().getLots().get(0);
+        assertThat(lot.getQuantity()).isNull();
+        assertThat(lot.getMaxCost()).isNull();
+        assertThat(lot.getRequiredSpec()).startsWith("Количество на площадке: 0.5")
+                .endsWith("Портативный, с конвексным датчиком");
     }
 
     @Test

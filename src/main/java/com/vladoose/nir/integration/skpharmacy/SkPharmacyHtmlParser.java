@@ -1,5 +1,6 @@
 package com.vladoose.nir.integration.skpharmacy;
 
+import com.vladoose.nir.integration.ImportQuantity;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -85,7 +86,11 @@ public final class SkPharmacyHtmlParser {
                 String code = txt(tds, cols.code());
                 String name = txt(tds, cols.name());
                 if (code.isBlank() || name.isBlank()) continue;
-                out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), intOrNull(tds, cols.qty()), txt(tds, cols.desc())));
+                // B3: «1.00» → 1; «2.5», «0» → пусто, сырое значение — в пометку (отрезать дробь нельзя: занижает заказ)
+                String rawQty = txt(tds, cols.qty());
+                Integer qty = ImportQuantity.wholePositiveOrNull(ImportQuantity.parse(rawQty));
+                out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), qty, txt(tds, cols.desc()),
+                        !rawQty.isBlank() && qty == null ? rawQty : null));
             }
             if (!out.isEmpty()) return out;                      // первая таблица с лотами — она и есть
         }
@@ -228,10 +233,10 @@ public final class SkPharmacyHtmlParser {
     private static String txt(Elements tds, int i) { return i >= 0 && i < tds.size() ? tds.get(i).text().trim() : ""; }
 
     /**
-     * Количество: площадка печатает его и целым («487»), и с дробной частью («1.00»).
+     * Целое из ячейки (число лотов в ленте). Количество ЛОТА сюда больше не ходит — его разбирает
+     * {@link ImportQuantity} (дробное не отрезается, а уходит в пометку).
      * ⚠️ Дробную часть надо ОТРЕЗАТЬ, а не вычищать вместе с точкой: выбрасывание всех нецифр склеивало
-     * «1.00» в «100» — стократное завышение, которое уезжает в письмо КП и в расчёт победителя.
-     * Разделитель тысяч (пробел/неразрывный пробел) при этом убирается, как и раньше.
+     * «1.00» в «100» — стократное завышение.
      */
     private static Integer intOrNull(Elements tds, int i) {
         String raw = txt(tds, i);

@@ -9,5 +9,9 @@ import java.math.BigDecimal;
  * у объявлений новых вёрсток PDF техспеки нет вообще, и это ЕДИНСТВЕННЫЙ источник характеристик изделия
  * (состав набора, размеры, принцип анализа — медиана 354–631 символ). Может быть пустой: у лекарств там
  * лежит просто форма выпуска («Таблетки 8 мг»), а в вёрстке медтехники колонки нет вовсе.
+ *
+ * <p>{@code rawQuantity} — сырое количество площадки; непусто ТОЛЬКО когда оно было, но не стало целым &gt; 0
+ * («2.5», «0»): тогда {@code quantity} пусто, а райтер кладёт пометку «Количество на площадке: …» в описание.
  */
-public record SkLot(String code, String name, BigDecimal unitPrice, Integer quantity, String description) {}
+public record SkLot(String code, String name, BigDecimal unitPrice, Integer quantity, String description,
+                    String rawQuantity) {}

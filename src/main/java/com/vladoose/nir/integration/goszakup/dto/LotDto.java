@@ -13,6 +13,7 @@ public class LotDto {
     /** Техспека лота (полное описание ТЗ). */
     @JsonProperty("description_ru") private String descriptionRu;
     private BigDecimal amount;
-    private Integer count;
+    /** Количество лота: площадка присылает и дробное («0.5») — в {@code Integer} Jackson молча делал 0. */
+    private BigDecimal count;
     @JsonProperty("trd_buy_number_anno") private String trdBuyNumberAnno;
 }

@@ -13,6 +13,7 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.vladoose.nir.integration.ImportQuantity;
 import com.vladoose.nir.integration.LotMergeIndex;
 
 import java.util.ArrayList;
@@ -135,11 +136,16 @@ public class GoszakupTenderWriter {
             lot.setSourceLotCode(code);                          // «87197521-ОИ2» — ключ слияния
             lot.setLotNumber(GoszakupParse.intOrNull(d.getLotNumber()));
             lot.setEquipName(trunc(d.getNameRu(), 255));         // колонка VARCHAR(255): живое имя уже упирается в предел
-            lot.setQuantity(d.getCount());
-            lot.setMaxCost(d.getAmount());
+            // B3: дробное/нулевое количество — пусто + пометка с сырым значением; сумма ≤ 0 — пусто
+            // (CHECK max_cost > 0 ронял запись всего тендера)
+            Integer qty = ImportQuantity.wholePositiveOrNull(d.getCount());
+            lot.setQuantity(qty);
+            lot.setMaxCost(ImportQuantity.positiveMoneyOrNull(d.getAmount()));
+            String note = d.getCount() != null && qty == null
+                    ? ImportQuantity.note(d.getCount().stripTrailingZeros().toPlainString()) : null;
             // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru
             if (lot.getTechSpecStatus() != TechSpecStatus.OK) {
-                lot.setRequiredSpec(d.getDescriptionRu());
+                lot.setRequiredSpec(ImportQuantity.withNote(note, d.getDescriptionRu()));
             }
             result.add(lot);
         }

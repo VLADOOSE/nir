@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.ImportQuantity;
 import com.vladoose.nir.integration.LotMergeIndex;
 import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.repository.TenderRepository;
@@ -107,9 +108,9 @@ public class SkPharmacyTenderWriter {
             lot.setLotNumber(n++);
             lot.setSourceLotCode(code);                   // «1040409-Т1» — ключ связи с ТЗ-файлами
             lot.setEquipName(trunc(l.name(), 255));
-            applyPortalDescription(lot, l.description());
-            lot.setQuantity(l.quantity());
-            lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
+            applyPortalDescription(lot, l.description(), l.rawQuantity());
+            lot.setQuantity(l.quantity());                // дробное/нулевое уже пусто — сырое ушло в пометку
+            lot.setMaxCost(ImportQuantity.positiveMoneyOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
             result.add(lot);
         }
         if (!complete) {
@@ -137,11 +138,14 @@ public class SkPharmacyTenderWriter {
      * поэтому иначе лот остаётся с одним названием и подбору нечем различать записи реестра.
      * ⚠️ Пишем ТОЛЬКО в пустое поле: переимпорт идёт регулярно, а очередь разбора ТЗ отрабатывает по лоту
      * один раз — затирать разобранный PDF (десятки тысяч символов) описанием с площадки нельзя.
+     * Дробное/нулевое количество площадки (B3) идёт первой строкой-пометкой «Количество на площадке: …».
      */
-    private static void applyPortalDescription(TenderLot lot, String description) {
-        if (description == null || description.isBlank()) return;
+    private static void applyPortalDescription(TenderLot lot, String description, String rawQuantity) {
+        String text = ImportQuantity.withNote(
+                rawQuantity == null || rawQuantity.isBlank() ? null : ImportQuantity.note(rawQuantity), description);
+        if (text == null || text.isBlank()) return;
         if (lot.getRequiredSpec() != null && !lot.getRequiredSpec().isBlank()) return;
-        lot.setRequiredSpec(description);
+        lot.setRequiredSpec(text);
     }
 
     /** «2026-07-27 10:00:00» → LocalDate; пусто/битое → null. */
@@ -162,12 +166,5 @@ public class SkPharmacyTenderWriter {
     private static String trunc(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
-    }
-
-    /** Цена лота: null/≤0/переполнение NUMERIC(15,2) целой части >13 → null (колонка nullable, CHECK max_cost>0). */
-    private static java.math.BigDecimal priceOrNull(java.math.BigDecimal p) {
-        if (p == null || p.signum() <= 0) return null;
-        if (p.precision() - p.scale() > 13) return null;
-        return p;
     }
 }

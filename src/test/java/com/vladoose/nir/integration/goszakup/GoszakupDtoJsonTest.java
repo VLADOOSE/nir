@@ -77,7 +77,14 @@ class GoszakupDtoJsonTest {
         LotDto lot = om.readValue(json, LotDto.class);
         assertThat(lot.getLotNumber()).isEqualTo("1");
         assertThat(lot.getNameRu()).isEqualTo("Аппарат УЗИ портативный");
-        assertThat(lot.getCount()).isEqualTo(2);
+        assertThat(lot.getCount()).isEqualByComparingTo("2");
+    }
+
+    /** B3: дробное количество — BigDecimal, а не Integer, в который Jackson молча делал 0. */
+    @Test
+    void parsesLot_fractionalCount() throws Exception {
+        LotDto lot = om.readValue("{\"lot_number\":\"1\",\"count\":0.5,\"amount\":0}", LotDto.class);
+        assertThat(lot.getCount()).isEqualByComparingTo("0.5");
     }
 
     @Test

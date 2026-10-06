@@ -74,7 +74,7 @@ class ImportLotMergeFlushTest {
         l.setLotNumber(number);
         l.setNameRu(name);
         l.setDescriptionRu(descr);
-        l.setCount(1);
+        l.setCount(BigDecimal.ONE);
         return l;
     }
 
@@ -385,8 +385,8 @@ class ImportLotMergeFlushTest {
     void skReimport_mergesBySourceLotCode_andEnqueuesNewLot() {
         String anno = "MERGE-SK-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot("A-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "")), null, true);
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot("A-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "", null)), null, true);
         Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
         TenderLot keeper = t.getLots().stream()
                 .filter(x -> "A-Т1".equals(x.getSourceLotCode())).findFirst().orElseThrow();
@@ -399,8 +399,8 @@ class ImportLotMergeFlushTest {
 
         // переимпорт: A-Т1 остался, A-Т2 исчез, A-Т3 добавился
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Томограф компьютерный 128", new BigDecimal("550000"), 2, ""),
-                new SkLot("A-Т3", "Аппарат рентгеновский", new BigDecimal("300000"), 1, "")), null, true);
+                new SkLot("A-Т1", "Томограф компьютерный 128", new BigDecimal("550000"), 2, "", null),
+                new SkLot("A-Т3", "Аппарат рентгеновский", new BigDecimal("300000"), 1, "", null)), null, true);
         em.flush();
         em.clear();
 
@@ -425,12 +425,12 @@ class ImportLotMergeFlushTest {
     void skDuplicateLotCodesDoNotCollapseIntoOneRow() {
         String anno = "MERGE-SKDUP-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "")), null, true);
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null)), null, true);
         em.flush();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot("A-Т1", "Аппарат МРТ", new BigDecimal("700000"), 1, "")), null, true);
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot("A-Т1", "Аппарат МРТ", new BigDecimal("700000"), 1, "", null)), null, true);
         em.flush();
         em.clear();
 
@@ -445,7 +445,7 @@ class ImportLotMergeFlushTest {
     void skEmptyLotListDoesNotWipeExistingLots() {
         String anno = "MERGE-SKEMPTY-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "")), null, true);
+                new SkLot("A-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null)), null, true);
         em.flush();
 
         assertThatThrownBy(() -> skWriter.upsert(announce(anno), List.of(), null, true))
@@ -464,11 +464,35 @@ class ImportLotMergeFlushTest {
         String anno = "MERGE-SKDESC-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
                 new SkLot("A-Т1", "Набор процедурный", new BigDecimal("22568"), 1,
-                        "1. Простыня операционная 150х160 см - 1 шт. 2. Катетер Фолея - 1 шт.")), null, true);
+                        "1. Простыня операционная 150х160 см - 1 шт. 2. Катетер Фолея - 1 шт.", null)), null, true);
         em.flush();
 
         TenderLot lot = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0);
         assertThat(lot.getRequiredSpec()).contains("Катетер Фолея");
+    }
+
+    /** B3: дробное количество СК-Фармации — количество пусто, сырое значение площадки — в requiredSpec. */
+    @Test
+    void skFractionalQuantity_noteInRequiredSpec() {
+        String anno = "MERGE-SKQTY-" + System.nanoTime();
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot("A-Т1", "Набор процедурный", BigDecimal.ZERO, null, "", "2.5"),
+                new SkLot("A-Т2", "Набор перевязочный", new BigDecimal("100"), null, "Бинт 7х14", "2,5")), null, true);
+        em.flush();
+
+        List<TenderLot> lots = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots();
+        assertThat(lots.get(0).getQuantity()).isNull();
+        assertThat(lots.get(0).getMaxCost()).isNull();
+        assertThat(lots.get(0).getRequiredSpec()).isEqualTo("Количество на площадке: 2.5");
+        assertThat(lots.get(1).getRequiredSpec()).isEqualTo("Количество на площадке: 2,5\nБинт 7х14");
+
+        // переимпорт: пометка не двоится (поле уже непустое — не перезаписывается)
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot("A-Т1", "Набор процедурный", BigDecimal.ZERO, null, "", "2.5"),
+                new SkLot("A-Т2", "Набор перевязочный", new BigDecimal("100"), null, "Бинт 7х14", "2,5")), null, true);
+        em.flush();
+        assertThat(tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0).getRequiredSpec())
+                .isEqualTo("Количество на площадке: 2.5");
     }
 
     /**
@@ -479,7 +503,7 @@ class ImportLotMergeFlushTest {
     void skLotDescriptionDoesNotOverwriteParsedTechSpec() {
         String anno = "MERGE-SKDESC2-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Набор процедурный", new BigDecimal("22568"), 1, "краткое описание с площадки")), null, true);
+                new SkLot("A-Т1", "Набор процедурный", new BigDecimal("22568"), 1, "краткое описание с площадки", null)), null, true);
         Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
         TenderLot lot = t.getLots().get(0);
         lot.setRequiredSpec("разобранное ТЗ: подробные технические характеристики на много страниц");
@@ -487,7 +511,7 @@ class ImportLotMergeFlushTest {
         em.flush();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot("A-Т1", "Набор процедурный", new BigDecimal("22568"), 1, "краткое описание с площадки")), null, true);
+                new SkLot("A-Т1", "Набор процедурный", new BigDecimal("22568"), 1, "краткое описание с площадки", null)), null, true);
         em.flush();
 
         assertThat(tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().get(0).getRequiredSpec())
@@ -503,9 +527,9 @@ class ImportLotMergeFlushTest {
     void skIncompleteList_keepsUnmatchedExistingLots() {
         String anno = "MERGE-SKPART-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, ""),
-                new SkLot(anno + "-Т3", "Аппарат рентгеновский", new BigDecimal("300000"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "", null),
+                new SkLot(anno + "-Т3", "Аппарат рентгеновский", new BigDecimal("300000"), 1, "", null)), null, true);
         TenderLot third = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
                 .filter(x -> (anno + "-Т3").equals(x.getSourceLotCode())).findFirst().orElseThrow();
         third.setRequiredSpec("разобранное ТЗ: напряжение 150 кВ");
@@ -513,8 +537,8 @@ class ImportLotMergeFlushTest {
         em.clear();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "")), null, false);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "", null)), null, false);
         em.flush();
         em.clear();
 
@@ -532,13 +556,13 @@ class ImportLotMergeFlushTest {
     void skCompleteList_stillRemovesVanishedLots() {
         String anno = "MERGE-SKFULL-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т2", "Аппарат МРТ", new BigDecimal("700000"), 1, "", null)), null, true);
         em.flush();
         em.clear();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null)), null, true);
         em.flush();
         em.clear();
 
@@ -553,8 +577,8 @@ class ImportLotMergeFlushTest {
     void skIncompleteList_nameFallbackDoesNotRelabelCodedLot() {
         String anno = "MERGE-SKNAME-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "", null)), null, true);
         TenderLot second = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
                 .filter(x -> (anno + "-Т2").equals(x.getSourceLotCode())).findFirst().orElseThrow();
         second.setRequiredSpec("разобранное ТЗ лота Т2");
@@ -563,8 +587,8 @@ class ImportLotMergeFlushTest {
         em.clear();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, false);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "", null)), null, false);
         em.flush();
         em.clear();
 
@@ -585,16 +609,16 @@ class ImportLotMergeFlushTest {
     void skCompleteList_nameFallbackUnchanged() {
         String anno = "MERGE-SKNAME2-" + System.nanoTime();
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "", null)), null, true);
         Long secondId = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
                 .filter(x -> (anno + "-Т2").equals(x.getSourceLotCode())).findFirst().orElseThrow().getId();
         em.flush();
         em.clear();
 
         skWriter.upsert(announce(anno), List.of(
-                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
-                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, "", null),
+                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "", null)), null, true);
         em.flush();
         em.clear();
 

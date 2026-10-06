@@ -144,6 +144,25 @@ class SkPharmacyHtmlParserTest {
         assertThat(lot.name()).startsWith("Аппарат для неинвазивного определения");
         assertThat(lot.quantity()).isEqualTo(1);                        // «1.00», а не 100
         assertThat(lot.unitPrice()).isEqualByComparingTo("75147276.75");
+        assertThat(lot.rawQuantity()).isNull();                         // целое — пометка не нужна
+    }
+
+    /**
+     * B3: дробное и нулевое количество — не целое > 0. Отрезать дробную часть нельзя («2.5» → 2 занижает
+     * заказ), нулю в колонке не место — количество пусто, а сырое значение площадки уходит в пометку.
+     */
+    @Test
+    void parseLots_fractionalOrZeroQuantity_emptyWithRawValue() throws IOException {
+        String html = fixture("lots-equipment-decimal-qty.html");
+        for (String raw : List.of("2.5", "0", "2,5")) {
+            SkLot lot = SkPharmacyHtmlParser.parseLots(html.replace("nowrap>1.00</td>", "nowrap>" + raw + "</td>")).get(0);
+            assertThat(lot.quantity()).as("количество «%s»", raw).isNull();
+            assertThat(lot.rawQuantity()).isEqualTo(raw);
+            assertThat(lot.unitPrice()).isEqualByComparingTo("75147276.75");
+        }
+        SkLot thousand = SkPharmacyHtmlParser.parseLots(html.replace("nowrap>1.00</td>", "nowrap>1 000</td>")).get(0);
+        assertThat(thousand.quantity()).isEqualTo(1000);
+        assertThat(thousand.rawQuantity()).isNull();
     }
 
     /** Пагинация lots-вкладки: идём дальше, только пока в пейджере есть ссылка на СЛЕДУЮЩУЮ страницу. */
