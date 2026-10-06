@@ -62,8 +62,14 @@ public final class MailClassifier {
         return t.isPresent() ? t.get() : KpToken.parse(m.body()).orElse(null);
     }
 
-    /** Автоответ: RFC 3834 Auto-Submitted (кроме «no»), X-Autoreply / X-Autorespond, Precedence auto_reply, тема. */
+    /**
+     * Автоответ: RFC 3834 Auto-Submitted (кроме «no»), X-Autoreply / X-Autorespond, Precedence auto_reply, тема — и
+     * отчёт multipart/report НЕ о доставке: квитанция о прочтении (report-type=disposition-notification, RFC 8098) и
+     * прочие отчёты роботов. Иначе квитанция с меткой [КП-id] в теме («Прочитано: [КП-…] …») ставила бы запрос в
+     * «Ответ получен» с громким уведомлением. Отчёт о доставке (delivery-status) сюда не доходит — это возврат.
+     */
     static boolean isAutoReply(ParsedMail m) {
+        if (m.contentType().startsWith("multipart/report") && !m.contentType().contains("delivery-status")) return true;
         String as = m.autoHeaders().get("auto-submitted");
         if (as != null && !as.isBlank() && !as.startsWith("no")) return true;
         if (m.autoHeaders().containsKey("x-autoreply") || m.autoHeaders().containsKey("x-autorespond")) return true;

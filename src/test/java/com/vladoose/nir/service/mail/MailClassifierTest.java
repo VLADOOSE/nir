@@ -105,6 +105,32 @@ class MailClassifierTest {
         assertThat(c.kpId()).isEqualTo(9L);
     }
 
+    /**
+     * Квитанция о прочтении (multipart/report; report-type=disposition-notification, RFC 8098) — письмо робота, а не
+     * ответ поставщика: иначе квитанция с меткой ставила бы запрос в «Ответ получен» с громким 📩.
+     */
+    @Test
+    void readReceipt_withToken_isAutoReply() {
+        Classification c = MailClassifier.classify(mail().from("Отдел продаж <sales@x.kz>")
+                .subject("Прочитано: [КП-9] Запрос коммерческого предложения")
+                .contentType("multipart/report; report-type=disposition-notification; boundary=\"x\"")
+                .text("Ваше сообщение было прочитано 06.10.2026 в 10:00").build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.AUTO_REPLY);
+        assertThat(c.kpId()).isEqualTo(9L);
+    }
+
+    /** Отчёт о доставке остаётся возвратом / задержкой: правило квитанций его не трогает. */
+    @Test
+    void deliveryStatusReport_stillBounceOrDelayed() {
+        String ct = "multipart/report; report-type=delivery-status; boundary=\"x\"";
+        assertThat(MailClassifier.classify(mail().from("Mail Delivery <postmaster@x.kz>").contentType(ct)
+                .bounce("a@b.kz", "5.1.1", "550 User unknown", "[КП-9] Запрос КП", "failed").build(), ZAKUP).mailClass())
+                .isEqualTo(MailClass.BOUNCE);
+        assertThat(MailClassifier.classify(mail().from("sales@x.kz").contentType(ct)
+                .bounce("a@b.kz", "4.4.1", "451 4.4.1 try again later", "[КП-9] Запрос КП", "delayed").build(), ZAKUP).mailClass())
+                .isEqualTo(MailClass.DELAYED);
+    }
+
     @Test
     void autoSubmitted_withToken_isAutoReply() {
         Classification c = MailClassifier.classify(mail().subject("Re: [КП-9] Запрос")

@@ -196,6 +196,26 @@ class MailIngestWriterTest {
         assertThat(e.isNotifySilent()).isTrue();
     }
 
+    /** Квитанция о прочтении с меткой — автоответ: запрос КП не трогается, уведомление «🤖» без звука. */
+    @Test
+    void readReceipt_keepsRequestSent_silentAutoReply() {
+        PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
+        MailIngestWriter.WriteResult r = writer().write(mail()
+                .subject("Прочитано: " + KpToken.subjectToken(p.getId()) + " Запрос КП")
+                .contentType("multipart/report; report-type=disposition-notification; boundary=x")
+                .text("Ваше сообщение было прочитано 06.10.2026 в 10:00").build(), 5);
+
+        assertThat(r.mailClass()).isEqualTo(MailClass.AUTO_REPLY);
+        PriceRequest back = prRepo.findById(p.getId()).orElseThrow();
+        assertThat(back.getStatus()).isEqualTo("SENT");
+        assertThat(back.getResponseDate()).isNull();
+        InboundEmail e = rows().get(0);
+        assertThat(e.getType()).isEqualTo(InboundType.AUTO_REPLY);
+        assertThat(e.getMatchedPriceRequestId()).isEqualTo(p.getId());
+        assertThat(e.isNotifySilent()).isTrue();
+        assertThat(e.getNotifyText()).startsWith("🤖 Автоответ");
+    }
+
     @Test
     void excelWithoutToken_dependsOnClientRequests() {
         writer(TG_ON, false).write(mail().uid(1).excel("прайс.xlsx").build(), 5);
