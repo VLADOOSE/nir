@@ -17,6 +17,17 @@ class MailClassifierTest {
         assertThat(c.mailClass()).isEqualTo(MailClass.SITE_NOTIFICATION);
     }
 
+    /**
+     * Уведомление сайта узнаётся по адресу И по суффиксу темы «— westmed.kz»: письмо с того же адреса без суффикса
+     * (пересланная заявка клиники, ответ человека) — обычное письмо, его не выбрасываем.
+     */
+    @Test
+    void siteAddressWithoutSuffix_notSiteNotification() {
+        Classification c = MailClassifier.classify(mail().from("WestMed.kz <info@westmed.kz>")
+                .subject("Fwd: заявка клиники").text("Пересылаю заявку").build(), ZAKUP);
+        assertThat(c.mailClass()).isEqualTo(MailClass.UNMATCHED);
+    }
+
     @Test
     void ownEcho_withToken_isOwn() {
         Classification c = MailClassifier.classify(mail().from("zakup@westmed.kz").subject("[КП-5] Запрос").build(), ZAKUP);
