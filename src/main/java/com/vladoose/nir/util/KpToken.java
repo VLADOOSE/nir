@@ -7,7 +7,11 @@ import java.util.regex.Pattern;
 /** Токен сопоставления КП в теме письма: [КП-<id>]. Единый формат для отправки и приёма. */
 public final class KpToken {
 
-    private static final Pattern PATTERN = Pattern.compile("\\[КП-(\\d+)\\]");
+    /**
+     * Не длиннее 18 цифр — всегда помещается в long: «метка» с числом длиннее (чужая тема, текст возврата) меткой не
+     * считается, а не роняет разбор письма NumberFormatException.
+     */
+    private static final Pattern PATTERN = Pattern.compile("\\[КП-(\\d{1,18})\\]");
 
     private KpToken() {}
 
