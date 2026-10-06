@@ -58,6 +58,15 @@ class IncompleteCertificateChainTest {
     static void loadApplicationClass() throws ClassNotFoundException {
         // Ровно то, что происходит при старте приложения: JVM инициализирует класс приложения до main().
         Class.forName("com.vladoose.nir.Nir2Application", true, IncompleteCertificateChainTest.class.getClassLoader());
+        // Белый список докачки (JDK 17.0.20+, см. TlsDefaults): приложение пускает Sectigo, тест — ещё и свой «AIA-сервер».
+        System.setProperty(TlsDefaults.ALLOWED_PROPERTY,
+                System.getProperty(TlsDefaults.ALLOWED_PROPERTY) + " http://127.0.0.1:" + AIA_PORT + "/");
+    }
+
+    @Test
+    void applicationAllowsFetchingFromTheSkPharmacyCertificateAuthority() {
+        // fms.ecc.kz: CA Issuers = http://crt.sectigo.com/GoGetSSLRSADVSSLCA2.crt — без этого на JDK 17.0.20 PKIX
+        assertThat(System.getProperty(TlsDefaults.ALLOWED_PROPERTY)).startsWith("http://crt.sectigo.com/");
     }
 
     @AfterEach
