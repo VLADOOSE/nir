@@ -6,10 +6,15 @@ import com.icegreen.greenmail.util.ServerSetupTest;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.telegram.TelegramClient;
+import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.integration.telegram.TelegramStubServer;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.MailReceiveService;
 import com.vladoose.nir.service.mail.ImapTestSupport;
+import com.vladoose.nir.service.mail.MailIngestWriter;
+import com.vladoose.nir.service.mail.MailNotifyStore;
+import com.vladoose.nir.service.mail.MailTelegramNotifier;
 import com.vladoose.nir.service.mail.MailboxConnector;
 import com.vladoose.nir.service.mail.MailboxSession;
 import com.vladoose.nir.service.mail.TestMimes;
@@ -47,6 +52,10 @@ class MailReceiveServiceIntegrationTest {
     @Autowired DistributorRepository distributorRepository;
     @Autowired MailCursorRepository cursorRepository;
     @Autowired MailboxConnector mailboxConnector;
+    @Autowired MailIngestWriter mailIngestWriter;
+    @Autowired MailNotifyStore mailNotifyStore;
+    @Autowired TelegramClient telegramClient;
+    @Autowired TelegramSettings telegramSettings;
     @Autowired EntityManager em;
 
     /**
@@ -465,15 +474,22 @@ class MailReceiveServiceIntegrationTest {
         assertThat(inboundEmailRepository.findAll()).anyMatch(e -> e.getType() == InboundType.AUTO_REPLY);
     }
 
+    /**
+     * Путь письма до Telegram на бинах контекста — ящик, запись, клиент Bot API и его настройки. Отправитель — свой
+     * экземпляр, а не бин: бин общего контекста помнит паузу после сбоев (в других тестах заглушки на 7798 нет,
+     * отправка падает, и пауза после сбоев подряд растёт до 30 мин) — с ним итог зависел бы от порядка тестов.
+     */
     @Test
     void telegramEndToEnd_sendsToThread_marksSent() throws Exception {
         em.createNativeQuery("update inbound_email set notify_status = 'SENT' where notify_status = 'PENDING'").executeUpdate();
         try (TelegramStubServer stub = TelegramStubServer.start(7798)) {
             GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
             user.deliver(TestMimes.plain("Иван <ivan@x.kz>", "ZZTG Прайс октябрь", "Высылаем прайс"));
+            MailReceiveService service = new MailReceiveService(mailboxConnector, mailIngestWriter, cursorRepository,
+                    new MailTelegramNotifier(mailNotifyStore, telegramClient, telegramSettings), true, "KZ", 60);
 
             MarketContext.set(Market.KZ);
-            PollResultResponse res = mailReceiveService.poll();
+            PollResultResponse res = service.poll();
 
             assertThat(res.getTelegramSent()).isEqualTo(1);
             assertThat(stub.requests()).hasSize(1);

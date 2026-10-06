@@ -11,6 +11,8 @@ import java.lang.annotation.*;
  * соединений к nirdb, CLAUDE.md §14). IMAP — GreenMail :3143; планировщик не тикает (начальная задержка — сутки),
  * иначе его проход коммитил бы письма GreenMail в nirdb мимо отката теста; Telegram — на заглушку 127.0.0.1:7798
  * (тест, которому она нужна, поднимает её сам; остальным отправка честно не удаётся — это пишется в их откатываемую строку).
+ * После такого сбоя бин MailTelegramNotifier держит паузу (нарастающую, до 30 мин) на весь контекст — тест, которому
+ * нужна настоящая отправка, берёт свой экземпляр отправителя (см. telegramEndToEnd_sendsToThread_marksSent).
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

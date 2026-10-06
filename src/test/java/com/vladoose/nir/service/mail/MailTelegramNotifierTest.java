@@ -20,6 +20,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +37,9 @@ class MailTelegramNotifierTest {
 
     TelegramStubServer stub;
     MutableClock clock;
+    /** Паузы между отправками, которые запросил отправитель; сам «сон» в тестах — ноль, часы не двигает. */
+    final List<Duration> sleeps = new ArrayList<>();
+    final MailTelegramNotifier.Sleeper sleeper = sleeps::add;
 
     static final class MutableClock extends Clock {
         Instant now = Instant.parse("2026-10-05T09:00:00Z");
@@ -60,7 +65,7 @@ class MailTelegramNotifierTest {
 
     MailTelegramNotifier notifier(boolean enabled) {
         TelegramSettings s = new TelegramSettings(enabled, stub.url(), TOKEN, "-1001", "77");
-        return new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, clock);
+        return new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, clock, sleeper);
     }
 
     InboundEmail pending(String text, boolean silent, Instant queuedAt) {
@@ -91,17 +96,128 @@ class MailTelegramNotifierTest {
         assertThat(reload(b).getNotifiedAt()).isNotNull();
     }
 
+    /**
+     * Бот и группа общие с сайтом: не больше 10 отправок за скользящие 60 с. Дошли до предела — пачка кончается,
+     * следующий проход в ту же минуту не шлёт ничего, остаток уходит, когда окно освободится. Предел живёт в бине —
+     * общий для всех проходов.
+     */
     @Test
-    void batchOf20_restGoesNextPass() {
-        for (int i = 1; i <= 21; i++) pending("уведомление " + i, true, clock.now);
+    void tenPerSlidingMinute_restGoesNextPasses() {
+        for (int i = 1; i <= 12; i++) pending("уведомление " + i, true, clock.now);
+        MailTelegramNotifier n = notifier(true);
+        Instant start = clock.now;
 
-        MailTelegramNotifier.FlushResult r = notifier(true).flush();
+        MailTelegramNotifier.FlushResult r = n.flush();
+        assertThat(r.sent()).isEqualTo(10);
+        assertThat(r.pending()).isEqualTo(2);
+        assertThat(r.lastError()).isNull();
+        assertThat(stub.requests()).hasSize(10);
 
-        assertThat(r.sent()).isEqualTo(20);
-        assertThat(r.pending()).isEqualTo(1);
-        assertThat(stub.requests()).hasSize(20);
-        assertThat(notifier(true).flush().sent()).isEqualTo(1);
-        assertThat(stub.requests().get(20).body()).contains("уведомление 21");
+        assertThat(n.flush().sent()).isZero();                 // следующий проход сразу — предел выбран
+        clock.now = start.plusSeconds(59);
+        assertThat(n.flush().sent()).isZero();                 // та же минута
+        assertThat(stub.requests()).hasSize(10);
+
+        clock.now = start.plusSeconds(60);                     // окно освободилось — остаток
+        MailTelegramNotifier.FlushResult rest = n.flush();
+        assertThat(rest.sent()).isEqualTo(2);
+        assertThat(rest.pending()).isZero();
+        assertThat(stub.requests()).hasSize(12);
+        assertThat(stub.requests().get(11).body()).contains("уведомление 12");
+    }
+
+    /**
+     * Между отправками — не меньше 1,1 с: перед каждой, кроме первой, запрошена пауза до 1,1 с от прошлой. После
+     * простоя — без паузы, через 0,5 с после прошлой — оставшиеся 0,6 с.
+     */
+    @Test
+    void gapOfAtLeast1_1sBetweenSends() {
+        for (int i = 1; i <= 3; i++) pending("уведомление " + i, true, clock.now);
+        MailTelegramNotifier n = notifier(true);
+
+        assertThat(n.flush().sent()).isEqualTo(3);
+        assertThat(sleeps).hasSize(2).allSatisfy(d -> assertThat(d).isGreaterThanOrEqualTo(Duration.ofMillis(1100)));
+
+        clock.now = clock.now.plusSeconds(10);
+        pending("после простоя", true, clock.now);
+        assertThat(n.flush().sent()).isEqualTo(1);
+        assertThat(sleeps).hasSize(2);
+
+        clock.now = clock.now.plusMillis(500);
+        pending("следом", true, clock.now);
+        assertThat(n.flush().sent()).isEqualTo(1);
+        assertThat(sleeps).hasSize(3);
+        assertThat(sleeps.get(2)).isEqualTo(Duration.ofMillis(600));
+    }
+
+    /**
+     * Сбои подряд (кроме 429) — нарастающая пауза: после 1-го следующий проход раньше чем через минуту ничего не шлёт,
+     * после 2-го — две минуты. Успех обнуляет счёт: следующий сбой — снова минута.
+     */
+    @Test
+    void failuresInRow_growingPause_successResets() {
+        pending("первое", false, clock.now);
+        stub.enqueue(TelegramStubServer.Reply.error(500, "boom"), TelegramStubServer.Reply.error(500, "boom"));
+        MailTelegramNotifier n = notifier(true);
+        Instant t0 = clock.now;
+
+        n.flush();                                             // 1-й сбой — пауза минута
+        assertThat(stub.requests()).hasSize(1);
+        clock.now = t0.plusSeconds(59);
+        MailTelegramNotifier.FlushResult paused = n.flush();
+        assertThat(stub.requests()).hasSize(1);
+        assertThat(paused.pending()).isEqualTo(1);
+        assertThat(paused.lastError()).contains("HTTP 500");   // в паузе сводка помнит причину
+
+        clock.now = t0.plusSeconds(60);
+        n.flush();                                             // 2-й подряд — две минуты
+        assertThat(stub.requests()).hasSize(2);
+        Instant t1 = clock.now;
+        clock.now = t1.plusSeconds(119);
+        n.flush();
+        assertThat(stub.requests()).hasSize(2);
+
+        clock.now = t1.plusSeconds(120);
+        assertThat(n.flush().sent()).isEqualTo(1);             // успех
+        assertThat(stub.requests()).hasSize(3);
+
+        pending("второе", false, clock.now);
+        stub.enqueue(TelegramStubServer.Reply.error(500, "boom"));
+        Instant t2 = clock.now;
+        n.flush();                                             // снова 1-й сбой: минута, а не четыре
+        assertThat(stub.requests()).hasSize(4);
+        clock.now = t2.plusSeconds(60);
+        assertThat(n.flush().sent()).isEqualTo(1);
+        assertThat(stub.requests()).hasSize(5);
+    }
+
+    /** 429 сбоем подряд не считается: пауза — по retry_after, следующий настоящий сбой — первый, на минуту. */
+    @Test
+    void rateLimit_notCountedAsFailureInRow() {
+        pending("первое", false, clock.now);
+        stub.enqueue(TelegramStubServer.Reply.tooMany(30), TelegramStubServer.Reply.error(500, "boom"));
+        MailTelegramNotifier n = notifier(true);
+
+        n.flush();                                             // 429 — пауза 30 с
+        clock.now = clock.now.plusSeconds(31);
+        n.flush();                                             // 500 — первый сбой подряд
+        assertThat(stub.requests()).hasSize(2);
+        Instant failedAt = clock.now;
+
+        clock.now = failedAt.plusSeconds(60);
+        assertThat(n.flush().sent()).isEqualTo(1);
+        assertThat(stub.requests()).hasSize(3);
+    }
+
+    @Test
+    void backoff_doublesFromOneMinute_cappedAt30() {
+        assertThat(MailTelegramNotifier.backoff(1)).isEqualTo(Duration.ofMinutes(1));
+        assertThat(MailTelegramNotifier.backoff(2)).isEqualTo(Duration.ofMinutes(2));
+        assertThat(MailTelegramNotifier.backoff(3)).isEqualTo(Duration.ofMinutes(4));
+        assertThat(MailTelegramNotifier.backoff(5)).isEqualTo(Duration.ofMinutes(16));
+        assertThat(MailTelegramNotifier.backoff(6)).isEqualTo(Duration.ofMinutes(30));
+        assertThat(MailTelegramNotifier.backoff(64)).isEqualTo(Duration.ofMinutes(30));
+        assertThat(MailTelegramNotifier.backoff(Integer.MAX_VALUE)).isEqualTo(Duration.ofMinutes(30));
     }
 
     @Test
@@ -151,7 +267,7 @@ class MailTelegramNotifierTest {
         pending("второе", false, start);
         stub.enqueue(TelegramStubServer.Reply.ok(1), TelegramStubServer.Reply.tooMany(30));
         TelegramSettings s = new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77");
-        MailTelegramNotifier n = new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, ticking);
+        MailTelegramNotifier n = new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, ticking, sleeper);
 
         assertThat(n.flush().sent()).isEqualTo(1);     // 429 пришёл на 20-й секунде — пауза до 50-й
         clock.now = start.plusSeconds(25);             // на часах 45-я: от начала пачки 30 с прошли, от ответа — нет
@@ -205,7 +321,7 @@ class MailTelegramNotifierTest {
                 }
             };
 
-            MailTelegramNotifier.FlushResult r = new MailTelegramNotifier(store, defective, s, clock).flush();
+            MailTelegramNotifier.FlushResult r = new MailTelegramNotifier(store, defective, s, clock, sleeper).flush();
 
             assertThat(r.sent()).isZero();
             assertThat(r.pending()).isEqualTo(2);
@@ -244,7 +360,7 @@ class MailTelegramNotifierTest {
             int port = stub.port();
             stub.close();                               // обрыв соединения — второй вид отказа
             TelegramSettings s = new TelegramSettings(true, "http://127.0.0.1:" + port, TOKEN, "-1001", "77");
-            new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, clock).flush();
+            new MailTelegramNotifier(store, new TelegramClient(s, new ObjectMapper()), s, clock, sleeper).flush();
 
             assertThat(logs.list).isNotEmpty();
             assertThat(logs.list).allSatisfy(ev -> assertThat(ev.getFormattedMessage()).doesNotContain("SECRET"));
