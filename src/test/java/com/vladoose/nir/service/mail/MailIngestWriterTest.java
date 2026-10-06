@@ -5,6 +5,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.util.KpToken;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ class MailIngestWriterTest {
     @Autowired MailCursorRepository cursorRepo;
     @Autowired TenderRepository tenderRepo;
     @Autowired DistributorRepository distributorRepo;
+    @Autowired EntityManager em;
 
     static final TelegramSettings TG_ON = new TelegramSettings(true, "http://127.0.0.1:1", "123:SECRET", "-1001", "77");
     static final TelegramSettings TG_OFF = new TelegramSettings(false, "", "", "", "");
@@ -341,11 +343,15 @@ class MailIngestWriterTest {
      * КП обоих рынков уходят с одного ящика: ответ поставщика Регион-Мед (РФ) приходит в ящик West-Med. Запрос КП
      * находится по id в любом рынке и правится, строка «Входящих» — рынка ящика, уведомление — по рынку запроса:
      * рубли, часовой пояс Самары в «Получено» и ссылка с market=RF, которая откроет тендер РФ.
+     * Запрос — из базы, а не из кеша сессии: созданный в этой же транзакции нашёлся бы в кеше при любом фильтре рынка
+     * (проверено мутацией {@code applyToLoadByKey = true} у фильтра — без flush/clear тест оставался зелёным).
      */
     @Test
     void otherMarketRequest_updated_notificationInRequestMarket() {
         MarketContext.set(Market.RF);
         PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
+        em.flush();
+        em.clear();
         MarketContext.set(Market.KZ);
 
         MailIngestWriter.WriteResult r = writer().write(mail().subject("Re: " + KpToken.subjectToken(p.getId()))
