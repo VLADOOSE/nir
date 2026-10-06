@@ -79,7 +79,7 @@ public class TechSpecBackfillScheduler {
      * Каждые 10 минут: небольшая пачка, чтобы не долбить площадку. Работа уходит на СВОЙ
      * однопоточный экзекьютор (как у {@code GoszakupImportScheduler}), а не на общий
      * {@code scheduling-1}: при DROP-блокировке пачка из 10 лотов — это 10 × (15 с connect ×
-     * 3 ретрая {@code GoszakupRetry}) ≈ 470 с при интервале 600 с, и приём почты (300 с)
+     * 3 попытки {@code UpstreamRetry}) ≈ 470 с при интервале 600 с, и приём почты (300 с)
      * простаивал бы половину времени.
      */
     @Scheduled(fixedDelayString = "${techspec.backfill.interval-ms:600000}")

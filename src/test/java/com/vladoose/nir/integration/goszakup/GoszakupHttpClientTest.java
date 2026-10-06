@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -10,16 +11,32 @@ import org.junit.jupiter.api.Test;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Живые формы ответов goszakup, снятые реальным токеном (стаб на JDK HttpServer, без сети). */
 class GoszakupHttpClientTest {
 
     static HttpServer server;
     static volatile String lastPath;
+    static final java.util.Set<String> requestedPaths = ConcurrentHashMap.newKeySet();
     static volatile String lastRequestBody;
     static volatile String nextBody = "{}";
+    /** Ответ по «путь?query» (query без «?», пустой — ""); нет в карте — 200 и {@link #nextBody}. */
+    static final Map<String, Reply> replies = new ConcurrentHashMap<>();
+
+    record Reply(int status, String body, String location) {}
+
+    static void respond(String path, String query, int status, String body) {
+        replies.put(path + "?" + query, new Reply(status, body, null));
+    }
+
+    static void respondRedirect(String path, String location) {
+        replies.put(path + "?", new Reply(302, "", location));
+    }
     static GoszakupHttpClient client;
 
     @BeforeAll
@@ -27,11 +44,15 @@ class GoszakupHttpClientTest {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/", ex -> {
             lastPath = ex.getRequestURI().getPath();
+            requestedPaths.add(lastPath);
             lastRequestBody = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            byte[] b = nextBody.getBytes(StandardCharsets.UTF_8);
+            String q = ex.getRequestURI().getRawQuery();
+            Reply r = replies.getOrDefault(lastPath + "?" + (q == null ? "" : q), new Reply(200, nextBody, null));
+            byte[] b = r.body().getBytes(StandardCharsets.UTF_8);
             ex.getResponseHeaders().add("Content-Type", "application/json");
-            ex.sendResponseHeaders(200, b.length);
-            try (OutputStream os = ex.getResponseBody()) { os.write(b); }
+            if (r.location() != null) ex.getResponseHeaders().add("Location", r.location());
+            ex.sendResponseHeaders(r.status(), b.length == 0 ? -1 : b.length);
+            try (OutputStream os = ex.getResponseBody()) { if (b.length > 0) os.write(b); }
         });
         server.start();
         client = new GoszakupHttpClient(new ObjectMapper(),
@@ -114,5 +135,50 @@ class GoszakupHttpClientTest {
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> unreachable.fetchSubject("123456789012"))
                 .hasMessage("goszakup API недоступно: ConnectException");
+    }
+
+    @Test
+    void fetchLots_followsNextPage_untilTotal() {
+        respond("/v2/lots/number-anno/17737448-1", "limit=500", 200, """
+            {"total":3,"limit":2,"next_page":"/v2/lots/number-anno/17737448-1?page=next&search_after=43500954",
+             "items":[{"lot_number":"1","name_ru":"A","count":1,"amount":10},{"lot_number":"2","name_ru":"B","count":1,"amount":10}]}""");
+        respond("/v2/lots/number-anno/17737448-1", "page=next&search_after=43500954", 200, """
+            {"total":3,"limit":2,"next_page":"","items":[{"lot_number":"3","name_ru":"C","count":1,"amount":10}]}""");
+        assertThat(client.fetchLots("17737448-1")).extracting(LotDto::getNameRu).containsExactly("A", "B", "C");
+    }
+
+    @Test
+    void fetchLots_lessThanTotal_failsNotRetryable() {
+        respond("/v2/lots/number-anno/1-1", "limit=500", 200, """
+            {"total":5,"limit":500,"next_page":"","items":[{"lot_number":"1","name_ru":"A","count":1,"amount":10}]}""");
+        assertThatThrownBy(() -> client.fetchLots("1-1"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> {
+                assertThat(e.retryable()).isFalse();
+                assertThat(e.getMessage()).isEqualTo("goszakup: лоты объявления 1-1 — получено 1 из 5");
+            });
+    }
+
+    @Test
+    void serverError_retryable_clientError_not() {
+        respond("/v2/subject/biin/111", "", 503, "{}");
+        assertThatThrownBy(() -> client.fetchSubject("111"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> assertThat(e.retryable()).isTrue());
+        respond("/v2/subject/biin/222", "", 403, "{}");
+        assertThatThrownBy(() -> client.fetchSubject("222"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> {
+                assertThat(e.retryable()).isFalse();
+                // путь без хоста: ни адреса площадки, ни query в тексте для оператора
+                assertThat(e.getMessage()).isEqualTo("goszakup API 403 на /v2/subject/biin/222");
+            });
+    }
+
+    @Test
+    void redirectNotFollowed_tokenStaysHome() {   // C5 не ухудшаем: 302 → ошибка, а не запрос на чужой хост
+        // цель редиректа живая и ответила бы валидным субъектом — значит, отказ только от того, что не пошли
+        respond("/steal", "", 200, "{\"bin\":\"333\",\"name_ru\":\"чужой\"}");
+        respondRedirect("/v2/subject/biin/333", "http://localhost:" + server.getAddress().getPort() + "/steal");
+        assertThatThrownBy(() -> client.fetchSubject("333"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> assertThat(e.retryable()).isFalse());
+        assertThat(requestedPaths).doesNotContain("/steal");
     }
 }

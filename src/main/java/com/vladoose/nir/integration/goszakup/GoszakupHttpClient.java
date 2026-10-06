@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.goszakup;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -11,7 +12,9 @@ import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyV3PageDto;
-import com.vladoose.nir.util.ErrorText;
+import com.vladoose.nir.integration.http.UpstreamHttp;
+import com.vladoose.nir.integration.http.UpstreamIoException;
+import com.vladoose.nir.integration.http.UpstreamRetry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,13 +23,23 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
 public class GoszakupHttpClient implements GoszakupClient {
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15)).build();
+    /** Предел JSON-ответа API (страница ленты/лотов — сотни КБ). */
+    static final long MAX_JSON_BYTES = 10L * 1024 * 1024;
+    /** Предел файла техспеки (PDF). */
+    static final long MAX_FILE_BYTES = 30L * 1024 * 1024;
+    /** Предохранитель обхода страниц лотов: 40 × 50 = 2000 лотов — с запасом над живыми объявлениями. */
+    static final int MAX_LOT_PAGES = 40;
+    private static final Duration API_DEADLINE = Duration.ofSeconds(60);
+    private static final Duration FILE_DEADLINE = Duration.ofSeconds(120);
+
+    /** Без редиректов: токен уходит в заголовке, и переход на чужой хост унёс бы его туда. */
+    private final HttpClient http = UpstreamHttp.newClient(HttpClient.Redirect.NEVER);
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final String token;
@@ -90,7 +103,7 @@ public class GoszakupHttpClient implements GoszakupClient {
             body.set("variables", vars);
             JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
             if (root.path("errors").size() > 0) {
-                throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+                throw new GoszakupCallException("goszakup v3 GraphQL: " + root.get("errors"), false, null);
             }
             List<TrdBuyDto> items = new java.util.ArrayList<>();
             for (JsonNode n : root.path("data").path("TrdBuy")) {
@@ -104,7 +117,7 @@ public class GoszakupHttpClient implements GoszakupClient {
             page.setNextAfter(nextAfter);
             return page;
         } catch (java.io.IOException e) {
-            throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
+            throw new GoszakupCallException("goszakup v3: разбор JSON: " + e.getMessage(), false, e);
         }
     }
 
@@ -118,10 +131,31 @@ public class GoszakupHttpClient implements GoszakupClient {
 
     @Override
     public List<LotDto> fetchLots(String numberAnno) {
-        // лоты приходят в обёртке-странице {items:[...]}
-        TypeRefPage<LotDto> page = get(baseUrl + "/lots/number-anno/" + enc(numberAnno),
-                new TypeReference<TypeRefPage<LotDto>>() {});
-        return page != null && page.items != null ? page.items : List.of();
+        // живой API (2026-10-07): страница {total, limit, next_page, items}; limit=500 принимается, next_page
+        // ведёт без limit (страницы по 50) — идём по нему до конца и сверяем с total: неполный ответ = сбой
+        List<LotDto> all = new ArrayList<>();
+        String url = baseUrl + "/lots/number-anno/" + enc(numberAnno) + "?limit=500";
+        Integer total = null;
+        for (int page = 0; page < MAX_LOT_PAGES && url != null; page++) {
+            LotsPage p = get(url, LotsPage.class);
+            if (p == null) break;
+            if (total == null) total = p.total;
+            if (p.items != null) all.addAll(p.items);
+            url = (p.nextPage == null || p.nextPage.isBlank()) ? null : origin() + p.nextPage;
+        }
+        if (total != null && all.size() < total) {
+            throw new GoszakupCallException("goszakup: лоты объявления " + numberAnno + " — получено " + all.size()
+                    + " из " + total, false, null);
+        }
+        return all;
+    }
+
+    /** Страница лотов v2. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class LotsPage {
+        public Integer total;
+        @JsonProperty("next_page") public String nextPage;
+        public List<LotDto> items;
     }
 
     @Override
@@ -137,7 +171,7 @@ public class GoszakupHttpClient implements GoszakupClient {
         } catch (GoszakupNotFoundException notFound) {
             return null; // организации нет в реестре — регион просто не определится
         } catch (java.io.IOException e) {
-            throw new IllegalStateException("goszakup: разбор JSON: " + e.getMessage(), e);
+            throw new GoszakupCallException("goszakup: разбор JSON: " + e.getMessage(), false, e);
         }
     }
 
@@ -147,7 +181,7 @@ public class GoszakupHttpClient implements GoszakupClient {
         String query = "query($anno:String,$l:Int){ Lots(filter:{trdBuyNumberAnno:$anno}, limit:$l){ "
                 + "lotNumber nameRu Files{ nameRu originalName filePath } } }";
         // площадка периодически моргает timeout — ретраим транзиентные сбои (ручная кнопка «ТЗ», оператор ждёт)
-        return GoszakupRetry.withRetries(3, 400, () -> {
+        return UpstreamRetry.call(UpstreamRetry.REAL, () -> {
             try {
                 ObjectNode vars = objectMapper.createObjectNode();
                 vars.put("anno", numberAnno);
@@ -157,11 +191,11 @@ public class GoszakupHttpClient implements GoszakupClient {
                 body.set("variables", vars);
                 JsonNode root = objectMapper.readTree(rawPost(graphqlUrl(), objectMapper.writeValueAsBytes(body)));
                 if (root.path("errors").size() > 0) {
-                    throw new IllegalStateException("goszakup v3 GraphQL: " + root.get("errors"));
+                    throw new GoszakupCallException("goszakup v3 GraphQL: " + root.get("errors"), false, null);
                 }
                 return parseLotTechSpec(root, lotNameRu);
             } catch (java.io.IOException e) {
-                throw new IllegalStateException("goszakup v3: разбор JSON: " + e.getMessage(), e);
+                throw new GoszakupCallException("goszakup v3: разбор JSON: " + e.getMessage(), false, e);
             }
         });
     }
@@ -192,28 +226,27 @@ public class GoszakupHttpClient implements GoszakupClient {
     @Override
     public byte[] downloadFile(String url) {
         // без Accept: application/json — отдаётся бинарник (octet-stream); ретрай на транзиентный timeout
-        return GoszakupRetry.withRetries(3, 400, () -> {
+        return UpstreamRetry.call(UpstreamRetry.REAL, () -> {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .GET()
+                    .header("Authorization", "Bearer " + token)
+                    .timeout(FILE_DEADLINE).build();
+            HttpResponse<byte[]> resp;
             try {
-                HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                        .GET()
-                        .header("Authorization", "Bearer " + token)
-                        .timeout(Duration.ofSeconds(60)).build();
-                HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
-                if (resp.statusCode() == 404) return null; // файл удалили/протух hash — вызывающий решает (404 к лоту)
-                if (resp.statusCode() / 100 != 2) {
-                    throw new IllegalStateException("goszakup download " + resp.statusCode() + " на " + url);
-                }
-                return resp.body();
-            } catch (java.io.IOException | InterruptedException e) {
-                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new IllegalStateException("goszakup download недоступен: " + ErrorText.of(e), e);
+                resp = UpstreamHttp.exchange(http, req, MAX_FILE_BYTES, FILE_DEADLINE);
+            } catch (UpstreamIoException e) {
+                throw new GoszakupCallException("goszakup download недоступен: " + e.getMessage(), e.retryable(), e);
             }
+            int code = resp.statusCode();
+            if (code == 404) return null; // файл удалили/протух hash — вызывающий решает (404 к лоту)
+            if (code / 100 != 2) {
+                throw new GoszakupCallException("goszakup download " + code, UpstreamRetry.retryableStatus(code), null);
+            }
+            return resp.body();
         });
     }
 
     // --- helpers ---
-    /** Тонкая обёртка-страница для эндпоинтов, отдающих {items:[...]}. */
-    static class TypeRefPage<T> { public List<T> items; }
 
     private String origin() {
         // baseUrl="https://ows.goszakup.gov.kz/v2" → origin="https://ows.goszakup.gov.kz"
@@ -226,9 +259,6 @@ public class GoszakupHttpClient implements GoszakupClient {
     private <T> T get(String url, Class<T> type) {
         return parse(rawGet(url), b -> objectMapper.readValue(b, type));
     }
-    private <T> T get(String url, TypeReference<T> type) {
-        return parse(rawGet(url), b -> objectMapper.readValue(b, type));
-    }
     private byte[] rawGet(String url) {
         return raw(HttpRequest.newBuilder(URI.create(url)).GET(), url);
     }
@@ -238,27 +268,38 @@ public class GoszakupHttpClient implements GoszakupClient {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body)), url);
     }
     private byte[] raw(HttpRequest.Builder builder, String url) {
+        HttpRequest req = builder
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/json")
+                .timeout(API_DEADLINE).build();
+        HttpResponse<byte[]> resp;
         try {
-            HttpRequest req = builder
-                    .header("Authorization", "Bearer " + token)
-                    .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(30)).build();
-            HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() == 404) {
-                throw new GoszakupNotFoundException("goszakup 404 на " + url);
-            }
-            if (resp.statusCode() / 100 != 2) {
-                throw new IllegalStateException("goszakup API " + resp.statusCode() + " на " + url);
-            }
-            return resp.body();
-        } catch (java.io.IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IllegalStateException("goszakup API недоступно: " + ErrorText.of(e), e);
+            resp = UpstreamHttp.exchange(http, req, MAX_JSON_BYTES, API_DEADLINE);
+        } catch (UpstreamIoException e) {
+            throw new GoszakupCallException("goszakup API недоступно: " + e.getMessage(), e.retryable(), e);
+        }
+        int code = resp.statusCode();
+        if (code == 404) {
+            throw new GoszakupNotFoundException("goszakup 404 на " + pathOf(url));
+        }
+        if (code / 100 != 2) { // 3xx сюда же: редиректы не идём, повтор не поможет
+            throw new GoszakupCallException("goszakup API " + code + " на " + pathOf(url),
+                    UpstreamRetry.retryableStatus(code), null);
+        }
+        return resp.body();
+    }
+
+    /** Путь без хоста и query: в тексте для оператора не нужен ни адрес площадки, ни параметры. */
+    private static String pathOf(String url) {
+        try {
+            return URI.create(url).getPath();
+        } catch (IllegalArgumentException e) {
+            return "?";
         }
     }
     private interface Parser<T> { T apply(byte[] b) throws java.io.IOException; }
     private <T> T parse(byte[] body, Parser<T> p) {
         try { return p.apply(body); }
-        catch (java.io.IOException e) { throw new IllegalStateException("goszakup: разбор JSON: " + e.getMessage(), e); }
+        catch (java.io.IOException e) { throw new GoszakupCallException("goszakup: разбор JSON: " + e.getMessage(), false, e); }
     }
 }
