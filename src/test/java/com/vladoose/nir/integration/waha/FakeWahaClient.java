@@ -1,7 +1,7 @@
 package com.vladoose.nir.integration.waha;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.vladoose.nir.integration.whatsapp.FileTooLargeException;
+import com.vladoose.nir.integration.http.FileTooLargeException;
 import com.vladoose.nir.integration.whatsapp.GatewayException;
 
 import java.util.ArrayList;

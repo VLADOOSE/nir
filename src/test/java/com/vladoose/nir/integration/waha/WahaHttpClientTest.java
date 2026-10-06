@@ -3,7 +3,7 @@ package com.vladoose.nir.integration.waha;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
-import com.vladoose.nir.integration.whatsapp.FileTooLargeException;
+import com.vladoose.nir.integration.http.FileTooLargeException;
 import com.vladoose.nir.integration.whatsapp.GatewayAuthException;
 import com.vladoose.nir.integration.whatsapp.GatewayException;
 import org.junit.jupiter.api.AfterAll;

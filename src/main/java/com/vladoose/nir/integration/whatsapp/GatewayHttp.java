@@ -1,5 +1,7 @@
 package com.vladoose.nir.integration.whatsapp;
 
+import com.vladoose.nir.integration.http.FileTooLargeException;
+
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;

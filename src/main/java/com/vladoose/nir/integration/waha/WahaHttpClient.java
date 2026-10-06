@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vladoose.nir.integration.whatsapp.GatewayAuthException;
 import com.vladoose.nir.integration.whatsapp.GatewayException;
 import com.vladoose.nir.integration.whatsapp.GatewayHttp;
-import com.vladoose.nir.integration.whatsapp.LimitedBytes;
+import com.vladoose.nir.integration.http.LimitedBytes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;

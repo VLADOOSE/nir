@@ -1,5 +1,6 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.http.FileTooLargeException;
 import com.vladoose.nir.integration.whatsapp.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

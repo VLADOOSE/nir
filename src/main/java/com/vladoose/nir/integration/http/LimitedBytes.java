@@ -1,4 +1,4 @@
-package com.vladoose.nir.integration.whatsapp;
+package com.vladoose.nir.integration.http;
 
 import java.io.ByteArrayOutputStream;
 import java.net.http.HttpResponse;
@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
 
-/** Байты тела с обрывом на пределе — внутри обмена, чтобы дедлайн GatewayHttp покрывал и чтение тела. */
+/** Байты тела с обрывом на пределе — внутри обмена, чтобы дедлайн (GatewayHttp, UpstreamHttp) покрывал и чтение тела. */
 public final class LimitedBytes implements HttpResponse.BodySubscriber<byte[]> {
 
     private final long maxBytes;

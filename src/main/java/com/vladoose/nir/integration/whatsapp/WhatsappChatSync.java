@@ -9,6 +9,7 @@ import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
 import com.vladoose.nir.service.ChatIngestWriter;
 import com.vladoose.nir.util.InfrastructureFailure;
 import com.vladoose.nir.util.SiteCartMessageParser;
+import com.vladoose.nir.integration.http.FileTooLargeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

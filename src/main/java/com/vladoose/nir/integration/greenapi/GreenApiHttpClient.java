@@ -1,5 +1,6 @@
 package com.vladoose.nir.integration.greenapi;
 
+import com.vladoose.nir.integration.http.LimitedBytes;
 import com.vladoose.nir.integration.whatsapp.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
