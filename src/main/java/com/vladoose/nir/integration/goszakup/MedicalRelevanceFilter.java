@@ -42,7 +42,7 @@ public final class MedicalRelevanceFilter {
         String name = lot.name() == null ? "" : lot.name();
         String descr = lot.description() == null ? "" : lot.description();
         boolean deviceInName = MedicalGoodsVocabulary.hasDeviceStrong(name);
-        if (isMedicalWasteContainer(name, descr)) return true;
+        if (MedicalGoodsVocabulary.isMedicalWasteContainer(name, descr)) return true;
         if (MedicalGoodsVocabulary.hasServiceStrong(name)) {
             if (deviceInName) log.debug("goszakup: лот «{}» — изделие и услуга, считаем услугой", name);
             return false;
@@ -52,11 +52,5 @@ public final class MedicalRelevanceFilter {
             log.debug("goszakup: лот «{}» — изделие и слабый маркер услуги, считаем изделием", name);
         }
         return deviceInName || MedicalGoodsVocabulary.hasDeviceStrong((name + " " + descr).trim());
-    }
-
-    private static boolean isMedicalWasteContainer(String name, String descr) {
-        return MedicalGoodsVocabulary.matchesAny(name, MedicalGoodsVocabulary.WASTE_CONTAINER)
-                && !MedicalGoodsVocabulary.matchesAny(name, MedicalGoodsVocabulary.WASTE_SERVICE)
-                && MedicalGoodsVocabulary.matchesAny((name + " " + descr).trim(), MedicalGoodsVocabulary.MEDICAL_WASTE);
     }
 }

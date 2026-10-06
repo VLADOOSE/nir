@@ -31,10 +31,13 @@ public final class SkPharmacyRelevanceFilter {
     /**
      * Лот = медизделие/техника. Сильное изделие («шприц», «анализатор») перебивает лекарственное вето
      * («Шприцы инъекционные»); слабое слово («набор», «система») — только без вето («Набор для инфузий» — нет).
+     * Сильный термин-прилагательное («стоматологический») при лекарственной форме не засчитывается:
+     * «Артикаин стоматологический раствор для инъекций» — лекарство. Тара для медотходов — изделие.
      */
     public static boolean isDeviceLot(String lotName) {
         String n = lotName == null ? "" : lotName;
-        if (MedicalGoodsVocabulary.hasDeviceStrong(n)) return true;
+        if (MedicalGoodsVocabulary.hasDeviceStrongOverDrugForm(n)) return true;
+        if (MedicalGoodsVocabulary.isMedicalWasteContainer(n, null)) return true;
         if (MedicalGoodsVocabulary.hasMedicine(n)) return false;
         return MedicalGoodsVocabulary.hasDeviceWeak(n);
     }

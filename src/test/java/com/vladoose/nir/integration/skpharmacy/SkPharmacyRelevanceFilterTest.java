@@ -76,4 +76,18 @@ class SkPharmacyRelevanceFilterTest {
         assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинской техники", List.of("Ларингоскоп", "Прочее"))).isTrue();
         assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинских изделий на 2026 год", List.of("Х"))).isTrue();
     }
+
+    @Test
+    void announcementMedicalDevicesShortCircuitsEvenIfAllLotsAreMedicines() {   // имя объявления достаточно
+        assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинских изделий",
+                List.of("Парацетамол таблетки 500 мг", "Инсулин человеческий"))).isTrue();
+    }
+
+    @Test
+    void dentalAnaestheticIsMedicine_syringeForInjectionIsDevice() {
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Стоматологический анестетик раствор для инъекций")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Артикаин стоматологический раствор для инъекций")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Гистологический фиксатор раствор формалина")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Шприц для инъекций 10 мл")).isTrue();
+    }
 }
