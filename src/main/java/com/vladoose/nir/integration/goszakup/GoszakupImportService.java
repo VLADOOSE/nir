@@ -3,6 +3,7 @@ package com.vladoose.nir.integration.goszakup;
 import com.vladoose.nir.entity.Facility;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.LotText;
+import com.vladoose.nir.integration.http.UpstreamRetry;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
@@ -10,13 +11,17 @@ import com.vladoose.nir.repository.FacilityRepository;
 import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -37,13 +42,22 @@ public class GoszakupImportService {
     private final Set<Integer> statuses;
     private final int sinceDays;
     private final int maxPages;
+    private final UpstreamRetry.Sleeper sleeper;
 
+    @Autowired
     public GoszakupImportService(GoszakupClient client,
                                  GoszakupTenderWriter writer,
                                  FacilityRepository facilityRepository,
                                  @Value("${goszakup.import.statuses:}") String statusesCsv,
                                  @Value("${goszakup.import.since-days:30}") int sinceDays,
                                  @Value("${goszakup.import.max-pages:60}") int maxPages) {
+        this(client, writer, facilityRepository, statusesCsv, sinceDays, maxPages, UpstreamRetry.REAL);
+    }
+
+    /** Тесты передают сон-заглушку: паузы повторов (1 и 3 с) не нужны. */
+    GoszakupImportService(GoszakupClient client, GoszakupTenderWriter writer, FacilityRepository facilityRepository,
+                          String statusesCsv, int sinceDays, int maxPages, UpstreamRetry.Sleeper sleeper) {
+        this.sleeper = sleeper;
         this.client = client;
         this.writer = writer;
         this.facilityRepository = facilityRepository;
@@ -97,10 +111,11 @@ public class GoszakupImportService {
             return;
         }
         LocalDate cutoff = LocalDate.now().minusDays(sinceDays);
+        Map<String, Optional<SubjectDto>> subjects = new HashMap<>();   // subject по БИН — один раз за прогон
         for (Facility org : orgs) {
             sum.setCurrentOrgName(org.getName());
             try {
-                fetchOrgFeed(org.getInn(), org.getRegion(), cutoff, sum);
+                fetchOrgFeed(org.getInn(), org.getRegion(), cutoff, sum, subjects);
             } catch (RuntimeException e) {
                 sum.addError(org.getName() + ": " + ErrorText.of(e));
                 log.warn("goszakup: ошибка импорта по БИН {} ({}): {}", org.getInn(), org.getName(), e.toString());
@@ -111,34 +126,37 @@ public class GoszakupImportService {
                 sum.getOrgsProcessed(), sum.getFetched(), sum.getMatched(), sum.getCreated(), sum.getUpdated(), sum.getErrors()));
     }
 
-    private void fetchOrgFeed(String orgBin, String region, LocalDate cutoff, ImportSummary sum) {
+    private void fetchOrgFeed(String orgBin, String region, LocalDate cutoff, ImportSummary sum,
+                              Map<String, Optional<SubjectDto>> subjects) {
         Long after = null;
         int pagesRead = 0;
         do {
-            var page = client.fetchTrdBuyPageByOrgBin(orgBin, after);
+            Long a = after;
+            var page = UpstreamRetry.call(sleeper, () -> client.fetchTrdBuyPageByOrgBin(orgBin, a));
             List<TrdBuyDto> items = page.getItems() != null ? page.getItems() : List.of();
-            processItems(items, cutoff, sum, region);
+            processItems(items, cutoff, sum, region, subjects);
             pagesRead++;
             if (wholePageOlderThan(items, cutoff)) break;
             after = page.getNextAfter();
         } while (after != null && pagesRead < maxPages);
     }
 
-    private void processItems(List<TrdBuyDto> items, LocalDate cutoff, ImportSummary sum, String regionOverride) {
+    private void processItems(List<TrdBuyDto> items, LocalDate cutoff, ImportSummary sum, String regionOverride,
+                              Map<String, Optional<SubjectDto>> subjects) {
         for (TrdBuyDto d : items) {
             sum.setFetched(sum.getFetched() + 1);
             LocalDate pub = GoszakupParse.localDate(d.getPublishDate());
             if (pub != null && pub.isBefore(cutoff)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
             if (!statusOk(d) || !systemOk(d)) { sum.setSkipped(sum.getSkipped() + 1); continue; }
-            importOne(d, sum, regionOverride);
+            importOne(d, sum, regionOverride, subjects);
         }
     }
 
     /** Сеть — ВНЕ транзакции; запись — в отдельной per-item транзакции writer'а. Ошибка элемента не валит прогон. */
-    private void importOne(TrdBuyDto d, ImportSummary sum, String regionOverride) {
+    private void importOne(TrdBuyDto d, ImportSummary sum, String regionOverride,
+                           Map<String, Optional<SubjectDto>> subjects) {
         try {
-            SubjectDto subj = client.fetchSubject(d.effectiveBin());
-            List<LotDto> lots = client.fetchLots(d.getNumberAnno());
+            List<LotDto> lots = UpstreamRetry.call(sleeper, () -> client.fetchLots(d.getNumberAnno()));
             List<LotText> lotTexts = lots.stream()
                     .map(l -> new LotText(l.getNameRu(), l.getDescriptionRu()))
                     .toList();
@@ -146,6 +164,7 @@ public class GoszakupImportService {
                 sum.setSkipped(sum.getSkipped() + 1); // лоты — не медтовар (лекарства/еда/хозтовары/услуги)
                 return;
             }
+            SubjectDto subj = subjectOf(d.effectiveBin(), subjects);
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
             else sum.setUpdated(sum.getUpdated() + 1);
@@ -154,6 +173,23 @@ public class GoszakupImportService {
             sum.addError("объявление " + d.getNumberAnno() + ": " + ErrorText.of(e));
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
         }
+    }
+
+    /**
+     * subject — после фильтра (≈ 95 % объявлений не профильные) и один раз на БИН за прогон; сбой не роняет
+     * тендер: пишем без заказчика (у существующего тендера writer поля заказчика не трогает). Неудача тоже
+     * кешируется — иначе каждое объявление той же больницы повторило бы три попытки.
+     */
+    private SubjectDto subjectOf(String bin, Map<String, Optional<SubjectDto>> cache) {
+        if (bin == null || bin.isBlank()) return null;
+        return cache.computeIfAbsent(bin, b -> {
+            try {
+                return Optional.ofNullable(UpstreamRetry.call(sleeper, () -> client.fetchSubject(b)));
+            } catch (RuntimeException e) {
+                log.warn("goszakup: subject {} недоступен, тендер пишем без него: {}", b, ErrorText.of(e));
+                return Optional.empty();
+            }
+        }).orElse(null);
     }
 
     private static boolean wholePageOlderThan(List<TrdBuyDto> items, LocalDate cutoff) {

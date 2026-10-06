@@ -76,10 +76,16 @@ public class GoszakupTenderWriter {
         t.setStatus(status);
     }
 
+    /**
+     * subject null — нет данных (сбой после повторов или неизвестный БИН): поля заказчика не трогаем, иначе
+     * разовый сбой subject затёр бы у существующего тендера заказчика, КАТО и адрес. Регион нового тендера
+     * при регион-импорте всё равно ставит regionOverride.
+     */
     private void applyRegion(Tender t, SubjectDto subj) {
-        String customerName = subj != null ? subj.getNameRu() : null;
-        String address = subj != null ? subj.firstAddress() : null;
-        String kato = subj != null ? subj.firstKato() : null;
+        if (subj == null) return;
+        String customerName = subj.getNameRu();
+        String address = subj.firstAddress();
+        String kato = subj.firstKato();
         t.setCustomerName(customerName);
         t.setRegionKato(kato);
         if (address != null) t.setDeliveryAddress(address);

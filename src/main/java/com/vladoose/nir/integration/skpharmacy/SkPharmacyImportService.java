@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.integration.http.UpstreamRetry;
 import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,7 @@ public class SkPharmacyImportService {
     private final int maxPages;
     private final int maxLotPages;
     private final long throttleMs;
+    private UpstreamRetry.Sleeper sleeper = UpstreamRetry.REAL;
 
     public SkPharmacyImportService(SkPharmacyClient client, SkPharmacyTenderWriter writer,
                                    @Value("${skpharmacy.import.max-pages:30}") int maxPages,
@@ -36,6 +38,11 @@ public class SkPharmacyImportService {
         this.maxPages = maxPages;
         this.maxLotPages = maxLotPages;
         this.throttleMs = throttleMs;
+    }
+
+    /** Тесты подменяют сон пауз повторов (1 и 3 с), не заводя отдельный Spring-контекст. */
+    void setSleeper(UpstreamRetry.Sleeper sleeper) {
+        this.sleeper = sleeper;
     }
 
     /**
@@ -55,7 +62,8 @@ public class SkPharmacyImportService {
         Set<String> seenCodes = new HashSet<>();
         boolean services = false;
         for (int page = 1; page <= maxLotPages; page++) {
-            String html = client.lotsPage(announceId, page);
+            int p = page;
+            String html = UpstreamRetry.call(sleeper, () -> client.lotsPage(announceId, p));
             if (page == 1) services = SkPharmacyHtmlParser.isServicesLotsPage(html);
             List<SkLot> pageLots = SkPharmacyHtmlParser.parseLots(html);
             int added = 0;
@@ -72,7 +80,7 @@ public class SkPharmacyImportService {
     /** Вкладка «Общие сведения» — доп. запрос к порталу; регион/контакт вторичны → сбой не валит тендер (пишем без них). */
     private SkGeneral fetchGeneral(SkAnnounce a) {
         try {
-            return SkPharmacyHtmlParser.parseGeneral(client.generalPage(a.announceId()));
+            return SkPharmacyHtmlParser.parseGeneral(UpstreamRetry.call(sleeper, () -> client.generalPage(a.announceId())));
         } catch (Exception e) {
             log.warn("sk general {}: {}", a.numberAnno(), e.getMessage());
             return null;
@@ -92,7 +100,8 @@ public class SkPharmacyImportService {
         for (int page = 1; page <= maxPages; page++) {
             List<SkAnnounce> anns;
             try {
-                anns = SkPharmacyHtmlParser.parseSearch(client.searchPage(page));
+                int p = page;
+                anns = SkPharmacyHtmlParser.parseSearch(UpstreamRetry.call(sleeper, () -> client.searchPage(p)));
             } catch (Exception e) {
                 log.warn("sk searchanno стр. {}: {}", page, ErrorText.of(e));
                 sum.addError("лента, стр. " + page + ": " + ErrorText.of(e));

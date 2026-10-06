@@ -35,7 +35,12 @@ class SkPharmacyImportServiceTest {
     @Autowired TenderRepository tenderRepository;
     @MockitoBean SkPharmacyClient client;
 
-    @AfterEach void clear() { MarketContext.clear(); }
+    @org.junit.jupiter.api.BeforeEach void noSleep() { importService.setSleeper(ms -> { }); }
+
+    @AfterEach void clear() {
+        MarketContext.clear();
+        importService.setSleeper(com.vladoose.nir.integration.http.UpstreamRetry.REAL);
+    }
 
     private String fixture(String name) throws IOException {
         try (var is = getClass().getResourceAsStream("/skpharmacy/" + name)) {
@@ -178,5 +183,41 @@ class SkPharmacyImportServiceTest {
 
         assertThat(sum.getErrors()).isPositive();
         assertThat(sum.getLastError()).matches("объявление \\d+-\\d+: fms\\.ecc\\.kz вернул 503");
+    }
+
+    /** Разовый обрыв ленты и лотов — повторяется, объявление не теряется (ревью A5). */
+    @Test
+    void import_transientFeedAndLotsFailure_retried() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        when(client.searchPage(1))
+                .thenThrow(new SkCallException("Сеть fms.ecc.kz: нет ответа за 60 с", true))
+                .thenReturn(fixture("search.html"));
+        when(client.searchPage(2)).thenReturn("");
+        when(client.lotsPage(anyString(), anyInt()))
+                .thenThrow(new SkCallException("Сеть fms.ecc.kz: нет ответа за 60 с", true))
+                .thenReturn(fixture("lots.html"));
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isZero();
+        assertThat(sum.getFetched()).isEqualTo(10);
+        assertThat(tenderRepository.findBySourceExtId("521464-1")).isPresent();
+        verify(client, times(2)).searchPage(1);
+    }
+
+    /** 403 повтором не лечится — один вызов, ошибка прогона. */
+    @Test
+    void import_clientErrorOnFeed_notRetried() {
+        when(client.searchPage(1)).thenThrow(new SkCallException("fms.ecc.kz вернул 403", false));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo("лента, стр. 1: fms.ecc.kz вернул 403");
+        verify(client, times(1)).searchPage(1);
     }
 }

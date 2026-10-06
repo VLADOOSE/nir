@@ -29,6 +29,16 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final List<String> orgBinsQueried = new ArrayList<>();
     /** cursor (null=первая) → страница справочника КАТО. */
     public final Map<String, KatoRefPageDto> katoPages = new HashMap<>();
+    /** Сколько раз подряд бросить повторяемый сетевой сбой (ключ — БИН / номер объявления / БИН subject). */
+    public final Map<String, Integer> orgFailuresLeft = new HashMap<>();
+    public final Map<String, Integer> lotsFailuresLeft = new HashMap<>();
+    public final Map<String, Integer> subjectFailuresLeft = new HashMap<>();
+    /** БИН, по которым лента отвечает 403 — не повторяемо. */
+    public final java.util.Set<String> forbiddenOrgBins = new java.util.HashSet<>();
+    /** Счётчики вызовов по ключу. */
+    public final Map<String, Integer> orgCalls = new HashMap<>();
+    public final Map<String, Integer> lotsCalls = new HashMap<>();
+    public final Map<String, Integer> subjectCalls = new HashMap<>();
     public int trdBuyFetches = 0;
     public int katoFetches = 0;
     public List<String> lastKatoFilter;
@@ -50,6 +60,9 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final java.util.Set<String> failingOrgBins = new java.util.HashSet<>();
     @Override public TrdBuyV3PageDto fetchTrdBuyPageByOrgBin(String orgBin, Long after) {
         orgBinsQueried.add(orgBin);
+        orgCalls.merge(orgBin, 1, Integer::sum);
+        failTransient(orgFailuresLeft, orgBin);
+        if (forbiddenOrgBins.contains(orgBin)) throw new GoszakupCallException("goszakup API 403 на /v3/graphql", false, null);
         if (failingOrgBins.contains(orgBin)) throw new IllegalStateException("goszakup API недоступно: ConnectException");
         TrdBuyV3PageDto p = (after == null) ? orgPages.get(orgBin) : null;
         if (p != null) return p;
@@ -62,9 +75,13 @@ public class FakeGoszakupClient implements GoszakupClient {
         KatoRefPageDto empty = new KatoRefPageDto(); empty.setItems(new ArrayList<>()); return empty;
     }
     @Override public List<LotDto> fetchLots(String numberAnno) {
+        lotsCalls.merge(numberAnno, 1, Integer::sum);
+        failTransient(lotsFailuresLeft, numberAnno);
         return lotsByAnno.getOrDefault(numberAnno, List.of());
     }
     @Override public SubjectDto fetchSubject(String bin) {
+        subjectCalls.merge(bin, 1, Integer::sum);
+        failTransient(subjectFailuresLeft, bin);
         if (failingSubjectBins.contains(bin)) throw new RuntimeException("fake subject failure: " + bin);
         return subjectsByBin.get(bin);
     }
@@ -79,6 +96,14 @@ public class FakeGoszakupClient implements GoszakupClient {
     }
     @Override public byte[] downloadFile(String url) {
         return filesByUrl.get(url); // как живой клиент: 404 → null (файл недоступен)
+    }
+
+    private static void failTransient(Map<String, Integer> left, String key) {
+        Integer n = left.get(key);
+        if (n != null && n > 0) {
+            left.put(key, n - 1);
+            throw new GoszakupCallException("goszakup API недоступно: header parser received no bytes", true, null);
+        }
     }
 
     // --- builders для тестов ---

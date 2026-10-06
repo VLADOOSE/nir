@@ -48,7 +48,7 @@ class GoszakupImportServiceTest {
     void tearDown() { MarketContext.clear(); }
 
     private GoszakupImportService svc(String statuses, int sinceDays) {
-        return new GoszakupImportService(fake, writer, facilityRepository, statuses, sinceDays, 20);
+        return new GoszakupImportService(fake, writer, facilityRepository, statuses, sinceDays, 20, ms -> { });
     }
 
     /** Мониторимая KZ-больница в тестовом регионе с заданным БИН. */
@@ -172,12 +172,13 @@ class GoszakupImportServiceTest {
                 FakeGoszakupClient.buy("ERR-1", "Закуп", 230, "BINERR", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
         fake.lotsByAnno.put("OK-1", List.of(lot("Аппарат УЗИ", null)));
         fake.lotsByAnno.put("ERR-1", List.of(lot("Аппарат УЗИ", null)));
-        fake.failingSubjectBins.add("BINERR");
+        fake.lotsFailuresLeft.put("ERR-1", 99);   // лоты лежат и после повторов
 
         ImportSummary s = svc("", 3650).importMedicalTenders(REGION);
 
         assertThat(s.getErrors()).isEqualTo(1);
-        assertThat(s.getLastError()).isEqualTo("объявление ERR-1: fake subject failure: BINERR");
+        assertThat(s.getLastError()).isEqualTo("объявление ERR-1: goszakup API недоступно: header parser received no bytes");
+        assertThat(fake.lotsCalls.get("ERR-1")).isEqualTo(3);   // три попытки, не больше
         assertThat(s.getCreated()).isEqualTo(1);
         assertThat(tenderRepository.findBySourceExtId("OK-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("ERR-1")).isEmpty();
@@ -265,5 +266,100 @@ class GoszakupImportServiceTest {
         assertThat(s.getErrors()).isEqualTo(1);
         assertThat(s.getCreated()).isEqualTo(1);
         assertThat(s.getLastError()).isEqualTo("Больница Н: goszakup API недоступно: ConnectException");
+    }
+
+    /** Ревью A5: на разовом обрыве выпадало 4 из 29 больниц — лента и лоты повторяются. */
+    @Test
+    void transientFeedFailure_retried_orgImported() {
+        hospital("Больница Р", "BINR");
+        fake.orgPage("BINR", FakeGoszakupClient.buy("200-1", "Закуп", 230, "BINR", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("200-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.orgFailuresLeft.put("BINR", 1);
+        fake.lotsFailuresLeft.put("200-1", 1);
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isZero();
+        assertThat(s.getCreated()).isEqualTo(1);
+        assertThat(fake.orgCalls.get("BINR")).isEqualTo(2);
+        assertThat(fake.lotsCalls.get("200-1")).isEqualTo(2);
+    }
+
+    /** 400/403 повтором не лечатся — один вызов, сразу в ошибки прогона. */
+    @Test
+    void clientErrorNotRetried() {
+        hospital("Больница Ф", "BINF");
+        fake.forbiddenOrgBins.add("BINF");
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isEqualTo(1);
+        assertThat(s.getLastError()).isEqualTo("Больница Ф: goszakup API 403 на /v3/graphql");
+        assertThat(fake.orgCalls.get("BINF")).isEqualTo(1);
+    }
+
+    /** subject — только для профильных объявлений и один раз на БИН за прогон. */
+    @Test
+    void subjectFetchedOnlyForRelevant_andOncePerBin() {
+        hospital("Больница С", "BINS");
+        fake.orgPage("BINS",
+                FakeGoszakupClient.buy("301-1", "Закуп", 230, "BINS", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("302-1", "Закуп", 230, "BINS", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("303-1", "Закуп", 230, "BINS", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("301-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("302-1", List.of(lot("Монитор пациента", null)));
+        fake.lotsByAnno.put("303-1", List.of(lot("Бумага офисная", null)));
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getCreated()).isEqualTo(2);
+        assertThat(fake.subjectCalls.get("BINS")).isEqualTo(1);
+    }
+
+    /** Неудача subject тоже запоминается на прогон — иначе каждое объявление больницы повторит три попытки. */
+    @Test
+    void subjectFailureCachedPerBin_tenderWrittenWithoutCustomer() {
+        hospital("Больница Т", "BINT");
+        fake.orgPage("BINT",
+                FakeGoszakupClient.buy("501-1", "Закуп", 230, "BINT", "2026-06-01T00:00:00", "2026-06-20T00:00:00"),
+                FakeGoszakupClient.buy("502-1", "Закуп", 230, "BINT", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("501-1", List.of(lot("Аппарат УЗИ", null)));
+        fake.lotsByAnno.put("502-1", List.of(lot("Монитор пациента", null)));
+        fake.subjectFailuresLeft.put("BINT", 99);
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isZero();
+        assertThat(s.getCreated()).isEqualTo(2);
+        assertThat(fake.subjectCalls.get("BINT")).isEqualTo(3);   // три попытки один раз, не 3 × 2
+        Tender t = tenderRepository.findBySourceExtId("501-1").orElseThrow();
+        assertThat(t.getCustomerName()).isNull();
+        assertThat(t.getRegion()).isEqualTo(REGION);
+    }
+
+    /** Review Focus 4: subject лежит и после повторов — существующий тендер обновляется, заказчик не затирается. */
+    @Test
+    void subjectDownAfterRetries_existingTenderKeepsCustomer() {
+        hospital("Больница К2", "BINK");
+        fake.orgPage("BINK", FakeGoszakupClient.buy("400-1", "Закуп", 230, "BINK", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("400-1", List.of(lot("Аппарат УЗИ", null)));
+        SubjectDto subj = new SubjectDto();
+        subj.setBin("BINK"); subj.setNameRu("ГКП Больница К");
+        com.vladoose.nir.integration.goszakup.dto.SubjectAddressDto addr = new com.vladoose.nir.integration.goszakup.dto.SubjectAddressDto();
+        addr.setAddress("г. Караганда, ул. Ленина, 1"); addr.setKatoCode("351010000");
+        subj.setAddress(List.of(addr));
+        fake.subjectsByBin.put("BINK", subj);
+        service.importMedicalTenders(REGION);                        // первый прогон — заказчик записан
+
+        fake.subjectFailuresLeft.put("BINK", 99);                    // дальше subject лежит
+        ImportSummary s = svc("", 3650).importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isZero();
+        assertThat(s.getUpdated()).isEqualTo(1);
+        Tender t = tenderRepository.findBySourceExtId("400-1").orElseThrow();
+        assertThat(t.getCustomerName()).isEqualTo("ГКП Больница К");
+        assertThat(t.getRegionKato()).isEqualTo("351010000");
+        assertThat(t.getDeliveryAddress()).isEqualTo("г. Караганда, ул. Ленина, 1");
+        assertThat(t.getRegion()).isEqualTo(REGION);
     }
 }
