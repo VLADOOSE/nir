@@ -3,6 +3,9 @@ package com.vladoose.nir.integration.skpharmacy;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.util.ErrorText;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Асинхронный запуск импорта СК-Фармации с живым прогрессом (зеркалит GoszakupImportScheduler). */
 @Component
 public class SkPharmacyImportScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(SkPharmacyImportScheduler.class);
 
     public record ImportStatus(boolean running, Instant lastFinishedAt, ImportSummary lastSummary) {}
 
@@ -56,8 +61,10 @@ public class SkPharmacyImportScheduler {
             MarketContext.set(Market.KZ);   // §6: рынок в ФОНОВОМ потоке
             try {
                 importService.fillImport(sum);
-            } catch (Exception e) {
-                sum.setMessage("Ошибка импорта СК-Фармации: " + e.getMessage());
+            } catch (Throwable e) {   // и Error: иначе он тонул в Future, а прогон выглядел бы «без ошибок»
+                log.error("СК-Фармация: импорт прерван", e);
+                sum.addError("прогон прерван: " + ErrorText.of(e));
+                sum.setMessage("Ошибка импорта СК-Фармации: " + ErrorText.of(e));
             } finally {
                 lastFinishedAt = Instant.now();
                 running.set(false);

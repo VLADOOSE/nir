@@ -2,6 +2,9 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.util.ErrorText;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -13,6 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class GoszakupImportScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(GoszakupImportScheduler.class);
 
     /** Снимок для UI: идёт ли импорт и чем закончился последний прогон. */
     public record ImportStatus(boolean running, Instant lastFinishedAt, String lastRegion, ImportSummary lastSummary) {}
@@ -85,6 +90,11 @@ public class GoszakupImportScheduler {
             MarketContext.set(Market.KZ);
             try {
                 importService.fillImport(region, sum);
+            } catch (Throwable e) {
+                // без этого исключение (и Error) тонуло в Future: прогон кончался без итога, и тоста не было вовсе
+                log.error("goszakup: импорт прерван", e);
+                sum.addError("прогон прерван: " + ErrorText.of(e));
+                sum.setMessage("Импорт прерван: " + ErrorText.of(e));
             } finally {
                 lastFinishedAt = Instant.now();
                 running.set(false);

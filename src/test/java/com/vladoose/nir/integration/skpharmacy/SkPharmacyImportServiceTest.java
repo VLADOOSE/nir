@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderPlatform;
+import com.vladoose.nir.exception.UpstreamException;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.repository.TenderRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +61,7 @@ class SkPharmacyImportServiceTest {
         importService.fillImport(sum);
 
         assertThat(sum.getFetched()).isEqualTo(10);      // 10 объявлений в фикстуре
+        assertThat(sum.getErrors()).isZero();            // пустая ВТОРАЯ страница — конец ленты, не ошибка
         assertThat(sum.getMatched()).isGreaterThanOrEqualTo(1);
         assertThat(sum.getCreated()).isGreaterThanOrEqualTo(1);
 
@@ -137,5 +139,44 @@ class SkPharmacyImportServiceTest {
         Tender t = tenderRepository.findBySourceExtId("521464-1").orElseThrow();
         assertThat(t.getLots()).hasSize(20);                              // без дублей
         verify(client, times(2)).lotsPage(eq("521464"), anyInt());        // стр. 1 + одна проверка повтора, дальше стоп
+    }
+
+    /** Лента не открылась (сеть, сертификат, бан) — ошибка прогона с причиной, а не «ничего нового». */
+    @Test
+    void import_unreachableFeed_reportsTheReason() {
+        when(client.searchPage(1)).thenThrow(new UpstreamException("Сеть fms.ecc.kz: PKIX path building failed"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getFetched()).isZero();
+        assertThat(sum.getLastError()).isEqualTo("лента, стр. 1: Сеть fms.ecc.kz: PKIX path building failed");
+    }
+
+    /** Пустая ПЕРВАЯ страница — не конец ленты (на портале тысячи объявлений), а сменившаяся вёрстка. */
+    @Test
+    void import_emptyFirstFeedPage_isAnError() {
+        when(client.searchPage(anyInt())).thenReturn("<html><body><p>Ведутся технические работы</p></body></html>");
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo("на первой странице ленты нет объявлений — похоже, сменилась вёрстка fms.ecc.kz");
+    }
+
+    @Test
+    void import_announcementError_reportsWhichAnnouncement() throws IOException {
+        MarketContext.set(Market.KZ);
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");
+        when(client.lotsPage(anyString(), anyInt())).thenThrow(new UpstreamException("fms.ecc.kz вернул 503"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isPositive();
+        assertThat(sum.getLastError()).matches("объявление \\d+-\\d+: fms\\.ecc\\.kz вернул 503");
     }
 }

@@ -11,6 +11,7 @@ import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyPageDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyV3PageDto;
+import com.vladoose.nir.util.ErrorText;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -205,7 +206,7 @@ public class GoszakupHttpClient implements GoszakupClient {
                 return resp.body();
             } catch (java.io.IOException | InterruptedException e) {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new IllegalStateException("goszakup download недоступен: " + e.getMessage(), e);
+                throw new IllegalStateException("goszakup download недоступен: " + ErrorText.of(e), e);
             }
         });
     }
@@ -252,7 +253,7 @@ public class GoszakupHttpClient implements GoszakupClient {
             return resp.body();
         } catch (java.io.IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IllegalStateException("goszakup API недоступно: " + e.getMessage(), e);
+            throw new IllegalStateException("goszakup API недоступно: " + ErrorText.of(e), e);
         }
     }
     private interface Parser<T> { T apply(byte[] b) throws java.io.IOException; }

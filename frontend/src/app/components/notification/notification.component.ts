@@ -29,7 +29,7 @@ import { NotificationService, Notification } from '../../services/notification.s
     .toast-error { background: #dc2626; }
     .toast-info { background: #1a56db; }
     .toast-icon { font-weight: 700; font-size: 16px; }
-    .toast-msg { flex: 1; }
+    .toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }   /* длинный адрес или код ошибки не распирает тост за край экрана */
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   `]
 })

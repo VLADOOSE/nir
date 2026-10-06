@@ -101,4 +101,18 @@ class GoszakupHttpClientTest {
         assertThat(lastRequestBody).contains("\"a\":100");
         assertThat(page.getNextAfter()).isNull();
     }
+
+    /** JDK 17 бросает ConnectException без текста — в логе прода было «goszakup API недоступно: null». */
+    @Test
+    void unreachableApi_namesTheFailureInsteadOfNull() throws java.io.IOException {
+        int closedPort;
+        try (java.net.ServerSocket s = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            closedPort = s.getLocalPort();
+        }
+        GoszakupHttpClient unreachable = new GoszakupHttpClient(new ObjectMapper(),
+                "http://127.0.0.1:" + closedPort + "/v2", "test-token", 50);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> unreachable.fetchSubject("123456789012"))
+                .hasMessage("goszakup API недоступно: ConnectException");
+    }
 }

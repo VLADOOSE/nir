@@ -6,6 +6,7 @@ import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
 import com.vladoose.nir.repository.FacilityRepository;
+import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -100,7 +101,7 @@ public class GoszakupImportService {
             try {
                 fetchOrgFeed(org.getInn(), org.getRegion(), cutoff, sum);
             } catch (RuntimeException e) {
-                sum.setErrors(sum.getErrors() + 1);
+                sum.addError(org.getName() + ": " + ErrorText.of(e));
                 log.warn("goszakup: ошибка импорта по БИН {} ({}): {}", org.getInn(), org.getName(), e.toString());
             }
             sum.setOrgsProcessed(sum.getOrgsProcessed() + 1);
@@ -150,7 +151,7 @@ public class GoszakupImportService {
             else sum.setUpdated(sum.getUpdated() + 1);
             sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
         } catch (RuntimeException e) {
-            sum.setErrors(sum.getErrors() + 1);
+            sum.addError("объявление " + d.getNumberAnno() + ": " + ErrorText.of(e));
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
         }
     }

@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.exception.UpstreamException;
+import com.vladoose.nir.util.ErrorText;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -57,7 +58,7 @@ public class SkPharmacyHttpClient implements SkPharmacyClient {
             Thread.currentThread().interrupt();
             throw new UpstreamException("Прервано при запросе к fms.ecc.kz");
         } catch (java.io.IOException e) {
-            throw new UpstreamException("Сеть fms.ecc.kz: " + e.getMessage());
+            throw new UpstreamException("Сеть fms.ecc.kz: " + ErrorText.of(e));
         }
     }
 }

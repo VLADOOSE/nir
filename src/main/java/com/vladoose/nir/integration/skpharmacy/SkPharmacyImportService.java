@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -93,12 +94,17 @@ public class SkPharmacyImportService {
             try {
                 anns = SkPharmacyHtmlParser.parseSearch(client.searchPage(page));
             } catch (Exception e) {
-                log.warn("sk searchanno стр. {}: {}", page, e.getMessage());
-                sum.setErrors(sum.getErrors() + 1);
+                log.warn("sk searchanno стр. {}: {}", page, ErrorText.of(e));
+                sum.addError("лента, стр. " + page + ": " + ErrorText.of(e));
                 break;   // сеть/бан по списку — дальше не идём
             }
             sum.setPagesRead(page);
-            if (anns.isEmpty()) break;   // конец ленты
+            if (anns.isEmpty()) {
+                // У портала тысячи объявлений: пустая ПЕРВАЯ страница — не конец ленты, а сменившаяся вёрстка
+                // или страница-заглушка; без ошибки прогон молча закончился бы «получено 0».
+                if (page == 1) sum.addError("на первой странице ленты нет объявлений — похоже, сменилась вёрстка fms.ecc.kz");
+                break;   // конец ленты
+            }
 
             for (SkAnnounce a : anns) {
                 sum.setFetched(sum.getFetched() + 1);
@@ -127,12 +133,12 @@ public class SkPharmacyImportService {
                         sum.setUpdated(sum.getUpdated() + 1);
                     }
                 } catch (Exception e) {
-                    log.warn("sk объявление {}: {}", a.numberAnno(), e.getMessage());
-                    sum.setErrors(sum.getErrors() + 1);
+                    log.warn("sk объявление {}: {}", a.numberAnno(), ErrorText.of(e));
+                    sum.addError("объявление " + a.numberAnno() + ": " + ErrorText.of(e));
                 }
             }
         }
-        sum.setMessage("СК-Фармация: стр. " + sum.getPagesRead() + ", получено " + sum.getFetched()
+        sum.setMessage("Стр. " + sum.getPagesRead() + ", получено " + sum.getFetched()
                 + ", подходящих " + sum.getMatched() + ", создано " + sum.getCreated()
                 + ", обновлено " + sum.getUpdated() + (sum.getErrors() > 0 ? ", ошибок " + sum.getErrors() : ""));
     }

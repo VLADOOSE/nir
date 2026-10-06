@@ -19,4 +19,12 @@ public class ImportSummary {
     private int orgsProcessed;
     private String currentOrgName;
     private String message;
+    /** Последняя ошибка прогона «где: что» — в итоговый тост, чтобы причина была видна не только в логе. */
+    private String lastError;
+
+    /** Ошибка прогона: +1 к счётчику и её текст (без стека, не длиннее 300 символов). */
+    public void addError(String text) {
+        errors++;
+        lastError = text == null || text.length() <= 300 ? text : text.substring(0, 299) + "…";
+    }
 }

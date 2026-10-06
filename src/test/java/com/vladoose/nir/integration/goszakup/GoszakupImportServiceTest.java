@@ -177,6 +177,7 @@ class GoszakupImportServiceTest {
         ImportSummary s = svc("", 3650).importMedicalTenders(REGION);
 
         assertThat(s.getErrors()).isEqualTo(1);
+        assertThat(s.getLastError()).isEqualTo("объявление ERR-1: fake subject failure: BINERR");
         assertThat(s.getCreated()).isEqualTo(1);
         assertThat(tenderRepository.findBySourceExtId("OK-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("ERR-1")).isEmpty();
@@ -248,5 +249,21 @@ class GoszakupImportServiceTest {
         assertThat(s.getOrgsProcessed()).isEqualTo(2);
         assertThat(s.getCreated()).isEqualTo(2);
         assertThat(fake.orgBinsQueried).contains("BIN10", "BIN11");
+    }
+
+    /** Больница, по которой площадка не ответила, названа в итоге прогона вместе с причиной. */
+    @Test
+    void orgFeedError_namesTheHospitalAndTheReason() {
+        hospital("Больница Н", "BIN12");
+        hospital("Больница О", "BIN13");
+        fake.failingOrgBins.add("BIN12");
+        fake.orgPage("BIN13", FakeGoszakupClient.buy("C-1", "Закуп", 230, "BIN13", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("C-1", List.of(lot("Аппарат УЗИ", null)));
+
+        ImportSummary s = service.importMedicalTenders(REGION);
+
+        assertThat(s.getErrors()).isEqualTo(1);
+        assertThat(s.getCreated()).isEqualTo(1);
+        assertThat(s.getLastError()).isEqualTo("Больница Н: goszakup API недоступно: ConnectException");
     }
 }

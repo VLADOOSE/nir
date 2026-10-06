@@ -46,8 +46,11 @@ public class FakeGoszakupClient implements GoszakupClient {
         if (p != null) return p;
         TrdBuyV3PageDto empty = new TrdBuyV3PageDto(); empty.setItems(new ArrayList<>()); return empty;
     }
+    /** БИН, по которым «площадка не отвечает» — текст как у настоящего клиента при отказе в соединении. */
+    public final java.util.Set<String> failingOrgBins = new java.util.HashSet<>();
     @Override public TrdBuyV3PageDto fetchTrdBuyPageByOrgBin(String orgBin, Long after) {
         orgBinsQueried.add(orgBin);
+        if (failingOrgBins.contains(orgBin)) throw new IllegalStateException("goszakup API недоступно: ConnectException");
         TrdBuyV3PageDto p = (after == null) ? orgPages.get(orgBin) : null;
         if (p != null) return p;
         TrdBuyV3PageDto empty = new TrdBuyV3PageDto(); empty.setItems(new ArrayList<>()); return empty;

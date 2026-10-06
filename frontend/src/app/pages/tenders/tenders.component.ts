@@ -15,6 +15,7 @@ import { LucideDynamicIcon } from '@lucide/angular';
 import { KZ_REGIONS } from '../../shared/kz-regions';
 import { kpToastFromResults } from '../../shared/kp-toast';
 import { mailPollToast } from '../../shared/mail-poll-toast';
+import { importToast } from '../../shared/import-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 import { TenderLotsComponent } from './tender-lots.component';
 
@@ -51,7 +52,7 @@ import { TenderLotsComponent } from './tender-lots.component';
           </span>
         </div>
         <span class="import-status" *ngIf="isKz() && importStatus && !importStatus.running && importStatus.lastFinishedAt">
-          Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container>
+          Обновлено {{ formatImportTime(importStatus.lastFinishedAt) }}<ng-container *ngIf="importStatus.lastSummary"> · создано {{ importStatus.lastSummary.created }}, обновлено {{ importStatus.lastSummary.updated }}</ng-container><ng-container *ngIf="importStatus.lastSummary?.errors"> · <span class="import-errors" [title]="importStatus.lastSummary.lastError || ''">ошибок {{ importStatus.lastSummary.errors }}</span></ng-container>
         </span>
         <!-- СК-Фармация импортируется той же кнопкой «Обновить тендеры» (см. onImportTenders); своя полоса прогресса ниже -->
         <div class="import-progress" *ngIf="isKz() && skImportStatus?.running">
@@ -354,6 +355,7 @@ import { TenderLotsComponent } from './tender-lots.component';
     .btn-edit { margin-right: 4px; }
     .btn-back { margin-bottom: 16px; }
     .import-status { color: var(--text-muted); font-size: 12.5px; margin-left: 10px; }
+    .import-errors { color: var(--danger-text); }
     .import-progress { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
     .import-bar { width: 150px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
     .import-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
@@ -769,11 +771,12 @@ export class TendersComponent {
     this.api.importKzTenders(this.importRegion()).subscribe({
       next: (st: any) => {
         this.importStatus = st;
-        if (st?.lastSummary?.enabled === false) {
-          this.importing = false;
-          this.notify.error(st.lastSummary.message || 'Импорт выключен: не настроен токен goszakup');
-        } else {
+        if (st?.running) {
           this.startImportPolling();
+        } else { // прогон закончился, пока шёл ответ (нет токена, нет больниц, мгновенный сбой) — итог сразу
+          this.importing = false;
+          this.toastImport('Госзакуп', st?.lastSummary);
+          if (st?.lastSummary?.enabled !== false) this.loadTenders();
         }
         this.cdr.detectChanges();
       },
@@ -793,7 +796,17 @@ export class TendersComponent {
   onImportSk() {
     this.skImporting = true;
     this.api.importSkTenders().subscribe({
-      next: (st: any) => { this.skImportStatus = st; this.startSkImportPolling(); this.cdr.detectChanges(); },
+      next: (st: any) => {
+        this.skImportStatus = st;
+        if (st?.running) {
+          this.startSkImportPolling();
+        } else { // прогон закончился, пока шёл ответ (мгновенный сбой) — итог сразу, иначе тоста не было бы
+          this.skImporting = false;
+          this.toastImport('СК-Фармация', st?.lastSummary);
+          this.loadTenders();
+        }
+        this.cdr.detectChanges();
+      },
       error: err => {
         this.skImporting = false;
         this.notify.error('Ошибка импорта СК-Фармации: ' + (err.error?.message || err.message));
@@ -812,7 +825,7 @@ export class TendersComponent {
           if (!st.running) {
             clearInterval(this.skImportPollTimer); this.skImportPollTimer = null; this.skImporting = false;
             if (wasRunning) {
-              if (st.lastSummary?.message) this.notify.success('СК-Фармация: ' + st.lastSummary.message);
+              this.toastImport('СК-Фармация', st.lastSummary);
               this.loadTenders();
             }
           }
@@ -907,6 +920,12 @@ export class TendersComponent {
     return Math.max(5, Math.min(100, Math.round(100 * (s.orgsProcessed || 0) / s.orgsTotal)));
   }
 
+  /** Итоговый тост прогона: цвет по исходу — провал красным, с причиной (shared/import-toast.ts). */
+  private toastImport(label: string, summary: any) {
+    const t = importToast(label, summary);
+    if (t) this.notify.show(t.message, t.type);
+  }
+
   startImportPolling() {
     if (this.importPollTimer) return;
     this.importPollTimer = setInterval(() => {
@@ -918,13 +937,8 @@ export class TendersComponent {
             this.stopImportPolling();
             this.importing = false;
             if (wasRunning) { // прогон закончился на наших глазах — итоговый тост + обновить список
-              const s = st.lastSummary;
-              if (s?.enabled === false) {
-                this.notify.error(s.message || 'Импорт выключен: не настроен токен goszakup');
-              } else {
-                if (s?.message) this.notify.success('Импорт завершён: ' + s.message);
-                this.loadTenders();
-              }
+              this.toastImport('Госзакуп', st.lastSummary);
+              if (st.lastSummary?.enabled !== false) this.loadTenders();
             }
           }
           this.cdr.detectChanges();

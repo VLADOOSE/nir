@@ -79,4 +79,42 @@ class GoszakupImportSchedulerTest {
         assertThat(st.lastSummary().getCreated()).isEqualTo(3);
         MarketContext.clear();
     }
+
+    /** Прогон, упавший целиком (например, база недоступна), — ошибка с причиной, а не тихий конец без итога. */
+    @Test
+    void startAsync_crashedRun_reportsTheReason() throws Exception {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        doThrow(new IllegalStateException("Connection to localhost:5432 refused"))
+                .when(service).fillImport(eq(null), any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        scheduler.startAsync(null);
+        long deadline = System.currentTimeMillis() + 3000;
+        while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
+
+        ImportSummary s = scheduler.status().lastSummary();
+        assertThat(s.getErrors()).isEqualTo(1);
+        assertThat(s.getLastError()).isEqualTo("прогон прерван: Connection to localhost:5432 refused");
+        assertThat(s.getMessage()).isEqualTo("Импорт прерван: Connection to localhost:5432 refused");
+    }
+
+    /** Error (не Exception) раньше тонул в Future без следа: тост был бы зелёным. Подкласс Error — не настоящий OOM (§14). */
+    @Test
+    void startAsync_errorInRun_isReportedToo() throws Exception {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        doThrow(new FakeHeapError("Java heap space")).when(service).fillImport(eq(null), any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        scheduler.startAsync(null);
+        long deadline = System.currentTimeMillis() + 3000;
+        while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
+
+        assertThat(scheduler.status().running()).isFalse();
+        assertThat(scheduler.status().lastSummary().getLastError()).isEqualTo("прогон прерван: Java heap space");
+    }
+
+    private static final class FakeHeapError extends Error {
+        FakeHeapError(String message) { super(message); }
+    }
 }
+
