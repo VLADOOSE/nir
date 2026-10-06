@@ -46,4 +46,34 @@ class SkPharmacyRelevanceFilterTest {
         assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинской техники", List.of())).isTrue();
         assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп лекарственных средств", List.of())).isFalse();
     }
+
+    @Test
+    void strongDevicesRecognizedDespiteMedicineWords() {   // ревью A1
+        for (String n : List.of("Анализатор биохимический автоматический", "Гастроскоп", "Бронхоскоп",
+                "Микроскоп бинокулярный", "Центрифуга лабораторная", "Маммограф цифровой", "Насос инфузионный",
+                "Капсула эндоскопическая", "Тест-полоски для глюкометра", "Экспресс-тест для определения тропонина",
+                "Реагент для определения глюкозы в сыворотке крови", "Шприц инъекционный 5 мл")) {
+            assertThat(SkPharmacyRelevanceFilter.isDeviceLot(n)).as(n).isTrue();
+        }
+    }
+
+    @Test
+    void medicinesStayOut() {
+        for (String n : List.of("Раствор для инфузий натрия хлорида 0,9%", "Таблетки 8 мг", "Вакцина против гриппа",
+                "Аэрозол для ингаляций", "Капсулы 20 мг")) {
+            assertThat(SkPharmacyRelevanceFilter.isDeviceLot(n)).as(n).isFalse();
+        }
+    }
+
+    @Test
+    void weakDeviceWordLosesToMedicine() {
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Набор для инфузий")).isFalse();      // набор — слабое, инфузи — вето
+        assertThat(SkPharmacyRelevanceFilter.isDeviceLot("Набор хирургических инструментов")).isTrue(); // хирургическ — сильное
+    }
+
+    @Test
+    void announcementNamedMedicalEquipmentIsRelevantWhateverLots() {
+        assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинской техники", List.of("Ларингоскоп", "Прочее"))).isTrue();
+        assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинских изделий на 2026 год", List.of("Х"))).isTrue();
+    }
 }

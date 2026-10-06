@@ -5,7 +5,6 @@ import com.vladoose.nir.integration.corpus.ImportCorpus.CorpusLot;
 import com.vladoose.nir.integration.corpus.ImportCorpus.CorpusTender;
 import com.vladoose.nir.integration.goszakup.MedicalRelevanceFilter;
 import com.vladoose.nir.integration.skpharmacy.SkPharmacyRelevanceFilter;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
@@ -29,7 +28,7 @@ class ImportCorpusReportTest {
     static final String SK = "/import-corpus/sk-first5.jsonl.gz";
     static final String GOLDEN = "/import-corpus/golden-lots.tsv";
 
-    // ---- новые предикаты (goszakup — новый фильтр с Task 2, СК — пока старый) ----
+    // ---- новые предикаты (goszakup — новый фильтр с Task 2, СК — с Task 3) ----
 
     static boolean newGoszakup(CorpusTender t) {
         return MedicalRelevanceFilter.isRelevant(t.name(),
@@ -73,7 +72,6 @@ class ImportCorpusReportTest {
     }
 
     @Test
-    @Disabled("включается в Task 3 — фильтры ещё старые")
     void golden() throws Exception {
         List<String> mismatches = new ArrayList<>();
         int rows = 0;
