@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Индекс существующих лотов тендера для слияния при переимпорте: по коду лота площадки,
@@ -68,12 +69,23 @@ public final class LotMergeIndex {
      * (лот будет создан заново).
      */
     public <T> List<TenderLot> matchAll(List<T> incoming, Function<T, String> codeFn, Function<T, String> nameFn) {
+        return matchAll(incoming, codeFn, nameFn, l -> true);
+    }
+
+    /**
+     * То же, но запасной матч по имени может забрать только существующий лот, прошедший
+     * {@code nameFallbackAllowed}. Однозначность имени по-прежнему считается по ВСЕМ незабранным лотам.
+     * Нужен для неполного списка площадки (СК-Фармация, обрыв пагинации): лот с кодом, не пришедший по коду,
+     * скорее всего лежит на недочитанной странице — переклеить его по имени на другой лот нельзя.
+     */
+    public <T> List<TenderLot> matchAll(List<T> incoming, Function<T, String> codeFn, Function<T, String> nameFn,
+                                        Predicate<TenderLot> nameFallbackAllowed) {
         List<TenderLot> matched = new ArrayList<>(Collections.nCopies(incoming.size(), null));
         for (int i = 0; i < incoming.size(); i++) {
             matched.set(i, claimByCode(codeFn.apply(incoming.get(i))));
         }
         for (int i = 0; i < incoming.size(); i++) {
-            if (matched.get(i) == null) matched.set(i, claimByUniqueName(nameFn.apply(incoming.get(i))));
+            if (matched.get(i) == null) matched.set(i, claimByUniqueName(nameFn.apply(incoming.get(i)), nameFallbackAllowed));
         }
         return matched;
     }
@@ -93,10 +105,15 @@ public final class LotMergeIndex {
      * Неоднозначное имя соответствием не считается — см. третье правило в описании класса.
      */
     public TenderLot claimByUniqueName(String name) {
+        return claimByUniqueName(name, l -> true);
+    }
+
+    private TenderLot claimByUniqueName(String name, Predicate<TenderLot> allowed) {
         Deque<TenderLot> queue = byName.get(norm(name));
         if (queue == null) return null;
         queue.removeIf(claimed::contains);      // забранные по коду в счёт однозначности не идут
         if (queue.size() != 1) return null;
+        if (!allowed.test(queue.peekFirst())) return null;
         TenderLot lot = queue.pollFirst();
         claimed.add(lot);
         return lot;

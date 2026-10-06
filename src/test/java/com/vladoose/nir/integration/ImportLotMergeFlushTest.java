@@ -544,4 +544,61 @@ class ImportLotMergeFlushTest {
 
         assertThat(lotCount(anno)).isEqualTo(1L);
     }
+
+    /**
+     * Fix round 1 (A3): в НЕПОЛНОМ списке запасной матч по имени не забирает лот, у которого есть код —
+     * он просто лежит на недочитанной странице. Иначе Т2 переклеился бы в Т9 вместе с разобранным ТЗ.
+     */
+    @Test
+    void skIncompleteList_nameFallbackDoesNotRelabelCodedLot() {
+        String anno = "MERGE-SKNAME-" + System.nanoTime();
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
+                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+        TenderLot second = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
+                .filter(x -> (anno + "-Т2").equals(x.getSourceLotCode())).findFirst().orElseThrow();
+        second.setRequiredSpec("разобранное ТЗ лота Т2");
+        em.flush();
+        Long secondId = second.getId();
+        em.clear();
+
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
+                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, false);
+        em.flush();
+        em.clear();
+
+        TenderLot kept = em.find(TenderLot.class, secondId);
+        assertThat(kept.getSourceLotCode()).isEqualTo(anno + "-Т2");
+        assertThat(kept.getRequiredSpec()).isEqualTo("разобранное ТЗ лота Т2");
+        Tender t = tenderRepository.findBySourceExtId(anno).orElseThrow();
+        assertThat(t.getLots()).extracting(TenderLot::getSourceLotCode)
+                .containsExactlyInAnyOrder(anno + "-Т1", anno + "-Т2", anno + "-Т9");
+        TenderLot fresh = t.getLots().stream().filter(x -> (anno + "-Т9").equals(x.getSourceLotCode()))
+                .findFirst().orElseThrow();
+        assertThat(fresh.getId()).isNotEqualTo(secondId);
+        assertThat(fresh.getRequiredSpec()).isNull();
+    }
+
+    /** В ПОЛНОМ списке поведение прежнее: однозначное имя забирает строку и с кодом (код на площадке сменился). */
+    @Test
+    void skCompleteList_nameFallbackUnchanged() {
+        String anno = "MERGE-SKNAME2-" + System.nanoTime();
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
+                new SkLot(anno + "-Т2", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+        Long secondId = tenderRepository.findBySourceExtId(anno).orElseThrow().getLots().stream()
+                .filter(x -> (anno + "-Т2").equals(x.getSourceLotCode())).findFirst().orElseThrow().getId();
+        em.flush();
+        em.clear();
+
+        skWriter.upsert(announce(anno), List.of(
+                new SkLot(anno + "-Т1", "Томограф компьютерный", new BigDecimal("500000"), 1, ""),
+                new SkLot(anno + "-Т9", "Набор процедурный", new BigDecimal("22568"), 1, "")), null, true);
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(TenderLot.class, secondId).getSourceLotCode()).isEqualTo(anno + "-Т9");
+        assertThat(lotCount(anno)).isEqualTo(2L);
+    }
 }

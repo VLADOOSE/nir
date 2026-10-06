@@ -139,4 +139,15 @@ class LotMergeIndexTest {
         assertThat(index.claimByCode(null)).isNull();
         assertThat(index.claimByUniqueName(null)).isNull();
     }
+
+    /** Фильтр запасного матча: лот с кодом по имени не забирается, но однозначность считается по всем. */
+    @Test
+    void nameFallbackFilterBlocksCodedRows() {
+        TenderLot coded = lot("Т25", "Набор процедурный");
+        LotMergeIndex index = new LotMergeIndex(List.of(coded));
+        List<TenderLot> matched = index.matchAll(List.of(new In("Т21", "Набор процедурный")), In::code, In::name,
+                l -> l.getSourceLotCode() == null);
+        assertThat(matched.get(0)).isNull();
+        assertThat(index.claimByCode("Т25")).as("строка не забрана — осталась своему коду").isSameAs(coded);
+    }
 }

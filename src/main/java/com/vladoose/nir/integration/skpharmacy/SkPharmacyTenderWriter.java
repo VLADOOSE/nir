@@ -9,7 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 /** Upsert объявления СК-Фармации в Tender (platform=SK_PHARMACY). Отдельный @Transactional-бин (сеть вне tx, §6). */
 @Component
@@ -84,8 +87,11 @@ public class SkPharmacyTenderWriter {
 
         // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
         // Имя обрезаем так же, как при записи в equipName — иначе длинные имена не совпадут сами с собой.
+        // Неполный список: по имени — только на лоты БЕЗ кода. Лот с кодом, не пришедший по коду, скорее всего
+        // на недочитанной странице; переклеить его по совпавшему имени на другой лот = молча перенести ТЗ/модель.
         List<TenderLot> matched = new LotMergeIndex(t.getLots())
-                .matchAll(lots, l -> trunc(l.code(), 50), l -> trunc(l.name(), 255));
+                .matchAll(lots, l -> trunc(l.code(), 50), l -> trunc(l.name(), 255),
+                        complete ? existing -> true : SkPharmacyTenderWriter::hasNoCode);
 
         List<TenderLot> result = new ArrayList<>();
         int n = 1;
@@ -108,7 +114,7 @@ public class SkPharmacyTenderWriter {
         }
         if (!complete) {
             // не дочитанные лоты — в конец, как есть (сравнение по ссылке: matched держит те же управляемые объекты)
-            java.util.Set<TenderLot> taken = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            Set<TenderLot> taken = Collections.newSetFromMap(new IdentityHashMap<>());
             for (TenderLot m : matched) if (m != null) taken.add(m);
             for (TenderLot old : t.getLots()) {
                 if (taken.contains(old)) continue;
@@ -119,6 +125,10 @@ public class SkPharmacyTenderWriter {
         // полный список: всё, чего больше нет на площадке, уходит через orphanRemoval
         t.getLots().clear();
         t.getLots().addAll(result);
+    }
+
+    private static boolean hasNoCode(TenderLot lot) {
+        return lot.getSourceLotCode() == null || lot.getSourceLotCode().isBlank();
     }
 
     /**

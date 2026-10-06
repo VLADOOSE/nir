@@ -144,7 +144,7 @@ public class SkPharmacyImportService {
                                 + expected + ", получено 0");
                         continue;
                     }
-                    // лента и вкладка сверены живьём (measurements.md, Task 8): число в ленте = строкам вкладки
+                    // lotsCount ленты = числу лотов вкладки (сверено 2026-10-07: 49/49 объявлений корпуса, 3/3 живьём)
                     boolean complete = !fetched.truncated() && (expected == null || got >= expected);
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
                     if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
