@@ -11,7 +11,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long> {
-    List<InboundEmail> findAllByOrderByReceivedAtDesc();
+    /** «Входящие» — последние 300 писем рынка, новые сверху: список не растёт без предела. */
+    List<InboundEmail> findTop300ByOrderByReceivedAtDesc();
 
     boolean existsByMailboxAndMessageId(String mailbox, String messageId);
 

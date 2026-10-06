@@ -49,6 +49,8 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
         </tr>
       </tbody>
     </table>
+    <!-- сервер отдаёт не больше LIST_LIMIT последних писем: ровно столько — значит, старые не показаны -->
+    <p class="list-cap" *ngIf="rows.length >= LIST_LIMIT">Показаны последние {{ LIST_LIMIT }} писем</p>
     <p class="empty" *ngIf="!rows.length && !loading">Писем пока нет. Нажмите «Проверить почту».</p>
 
     <!-- Импорт письма клиники через грид D1 -->
@@ -128,6 +130,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     /* «· КП #416» — одной строкой: у короткого бейджа («Автоответ») перенос шёл посреди метки, «КП» и «#416» на разных строках */
     .kp-ref { white-space: nowrap; }
     .when { white-space: nowrap; color: var(--text); font-size: 12px; }
+    .list-cap { color: var(--text-muted); font-size: 12px; margin: 8px 0 0; }
     .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; background: var(--surface); }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
     .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
@@ -223,6 +226,8 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
   `],
 })
 export class InboundComponent {
+  /** Предел списка на сервере (GET /api/inbound — последние 300 писем). */
+  readonly LIST_LIMIT = 300;
   rows: any[] = [];
   facilities: any[] = [];
   loading = false;

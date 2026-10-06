@@ -32,9 +32,10 @@ public class InboundController {
         this.importService = importService;
     }
 
+    /** Последние 300 писем рынка (страница покажет, что список обрезан). */
     @GetMapping
     public List<InboundEmailResponse> list() {
-        return repository.findAllByOrderByReceivedAtDesc().stream().map(this::toResponse).toList();
+        return repository.findTop300ByOrderByReceivedAtDesc().stream().map(this::toResponse).toList();
     }
 
     @PostMapping("/poll")
