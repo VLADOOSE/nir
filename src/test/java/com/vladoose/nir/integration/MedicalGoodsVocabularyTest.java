@@ -75,4 +75,21 @@ class MedicalGoodsVocabularyTest {
         assertThat(MedicalGoodsVocabulary.hasDeviceStrongOverDrugForm("Шприц для инъекций 5 мл")).isTrue();
         assertThat(MedicalGoodsVocabulary.hasDeviceStrongOverDrugForm("Набор стоматологических инструментов")).isTrue();
     }
+
+    @Test
+    void containerTermsNeedMedicalForm_notKrovatOrMochalka() {   // ревью Task 3, round 2: «кров» — кровать, «моч» — мочалка
+        for (String t : List.of("Контейнер кровельный", "Контейнер для мочалок", "Контейнер пластиковый для ванной, мочалки",
+                "Кровать с контейнером для белья", "Сборник мочалок")) {
+            assertThat(MedicalGoodsVocabulary.hasDeviceStrong(t)).as(t).isFalse();
+        }
+        for (String t : List.of("Контейнер для крови", "Контейнер для сбора мочи", "Контейнер для биоматериала",
+                "Контейнер для мочи стерильный", "Сборник мочи для детей")) {
+            assertThat(MedicalGoodsVocabulary.hasDeviceStrong(t)).as(t).isTrue();
+        }
+    }
+
+    @Test
+    void adjectiveTermsAreStrongTerms() {   // вето формы снимает только то, что иначе засчиталось бы сильным
+        assertThat(MedicalGoodsVocabulary.DEVICE_STRONG).containsAll(MedicalGoodsVocabulary.ADJECTIVE_STRONG);
+    }
 }
