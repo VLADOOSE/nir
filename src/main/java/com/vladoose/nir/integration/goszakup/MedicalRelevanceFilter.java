@@ -31,20 +31,32 @@ public final class MedicalRelevanceFilter {
      * персонала» и раньше убивало лот. Термины изделий — в названии и описании вместе (стемы многословного
      * терма могут стоять в разных полях: «Тележка» / «медицинская»). Сильный маркер услуги отсекает всегда,
      * слабый — только без термина изделия в названии.
+     *
+     * <p>Исключение до маркеров услуг: тара для сбора медицинских отходов (КБУ, «Контейнер | для сбора
+     * медицинских отходов», «Коробка для сбора и хранения медицинских отходов») — товар, хотя «отход» — сильный
+     * маркер услуги. Только если в названии нет «услуг»/«вывоз»/«работы по»: «Вывоз медицинских отходов» и
+     * «Услуги по утилизации отходов в контейнерах» остаются услугами.
      */
     public static boolean isMedicalLot(LotText lot) {
         if (lot == null) return false;
         String name = lot.name() == null ? "" : lot.name();
         String descr = lot.description() == null ? "" : lot.description();
         boolean deviceInName = MedicalGoodsVocabulary.hasDeviceStrong(name);
+        if (isMedicalWasteContainer(name, descr)) return true;
         if (MedicalGoodsVocabulary.hasServiceStrong(name)) {
-            if (deviceInName) log.info("goszakup: лот «{}» — изделие и услуга, считаем услугой", name);
+            if (deviceInName) log.debug("goszakup: лот «{}» — изделие и услуга, считаем услугой", name);
             return false;
         }
         if (MedicalGoodsVocabulary.hasServiceWeak(name)) {
             if (!deviceInName) return false;
-            log.info("goszakup: лот «{}» — изделие и слабый маркер услуги, считаем изделием", name);
+            log.debug("goszakup: лот «{}» — изделие и слабый маркер услуги, считаем изделием", name);
         }
         return deviceInName || MedicalGoodsVocabulary.hasDeviceStrong((name + " " + descr).trim());
+    }
+
+    private static boolean isMedicalWasteContainer(String name, String descr) {
+        return MedicalGoodsVocabulary.matchesAny(name, MedicalGoodsVocabulary.WASTE_CONTAINER)
+                && !MedicalGoodsVocabulary.matchesAny(name, MedicalGoodsVocabulary.WASTE_SERVICE)
+                && MedicalGoodsVocabulary.matchesAny((name + " " + descr).trim(), MedicalGoodsVocabulary.MEDICAL_WASTE);
     }
 }

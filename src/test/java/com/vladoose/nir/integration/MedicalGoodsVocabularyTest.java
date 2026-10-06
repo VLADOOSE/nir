@@ -22,6 +22,8 @@ class MedicalGoodsVocabularyTest {
         assertThat(MedicalGoodsVocabulary.matchesAny("Работы по ремонту кровли", List.of("работы по"))).isTrue();
         assertThat(MedicalGoodsVocabulary.matchesAny("Поставка, выполнение работы и обучение", List.of("работы по"))).isFalse();
         assertThat(MedicalGoodsVocabulary.matchesAny("Объём работы поставщика", List.of("работы по"))).isFalse();
+        assertThat(MedicalGoodsVocabulary.matchesAny("Работы\nпо ремонту", List.of("работы по"))).isTrue();
+        assertThat(MedicalGoodsVocabulary.matchesAny("Работы  по ремонту", List.of("работы по"))).isTrue();
     }
     @Test
     void yoIsTreatedAsYe() {

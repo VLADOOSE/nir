@@ -121,4 +121,18 @@ class MedicalRelevanceFilterTest {
                 "металлический, плавящийся, с покрытием"))).isFalse();
         assertThat(MedicalRelevanceFilter.isMedicalLot(new LotText("Электроды ЭКГ одноразовые", null))).isTrue();
     }
+
+    @Test
+    void medicalWasteContainersAreGoods_wasteServicesAreNot() {   // решение 2026-10-07
+        assertThat(medical("Контейнер для сбора и утилизации медицинских отходов")).isTrue();
+        assertThat(MedicalRelevanceFilter.isMedicalLot(new LotText("Контейнер",
+                "для сбора и утилизации медицинских отходов, пластиковый"))).isTrue();
+        assertThat(medical("Коробка для сбора и хранения медицинских отходов")).isTrue();
+        assertThat(medical("Пакет для медицинских отходов класса Б")).isTrue();
+        assertThat(medical("КБУ 5 л")).isTrue();
+        assertThat(medical("Вывоз медицинских отходов")).isFalse();
+        assertThat(medical("Услуги по утилизации отходов в контейнерах")).isFalse();
+        assertThat(medical("Услуги по утилизации медицинских отходов в контейнерах")).isFalse();
+        assertThat(medical("Контейнер для сбора бытовых отходов")).isFalse();
+    }
 }
