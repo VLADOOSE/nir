@@ -71,6 +71,12 @@ tasks.register('devMail', JavaExec) {
     mainClass = 'com.vladoose.nir.mail.DevMailServer'
 }
 
+// Снятие замороженного корпуса импорта (ImportCorpusReportTest): GOSZAKUP_TOKEN=… ./gradlew importCorpus --args="<out-dir> <bins-file>"
+tasks.register('importCorpus', JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.vladoose.nir.tools.ImportCorpusSnapshot'
+}
+
 // Детерминированное имя fat-JAR для Docker-образа (COPY build/libs/app.jar). Плейн-JAR не нужен.
 tasks.named('bootJar') {
     archiveFileName = 'app.jar'
