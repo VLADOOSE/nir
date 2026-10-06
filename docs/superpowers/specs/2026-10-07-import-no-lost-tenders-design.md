@@ -56,7 +56,7 @@ C2–C5, D1, D3.
 
 ## 2. Полнота лотов (A3, A4)
 
-**Райтеры** получают признак полноты: `upsert(…, lots, complete)`. При `complete=false` новые и совпавшие
+**Райтер СК-Фармации** получает признак полноты (у goszakup неполный ответ — ошибка до записи, флаг не нужен): `upsert(…, lots, complete)`. При `complete=false` новые и совпавшие
 лоты пишутся/обновляются, **несовпавшие существующие не удаляются** (orphanRemoval не срабатывает);
 прочее (0 лотов при существующих → ошибка) — как сейчас.
 
@@ -99,9 +99,11 @@ C2–C5, D1, D3.
 
 ## 5. Дедлайн на весь HTTP-обмен (C1)
 
-- `GatewayHttp`, `LimitedBytes`, `GatewayException`, `FileTooLargeException` переезжают из
-  `integration/whatsapp` в `integration/http`; у WhatsApp меняются только импорты.
-- `GoszakupHttpClient`, `SkPharmacyHttpClient`, `SkTechSpecHttpClient` — через `GatewayHttp.exchange` с
+- `LimitedBytes` и `FileTooLargeException` переезжают из `integration/whatsapp` в `integration/http`
+  (у WhatsApp меняются только импорты). `GatewayHttp` остаётся в WhatsApp: его тексты намеренно без причины
+  (у Green-API токен в URL), а импорту причина нужна («PKIX path building failed») — поэтому рядом свой
+  `integration/http/UpstreamHttp` (уточнено при планировании, 2026-10-07).
+- `GoszakupHttpClient`, `SkPharmacyHttpClient`, `SkTechSpecHttpClient` — через `UpstreamHttp.exchange` с
   `LimitedBytes`: дедлайн 60 с (JSON/HTML), 120 с (PDF); предел тела 10 МБ (JSON/HTML), 30 МБ (PDF);
   `HttpClient.Version.HTTP_1_1`.
 - Редиректы: СК-Фармация — `Redirect.NORMAL`; goszakup — без редиректов (токен в заголовке не должен уйти
