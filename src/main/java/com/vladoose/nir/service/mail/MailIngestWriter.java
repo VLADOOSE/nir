@@ -79,13 +79,15 @@ public class MailIngestWriter {
         if (c.mailClass() == MailClass.SUPPLIER_RESPONSE) {
             outcome = pr == null ? KpOutcome.NOT_FOUND : applySupplierResponse(pr, m.rawBody(), m.body());
         }
+        // Все виды явно, без default: новый вид письма не уйдёт молча в «Прочее» — его не пропустит компилятор
         InboundType type = switch (c.mailClass()) {
             case SUPPLIER_RESPONSE -> InboundType.SUPPLIER_RESPONSE;
             case BOUNCE -> InboundType.BOUNCE;
             case DELAYED -> InboundType.DELAYED;
             case AUTO_REPLY -> InboundType.AUTO_REPLY;
             case CLIENT_REQUEST -> InboundType.CLIENT_REQUEST;
-            default -> InboundType.UNMATCHED;
+            // своё письмо — «Прочее» без уведомления; уведомление сайта сюда не доходит (возврат выше)
+            case OWN, UNMATCHED, SITE_NOTIFICATION -> InboundType.UNMATCHED;
         };
         boolean clientRequest = type == InboundType.CLIENT_REQUEST;
         InboundEmail e = InboundEmail.builder()

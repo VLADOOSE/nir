@@ -38,11 +38,13 @@ public final class MailNotificationComposer {
     private MailNotificationComposer() {}
 
     public static MailNotification compose(ParsedMail m, Classification c, KpSnapshot kp, KpOutcome outcome, ComposeContext ctx) {
+        // Все виды явно, без default: текст для нового вида письма не выберется молча — его не пропустит компилятор
         return switch (c.mailClass()) {
             case SUPPLIER_RESPONSE -> supplierResponse(m, c, kp, outcome, ctx);
             case BOUNCE, DELAYED -> bounce(m, kp, ctx);
             case AUTO_REPLY -> autoReply(m, kp, ctx);
-            default -> other(m, ctx);
+            // своё письмо и уведомление сайта MailIngestWriter сюда не передаёт — уведомлений у них нет
+            case CLIENT_REQUEST, UNMATCHED, OWN, SITE_NOTIFICATION -> other(m, ctx);
         };
     }
 
