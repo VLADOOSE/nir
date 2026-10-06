@@ -311,7 +311,7 @@ import { TenderLotsComponent } from './tender-lots.component';
   styles: [`
     h2 { margin: 0; font-size: 20px; }
     h3 { margin: 24px 0 12px; font-size: 17px; }
-    .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
 
     .tender-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s; }
     .tender-card:hover { box-shadow: var(--shadow); border-color: var(--border); }
@@ -354,12 +354,13 @@ import { TenderLotsComponent } from './tender-lots.component';
     .btn-cancel { margin-left: 8px; }
     .btn-edit { margin-right: 4px; }
     .btn-back { margin-bottom: 16px; }
-    .import-status { color: var(--text-muted); font-size: 12.5px; margin-left: 10px; }
+    .import-status { color: var(--text-muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
     .import-errors { color: var(--danger-text); }
-    .import-progress { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
-    .import-bar { width: 150px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+    /* Прогресс переносится строкой ниже кнопки и сам переносит текст — на узком окне и телефоне не уезжает вправо */
+    .import-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; max-width: 100%; }
+    .import-bar { flex: none; width: 150px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
     .import-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
-    .import-progress-text { color: var(--text); font-size: 12.5px; white-space: nowrap; }
+    .import-progress-text { color: var(--text); font-size: 12.5px; min-width: 0; }
     .pr-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
     .lot-mini-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
     .lot-mini { background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 2px 9px; font-size: 12px;
