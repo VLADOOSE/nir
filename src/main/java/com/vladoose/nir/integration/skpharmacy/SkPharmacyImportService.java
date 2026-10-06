@@ -31,7 +31,7 @@ public class SkPharmacyImportService {
 
     public SkPharmacyImportService(SkPharmacyClient client, SkPharmacyTenderWriter writer,
                                    @Value("${skpharmacy.import.max-pages:30}") int maxPages,
-                                   @Value("${skpharmacy.import.max-lot-pages:20}") int maxLotPages,
+                                   @Value("${skpharmacy.import.max-lot-pages:200}") int maxLotPages,
                                    @Value("${skpharmacy.import.throttle-ms:300}") long throttleMs) {
         this.client = client;
         this.writer = writer;
@@ -46,35 +46,41 @@ public class SkPharmacyImportService {
     }
 
     /**
+     * Лоты объявления + признак «это закупка УСЛУГ» + признак «список НЕПОЛНЫЙ». Признак услуг снимается с ПЕРВОЙ
+     * страницы: услуги и товары в одном объявлении не смешиваются, вкладка целиком одной вёрстки.
+     * {@code truncated} — обход оборвался, не дочитав вкладку: упор в {@code max-lot-pages} при живой ссылке
+     * «вперёд» или страница N&gt;1 (обещанная пейджером предыдущей) разобралась в 0 лотов — троттлинг, страница
+     * ошибки. По неполному списку райтер лоты не удаляет.
+     */
+    private record FetchedLots(List<SkLot> lots, boolean services, boolean truncated) {}
+
+    /**
      * Лоты объявления со ВСЕХ страниц вкладки. Идём вперёд, пока пейджер даёт ссылку на следующую страницу,
      * и обрываемся на странице без НОВЫХ кодов лотов: за последней страницей портал отдаёт контент последней
      * (page=4 = page=3) и «вперёд» обещать не перестаёт, так что одного признака мало. Предел `max-lot-pages` —
-     * последний рубеж; троттлинг между страницами тот же, что между объявлениями (бан площадки).
+     * последний рубеж (упор в него = неполный список); троттлинг между страницами тот же, что между объявлениями.
      */
-    /**
-     * Лоты объявления + признак «это закупка УСЛУГ». Признак снимается с ПЕРВОЙ страницы: услуги и товары
-     * в одном объявлении не смешиваются, вкладка целиком одной вёрстки.
-     */
-    private record FetchedLots(List<SkLot> lots, boolean services) {}
-
     private FetchedLots fetchLots(String announceId) {
         List<SkLot> all = new ArrayList<>();
         Set<String> seenCodes = new HashSet<>();
         boolean services = false;
-        for (int page = 1; page <= maxLotPages; page++) {
+        boolean truncated = false;
+        for (int page = 1; ; page++) {
+            if (page > maxLotPages) { truncated = true; break; }           // предыдущая страница обещала следующую
             int p = page;
             String html = UpstreamRetry.call(sleeper, () -> client.lotsPage(announceId, p));
             if (page == 1) services = SkPharmacyHtmlParser.isServicesLotsPage(html);
             List<SkLot> pageLots = SkPharmacyHtmlParser.parseLots(html);
+            if (page > 1 && pageLots.isEmpty()) { truncated = true; break; }   // обещанная страница пришла без таблицы
             int added = 0;
             for (SkLot l : pageLots) {
                 if (seenCodes.add(l.code())) { all.add(l); added++; }
             }
             if (added == 0) break;                                          // страница без новых лотов — пейджер зациклен
             if (!SkPharmacyHtmlParser.hasNextLotsPage(html, page)) break;   // последняя страница
-            if (!throttle()) break;
+            if (!throttle()) { truncated = true; break; }                   // остановка прогона посреди вкладки
         }
-        return new FetchedLots(all, services);
+        return new FetchedLots(all, services, truncated);
     }
 
     /** Вкладка «Общие сведения» — доп. запрос к порталу; регион/контакт вторичны → сбой не валит тендер (пишем без них). */
@@ -129,6 +135,17 @@ public class SkPharmacyImportService {
                         continue;
                     }
                     List<SkLot> lots = fetched.lots();
+                    Integer expected = a.lotsCount();
+                    int got = lots.size();
+                    // ДО фильтра по лотам: пустой список ушёл бы там в фолбэк по имени объявления и тихо записался
+                    // бы тендер без лотов
+                    if (got == 0 && expected != null && expected > 0) {
+                        sum.addError("объявление " + a.numberAnno() + ": лоты не разобраны — на площадке "
+                                + expected + ", получено 0");
+                        continue;
+                    }
+                    // лента и вкладка сверены живьём (measurements.md, Task 8): число в ленте = строкам вкладки
+                    boolean complete = !fetched.truncated() && (expected == null || got >= expected);
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
                     if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
                         sum.setSkipped(sum.getSkipped() + 1);
@@ -136,10 +153,16 @@ public class SkPharmacyImportService {
                     }
                     sum.setMatched(sum.getMatched() + 1);
                     SkGeneral general = fetchGeneral(a);   // регион/БИН/контакт со вкладки «Общие сведения» — fail-soft
-                    if (writer.upsert(a, lots, general) == SkPharmacyTenderWriter.Result.CREATED) {
+                    if (writer.upsert(a, lots, general, complete) == SkPharmacyTenderWriter.Result.CREATED) {
                         sum.setCreated(sum.getCreated() + 1);
                     } else {
                         sum.setUpdated(sum.getUpdated() + 1);
+                    }
+                    if (!complete) {
+                        // «больше», если число ленты неизвестно или (обрыв пагинации) не меньше полученного
+                        String onPortal = expected == null || got >= expected ? "больше" : String.valueOf(expected);
+                        sum.addError("объявление " + a.numberAnno() + ": на площадке " + onPortal
+                                + " лотов, получено " + got + " — лишние лоты не удалялись");
                     }
                 } catch (Exception e) {
                     log.warn("sk объявление {}: {}", a.numberAnno(), ErrorText.of(e));

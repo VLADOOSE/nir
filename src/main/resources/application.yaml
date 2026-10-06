@@ -120,6 +120,7 @@ skpharmacy:
     enabled: ${SKPHARMACY_IMPORT_ENABLED:false}   # авто-поллинг выкл по умолчанию
     poll-ms: ${SKPHARMACY_POLL_MS:21600000}         # 6 часов
     max-pages: ${SKPHARMACY_MAX_PAGES:30}           # 10 объявлений/страница
+    max-lot-pages: ${SKPHARMACY_MAX_LOT_PAGES:200}  # страниц вкладки лотов на объявление (20 лотов/стр.; 2485-лотовые бывают)
     throttle-ms: ${SKPHARMACY_THROTTLE_MS:300}      # пауза между запросами к порталу (троттлинг скрейпа от бана)
 
 ndda:

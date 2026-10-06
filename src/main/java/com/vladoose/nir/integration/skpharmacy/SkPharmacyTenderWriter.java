@@ -26,7 +26,7 @@ public class SkPharmacyTenderWriter {
     public enum Result { CREATED, UPDATED }
 
     @Transactional
-    public Result upsert(SkAnnounce a, List<SkLot> lots, SkGeneral general) {
+    public Result upsert(SkAnnounce a, List<SkLot> lots, SkGeneral general, boolean complete) {
         Tender t = tenderRepository.findBySourceExtId(a.numberAnno()).orElse(null);
         boolean isNew = t == null;
         if (isNew) { t = new Tender(); t.setSourceExtId(a.numberAnno()); }
@@ -47,7 +47,7 @@ public class SkPharmacyTenderWriter {
         t.setStatus(statusFrom(a.status(), deadline));
         applyGeneral(t, a, general);
 
-        rebuildLots(t, lots);
+        rebuildLots(t, lots, complete);
         tenderRepository.save(t);
         return isNew ? Result.CREATED : Result.UPDATED;
     }
@@ -68,8 +68,10 @@ public class SkPharmacyTenderWriter {
     }
 
     /** §7/§14: лоты ТОЛЬКО через коллекцию (orphanRemoval). Слияние по коду площадки —
-     *  переимпорт не должен стирать разобранное ТЗ и выбор оператора. */
-    private void rebuildLots(Tender t, List<SkLot> lots) {
+     *  переимпорт не должен стирать разобранное ТЗ и выбор оператора.
+     *  {@code complete == false} — список с площадки неполный (обрыв пагинации, упор в предел страниц, меньше,
+     *  чем в ленте): несопоставленные существующие лоты остаются как есть — их не дочитали, а не сняли. */
+    private void rebuildLots(Tender t, List<SkLot> lots, boolean complete) {
         if (lots == null || lots.isEmpty()) {
             // Пустой разбор lots-таблицы = смена вёрстки ЦЭФ / страница ошибки / троттлинг, а не «лотов больше нет».
             // Исключение ловит импорт-сервис: +1 к ошибкам прогона, лоты и работа оператора целы.
@@ -104,7 +106,17 @@ public class SkPharmacyTenderWriter {
             lot.setMaxCost(priceOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
             result.add(lot);
         }
-        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        if (!complete) {
+            // не дочитанные лоты — в конец, как есть (сравнение по ссылке: matched держит те же управляемые объекты)
+            java.util.Set<TenderLot> taken = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            for (TenderLot m : matched) if (m != null) taken.add(m);
+            for (TenderLot old : t.getLots()) {
+                if (taken.contains(old)) continue;
+                old.setLotNumber(n++);
+                result.add(old);
+            }
+        }
+        // полный список: всё, чего больше нет на площадке, уходит через orphanRemoval
         t.getLots().clear();
         t.getLots().addAll(result);
     }

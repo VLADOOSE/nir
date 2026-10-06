@@ -33,6 +33,7 @@ class SkPharmacyImportServiceTest {
 
     @Autowired SkPharmacyImportService importService;
     @Autowired TenderRepository tenderRepository;
+    @Autowired SkPharmacyTenderWriter writer;
     @MockitoBean SkPharmacyClient client;
 
     @org.junit.jupiter.api.BeforeEach void noSleep() { importService.setSleeper(ms -> { }); }
@@ -48,6 +49,21 @@ class SkPharmacyImportServiceTest {
         }
     }
 
+
+    /** Остальные объявления фикстуры ленты — закупки услуг (пропускаются), чтобы не мешать сверке лент/вкладки. */
+    private void servicesForOthers() throws IOException {
+        when(client.lotsPage(anyString(), anyInt())).thenReturn(fixture("lots-services.html"));
+    }
+
+    /** Реальная лента, у объявления 521464-1 число лотов подменено (в фикстуре — 12). */
+    private String searchWithLotsCount(int n) throws IOException {
+        String s = fixture("search.html");
+        int c = s.indexOf("<td>12</td>", s.indexOf("521464-1"));
+        return s.substring(0, c) + "<td>" + n + "</td>" + s.substring(c + "<td>12</td>".length());
+    }
+
+    private static final String THROTTLED = "<html><body>Too many requests</body></html>";
+
     /**
      * ⚠️ Счётчик created зависит от СОСТОЯНИЯ nirdb: объявления фикстуры давно на площадке, и после живого
      * прогона импорта они в базе уже есть → upsert вернёт UPDATED, а не CREATED (на этом тест и падал).
@@ -59,7 +75,10 @@ class SkPharmacyImportServiceTest {
         tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
         when(client.searchPage(anyInt())).thenAnswer(inv ->
                 inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");   // 1 страница, дальше конец
-        when(client.lotsPage(anyString(), anyInt())).thenReturn(fixture("lots.html"));   // device-лоты (томограф/МРТ)
+        // device-лоты (томограф/МРТ) только у 521464 (в ленте 12 лотов = 12 в фикстуре); остальным — услуги,
+        // иначе у них лента и вкладка разошлись бы (521324: 14 против 12) и прогон честно насчитал бы ошибки
+        servicesForOthers();
+        when(client.lotsPage(eq("521464"), anyInt())).thenReturn(fixture("lots.html"));
         when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));  // вкладка «Общие сведения» 521464
 
         ImportSummary sum = new ImportSummary();
@@ -194,7 +213,8 @@ class SkPharmacyImportServiceTest {
                 .thenThrow(new SkCallException("Сеть fms.ecc.kz: нет ответа за 60 с", true))
                 .thenReturn(fixture("search.html"));
         when(client.searchPage(2)).thenReturn("");
-        when(client.lotsPage(anyString(), anyInt()))
+        servicesForOthers();
+        when(client.lotsPage(eq("521464"), anyInt()))
                 .thenThrow(new SkCallException("Сеть fms.ecc.kz: нет ответа за 60 с", true))
                 .thenReturn(fixture("lots.html"));
         when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
@@ -219,5 +239,103 @@ class SkPharmacyImportServiceTest {
         assertThat(sum.getErrors()).isEqualTo(1);
         assertThat(sum.getLastError()).isEqualTo("лента, стр. 1: fms.ecc.kz вернул 403");
         verify(client, times(1)).searchPage(1);
+    }
+
+    // ---------- полнота лотов (ревью A3) ----------
+
+    /**
+     * Review Focus 2: вторая страница лотов пришла без таблицы (троттлинг). Список неполный → лоты, которых нет
+     * в нём, не удаляются, прогон честно получает ошибку «на площадке K, получено M».
+     */
+    @Test
+    void import_lotPageWithoutTable_keepsExistingLots_andReportsError() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        servicesForOthers();
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? searchWithLotsCount(36) : "");
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+        // первый прогон — полный список: 20 + 16 = 36, как в ленте
+        when(client.lotsPage(eq("521464"), anyInt())).thenAnswer(inv ->
+                inv.getArgument(1, Integer.class) == 1 ? fixture("lots-ed-order.html") : fixture("lots-ed-order-last.html"));
+        ImportSummary first = new ImportSummary();
+        importService.fillImport(first);
+        assertThat(first.getErrors()).isZero();
+        assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots()).hasSize(36);
+
+        // второй прогон — стр. 2 вместо таблицы отдала заглушку, хотя стр. 1 обещала её в пейджере
+        when(client.lotsPage(eq("521464"), anyInt())).thenAnswer(inv ->
+                inv.getArgument(1, Integer.class) == 1 ? fixture("lots-ed-order.html") : THROTTLED);
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo(
+                "объявление 521464-1: на площадке 36 лотов, получено 20 — лишние лоты не удалялись");
+        assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots()).hasSize(36);
+    }
+
+    /** Упор в предел max-lot-pages при живой ссылке «вперёд» — тоже неполный список. */
+    @Test
+    void import_lotPagesLimitReached_isIncomplete() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        servicesForOthers();
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? searchWithLotsCount(36) : "");
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+        when(client.lotsPage(eq("521464"), anyInt())).thenAnswer(inv ->
+                inv.getArgument(1, Integer.class) == 1 ? fixture("lots-ed-order.html") : fixture("lots-ed-order-last.html"));
+        SkPharmacyImportService limited = new SkPharmacyImportService(client, writer, 1, 1, 0);   // предел — 1 страница
+        limited.setSleeper(ms -> { });
+
+        ImportSummary sum = new ImportSummary();
+        limited.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo(
+                "объявление 521464-1: на площадке 36 лотов, получено 20 — лишние лоты не удалялись");
+        assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots()).hasSize(20);
+        verify(client, times(1)).lotsPage(eq("521464"), anyInt());
+    }
+
+    /**
+     * 0 лотов при непустом числе в ленте (и не услуги) — сбой разбора, а не «тендер без лотов»: раньше пустой
+     * список уходил в фолбэк фильтра по имени объявления и тихо писался тендер без единого лота.
+     */
+    @Test
+    void import_zeroLotsWhileFeedHasSome_isErrorAndNotWritten() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        servicesForOthers();
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");
+        when(client.lotsPage(eq("521464"), anyInt())).thenReturn(THROTTLED);
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo(
+                "объявление 521464-1: лоты не разобраны — на площадке 12, получено 0");
+        assertThat(tenderRepository.findBySourceExtId("521464-1")).isEmpty();
+    }
+
+    /** Полный список (12 в ленте = 12 на вкладке) — без ошибок. */
+    @Test
+    void import_completeLotList_noError() throws IOException {
+        MarketContext.set(Market.KZ);
+        servicesForOthers();
+        when(client.searchPage(anyInt())).thenAnswer(inv ->
+                inv.getArgument(0, Integer.class) == 1 ? fixture("search.html") : "");
+        when(client.lotsPage(eq("521464"), anyInt())).thenReturn(fixture("lots.html"));
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isZero();
+        assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots()).hasSize(12);
     }
 }
