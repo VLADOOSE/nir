@@ -88,6 +88,8 @@ class SkPharmacyImportServiceTest {
         assertThat(sum.getErrors()).isZero();            // пустая ВТОРАЯ страница — конец ленты, не ошибка
         assertThat(sum.getMatched()).isGreaterThanOrEqualTo(1);
         assertThat(sum.getCreated()).isGreaterThanOrEqualTo(1);
+        assertThat(sum.getCreatedExtIds()).contains("521464-1");          // для уведомления о новых тендерах
+        assertThat(sum.getCreatedExtIds()).hasSize(sum.getCreated());
 
         Tender t = tenderRepository.findBySourceExtId("521464-1").orElseThrow();
         assertThat(t.getPlatform()).isEqualTo(TenderPlatform.SK_PHARMACY);

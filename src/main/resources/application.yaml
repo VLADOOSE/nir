@@ -92,6 +92,8 @@ notify:
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     chat-id: ${TELEGRAM_CHAT_ID:}
     mail-thread-id: ${TELEGRAM_MAIL_THREAD_ID:}
+    # тема «Тендеры» той же группы — новые профильные тендеры (NewTenderNotifier); пусто — «Общая»
+    tenders-thread-id: ${TELEGRAM_TENDERS_THREAD_ID:}
 
 # Публичный адрес АИС — для ссылок «Открыть в АИС» в уведомлениях (прод — application-prod.yaml). Пусто — без ссылок.
 ais:
@@ -103,8 +105,6 @@ goszakup:
     token: ${GOSZAKUP_TOKEN:}
     page-size: ${GOSZAKUP_PAGE_SIZE:50}
   import:
-    enabled: ${GOSZAKUP_IMPORT_ENABLED:false}
-    poll-ms: ${GOSZAKUP_POLL_MS:21600000}   # 6 часов
     since-days: ${GOSZAKUP_SINCE_DAYS:30}
     # глубина ленты: лента ~1000-3000 объявлений/сутки, 60 страниц × 50 ≈ 2-3 дня;
     # с отсечкой по since-days (страница целиком старше cutoff → стоп) можно поднимать смело
@@ -117,11 +117,21 @@ goszakup:
 skpharmacy:
   base-url: ${SKPHARMACY_BASE_URL:https://fms.ecc.kz}
   import:
-    enabled: ${SKPHARMACY_IMPORT_ENABLED:false}   # авто-поллинг выкл по умолчанию
-    poll-ms: ${SKPHARMACY_POLL_MS:21600000}         # 6 часов
     max-pages: ${SKPHARMACY_MAX_PAGES:30}           # 10 объявлений/страница
     max-lot-pages: ${SKPHARMACY_MAX_LOT_PAGES:200}  # страниц вкладки лотов на объявление (20 лотов/стр.; 2485-лотовые бывают)
     throttle-ms: ${SKPHARMACY_THROTTLE_MS:300}      # пауза между запросами к порталу (троттлинг скрейпа от бана)
+
+# Автозапуск импорта обеих площадок в рабочие часы и уведомление о новых профильных тендерах в Telegram
+# (тема TELEGRAM_TENDERS_THREAD_ID группы «Заявки»; нужен настроенный notify.telegram). Оба выключены по умолчанию.
+tenders:
+  auto-import:
+    enabled: ${TENDERS_AUTO_IMPORT_ENABLED:false}
+    cron: ${TENDERS_AUTO_IMPORT_CRON:0 10 8-19 * * MON-SAT}   # ежечасно в :10, 8–19, пн–сб
+    zone: ${TENDERS_AUTO_IMPORT_ZONE:Asia/Oral}
+  notify:
+    enabled: ${TENDERS_NOTIFY_ENABLED:false}
+    # регионы тендеров для уведомления через запятую; пусто — все. У СК-Фармации регион — организатора («г. Астана»)
+    regions: ${TENDERS_NOTIFY_REGIONS:Западно-Казахстанская область}
 
 ndda:
   api:

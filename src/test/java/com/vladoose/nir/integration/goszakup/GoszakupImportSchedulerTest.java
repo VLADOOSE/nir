@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -11,33 +12,58 @@ import static org.mockito.Mockito.*;
 
 class GoszakupImportSchedulerTest {
 
+    final NewTenderNotifier notifier = mock(NewTenderNotifier.class);
+
+    static void awaitIdle(GoszakupImportScheduler scheduler) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 3000;
+        while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
+    }
+
     @Test
-    void run_setsKzMarketContext_aroundServiceCall() {
+    void startAsync_setsKzMarketContext_inBackgroundThread() throws Exception {
         GoszakupImportService service = mock(GoszakupImportService.class);
         AtomicReference<Market> seen = new AtomicReference<>();
         doAnswer(inv -> { seen.set(MarketContext.get()); return null; })
                 .when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, true);
-        scheduler.run();
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        scheduler.startAsync(null);
+        awaitIdle(scheduler);
 
-        assertThat(seen.get()).isEqualTo(Market.KZ);      // KZ во время вызова
-        assertThat(MarketContext.get()).isEqualTo(Market.RF); // очищено после (дефолт RF)
+        assertThat(seen.get()).isEqualTo(Market.KZ);      // KZ во время вызова, в потоке прогона
     }
 
+    /** В конце прогона — уведомление о созданных им тендерах, ещё под рынком KZ (нотификатор читает базу). */
     @Test
-    void tick_disabled_doesNotCallService() {
+    void finishedRun_notifiesWithItsSummary_underKzMarket() throws Exception {
         GoszakupImportService service = mock(GoszakupImportService.class);
-        new GoszakupImportScheduler(service, false).tick();
-        verifyNoInteractions(service);
+        doAnswer(inv -> { ((ImportSummary) inv.getArgument(1)).addCreated("100-1"); return null; })
+                .when(service).fillImport(eq(null), any(ImportSummary.class));
+        AtomicReference<Market> marketAtNotify = new AtomicReference<>();
+        doAnswer(inv -> { marketAtNotify.set(MarketContext.get()); return null; })
+                .when(notifier).afterImport(any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        scheduler.startAsync(null);
+        awaitIdle(scheduler);
+
+        verify(notifier).afterImport(argThat(s -> s != null && s.getCreatedExtIds().contains("100-1")));
+        assertThat(marketAtNotify.get()).isEqualTo(Market.KZ);
     }
 
+    /** Упавшее уведомление прогон не роняет: статус «не идёт», итог прогона на месте. */
     @Test
-    void tick_enabled_callsService() {
+    void notifierFailure_doesNotBreakRun() throws Exception {
         GoszakupImportService service = mock(GoszakupImportService.class);
-        new GoszakupImportScheduler(service, true).tick();
-        verify(service, times(1)).fillImport(eq(null), any(ImportSummary.class));
-        MarketContext.clear();
+        doThrow(new IllegalStateException("boom")).when(notifier).afterImport(any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        scheduler.startAsync(null);
+        awaitIdle(scheduler);
+
+        assertThat(scheduler.status().running()).isFalse();
+        assertThat(scheduler.status().lastFinishedAt()).isNotNull();
+        assertThat(scheduler.status().lastSummary().getErrors()).isZero();
     }
 
     @Test
@@ -47,7 +73,7 @@ class GoszakupImportSchedulerTest {
         doAnswer(inv -> { hold.await(); return null; })
                 .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
         var st = scheduler.startAsync("ЗКО");
 
         assertThat(st.running()).isTrue();          // вернулись сразу, импорт в фоне
@@ -61,23 +87,23 @@ class GoszakupImportSchedulerTest {
     }
 
     @Test
-    void status_reflectsLastRun() {
+    void status_reflectsLastRun() throws Exception {
         GoszakupImportService service = mock(GoszakupImportService.class);
         doAnswer(inv -> { ((ImportSummary) inv.getArgument(1)).setCreated(3); return null; })
                 .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
         assertThat(scheduler.status().running()).isFalse();
         assertThat(scheduler.status().lastFinishedAt()).isNull(); // ещё не бегали
 
-        scheduler.run("ЗКО");
+        scheduler.startAsync("ЗКО");
+        awaitIdle(scheduler);
 
         var st = scheduler.status();
         assertThat(st.running()).isFalse();
         assertThat(st.lastFinishedAt()).isNotNull();
         assertThat(st.lastRegion()).isEqualTo("ЗКО");
         assertThat(st.lastSummary().getCreated()).isEqualTo(3);
-        MarketContext.clear();
     }
 
     /** Прогон, упавший целиком (например, база недоступна), — ошибка с причиной, а не тихий конец без итога. */
@@ -87,7 +113,7 @@ class GoszakupImportSchedulerTest {
         doThrow(new IllegalStateException("Connection to localhost:5432 refused"))
                 .when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
         scheduler.startAsync(null);
         long deadline = System.currentTimeMillis() + 3000;
         while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
@@ -104,7 +130,7 @@ class GoszakupImportSchedulerTest {
         GoszakupImportService service = mock(GoszakupImportService.class);
         doThrow(new FakeHeapError("Java heap space")).when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, false);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
         scheduler.startAsync(null);
         long deadline = System.currentTimeMillis() + 3000;
         while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);

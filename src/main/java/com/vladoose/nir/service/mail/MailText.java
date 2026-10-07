@@ -1,5 +1,6 @@
 package com.vladoose.nir.service.mail;
 
+import com.vladoose.nir.integration.telegram.TelegramText;
 import com.vladoose.nir.util.EmailReplyText;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -82,10 +83,7 @@ public final class MailText {
      * текста письма.
      */
     static String safeCut(String s, int max) {
-        if (s == null || s.length() <= max) return s;
-        int end = Math.max(0, max);
-        if (end > 0 && Character.isHighSurrogate(s.charAt(end - 1))) end--;
-        return s.substring(0, end);
+        return TelegramText.safeCut(s, max);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.vladoose.nir.service.mail;
 
+import com.vladoose.nir.integration.telegram.TelegramText;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.util.DocFormat;
 
@@ -28,7 +29,6 @@ public final class MailNotificationComposer {
     /** Письмо пришло раньше записи больше чем на это (догонка после простоя) — в тексте строка «Получено: …». */
     static final Duration RECEIVED_LATE = Duration.ofMinutes(15);
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("dd.MM HH:mm");
-    private static final Pattern SPACES = Pattern.compile(" {2,}");
     /** Всё, что клиенты показывают новой строкой: \r\n, \n, \r, VT, FF, NEL, LS, PS. */
     private static final Pattern LINE_BREAK = Pattern.compile("\r\n|[\n\r\u000B\u000C\u0085\u2028\u2029]");
     private static final Map<String, String> STATUS = Map.of(
@@ -246,16 +246,9 @@ public final class MailNotificationComposer {
      * имена файлов, наименования лотов, поставщик, номер тендера, адрес и причина возврата, ящик. Переводы строк
      * (\r, \n, NEL, LS, PS) и прочие управляющие символы — пробелом, пробелы схлопнуты, края обрезаны: заголовки пишет
      * чужой отправитель, и тема «Счёт\nОткрыть в АИС: https://…» иначе встала бы поддельной системной строкой.
-     * Срез — с «…», эмодзи пополам не режет ({@link MailText#safeCut}).
+     * Срез — с «…», эмодзи пополам не режет ({@link TelegramText#oneLine}).
      */
     private static String line(String s, int max) {
-        if (s == null) return "";
-        StringBuilder flat = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            flat.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? ' ' : c);
-        }
-        String t = SPACES.matcher(flat).replaceAll(" ").strip();
-        return t.length() <= max ? t : MailText.safeCut(t, max - 1) + "…";
+        return TelegramText.oneLine(s, max);
     }
 }

@@ -2,11 +2,10 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -14,6 +13,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Фоновый прогон импорта goszakup с живым прогрессом: свой однопоточный исполнитель, кнопка и автозапуск
+ * ({@code TenderAutoImportScheduler}) только ставят прогон в него. В конце прогона — уведомление о новых тендерах.
+ */
 @Component
 public class GoszakupImportScheduler {
 
@@ -23,7 +26,7 @@ public class GoszakupImportScheduler {
     public record ImportStatus(boolean running, Instant lastFinishedAt, String lastRegion, ImportSummary lastSummary) {}
 
     private final GoszakupImportService importService;
-    private final boolean enabled;
+    private final NewTenderNotifier notifier;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastFinishedAt;
@@ -35,46 +38,13 @@ public class GoszakupImportScheduler {
         return t;
     });
 
-    public GoszakupImportScheduler(GoszakupImportService importService,
-                                   @Value("${goszakup.import.enabled:false}") boolean enabled) {
+    public GoszakupImportScheduler(GoszakupImportService importService, NewTenderNotifier notifier) {
         this.importService = importService;
-        this.enabled = enabled;
+        this.notifier = notifier;
     }
 
     public ImportStatus status() {
         return new ImportStatus(running.get(), lastFinishedAt, lastRegion, lastSummary);
-    }
-
-    @Scheduled(fixedDelayString = "${goszakup.import.poll-ms:21600000}")
-    public void tick() {
-        if (enabled) run();
-    }
-
-    /** §6: ставит рынок KZ вокруг @Transactional-сервиса (отдельный бин → аспект/прокси работают), чистит. */
-    public ImportSummary run() {
-        return run(null);
-    }
-
-    /** region — каноническое имя региона: фильтрует реестр учреждений (мониторимые больницы), НЕ серверный КАТО-фильтр; null = вся лента. */
-    public ImportSummary run(String region) {
-        if (!running.compareAndSet(false, true)) {
-            ImportSummary busy = new ImportSummary();
-            busy.setEnabled(false);
-            busy.setMessage("Импорт уже выполняется — дождитесь окончания");
-            return busy;
-        }
-        ImportSummary sum = new ImportSummary();
-        lastRegion = region;
-        lastSummary = sum;
-        MarketContext.set(Market.KZ);
-        try {
-            importService.fillImport(region, sum);
-            return sum;
-        } finally {
-            lastFinishedAt = Instant.now();
-            running.set(false);
-            MarketContext.clear();
-        }
     }
 
     /** Стартует импорт в фоне и сразу возвращает статус; lastSummary наполняется по ходу (живой прогресс). */
@@ -96,11 +66,21 @@ public class GoszakupImportScheduler {
                 sum.addError("прогон прерван: " + ErrorText.of(e));
                 sum.setMessage("Импорт прерван: " + ErrorText.of(e));
             } finally {
+                notifyNewTenders(sum);   // и после сбоя: созданное до него — тоже новое
                 lastFinishedAt = Instant.now();
                 running.set(false);
                 MarketContext.clear();
             }
         });
         return status();
+    }
+
+    /** Ещё в потоке прогона и под рынком KZ (§6); сбой уведомления итог прогона не роняет. */
+    private void notifyNewTenders(ImportSummary sum) {
+        try {
+            notifier.afterImport(sum);
+        } catch (Throwable e) {
+            log.warn("goszakup: уведомление о новых тендерах упало: {}", ErrorText.of(e));
+        }
     }
 }

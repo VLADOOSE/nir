@@ -166,7 +166,7 @@ public class GoszakupImportService {
             }
             SubjectDto subj = subjectOf(d.effectiveBin(), subjects);
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
-            if (r == GoszakupTenderWriter.Result.CREATED) sum.setCreated(sum.getCreated() + 1);
+            if (r == GoszakupTenderWriter.Result.CREATED) sum.addCreated(d.getNumberAnno());
             else sum.setUpdated(sum.getUpdated() + 1);
             sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
         } catch (RuntimeException e) {

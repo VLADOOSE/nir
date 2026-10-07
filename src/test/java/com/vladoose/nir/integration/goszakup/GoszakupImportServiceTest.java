@@ -86,6 +86,22 @@ class GoszakupImportServiceTest {
         assertThat(t.getSource()).isEqualTo(Source.PUBLIC_TENDER);
         assertThat(t.getRegion()).isEqualTo(REGION);            // регион из реестра, не от заказчика
         assertThat(t.getFacility()).isNull();
+        assertThat(s.getCreatedExtIds()).containsExactly("100-1");   // для уведомления о новых тендерах
+    }
+
+    /** Повторный прогон того же объявления — обновление: в «созданные» (уведомление) не попадает. */
+    @Test
+    void secondRun_updatesWithoutListingAsCreated() {
+        hospital("Больница Б", "BIN2");
+        fake.orgPage("BIN2", FakeGoszakupClient.buy("101-1", "Приобретение изделий", 230, "BIN2",
+                "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("101-1", List.of(lot("Аппарат УЗИ портативный", null)));
+        service.importMedicalTenders(REGION);
+
+        ImportSummary second = service.importMedicalTenders(REGION);
+
+        assertThat(second.getUpdated()).isEqualTo(1);
+        assertThat(second.getCreatedExtIds()).isEmpty();
     }
 
     /**

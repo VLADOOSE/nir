@@ -1,6 +1,10 @@
 package com.vladoose.nir.integration.goszakup;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 public class ImportSummary {
@@ -21,6 +25,18 @@ public class ImportSummary {
     private String message;
     /** Последняя ошибка прогона «где: что» — в итоговый тост, чтобы причина была видна не только в логе. */
     private String lastError;
+
+    /**
+     * Номера объявлений (source_ext_id), СОЗДАННЫХ этим прогоном, — по ним уходит уведомление о новых тендерах
+     * (NewTenderNotifier). В JSON статуса не отдаётся: UI он не нужен, а наполняется из потока импорта.
+     */
+    @JsonIgnore
+    private final List<String> createdExtIds = new ArrayList<>();
+
+    public void addCreated(String sourceExtId) {
+        created++;
+        createdExtIds.add(sourceExtId);
+    }
 
     /** Ошибка прогона: +1 к счётчику и её текст (без стека, не длиннее 300 символов). */
     public void addError(String text) {

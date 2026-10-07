@@ -161,7 +161,7 @@ public class SkPharmacyImportService {
                     sum.setMatched(sum.getMatched() + 1);
                     SkGeneral general = fetchGeneral(a);   // регион/БИН/контакт со вкладки «Общие сведения» — fail-soft
                     if (writer.upsert(a, lots, general, complete) == SkPharmacyTenderWriter.Result.CREATED) {
-                        sum.setCreated(sum.getCreated() + 1);
+                        sum.addCreated(a.numberAnno());
                     } else {
                         sum.setUpdated(sum.getUpdated() + 1);
                     }

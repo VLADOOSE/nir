@@ -18,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Bot API: sendMessage в тему почты. Обмен — с дедлайном на ВЕСЬ ответ (GatewayHttp: таймаут HttpRequest в JDK 17
+ * Bot API: sendMessage в тему почты или тендеров. Обмен — с дедлайном на ВЕСЬ ответ (GatewayHttp: таймаут HttpRequest в JDK 17
  * снимается после заголовков). Адрес запроса содержит токен — он не попадает ни в одно сообщение об ошибке.
  */
 @Component
@@ -46,14 +46,23 @@ public class TelegramClient {
 
     /** Сообщение в тему почты (`TELEGRAM_MAIL_THREAD_ID`; пусто — «Общая»). Возвращает message_id. */
     public long sendMail(String text, boolean silent) {
+        return send(settings.mailThreadId(), "TELEGRAM_MAIL_THREAD_ID", text, silent);
+    }
+
+    /** Сообщение о новых тендерах в их тему (`TELEGRAM_TENDERS_THREAD_ID`; пусто — «Общая»), со звуком. */
+    public long sendTenders(String text) {
+        return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, false);
+    }
+
+    /** threadVariable — имя переменной окружения темы: в тексте ошибки, если там не число. */
+    private long send(String thread, String threadVariable, String text, boolean silent) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("chat_id", settings.chatId());
-        String thread = settings.mailThreadId();
         if (!thread.isEmpty()) {
             try {
                 body.put("message_thread_id", Long.parseLong(thread));
             } catch (NumberFormatException e) {
-                throw new TelegramException(0, "Telegram: TELEGRAM_MAIL_THREAD_ID должен быть числом (id темы группы)", null);
+                throw new TelegramException(0, "Telegram: " + threadVariable + " должен быть числом (id темы группы)", null);
             }
         }
         body.put("text", text);
@@ -89,7 +98,7 @@ public class TelegramClient {
         // текст сервера: прокси или страница ошибки могут повторить путь запроса вместе с токеном — вычистить ДО обрезки
         String desc = node == null ? "" : maskToken(node.path("description").asText(""), settings.botToken());
         throw new TelegramException(resp.statusCode(), "Telegram: HTTP " + resp.statusCode()
-                + (desc.isBlank() ? "" : " — " + safeCut(desc, 200)), retryAfter);
+                + (desc.isBlank() ? "" : " — " + TelegramText.safeCut(desc, 200)), retryAfter);
     }
 
     /**
@@ -101,13 +110,6 @@ public class TelegramClient {
         String out = text.replace(token, "***");
         String secret = token.substring(token.indexOf(':') + 1);
         return secret.isEmpty() ? out : out.replace(secret, "***");
-    }
-
-    /** Не длиннее max символов, суррогатная пара (эмодзи) не разрезается — как MailText.safeCut. */
-    private static String safeCut(String s, int max) {
-        if (s.length() <= max) return s;
-        int end = Character.isHighSurrogate(s.charAt(max - 1)) ? max - 1 : max;
-        return s.substring(0, end);
     }
 
     private JsonNode parse(String body) {
