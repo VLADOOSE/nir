@@ -67,7 +67,7 @@ public class NewTenderNotifier {
     private final String publicUrl;
     private final Clock clock;
 
-    /** Не ушедшие из-за сбоя Telegram — уйдут со следующим прогоном (если ещё действуют). */
+    /** Не ушедшие из-за сбоя Telegram или не собранные из-за сбоя базы — уйдут со следующим прогоном (если ещё действуют). */
     private final Set<String> pending = new LinkedHashSet<>();
 
     @Autowired

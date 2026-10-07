@@ -54,6 +54,19 @@ class TenderAutoImportSchedulerTest {
         assertThat(next(t.get(1), "2026-10-07T03:41:00Z")).isEqualTo(Instant.parse("2026-10-07T07:40:00Z"));
     }
 
+    /** Каждое расписание запускает СВОЮ площадку: перепутанные задачи гнали бы СК-Фармацию ежечасно (≈ 900 запросов за прогон). */
+    @Test
+    void eachScheduleStartsItsOwnPlatform() {
+        List<CronTask> t = tasks(true, "", "", "");
+
+        t.get(0).getRunnable().run();
+        verify(goszakup).startAsync(null);
+        verifyNoInteractions(sk);
+
+        t.get(1).getRunnable().run();
+        verify(sk).startAsync();
+    }
+
     @Test
     void dash_disablesThatPlatformOnly() {
         assertThat(tasks(true, "", "-", "")).extracting(CronTask::getExpression)
