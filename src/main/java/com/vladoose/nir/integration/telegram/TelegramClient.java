@@ -49,9 +49,9 @@ public class TelegramClient {
         return send(settings.mailThreadId(), "TELEGRAM_MAIL_THREAD_ID", text, silent);
     }
 
-    /** Сообщение о новых тендерах в их тему (`TELEGRAM_TENDERS_THREAD_ID`; пусто — «Общая»), со звуком. */
+    /** Сообщение о новых тендерах в их тему (`TELEGRAM_TENDERS_THREAD_ID`; пусто — «Общая»), тихо (просьба оператора). */
     public long sendTenders(String text) {
-        return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, false);
+        return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, true);
     }
 
     /** threadVariable — имя переменной окружения темы: в тексте ошибки, если там не число. */

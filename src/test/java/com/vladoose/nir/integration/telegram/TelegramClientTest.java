@@ -46,9 +46,9 @@ class TelegramClientTest {
         assertThat(b.path("link_preview_options").path("is_disabled").asBoolean()).isTrue();
     }
 
-    /** Новые тендеры — своя тема (TELEGRAM_TENDERS_THREAD_ID), со звуком; тема почты не используется. */
+    /** Новые тендеры — своя тема (TELEGRAM_TENDERS_THREAD_ID), тихо (просьба оператора); тема почты не используется. */
     @Test
-    void sendsTendersToTendersThread_loud() throws Exception {
+    void sendsTendersToTendersThread_silent() throws Exception {
         stub.enqueue(TelegramStubServer.Reply.ok(556));
         TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "88"), json);
 
@@ -58,7 +58,7 @@ class TelegramClientTest {
         JsonNode b = json.readTree(stub.requests().get(0).body());
         assertThat(b.path("message_thread_id").asLong()).isEqualTo(88);
         assertThat(b.path("text").asText()).isEqualTo("Новый тендер");
-        assertThat(b.has("disable_notification")).isFalse();
+        assertThat(b.path("disable_notification").asBoolean()).isTrue();
     }
 
     @Test
