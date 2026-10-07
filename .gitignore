@@ -41,3 +41,5 @@ out/
 
 # SDD scratch (ledger, briefs, review packages) — не версионируется
 .superpowers/
+
+.DS_Store

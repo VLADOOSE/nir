@@ -41,6 +41,19 @@ class SkPharmacyRelevanceFilterTest {
         assertThat(SkPharmacyRelevanceFilter.nameCandidate("Препараты и медицинские изделия")).isTrue();
     }
 
+    /** I1: «Допуск КТП/ОТП …» — допуск отечественных производителей, а не закупка: лоты не тянем. */
+    @Test
+    void nameStage_dropsDomesticProducerAdmission() {
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate(
+                "Допуск КТП/ОТП к закупу МИ в рамках Долгосрочных договоров")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate("Допуск КТП/ОТП к закупу ЛС")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate("ДОПУСК ОТП к закупу медицинской техники")).isFalse();
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate("Закуп медицинских изделий")).isTrue();
+        // одно слово без другого — не допуск КТП/ОТП
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate("Закуп изделий, допуск к участию")).isTrue();
+        assertThat(SkPharmacyRelevanceFilter.nameCandidate("Закуп изделий с КТП")).isTrue();
+    }
+
     @Test
     void emptyLots_fallbackToName() {
         assertThat(SkPharmacyRelevanceFilter.isRelevant("Закуп медицинской техники", List.of())).isTrue();

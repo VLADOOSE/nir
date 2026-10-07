@@ -22,9 +22,24 @@ public final class SkPharmacyRelevanceFilter {
     /** Имя объявления, которого достаточно: «…медицинской техники», «…медицинских изделий». */
     private static final List<String> MEDICAL_PROCUREMENT = List.of("медицинск техник", "медицинск издели");
 
-    /** Ступень 1: стоит ли тянуть лоты (не явные ли лекарства по имени объявления). */
+    /** «Допуск КТП/ОТП …» — оба признака вместе: одно слово «допуск» или «КТП» само по себе допуском не делает. */
+    private static final Pattern ADMISSION = Pattern.compile("(?iU)допуск");
+    private static final Pattern KTP_OTP = Pattern.compile("(?iU)(?<![\\p{L}\\p{N}])(КТП|ОТП)(?![\\p{L}\\p{N}])");
+
+    /**
+     * Объявление допуска отечественных товаропроизводителей («Допуск КТП/ОТП к закупу МИ в рамках Долгосрочных
+     * договоров», «… к закупу ЛС»): это отбор производителей, а не закупка — West-Med в нём не участвует.
+     * Пропускается по названию, до запроса лотов, как закупки услуг (решение финального ревью 2026-10-07).
+     */
+    public static boolean isProducerAdmission(String announcementName) {
+        String n = announcementName == null ? "" : announcementName;
+        return ADMISSION.matcher(n).find() && KTP_OTP.matcher(n).find();
+    }
+
+    /** Ступень 1: стоит ли тянуть лоты (не явные ли лекарства и не допуск КТП/ОТП по имени объявления). */
     public static boolean nameCandidate(String announcementName) {
         String n = announcementName == null ? "" : announcementName;
+        if (isProducerAdmission(n)) return false;
         return !(MED_NAME.matcher(n).find() && !EQUIP_HINT.matcher(n).find());
     }
 

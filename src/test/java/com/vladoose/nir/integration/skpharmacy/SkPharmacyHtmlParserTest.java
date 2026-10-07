@@ -165,6 +165,17 @@ class SkPharmacyHtmlParserTest {
         assertThat(thousand.rawQuantity()).isNull();
     }
 
+    /** M1: в ячейке количества не число («—», «шт») — пометки «Количество на площадке: —» не нужно. */
+    @Test
+    void parseLots_nonNumericQuantity_noRawNote() throws IOException {
+        String html = fixture("lots-equipment-decimal-qty.html");
+        for (String raw : List.of("—", "шт")) {
+            SkLot lot = SkPharmacyHtmlParser.parseLots(html.replace("nowrap>1.00</td>", "nowrap>" + raw + "</td>")).get(0);
+            assertThat(lot.quantity()).as("количество «%s»", raw).isNull();
+            assertThat(lot.rawQuantity()).as("пометка для «%s»", raw).isNull();
+        }
+    }
+
     /** Пагинация lots-вкладки: идём дальше, только пока в пейджере есть ссылка на СЛЕДУЮЩУЮ страницу. */
     @Test
     void hasNextLotsPage_trueWhileNextLinkExists_falseOnLastPage() throws IOException {

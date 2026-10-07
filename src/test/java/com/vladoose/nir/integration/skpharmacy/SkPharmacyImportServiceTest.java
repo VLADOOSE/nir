@@ -338,4 +338,62 @@ class SkPharmacyImportServiceTest {
         assertThat(sum.getErrors()).isZero();
         assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots()).hasSize(12);
     }
+
+    /** Лента с другим названием объявления 521464-1 (в фикстуре — «Закуп медицинской техники»). */
+    private String searchWithName(String name) throws IOException {
+        return fixture("search.html").replaceFirst("<div>Закуп медицинской техники</div>", "<div>" + name + "</div>");
+    }
+
+    /** I1: «Допуск КТП/ОТП …» пропускается по названию, лоты даже не запрашиваются, тендера нет. */
+    @Test
+    void import_skipsDomesticProducerAdmission_byName() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        servicesForOthers();
+        when(client.searchPage(anyInt())).thenAnswer(inv -> inv.getArgument(0, Integer.class) == 1
+                ? searchWithName("Допуск КТП/ОТП к закупу МИ в рамках Долгосрочных договоров") : "");
+        when(client.lotsPage(eq("521464"), anyInt())).thenReturn(fixture("lots.html"));
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isZero();
+        assertThat(sum.getSkipped()).isEqualTo(10);                       // 9 услуг + допуск
+        assertThat(tenderRepository.findBySourceExtId("521464-1")).isEmpty();
+        verify(client, times(0)).lotsPage(eq("521464"), anyInt());
+    }
+
+    /**
+     * I2: список лотов неполный (стр. 2 без таблицы), а полученные лоты — сплошь лекарства. Релевантность по
+     * неполному списку не определить — это ошибка прогона, а не тихий пропуск.
+     */
+    @Test
+    void import_incompleteLotsAllMedicines_isErrorNotSilentSkip() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        servicesForOthers();
+        String feed = searchWithName("Закуп товаров").replaceFirst(
+                "(521464-1[\\s\\S]*?)<td>12</td>", "$1<td>36</td>");
+        when(client.searchPage(anyInt())).thenAnswer(inv -> inv.getArgument(0, Integer.class) == 1 ? feed : "");
+        String medicines = """
+                <html><body><table>
+                <tr><th>№ п/п</th><th>№ лота</th><th>Наименование лота</th><th>Цена выделенная</th><th>Количество</th></tr>
+                <tr><td>1</td><td>L-1</td><td>Парацетамол таблетки 500 мг</td><td>100.00</td><td>10</td></tr>
+                <tr><td>2</td><td>L-2</td><td>Инсулин человеческий</td><td>200.00</td><td>5</td></tr>
+                </table>
+                <ul class="pagination"><li><a href="https://fms.ecc.kz/ru/announce/index/521464?tab=lots&amp;page=2">2</a></li></ul>
+                </body></html>""";
+        when(client.lotsPage(eq("521464"), anyInt())).thenAnswer(inv ->
+                inv.getArgument(1, Integer.class) == 1 ? medicines : THROTTLED);
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).isEqualTo(
+                "объявление 521464-1: список лотов неполный (получено 2 из 36) — релевантность не определена");
+        assertThat(tenderRepository.findBySourceExtId("521464-1")).isEmpty();
+    }
 }

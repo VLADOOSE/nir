@@ -334,11 +334,17 @@ class GoszakupImportServiceTest {
         fake.lotsByAnno.put("301-1", List.of(lot("Аппарат УЗИ", null)));
         fake.lotsByAnno.put("302-1", List.of(lot("Монитор пациента", null)));
         fake.lotsByAnno.put("303-1", List.of(lot("Бумага офисная", null)));
+        // больница, у которой единственное объявление непрофильное: subject для её БИН не нужен вовсе
+        hospital("Больница С2", "BINS2");
+        fake.orgPage("BINS2",
+                FakeGoszakupClient.buy("304-1", "Закуп", 230, "BINS2", "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("304-1", List.of(lot("Бумага офисная", null)));
 
         ImportSummary s = service.importMedicalTenders(REGION);
 
         assertThat(s.getCreated()).isEqualTo(2);
         assertThat(fake.subjectCalls.get("BINS")).isEqualTo(1);
+        assertThat(fake.subjectCalls.getOrDefault("BINS2", 0)).isZero();
     }
 
     /** Неудача subject тоже запоминается на прогон — иначе каждое объявление больницы повторит три попытки. */

@@ -125,7 +125,7 @@ public class SkPharmacyImportService {
                 sum.setFetched(sum.getFetched() + 1);
                 if (!throttle()) { sum.setMessage("Импорт прерван"); return; }   // троттлинг + чистая остановка
                 try {
-                    if (!SkPharmacyRelevanceFilter.nameCandidate(a.nameRu())) {   // ступень 1 — явные лекарства
+                    if (!SkPharmacyRelevanceFilter.nameCandidate(a.nameRu())) {   // ступень 1 — явные лекарства, допуск КТП/ОТП
                         sum.setSkipped(sum.getSkipped() + 1);
                         continue;
                     }
@@ -148,6 +148,13 @@ public class SkPharmacyImportService {
                     boolean complete = !fetched.truncated() && (expected == null || got >= expected);
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
                     if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
+                        if (!complete) {
+                            // профильный лот мог остаться на недочитанной странице — тихий пропуск потерял бы тендер
+                            String of = expected != null && got < expected ? " из " + expected : ", на площадке больше";
+                            sum.addError("объявление " + a.numberAnno() + ": список лотов неполный (получено " + got
+                                    + of + ") — релевантность не определена");
+                            continue;
+                        }
                         sum.setSkipped(sum.getSkipped() + 1);
                         continue;
                     }

@@ -88,9 +88,11 @@ public final class SkPharmacyHtmlParser {
                 if (code.isBlank() || name.isBlank()) continue;
                 // B3: «1.00» → 1; «2.5», «0» → пусто, сырое значение — в пометку (отрезать дробь нельзя: занижает заказ)
                 String rawQty = txt(tds, cols.qty());
-                Integer qty = ImportQuantity.wholePositiveOrNull(ImportQuantity.parse(rawQty));
+                java.math.BigDecimal parsedQty = ImportQuantity.parse(rawQty);
+                Integer qty = ImportQuantity.wholePositiveOrNull(parsedQty);
+                // пометка — только про ЧИСЛО площадки («2.5», «0»); «—», «шт» в ячейке — не количество, пометка не нужна
                 out.add(new SkLot(code, name, moneyOrNull(tds, cols.price()), qty, txt(tds, cols.desc()),
-                        !rawQty.isBlank() && qty == null ? rawQty : null));
+                        parsedQty != null && qty == null ? rawQty : null));
             }
             if (!out.isEmpty()) return out;                      // первая таблица с лотами — она и есть
         }

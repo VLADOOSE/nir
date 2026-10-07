@@ -181,4 +181,33 @@ class GoszakupHttpClientTest {
             .isInstanceOfSatisfying(GoszakupCallException.class, e -> assertThat(e.retryable()).isFalse());
         assertThat(requestedPaths).doesNotContain("/steal");
     }
+
+    /** M2: абсолютный next_page на другой хост не идём (токен ушёл бы туда) — список неполный, ошибка. */
+    @Test
+    void fetchLots_absoluteNextPageOnOtherHost_notFollowed() {
+        respond("/steal-lots", "", 200, """
+            {"total":2,"next_page":"","items":[{"lot_number":"2","name_ru":"B","count":1,"amount":10}]}""");
+        respond("/v2/lots/number-anno/2-1", "limit=500", 200, """
+            {"total":2,"next_page":"http://127.0.0.1:%d/steal-lots",
+             "items":[{"lot_number":"1","name_ru":"A","count":1,"amount":10}]}""".formatted(server.getAddress().getPort()));
+        assertThatThrownBy(() -> client.fetchLots("2-1"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> {
+                assertThat(e.retryable()).isFalse();
+                assertThat(e.getMessage()).isEqualTo("goszakup: лоты объявления 2-1 — получено 1 из 2");
+            });
+        assertThat(requestedPaths).doesNotContain("/steal-lots");
+    }
+
+    /** M2: битый адрес (пробел в next_page) — ошибка goszakup без адреса в тексте, а не голый IllegalArgumentException. */
+    @Test
+    void fetchLots_malformedNextPage_isCallErrorWithoutUrl() {
+        respond("/v2/lots/number-anno/3-1", "limit=500", 200, """
+            {"total":2,"next_page":"/v2/lots/number-anno/3-1?page=next&x=a b",
+             "items":[{"lot_number":"1","name_ru":"A","count":1,"amount":10}]}""");
+        assertThatThrownBy(() -> client.fetchLots("3-1"))
+            .isInstanceOfSatisfying(GoszakupCallException.class, e -> {
+                assertThat(e.retryable()).isFalse();
+                assertThat(e.getMessage()).doesNotContain("localhost").doesNotContain("a b").doesNotContain("test-token");
+            });
+    }
 }
