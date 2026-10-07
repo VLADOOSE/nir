@@ -38,6 +38,15 @@ public class ImportSummary {
         createdExtIds.add(sourceExtId);
     }
 
+    /**
+     * Ошибка вне самого импорта (уведомление о новых тендерах): +1 к счётчику, а «последняя ошибка» ставится, только
+     * если её ещё нет, — причина сбоя импорта важнее и не затирается.
+     */
+    public void addSideError(String text) {
+        if (lastError == null) addError(text);
+        else errors++;
+    }
+
     /** Ошибка прогона: +1 к счётчику и её текст (без стека, не длиннее 300 символов). */
     public void addError(String text) {
         errors++;

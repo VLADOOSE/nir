@@ -31,7 +31,7 @@ public final class TelegramText {
         StringBuilder flat = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            flat.append(Character.isISOControl(c) || c == ' ' || c == ' ' ? ' ' : c);
+            flat.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? ' ' : c);
         }
         String t = SPACES.matcher(flat).replaceAll(" ").strip();
         return t.length() <= max ? t : safeCut(t, max - 1) + "…";

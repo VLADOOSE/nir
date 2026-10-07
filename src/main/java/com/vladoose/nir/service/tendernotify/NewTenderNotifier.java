@@ -10,6 +10,7 @@ import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.Card;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.LotLine;
 import com.vladoose.nir.util.ErrorText;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,18 +37,20 @@ import java.util.stream.Collectors;
  * планировщиками goszakup и СК-Фармации в конце каждого прогона — и автоматического, и по кнопке.
  * <p>
  * В уведомление попадают только действующие тендеры: статус ACTIVE, срок подачи не раньше сегодняшнего дня по
- * Уральску и регион из {@code tenders.notify.regions} (по умолчанию — ЗКО; пусто — все регионы). У тендеров
+ * Уральску и регион из {@code tenders.notify.regions} (через запятую; пусто — ЗКО, решение оператора «только ЗКО»;
+ * все регионы — только явной «*»: пустая переменная окружения не должна молча включать всю страну). У тендеров
  * СК-Фармации регион — организатора (республиканская закупка, «г. Астана»), поэтому при фильтре «ЗКО» они не приходят.
  * <p>
- * Одно сообщение на прогон. Чтение из базы — своей короткой транзакцией, отправка — вне её (§6). Не ушло — ошибка
- * в итоге прогона, номера остаются в памяти и уходят со следующим прогоном (рестарт бэкенда их теряет — принято:
- * тендер виден в АИС, а прогоны идут раз в час).
+ * Одно сообщение на прогон. Чтение из базы — своей короткой транзакцией, отправка — вне её (§6). Не собралось или
+ * не ушло — ошибка в итоге прогона, номера остаются в памяти и уходят со следующим прогоном (рестарт бэкенда их
+ * теряет — принято: тендер виден в АИС, а прогоны идут раз в час).
  */
 @Component
 public class NewTenderNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(NewTenderNotifier.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Oral");
+    static final String DEFAULT_REGION = "Западно-Казахстанская область";
 
     /** Отправка готового текста; в работе — тема тендеров Bot API. */
     interface Sender {
@@ -59,6 +62,7 @@ public class NewTenderNotifier {
     private final TelegramSettings telegram;
     private final Sender sender;
     private final boolean enabled;
+    /** Нормализованные имена регионов; пусто — все регионы (только по явной «*»). */
     private final Set<String> regions;
     private final String publicUrl;
     private final Clock clock;
@@ -70,7 +74,7 @@ public class NewTenderNotifier {
     public NewTenderNotifier(TenderRepository tenderRepository, PlatformTransactionManager txManager,
                              TelegramSettings telegram, TelegramClient client,
                              @Value("${tenders.notify.enabled:false}") boolean enabled,
-                             @Value("${tenders.notify.regions:Западно-Казахстанская область}") String regions,
+                             @Value("${tenders.notify.regions:}") String regions,
                              @Value("${ais.public-url:}") String publicUrl) {
         this(tenderRepository, txManager, telegram, client::sendTenders, enabled, regions, publicUrl, Clock.systemUTC());
     }
@@ -83,10 +87,30 @@ public class NewTenderNotifier {
         this.telegram = telegram;
         this.sender = sender;
         this.enabled = enabled;
-        this.regions = Arrays.stream(regions == null ? new String[0] : regions.split(","))
-                .map(NewTenderNotifier::norm).filter(r -> !r.isEmpty()).collect(Collectors.toSet());
+        this.regions = parseRegions(regions);
         this.publicUrl = publicUrl;
         this.clock = clock;
+    }
+
+    /** Пусто (в т. ч. пустая переменная окружения) — ЗКО; «*» — все регионы. */
+    static Set<String> parseRegions(String csv) {
+        Set<String> out = Arrays.stream(csv == null ? new String[0] : csv.split(","))
+                .map(NewTenderNotifier::norm).filter(r -> !r.isEmpty()).collect(Collectors.toSet());
+        if (out.contains("*")) return Set.of();
+        return out.isEmpty() ? Set.of(norm(DEFAULT_REGION)) : out;
+    }
+
+    /** Включили, а Telegram не настроен — иначе полная тишина без следа. */
+    @PostConstruct
+    void logSettings() {
+        if (!enabled) return;
+        if (!telegram.isConfigured()) {
+            log.warn("Уведомления о новых тендерах включены (TENDERS_NOTIFY_ENABLED=true), но Telegram не настроен: нужны "
+                    + "TELEGRAM_ENABLED=true, TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID — уведомления не уходят");
+        } else {
+            log.info("Уведомления о новых тендерах: регионы {}, тема {}", regions.isEmpty() ? "все" : regions,
+                    telegram.tendersThreadId().isEmpty() ? "«Общая»" : telegram.tendersThreadId());
+        }
     }
 
     /**
@@ -102,8 +126,13 @@ public class NewTenderNotifier {
         try {
             p = readTx.execute(status -> prepare(ids));
         } catch (RuntimeException e) {
-            log.warn("Telegram: не удалось собрать уведомление о новых тендерах: {}", ErrorText.of(e));
-            return;   // pending не трогаем — попробуем со следующим прогоном
+            // и новые номера этого прогона: следующий прогон увидит их тендеры уже как «обновлённые», не «созданные»
+            pending.addAll(ids);
+            log.warn("Telegram: не удалось собрать уведомление о новых тендерах ({}), повтор — со следующим прогоном: {}",
+                    ids.size(), ErrorText.of(e));
+            fail(sum, "уведомление в Telegram о новых тендерах не собрано (повтор — со следующим прогоном): "
+                    + ErrorText.of(e));
+            return;
         }
         pending.clear();
         if (p == null || p.text() == null) return;   // никто не прошёл фильтр
@@ -114,9 +143,15 @@ public class NewTenderNotifier {
             pending.addAll(p.extIds());
             log.warn("Telegram: уведомление о новых тендерах не ушло ({}), повтор — со следующим прогоном: {}",
                     p.extIds().size(), ErrorText.of(e));
-            sum.addError("уведомление в Telegram о новых тендерах не ушло (повтор — со следующим прогоном): "
+            fail(sum, "уведомление в Telegram о новых тендерах не ушло (повтор — со следующим прогоном): "
                     + ErrorText.of(e));
         }
+    }
+
+    /** Ошибку видно в тосте и строке «Обновлено…»; причина сбоя самого импорта, если была, не затирается. */
+    private static void fail(ImportSummary sum, String text) {
+        sum.addSideError(text);
+        if (sum.getMessage() != null) sum.setMessage(sum.getMessage() + " · Telegram: уведомление о новых тендерах не ушло");
     }
 
     private record Prepared(String text, List<String> extIds) {}

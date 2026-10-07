@@ -25,6 +25,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Кто попадает в уведомление: только созданные прогоном, действующие, со сроком не в прошлом и из нужного региона. */
 @SpringBootTest
@@ -51,7 +54,11 @@ class NewTenderNotifierTest {
     void clear() { MarketContext.clear(); }
 
     NewTenderNotifier notifier(boolean enabled, TelegramSettings tg, String regions) {
-        return new NewTenderNotifier(tenderRepository, txManager, tg, text -> {
+        return notifier(tenderRepository, enabled, tg, regions);
+    }
+
+    NewTenderNotifier notifier(TenderRepository repo, boolean enabled, TelegramSettings tg, String regions) {
+        return new NewTenderNotifier(repo, txManager, tg, text -> {
             if (failNext != null) {
                 RuntimeException e = failNext;
                 failNext = null;
@@ -118,13 +125,25 @@ class NewTenderNotifierTest {
         assertThat(sent).isEmpty();
     }
 
+    /** Все регионы — только явной «*». */
     @Test
-    void regionsEmpty_meansAllRegions() {
+    void regionsStar_meansAllRegions() {
         tender("NT-G", "г. Астана", "ACTIVE", TODAY.plusDays(3));
 
-        notifier(true, TG_ON, " ").afterImport(created("NT-G"));
+        notifier(true, TG_ON, "*").afterImport(created("NT-G"));
 
         assertThat(sent).singleElement().asString().contains("NT-G");
+    }
+
+    /** Пустая переменная окружения (TENDERS_NOTIFY_REGIONS=) — ЗКО, а не вся страна: требование «только ЗКО». */
+    @Test
+    void regionsBlank_meansZkoOnly() {
+        tender("NT-K", "г. Астана", "ACTIVE", TODAY.plusDays(3));
+        tender("NT-L", ZKO, "ACTIVE", TODAY.plusDays(3));
+
+        notifier(true, TG_ON, " , ").afterImport(created("NT-K", "NT-L"));
+
+        assertThat(sent).singleElement().asString().contains("NT-L").doesNotContain("NT-K");
     }
 
     @Test
@@ -156,6 +175,44 @@ class NewTenderNotifierTest {
         assertThat(sent).singleElement().asString().contains("NT-I");
         n.afterImport(new ImportSummary());
         assertThat(sent).hasSize(1);                                        // отправленное не повторяется
+    }
+
+    /** База не ответила при сборке — новые номера этого прогона не теряются: следующий прогон увидит их как «обновлённые». */
+    @Test
+    void readFailed_newTendersRetriedWithNextRun() {
+        tender("NT-M", ZKO, "ACTIVE", TODAY.plusDays(2));
+        TenderRepository flaky = mock(TenderRepository.class);
+        when(flaky.findBySourceExtId(anyString()))
+                .thenThrow(new IllegalStateException("Connection refused"))
+                .thenAnswer(inv -> tenderRepository.findBySourceExtId(inv.getArgument(0)));
+        NewTenderNotifier n = notifier(flaky, true, TG_ON, ZKO);
+
+        ImportSummary first = created("NT-M");
+        n.afterImport(first);
+
+        assertThat(sent).isEmpty();
+        assertThat(first.getErrors()).isEqualTo(1);
+        assertThat(first.getLastError()).startsWith("уведомление в Telegram о новых тендерах не собрано");
+
+        n.afterImport(new ImportSummary());
+
+        assertThat(sent).singleElement().asString().contains("NT-M");
+    }
+
+    /** Сбой уведомления не затирает причину сбоя самого импорта — она важнее. */
+    @Test
+    void notifyError_keepsImportErrorAsLast() {
+        tender("NT-N", ZKO, "ACTIVE", TODAY.plusDays(2));
+        failNext = new IllegalStateException("Telegram: HTTP 500");
+        ImportSummary sum = created("NT-N");
+        sum.addError("объявление 1-1: goszakup API недоступно: ConnectException");
+        sum.setMessage("Больниц 1, получено 1, ошибок 1");
+
+        notifier(true, TG_ON, ZKO).afterImport(sum);
+
+        assertThat(sum.getErrors()).isEqualTo(2);
+        assertThat(sum.getLastError()).isEqualTo("объявление 1-1: goszakup API недоступно: ConnectException");
+        assertThat(sum.getMessage()).endsWith(" · Telegram: уведомление о новых тендерах не ушло");
     }
 
     @Test
