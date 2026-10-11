@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
@@ -27,6 +28,7 @@ public class GoszakupImportScheduler {
 
     private final GoszakupImportService importService;
     private final NewTenderNotifier notifier;
+    private final ImportOutageNotifier outage;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastFinishedAt;
@@ -38,9 +40,11 @@ public class GoszakupImportScheduler {
         return t;
     });
 
-    public GoszakupImportScheduler(GoszakupImportService importService, NewTenderNotifier notifier) {
+    public GoszakupImportScheduler(GoszakupImportService importService, NewTenderNotifier notifier,
+                                   ImportOutageNotifier outage) {
         this.importService = importService;
         this.notifier = notifier;
+        this.outage = outage;
     }
 
     public ImportStatus status() {
@@ -67,6 +71,7 @@ public class GoszakupImportScheduler {
                 sum.setMessage("Импорт прерван: " + ErrorText.of(e));
             } finally {
                 notifyNewTenders(sum);   // и после сбоя: созданное до него — тоже новое
+                reportOutage(sum);       // авария площадки (упавшие подряд прогоны без записей) — в Telegram
                 lastFinishedAt = Instant.now();
                 running.set(false);
                 MarketContext.clear();
@@ -81,6 +86,15 @@ public class GoszakupImportScheduler {
             notifier.afterImport(sum);
         } catch (Throwable e) {
             log.warn("goszakup: уведомление о новых тендерах упало: {}", ErrorText.of(e));
+        }
+    }
+
+    /** Оповещение о сбое площадки; само ничего не бросает, но и его падение итог прогона не роняет. */
+    private void reportOutage(ImportSummary sum) {
+        try {
+            outage.afterRun("goszakup", sum);
+        } catch (Throwable e) {
+            log.warn("goszakup: оповещение о сбое импорта упало: {}", ErrorText.of(e));
         }
     }
 }

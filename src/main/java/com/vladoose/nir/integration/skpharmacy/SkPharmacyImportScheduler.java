@@ -3,6 +3,7 @@ package com.vladoose.nir.integration.skpharmacy;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import com.vladoose.nir.util.ErrorText;
 import org.slf4j.Logger;
@@ -27,6 +28,7 @@ public class SkPharmacyImportScheduler {
 
     private final SkPharmacyImportService importService;
     private final NewTenderNotifier notifier;
+    private final ImportOutageNotifier outage;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastFinishedAt;
@@ -37,9 +39,11 @@ public class SkPharmacyImportScheduler {
         return t;
     });
 
-    public SkPharmacyImportScheduler(SkPharmacyImportService importService, NewTenderNotifier notifier) {
+    public SkPharmacyImportScheduler(SkPharmacyImportService importService, NewTenderNotifier notifier,
+                                     ImportOutageNotifier outage) {
         this.importService = importService;
         this.notifier = notifier;
+        this.outage = outage;
     }
 
     public ImportStatus status() {
@@ -63,6 +67,7 @@ public class SkPharmacyImportScheduler {
                 sum.setMessage("Ошибка импорта СК-Фармации: " + ErrorText.of(e));
             } finally {
                 notifyNewTenders(sum);   // и после сбоя: созданное до него — тоже новое
+                reportOutage(sum);       // авария площадки (упавшие подряд прогоны без записей) — в Telegram
                 lastFinishedAt = Instant.now();
                 running.set(false);
                 MarketContext.clear();
@@ -77,6 +82,15 @@ public class SkPharmacyImportScheduler {
             notifier.afterImport(sum);
         } catch (Throwable e) {
             log.warn("СК-Фармация: уведомление о новых тендерах упало: {}", ErrorText.of(e));
+        }
+    }
+
+    /** Оповещение о сбое площадки; само ничего не бросает, но и его падение итог прогона не роняет. */
+    private void reportOutage(ImportSummary sum) {
+        try {
+            outage.afterRun("СК-Фармации", sum);   // в родительном: «Импорт СК-Фармации не работает»
+        } catch (Throwable e) {
+            log.warn("СК-Фармация: оповещение о сбое импорта упало: {}", ErrorText.of(e));
         }
     }
 }

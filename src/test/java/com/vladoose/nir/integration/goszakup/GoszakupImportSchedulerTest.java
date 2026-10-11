@@ -2,6 +2,7 @@ package com.vladoose.nir.integration.goszakup;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.*;
 class GoszakupImportSchedulerTest {
 
     final NewTenderNotifier notifier = mock(NewTenderNotifier.class);
+    final ImportOutageNotifier outage = mock(ImportOutageNotifier.class);
 
     static void awaitIdle(GoszakupImportScheduler scheduler) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 3000;
@@ -26,7 +28,7 @@ class GoszakupImportSchedulerTest {
         doAnswer(inv -> { seen.set(MarketContext.get()); return null; })
                 .when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         scheduler.startAsync(null);
         awaitIdle(scheduler);
 
@@ -43,7 +45,7 @@ class GoszakupImportSchedulerTest {
         doAnswer(inv -> { marketAtNotify.set(MarketContext.get()); return null; })
                 .when(notifier).afterImport(any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         scheduler.startAsync(null);
         awaitIdle(scheduler);
 
@@ -57,7 +59,7 @@ class GoszakupImportSchedulerTest {
         GoszakupImportService service = mock(GoszakupImportService.class);
         doThrow(new IllegalStateException("boom")).when(notifier).afterImport(any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         scheduler.startAsync(null);
         awaitIdle(scheduler);
 
@@ -73,7 +75,7 @@ class GoszakupImportSchedulerTest {
         doAnswer(inv -> { hold.await(); return null; })
                 .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         var st = scheduler.startAsync("ЗКО");
 
         assertThat(st.running()).isTrue();          // вернулись сразу, импорт в фоне
@@ -92,7 +94,7 @@ class GoszakupImportSchedulerTest {
         doAnswer(inv -> { ((ImportSummary) inv.getArgument(1)).setCreated(3); return null; })
                 .when(service).fillImport(eq("ЗКО"), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         assertThat(scheduler.status().running()).isFalse();
         assertThat(scheduler.status().lastFinishedAt()).isNull(); // ещё не бегали
 
@@ -113,7 +115,7 @@ class GoszakupImportSchedulerTest {
         doThrow(new IllegalStateException("Connection to localhost:5432 refused"))
                 .when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         scheduler.startAsync(null);
         long deadline = System.currentTimeMillis() + 3000;
         while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
@@ -130,7 +132,7 @@ class GoszakupImportSchedulerTest {
         GoszakupImportService service = mock(GoszakupImportService.class);
         doThrow(new FakeHeapError("Java heap space")).when(service).fillImport(eq(null), any(ImportSummary.class));
 
-        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier);
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
         scheduler.startAsync(null);
         long deadline = System.currentTimeMillis() + 3000;
         while (scheduler.status().running() && System.currentTimeMillis() < deadline) Thread.sleep(20);
@@ -142,5 +144,17 @@ class GoszakupImportSchedulerTest {
     private static final class FakeHeapError extends Error {
         FakeHeapError(String message) { super(message); }
     }
-}
 
+    /** Итог каждого прогона — и упавшего целиком — уходит в оповещение о сбоях, с названием площадки. */
+    @Test
+    void finishedRun_evenCrashed_reportedToOutageNotifier() throws Exception {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        doThrow(new IllegalStateException("Connection refused")).when(service).fillImport(eq(null), any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage);
+        scheduler.startAsync(null);
+        awaitIdle(scheduler);
+
+        verify(outage).afterRun(eq("goszakup"), argThat(s -> s != null && s.getErrors() == 1));
+    }
+}
