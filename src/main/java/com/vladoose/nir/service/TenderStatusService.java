@@ -24,8 +24,8 @@ public class TenderStatusService {
         this.tenderRepository = tenderRepository;
     }
 
-    @Transactional
     /** @param now «сейчас» по часам рынка ({@code Market#zone}) — сроки площадок записаны местным временем */
+    @Transactional
     public int completeExpired(LocalDateTime now) {
         // через выборку (не bulk-JPQL): Hibernate-фильтр рынка применяется только к запросам сессии
         Map<Long, Tender> expired = new LinkedHashMap<>();

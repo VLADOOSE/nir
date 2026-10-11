@@ -41,6 +41,7 @@ public interface PriceRequestMapper {
         r.setTenderNumber(t.getTenderNumber());
         r.setStatus(t.getStatus());
         r.setDeadline(t.getDeadline());
+        r.setDeadlineAt(t.getDeadlineAt());
         return r;
     }
 

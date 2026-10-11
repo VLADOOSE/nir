@@ -139,8 +139,11 @@ public class GoszakupTenderWriter {
 
         // сперва ВСЕ по коду, затем оставшиеся — по однозначному имени (см. LotMergeIndex).
         // Имя обрезаем так же, как при записи в equipName — иначе длинное имя не совпадёт само с собой.
+        // Лот «снят с площадки» возвращается только по коду: по имени его забрал бы новый лот площадки с тем же
+        // названием, и запрос КП молча переехал бы на чужой лот (B5).
         List<TenderLot> matched = new LotMergeIndex(t.getLots())
-                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), d -> trunc(d.getNameRu(), 255));
+                .matchAll(lots, d -> trunc(d.getLotNumber(), 50), d -> trunc(d.getNameRu(), 255),
+                        existing -> existing.getSourceRemovedAt() == null);
 
         List<TenderLot> result = new ArrayList<>();
         for (int i = 0; i < lots.size(); i++) {

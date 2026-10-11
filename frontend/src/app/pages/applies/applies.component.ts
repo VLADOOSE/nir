@@ -8,6 +8,7 @@ import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+import { deadlinePassed } from '../../shared/deadline';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 
 @Component({
@@ -810,9 +811,9 @@ export class AppliesComponent {
     }
   }
 
+  /** Срок — с временем площадки (B2); дата без времени — весь день (раньше блокировалось с 05:00 последнего дня). */
   isDeadlinePassed(): boolean {
-    if (!this.selectedApply?.tender?.deadline) return false;
-    return new Date(this.selectedApply.tender.deadline) < new Date();
+    return deadlinePassed(this.selectedApply?.tender, this.market.value);
   }
 
   submitButtonReason(): string {

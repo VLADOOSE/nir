@@ -252,4 +252,31 @@ class ApplyAutoFillServiceTest {
         assertThat(items.get(0).getTenderLot().getId()).isEqualTo(lotWithResponse.getId());
         assertThat(items.get(0).getOfferedCost()).isEqualByComparingTo(BigDecimal.valueOf(720_000));
     }
+
+    /**
+     * B5: лот снят с площадки (остался в АИС из-за запроса КП) — в заявку на участие его не собираем
+     * и «без КП» не числим: на площадке такого лота больше нет.
+     */
+    @Test
+    void autoFill_skipsLotsRemovedFromPlatform() {
+        EquipmentType uzi = equipmentTypeRepository.findByName("УЗИ").orElseThrow();
+        Tender tender = newTender(newFacility());
+        TenderLot live = newLot(tender, uzi, 1, BigDecimal.valueOf(2_000_000), uniq("ЛотУЗИ"), 1);
+        TenderLot removed = newLot(tender, uzi, 2, BigDecimal.valueOf(2_000_000), uniq("ЛотУЗИ-снят"), 1);
+        removed.setSourceRemovedAt(java.time.OffsetDateTime.now());
+        tenderLotRepository.save(removed);
+
+        MedEquipment equip = newEquipment(uzi, 600_000);
+        PriceRequest pr = newPriceRequest(tender, newDistributor());
+        newPriceRequestItem(pr, live, equip, BigDecimal.valueOf(720_000));
+        newPriceRequestItem(pr, removed, equip, BigDecimal.valueOf(700_000));
+        ActivityApply apply = newApply(tender);
+
+        AutoFillResponse resp = autoFillService.autoFill(apply.getId());
+
+        assertThat(resp.getAddedItems()).isEqualTo(1);
+        assertThat(resp.getLotsWithoutResponse()).isEmpty();
+        assertThat(applyItemRepository.findByApplyId(apply.getId()))
+                .extracting(i -> i.getTenderLot().getId()).containsExactly(live.getId());
+    }
 }

@@ -225,6 +225,79 @@ class ImportDataFixesTest {
         assertThat(lotByCode(reread(anno), "7-ОИ2").getSourceRemovedAt()).isNotNull();
     }
 
+    /**
+     * Ревью ветки, п. 2: снятый лот возвращается только по КОДУ. По имени его забрал бы новый лот площадки
+     * с тем же названием (другой код, другое количество) — запрос КП молча переехал бы на чужой лот.
+     */
+    @Test
+    void removedLotIsNotReclaimedByNameByAnotherPlatformLot() {
+        String anno = "B5-NAME-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null,
+                List.of(lot("9-ОИ1", "Перчатки нитриловые", "30000", "300"), lot("9-ОИ2", "Халат", "1000", "1")));
+        priceRequestOn(lotByCode(tenderRepository.findBySourceExtId(anno).orElseThrow(), "9-ОИ1"));
+        goszakupWriter.upsertOne(trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null,
+                List.of(lot("9-ОИ2", "Халат", "1000", "1")));
+
+        goszakupWriter.upsertOne(trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null,
+                List.of(lot("9-ОИ2", "Халат", "1000", "1"), lot("9-ОИ5", "Перчатки нитриловые", "100000", "1000")));
+
+        Tender after = reread(anno);
+        assertThat(after.getLots()).extracting(TenderLot::getSourceLotCode)
+                .containsExactlyInAnyOrder("9-ОИ1", "9-ОИ2", "9-ОИ5");
+        TenderLot removed = lotByCode(after, "9-ОИ1");
+        assertThat(removed.getSourceRemovedAt()).as("снятый лот остался снятым").isNotNull();
+        assertThat(removed.getQuantity()).as("количество нового лота не переехало на снятый").isEqualTo(300);
+        assertThat(lotByCode(after, "9-ОИ5").getSourceRemovedAt()).isNull();
+    }
+
+    /** Отметка — момент ПЕРВОГО снятия: следующие прогоны без лота её не двигают. */
+    @Test
+    void removedMarkIsSetOnce() {
+        Clock first = Clock.fixed(Instant.parse("2026-10-09T09:10:00Z"), ZoneOffset.UTC);
+        Clock nextDay = Clock.fixed(Instant.parse("2026-10-10T09:10:00Z"), ZoneOffset.UTC);
+        String anno = "B5-ONCE-" + System.nanoTime();
+        goszakupWriter.upsertOne(trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null,
+                List.of(lot("11-ОИ1", "Центрифуга", "300000", "1"), lot("11-ОИ2", "Морозильник", "500000", "1")));
+        priceRequestOn(lotByCode(tenderRepository.findBySourceExtId(anno).orElseThrow(), "11-ОИ2"));
+
+        new GoszakupTenderWriter(tenderRepository, regionResolver, removedLots, first).upsertOne(
+                trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null, List.of(lot("11-ОИ1", "Центрифуга", "300000", "1")));
+        new GoszakupTenderWriter(tenderRepository, regionResolver, removedLots, nextDay).upsertOne(
+                trdBuy(anno, "Закуп", "2030-01-10 10:00:00"), null, List.of(lot("11-ОИ1", "Центрифуга", "300000", "1")));
+
+        assertThat(lotByCode(reread(anno), "11-ОИ2").getSourceRemovedAt().toInstant())
+                .isEqualTo(Instant.parse("2026-10-09T09:10:00Z"));
+    }
+
+    /** СК-Фармация: номер лота — позиция в списке площадки; оставленному — номер после лотов площадки, без дублей. */
+    @Test
+    void sk_keptLotNumberedAfterPlatformLots() {
+        String anno = "B5-SKNUM-" + System.nanoTime();
+        skWriter.upsert(announce(anno, "2030-01-10 10:00:00"),
+                List.of(skLot("10-Т1", "Эндоскоп"), skLot("10-Т2", "Колоноскоп"), skLot("10-Т3", "Бронхоскоп")), null, true);
+        priceRequestOn(lotByCode(tenderRepository.findBySourceExtId(anno).orElseThrow(), "10-Т2"));
+
+        skWriter.upsert(announce(anno, "2030-01-10 10:00:00"),
+                List.of(skLot("10-Т1", "Эндоскоп"), skLot("10-Т3", "Бронхоскоп")), null, true);
+
+        Tender after = reread(anno);
+        assertThat(after.getLots()).extracting(TenderLot::getLotNumber).doesNotHaveDuplicates();
+        assertThat(lotByCode(after, "10-Т2").getLotNumber()).isEqualTo(3);
+    }
+
+    /** Неполный список СК-Фармации (обрыв пагинации): недочитанные лоты не сняты — отметки нет. */
+    @Test
+    void sk_incompleteList_marksNothing() {
+        String anno = "B5-SKINC-" + System.nanoTime();
+        skWriter.upsert(announce(anno, "2030-01-10 10:00:00"),
+                List.of(skLot("12-Т1", "Эндоскоп"), skLot("12-Т2", "Колоноскоп")), null, true);
+        priceRequestOn(lotByCode(tenderRepository.findBySourceExtId(anno).orElseThrow(), "12-Т2"));
+
+        skWriter.upsert(announce(anno, "2030-01-10 10:00:00"), List.of(skLot("12-Т1", "Эндоскоп")), null, false);
+
+        assertThat(lotByCode(reread(anno), "12-Т2").getSourceRemovedAt()).isNull();
+    }
+
     @Test
     void sk_lotWithPriceRequestGoneFromPlatform_keptAndMarked() {
         String anno = "B5-SK-" + System.nanoTime();

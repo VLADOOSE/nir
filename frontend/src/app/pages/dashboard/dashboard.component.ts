@@ -4,7 +4,8 @@ import { RouterLink } from '@angular/router';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
-import { deadlineText } from '../../shared/deadline';
+import { MarketService } from '../../services/market.service';
+import { Deadlined, daysUntil, deadlineText } from '../../shared/deadline';
 
 @Component({
   selector: 'app-dashboard',
@@ -24,7 +25,7 @@ import { deadlineText } from '../../shared/deadline';
         </div>
         <div class="alert-items">
           <a *ngFor="let t of urgentTenders.slice(0, 3)" class="alert-tender" routerLink="/tenders" [queryParams]="{ openId: t.id }">
-            № {{ t.tenderNumber }} <span>{{ getDaysLabel(t.deadline) }}</span>
+            № {{ t.tenderNumber }} <span>{{ getDaysLabel(t) }}</span>
           </a>
         </div>
       </div>
@@ -73,8 +74,8 @@ import { deadlineText } from '../../shared/deadline';
             <div class="facility-name">{{ t.facility?.name || '—' }}</div>
             <div class="deadline-date">{{ deadlineText(t) }}</div>
           </div>
-          <div class="days-left" [ngClass]="getDaysClass(t.deadline)">
-            {{ getDaysLabel(t.deadline) }}
+          <div class="days-left" [ngClass]="getDaysClass(t)">
+            {{ getDaysLabel(t) }}
           </div>
         </div>
       </div>
@@ -194,7 +195,7 @@ export class DashboardComponent {
   recentApplies: any[] = [];
   profitSummary: any = null;
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef) {
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private market: MarketService) {
     this.loadAll();
   }
 
@@ -213,8 +214,8 @@ export class DashboardComponent {
         .sort((a, b) => this.deadlineKey(a).localeCompare(this.deadlineKey(b)));
       this.upcomingDeadlines = activeSorted.slice(0, 5);
       this.urgentTenders = activeSorted
-        .map(t => ({ ...t, _overdue: this.getDaysLeft(t.deadline) < 0 }))
-        .filter(t => this.getDaysLeft(t.deadline) <= 7);
+        .map(t => ({ ...t, _overdue: this.getDaysLeft(t) < 0 }))
+        .filter(t => this.getDaysLeft(t) <= 7);
       this.cdr.detectChanges();
     });
 
@@ -244,22 +245,21 @@ export class DashboardComponent {
     return t.deadlineAt ?? (t.deadline ? t.deadline + 'T23:59:59' : '9999');
   }
 
-  getDaysLeft(deadline: string): number {
-    const d = new Date(deadline).getTime();
-    const now = new Date().getTime();
-    return Math.ceil((d - now) / (1000 * 60 * 60 * 24));
+  /** Дни до срока по часам рынка (B2): «до 10:25» после 10:25 — уже «Просрочен», а не «Сегодня». */
+  getDaysLeft(t: Deadlined): number {
+    return daysUntil(t, this.market.value) ?? Infinity;
   }
 
-  getDaysLabel(deadline: string): string {
-    const days = this.getDaysLeft(deadline);
+  getDaysLabel(t: Deadlined): string {
+    const days = this.getDaysLeft(t);
     if (days < 0) return 'Просрочен';
     if (days === 0) return 'Сегодня';
     if (days === 1) return 'Завтра';
     return `${days} дн.`;
   }
 
-  getDaysClass(deadline: string): string {
-    const days = this.getDaysLeft(deadline);
+  getDaysClass(t: Deadlined): string {
+    const days = this.getDaysLeft(t);
     if (days < 0) return 'urgent';
     if (days <= 3) return 'urgent';
     if (days <= 7) return 'soon';

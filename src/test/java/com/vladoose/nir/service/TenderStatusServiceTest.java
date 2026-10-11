@@ -41,6 +41,7 @@ class TenderStatusServiceTest {
 
     @Test
     void expiredActive_becomesCompleted_futureAndOtherStatusesUntouched() {
+        service.completeExpired(LocalDateTime.now());   // живая nirdb: сперва закрыть то, что уже просрочено там
         Tender expired = tender("EXP-1", "ACTIVE", LocalDate.now().minusDays(1));
         Tender future = tender("FUT-1", "ACTIVE", LocalDate.now().plusDays(3));
         Tender cancelled = tender("CAN-1", "CANCELLED", LocalDate.now().minusDays(5));
@@ -62,6 +63,7 @@ class TenderStatusServiceTest {
     @Test
     void deadlineTime_closesByTime_dateOnlyWaitsForNextDay() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 9, 14, 10);
+        service.completeExpired(now);   // живая nirdb: сперва закрыть то, что уже просрочено там
         Tender closedAtTen = tender("TM-1", "ACTIVE", now.toLocalDate());
         closedAtTen.setDeadlineAt(now.toLocalDate().atTime(10, 25));
         Tender closesTonight = tender("TM-2", "ACTIVE", now.toLocalDate());

@@ -71,6 +71,9 @@ public class ApplyAutoFillService {
             if (existingLotIds.contains(lot.getId())) {
                 continue;
             }
+            if (lot.getSourceRemovedAt() != null) {
+                continue;   // B5: лот снят с площадки — подавать по нему нечего (в АИС он остался из-за запроса КП)
+            }
             List<PriceRequestItem> candidates = allTenderItems.stream()
                     .filter(i -> i.getTenderLot().getId().equals(lot.getId()))
                     .filter(i -> i.getResponsePrice() != null)

@@ -13,6 +13,7 @@ export interface Deadlined {
 
 /** Смещение часов рынка: KZ — Уральск (весь Казахстан с 2024-03-01), RF — Самара; перехода на летнее время нет. */
 const OFFSET: Record<Market, string> = { KZ: '+05:00', RF: '+04:00' };
+const OFFSET_HOURS: Record<Market, number> = { KZ: 5, RF: 4 };
 
 /** «09.10.2026 10:25», «09.10.2026» или «—». */
 export function deadlineText(t: Deadlined | null | undefined): string {
@@ -39,4 +40,13 @@ export function deadlineEnd(t: Deadlined | null | undefined, market: Market): nu
 export function deadlinePassed(t: Deadlined | null | undefined, market: Market, now = Date.now()): boolean {
   const end = deadlineEnd(t, market);
   return end != null && end <= now;
+}
+
+/** Календарных дней до срока по часам рынка: 0 — сегодня, 1 — завтра; −1 — приём закончился; null — срока нет. */
+export function daysUntil(t: Deadlined | null | undefined, market: Market, now = Date.now()): number | null {
+  if (deadlinePassed(t, market, now)) return -1;
+  const day = (t?.deadlineAt ?? t?.deadline ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const today = new Date(now + OFFSET_HOURS[market] * 3_600_000).toISOString().slice(0, 10);
+  return Math.round((Date.parse(day) - Date.parse(today)) / 86_400_000);
 }

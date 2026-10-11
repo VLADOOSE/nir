@@ -108,9 +108,10 @@ public class SkPharmacyTenderWriter {
         // Имя обрезаем так же, как при записи в equipName — иначе длинные имена не совпадут сами с собой.
         // Неполный список: по имени — только на лоты БЕЗ кода. Лот с кодом, не пришедший по коду, скорее всего
         // на недочитанной странице; переклеить его по совпавшему имени на другой лот = молча перенести ТЗ/модель.
+        // Лот «снят с площадки» — только по коду, по той же причине (B5): по имени его забрал бы новый лот.
         List<TenderLot> matched = new LotMergeIndex(t.getLots())
                 .matchAll(lots, l -> trunc(l.code(), 50), l -> trunc(l.name(), 255),
-                        complete ? existing -> true : SkPharmacyTenderWriter::hasNoCode);
+                        existing -> existing.getSourceRemovedAt() == null && (complete || hasNoCode(existing)));
 
         List<TenderLot> result = new ArrayList<>();
         int n = 1;
