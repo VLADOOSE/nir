@@ -3,6 +3,7 @@ package com.vladoose.nir.dto.response;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * Slim tender projection used in nested references (without lots and facility),
@@ -15,4 +16,6 @@ public class TenderShortResponse {
     private String tenderNumber;
     private String status;
     private LocalDate deadline;
+    /** Время окончания приёма с площадки — местное время площадки; пусто у ручных тендеров (B2). */
+    private LocalDateTime deadlineAt;
 }

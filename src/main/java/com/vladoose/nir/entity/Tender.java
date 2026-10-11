@@ -8,6 +8,7 @@ import org.hibernate.annotations.ParamDef;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,6 +43,14 @@ public class Tender implements MarketScoped {
 
     @Column
     private LocalDate deadline;
+
+    /**
+     * Время окончания приёма заявок с площадки (B2): местное время площадки, без пояса — показывается как есть,
+     * сравнивается с «сейчас» по часам рынка ({@link Market#zone()}). Только у импортных тендеров; у ручных — пусто,
+     * их срок — дата {@link #deadline}. Всегда приходится на дату {@code deadline} (см. {@link #setDeadline}).
+     */
+    @Column(name = "deadline_at")
+    private LocalDateTime deadlineAt;
 
     @Column(name = "publish_date")
     private LocalDate publishDate;
@@ -105,4 +114,13 @@ public class Tender implements MarketScoped {
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TenderLot> lots = new ArrayList<>();
+
+    /**
+     * Срок приёма. Время площадки относится только к своей дате: перенос даты в форме тендера снимает его — иначе
+     * тендер закрылся бы по времени прежней даты. Следующий импорт пришлёт срок площадки заново.
+     */
+    public void setDeadline(LocalDate deadline) {
+        this.deadline = deadline;
+        if (deadlineAt != null && !deadlineAt.toLocalDate().equals(deadline)) deadlineAt = null;
+    }
 }

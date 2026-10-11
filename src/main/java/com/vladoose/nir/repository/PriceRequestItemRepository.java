@@ -11,6 +11,8 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
 
     List<PriceRequestItem> findByMedEquipmentId(Long medEquipmentId);
 
+    boolean existsByTenderLotId(Long tenderLotId);
+
     List<PriceRequestItem> findByPriceRequestId(Long priceRequestId);
 
     @Query("SELECT i FROM PriceRequestItem i WHERE i.priceRequest.tender.id = :tenderId")

@@ -255,7 +255,7 @@ export class LotKpPanelComponent implements OnChanges {
     if (!tenderId || !this.panel) return;
     const distributorIds = this.checkedSuppliers().map((e: any) => e.distributor.id);
     const items = this.lots
-      .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? 1 }));
+      .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? null }));   // нет количества — «кол-во уточняется» (B4)
     if (!distributorIds.length || !items.length) return;
     this.panel.sending = true;
     this.api.previewKp({ tenderId, distributorIds, items }).subscribe({

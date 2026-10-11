@@ -7,6 +7,7 @@ import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+import { Deadlined, deadlineEnd, deadlinePassed, deadlineText } from '../../shared/deadline';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { OfferComparisonComponent } from './offer-comparison.component';
@@ -130,8 +131,8 @@ import { TenderLotsComponent } from './tender-lots.component';
       <div *ngIf="filteredTenders.length === 0 && !showTenderForm" class="empty">Нет данных</div>
 
       <div class="tender-card" *ngFor="let t of filteredTenders" (click)="onOpen(t)"
-           [class.tender-overdue]="t.status === 'ACTIVE' && isOverdue(t.deadline)"
-           [class.tender-urgent]="t.status === 'ACTIVE' && !isOverdue(t.deadline) && isUrgent(t.deadline)">
+           [class.tender-overdue]="t.status === 'ACTIVE' && isOverdue(t)"
+           [class.tender-urgent]="t.status === 'ACTIVE' && !isOverdue(t) && isUrgent(t)">
         <div class="tender-card-header">
           <div class="tender-meta">
             <span class="tender-number">&#8470; {{ t.tenderNumber }}</span>
@@ -161,7 +162,7 @@ import { TenderLotsComponent } from './tender-lots.component';
           </div>
           <div class="detail-row">
             <div class="detail"><span class="detail-label">Дата публикации</span><span>{{ formatDate(t.publishDate) }}</span></div>
-            <div class="detail"><span class="detail-label">Окончание подачи заявок</span><span class="deadline" [class.overdue]="isOverdue(t.deadline)">{{ formatDate(t.deadline) }}</span></div>
+            <div class="detail"><span class="detail-label">Окончание подачи заявок</span><span class="deadline" [class.overdue]="isOverdue(t)">{{ deadlineText(t) }}</span></div>
           </div>
           <div class="detail-row">
             <div class="detail"><span class="detail-label">Контактное лицо</span><span>{{ formatContact(t) }}</span></div>
@@ -196,7 +197,7 @@ import { TenderLotsComponent } from './tender-lots.component';
           <div class="info-item" *ngIf="selectedTender.purchaseType"><span class="info-label">Способ закупки</span><span>{{ getPurchaseTypeLabel(selectedTender.purchaseType) }}</span></div>
           <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ selectedTender.totalCost | money }}</span></div>
           <div class="info-item" *ngIf="selectedTender.publishDate"><span class="info-label">Дата публикации</span><span>{{ formatDate(selectedTender.publishDate) }}</span></div>
-          <div class="info-item" *ngIf="selectedTender.deadline"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender.deadline)">{{ formatDate(selectedTender.deadline) }}</span></div>
+          <div class="info-item" *ngIf="selectedTender.deadline"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender)">{{ deadlineText(selectedTender) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.deliveryAddress"><span class="info-label">Адрес поставки</span><span>{{ selectedTender.deliveryAddress }}</span></div>
           <div class="info-item" *ngIf="hasContactPerson()"><span class="info-label">Контактное лицо</span><span>{{ formatContact(selectedTender) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.contactPhone"><span class="info-label">Телефон</span><span>{{ selectedTender.contactPhone }}</span></div>
@@ -282,7 +283,7 @@ import { TenderLotsComponent } from './tender-lots.component';
                 <tr *ngFor="let it of pr.items">
                   <td data-label="Лот">{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
                   <td data-label="Модель">{{ it.medEquipment?.name || '— по лоту' }}</td>
-                  <td data-label="Кол-во">{{ it.requestedQuantity }}</td>
+                  <td data-label="Кол-во">{{ it.requestedQuantity ?? '—' }}</td>
                   <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
                   <td class="pmc-calc" [attr.data-label]="'Предл. цена при ' + (pr._markup ?? 25) + '%'">{{ markedPrice(it, pr) | money }}
                     <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
@@ -675,11 +676,14 @@ export class TendersComponent {
     return this.calcMarked(it, pr).price - proc;
   }
 
-  private daysLeft(deadline: string): number {
-    if (!deadline) return Infinity;
-    return Math.ceil((new Date(deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  /** Срок — с временем площадки (B2): «до 10:25» в 14:10 уже прошёл, дата без времени — весь день. */
+  private daysLeft(t: Deadlined): number {
+    const end = deadlineEnd(t, this.market.value);
+    if (end == null) return Infinity;
+    return Math.ceil((end - Date.now()) / (1000 * 60 * 60 * 24));
   }
-  isUrgent(deadline: string): boolean { return this.daysLeft(deadline) <= 7; }
+  isUrgent(t: Deadlined): boolean { return this.daysLeft(t) <= 7; }
+  deadlineText(t: Deadlined): string { return deadlineText(t); }
 
   formatDate(d: string): string {
     if (!d) return '—';
@@ -691,10 +695,7 @@ export class TendersComponent {
     return parts.length ? parts.join(' ') : '—';
   }
 
-  isOverdue(d: string): boolean {
-    if (!d) return false;
-    return new Date(d) < new Date();
-  }
+  isOverdue(t: Deadlined): boolean { return deadlinePassed(t, this.market.value); }
 
   loadTenders() {
     this.api.getTenders().subscribe({
@@ -880,7 +881,7 @@ export class TendersComponent {
       // «скоро дедлайн»: будущие — ближайший первым; затем прошедшие (свежие выше); без дедлайна — вниз
       const now = Date.now();
       this.filteredTenders.sort((a, b) => {
-        const da = ts(a.deadline), db = ts(b.deadline);
+        const da = deadlineEnd(a, this.market.value), db = deadlineEnd(b, this.market.value);
         if (da == null && db == null) return 0;
         if (da == null) return 1;
         if (db == null) return -1;
@@ -1089,7 +1090,7 @@ export class TendersComponent {
       items: [{
         tenderLotId: this.matchLotId,
         medEquipmentId: ev.candidate.equipmentId,
-        requestedQuantity: lot?.quantity ?? 1
+        requestedQuantity: lot?.quantity ?? null   // нет количества — «кол-во уточняется», а не «1 шт.» (B4)
       }]
     }).subscribe({
       next: (results) => {

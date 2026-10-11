@@ -181,6 +181,24 @@ class PriceRequestSendServiceTest {
                 .isInstanceOf(BadRequestException.class);
     }
 
+    /**
+     * B4: у лота нет количества (СК-Фармация, вёрстка «приказ ЕД») — поставщику «кол-во уточняется»,
+     * а не выдуманная «1 шт.», которую раньше подставлял фронт (база не принимала пустое количество).
+     */
+    @Test
+    void noQuantity_storedEmpty_andMailSaysToBeClarified() throws Exception {
+        List<SendResult> results = sendService.send(
+                tender.getId(),
+                List.of(withEmail.getId()),
+                List.of(new SendItem(lot1.getId(), null, null)),
+                null, null);
+
+        PriceRequest pr = priceRequestRepository.findById(results.get(0).priceRequestId()).orElseThrow();
+        assertThat(pr.getItems()).singleElement().extracting(PriceRequestItem::getRequestedQuantity).isNull();
+        String body = greenMail.getReceivedMessages()[0].getContent().toString();
+        assertThat(body).contains("ZZ УЗИ — кол-во уточняется").doesNotContain("шт.");
+    }
+
     @Test
     void emptyItemsRejected() {
         assertThatThrownBy(() -> sendService.send(tender.getId(), List.of(withEmail.getId()), List.of(), null, null))

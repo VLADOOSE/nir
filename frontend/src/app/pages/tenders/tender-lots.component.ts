@@ -52,7 +52,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <option *ngFor="let t of equipmentTypes" [ngValue]="t.id">{{ t.name }}</option>
         </select>
       </label>
-      <label>Макс. цена<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
+      <label>Макс. цена за шт<input type="number" min="0.01" step="0.01" formControlName="maxCost" [class.input-error]="validationErrors.maxCost" /><span class="field-error" *ngIf="validationErrors.maxCost">{{ validationErrors.maxCost }}</span></label>
       <div class="form-row">
         <label>Макс. длина<input type="number" min="1" formControlName="maxLengthMm" [class.input-error]="validationErrors.maxLengthMm" /><span class="field-error" *ngIf="validationErrors.maxLengthMm">{{ validationErrors.maxLengthMm }}</span></label>
         <label>Макс. ширина<input type="number" min="1" formControlName="maxWidthMm" [class.input-error]="validationErrors.maxWidthMm" /><span class="field-error" *ngIf="validationErrors.maxWidthMm">{{ validationErrors.maxWidthMm }}</span></label>
@@ -84,6 +84,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             <span class="lot-name">{{ l.equipName }}</span>
             <!-- lotStage/kpDistributorsFor — чтение предпосчитанной карты (обход priceRequests×items
                  живёт в ngOnChanges, не в цикле change detection) -->
+            <!-- B5: лота больше нет на площадке, остался из-за запроса КП или позиции заявки -->
+            <span class="stage-chip stage-danger" *ngIf="l.sourceRemovedAt"
+                  title="Лота больше нет на площадке. Он остался в АИС, потому что на него есть запрос КП или позиция заявки.">снят с площадки</span>
             <ng-container *ngIf="lotStage(l) as st">
               <span class="stage-chip" [class]="'stage-' + st.tone">
                 {{ st.filled ? '●' : '○' }} {{ st.label }}
@@ -94,7 +97,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <!-- «пусто — не рисуем»: у большинства импортных лотов ни цены, ни вида МИ нет →
                лишнего разделителя быть не должно -->
           <div class="lot-metrics" *ngIf="l.quantity || l.maxCost || l.equipmentType?.name">
-            <ng-container *ngIf="l.quantity">{{ l.quantity }} шт</ng-container><ng-container *ngIf="l.maxCost">{{ l.quantity ? ' · ' : '' }}до {{ l.maxCost | money }}</ng-container><ng-container *ngIf="l.equipmentType?.name">{{ (l.quantity || l.maxCost) ? ' · ' : '' }}{{ l.equipmentType.name }}</ng-container>
+            <ng-container *ngIf="l.quantity">{{ l.quantity }} шт</ng-container><ng-container *ngIf="l.maxCost">{{ l.quantity ? ' · ' : '' }}до {{ l.maxCost | money }} за шт</ng-container><ng-container *ngIf="l.equipmentType?.name">{{ (l.quantity || l.maxCost) ? ' · ' : '' }}{{ l.equipmentType.name }}</ng-container>
           </div>
           <div class="lot-proposed" *ngIf="l.proposedEquipment">
             <span class="badge-proposed">Предложено:</span>

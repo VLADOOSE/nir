@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,8 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     Optional<Tender> findBySourceExtId(String sourceExtId);
 
     List<Tender> findByStatusAndDeadlineBefore(String status, LocalDate deadline);
+
+    List<Tender> findByStatusAndDeadlineAtLessThanEqual(String status, LocalDateTime deadlineAt);
 
     @Query("SELECT DISTINCT t FROM Tender t JOIN t.lots l WHERE " +
            "t.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER AND " +

@@ -18,9 +18,8 @@ public class PriceRequestItemRequest {
     // (тендерный поток всё равно всегда передаёт medEquipmentId)
     private Long medEquipmentId;
 
-    @NotNull
     @Positive
-    private Integer requestedQuantity;
+    private Integer requestedQuantity;   // null — у лота нет количества: «кол-во уточняется» (B4)
 
     @PositiveOrZero
     private BigDecimal responsePrice;

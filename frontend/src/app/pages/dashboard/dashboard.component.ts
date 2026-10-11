@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+import { deadlineText } from '../../shared/deadline';
 
 @Component({
   selector: 'app-dashboard',
@@ -70,7 +71,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
           <div class="deadline-info">
             <a class="tender-link" routerLink="/tenders" [queryParams]="{ openId: t.id }">№ {{ t.tenderNumber }}</a>
             <div class="facility-name">{{ t.facility?.name || '—' }}</div>
-            <div class="deadline-date">{{ formatDate(t.deadline) }}</div>
+            <div class="deadline-date">{{ deadlineText(t) }}</div>
           </div>
           <div class="days-left" [ngClass]="getDaysClass(t.deadline)">
             {{ getDaysLabel(t.deadline) }}
@@ -209,7 +210,7 @@ export class DashboardComponent {
       this.completedCount = data.filter(t => t.status === 'COMPLETED').length;
       const activeSorted = data
         .filter(t => t.status === 'ACTIVE')
-        .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+        .sort((a, b) => this.deadlineKey(a).localeCompare(this.deadlineKey(b)));
       this.upcomingDeadlines = activeSorted.slice(0, 5);
       this.urgentTenders = activeSorted
         .map(t => ({ ...t, _overdue: this.getDaysLeft(t.deadline) < 0 }))
@@ -233,6 +234,14 @@ export class DashboardComponent {
       this.maxDemand = Math.max(1, ...this.equipmentDemandList.map(i => i.count));
       this.cdr.detectChanges();
     });
+  }
+
+  /** Срок с временем площадки (B2) — «09.10.2026 10:25»; ручной тендер — дата. */
+  deadlineText(t: any): string { return deadlineText(t); }
+
+  /** Ключ сортировки: время площадки, иначе конец дня срока; без срока — в конец. */
+  private deadlineKey(t: any): string {
+    return t.deadlineAt ?? (t.deadline ? t.deadline + 'T23:59:59' : '9999');
   }
 
   getDaysLeft(deadline: string): number {

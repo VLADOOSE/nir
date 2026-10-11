@@ -356,7 +356,7 @@ export class BulkPriceModalComponent implements OnChanges {
         items.push({
           tenderLotId: item?.lot?.id,
           medEquipmentId: item?.equipment?.id,
-          requestedQuantity: item?.lot?.quantity ?? 1
+          requestedQuantity: item?.lot?.quantity ?? null   // нет количества — «кол-во уточняется» (B4)
         });
       }
     }

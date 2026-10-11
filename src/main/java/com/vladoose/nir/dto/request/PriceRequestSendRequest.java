@@ -29,7 +29,7 @@ public class PriceRequestSendRequest {
         @NotNull(message = "Не указан лот")
         private Long tenderLotId;
         private Long medEquipmentId; // null = запрос по голому лоту
-        @NotNull @Min(value = 1, message = "Количество должно быть не меньше 1")
-        private Integer requestedQuantity;
+        @Min(value = 1, message = "Количество должно быть не меньше 1")
+        private Integer requestedQuantity;   // null — у лота нет количества: «кол-во уточняется» (B4)
     }
 }

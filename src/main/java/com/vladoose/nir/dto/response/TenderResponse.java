@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,6 +16,8 @@ public class TenderResponse {
     private String status;
     private String purchaseType;
     private LocalDate deadline;
+    /** Время окончания приёма с площадки — местное время площадки; пусто у ручных тендеров (B2). */
+    private LocalDateTime deadlineAt;
     private LocalDate publishDate;
     private BigDecimal totalCost;
     private String currency;

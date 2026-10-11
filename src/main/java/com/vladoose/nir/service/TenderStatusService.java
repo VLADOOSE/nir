@@ -5,13 +5,15 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.util.List;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * Локальное авто-завершение: ACTIVE с прошедшим дедлайном → COMPLETED.
- * Работает в рынке из MarketContext (ставит вызывающий, §6); следующий импорт
- * с площадки сверяет и при продлении дедлайна вернёт статус обратно.
+ * Локальное авто-завершение: ACTIVE с прошедшим сроком → COMPLETED. Срок площадки — с временем (B2): тендер
+ * с приёмом до 10:25 закрывается в 10:25, а не в полночь; у ручного тендера (только дата) весь день срока
+ * приём ещё идёт. Работает в рынке из MarketContext (ставит вызывающий, §6); следующий импорт с площадки
+ * сверяет и при продлении срока вернёт статус обратно.
  */
 @Service
 public class TenderStatusService {
@@ -23,12 +25,17 @@ public class TenderStatusService {
     }
 
     @Transactional
-    public int completeExpired(LocalDate today) {
+    /** @param now «сейчас» по часам рынка ({@code Market#zone}) — сроки площадок записаны местным временем */
+    public int completeExpired(LocalDateTime now) {
         // через выборку (не bulk-JPQL): Hibernate-фильтр рынка применяется только к запросам сессии
-        List<Tender> expired = tenderRepository.findByStatusAndDeadlineBefore("ACTIVE", today);
-        for (Tender t : expired) {
-            t.setStatus("COMPLETED");
+        Map<Long, Tender> expired = new LinkedHashMap<>();
+        for (Tender t : tenderRepository.findByStatusAndDeadlineAtLessThanEqual("ACTIVE", now)) {
+            expired.put(t.getId(), t);
         }
+        for (Tender t : tenderRepository.findByStatusAndDeadlineBefore("ACTIVE", now.toLocalDate())) {
+            expired.putIfAbsent(t.getId(), t);
+        }
+        expired.values().forEach(t -> t.setStatus("COMPLETED"));
         return expired.size();
     }
 }

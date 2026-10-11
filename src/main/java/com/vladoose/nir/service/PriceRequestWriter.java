@@ -16,7 +16,8 @@ import java.util.List;
 @Service
 public class PriceRequestWriter {
 
-    public record Line(TenderLot lot, MedEquipment equipment, int qty) {}
+    /** qty пусто — у лота нет количества: «кол-во уточняется» (B4). */
+    public record Line(TenderLot lot, MedEquipment equipment, Integer qty) {}
 
     private final PriceRequestService priceRequestService;
     private final PriceRequestItemRepository itemRepository;

@@ -36,7 +36,7 @@ import { MarketService } from '../../services/market.service';
             </thead>
             <tbody>
               <tr *ngFor="let lot of data.lots">
-                <td class="oc-lot">№{{ lot.lotNumber || '—' }} {{ lot.lotName }} <small>×{{ lot.quantity }}</small></td>
+                <td class="oc-lot">№{{ lot.lotNumber || '—' }} {{ lot.lotName }} <small *ngIf="lot.quantity">×{{ lot.quantity }}</small></td>
                 <td *ngFor="let s of data.suppliers" [attr.data-label]="s.distributorName"
                     [class.oc-best]="data.bestByLot[lot.lotId] === s.priceRequestId"
                     [class.oc-winner]="assignedByLot[lot.lotId] === s.priceRequestId">

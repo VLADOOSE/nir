@@ -68,6 +68,9 @@ public class TenderLot {
     @Column(name = "tech_spec_attempted_at")
     private OffsetDateTime techSpecAttemptedAt;
 
+    @Column(name = "source_removed_at")
+    private OffsetDateTime sourceRemovedAt;
+
     /** Предложенная (одобренная) модель каталога; подставляется в запрос КП по лоту. */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "proposed_equipment_id")

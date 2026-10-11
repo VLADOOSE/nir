@@ -73,7 +73,8 @@ public class PriceRequestSendService {
         List<PriceRequestWriter.Line> lines = new ArrayList<>();
         for (SendItem si : items) {
             if (si.tenderLotId() == null) throw new BadRequestException("Не указан лот в позиции");
-            if (si.requestedQuantity() == null || si.requestedQuantity() < 1) {
+            // пусто — у лота нет количества (СК-Фармация, «приказ ЕД»): поставщику «кол-во уточняется», а не «1 шт.» (B4)
+            if (si.requestedQuantity() != null && si.requestedQuantity() < 1) {
                 throw new BadRequestException("Количество в позиции должно быть не меньше 1");
             }
             TenderLot lot = tenderLotService.findById(si.tenderLotId());

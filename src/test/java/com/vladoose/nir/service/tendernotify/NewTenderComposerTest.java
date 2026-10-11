@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,7 +18,7 @@ class NewTenderComposerTest {
 
     static Card card(long id, String number, List<LotLine> lots) {
         return new Card(id, "goszakup", number, "ГКП на ПХВ «Областная детская больница»", "Западно-Казахстанская область",
-                "Приобретение медицинских изделий", new BigDecimal("1234567.5"), LocalDate.of(2026, 10, 9), lots);
+                "Приобретение медицинских изделий", new BigDecimal("1234567.5"), LocalDate.of(2026, 10, 9), null, lots);
     }
 
     @Test
@@ -52,9 +53,18 @@ class NewTenderComposerTest {
                 .contains("Лоты (5): А — 1 шт.; Б — 1 шт.; В — 1 шт.; и ещё 2\n");
     }
 
+    /** B2: площадка назвала время окончания приёма — оно в уведомлении (тендеры ЗКО живут 2–4 дня). */
+    @Test
+    void deadlineWithTime_printedWithTime() {
+        Card c = new Card(5, "goszakup", "17740571-1", "Больница", null, "Закуп", new BigDecimal("100"),
+                LocalDate.of(2026, 10, 9), LocalDateTime.of(2026, 10, 9, 10, 25), List.of());
+
+        assertThat(NewTenderComposer.compose(List.of(c), URL)).contains("\nСумма: 100,00 ₸ · приём до 09.10.2026 10:25\n");
+    }
+
     @Test
     void missingFields_lineOmittedNotBlank() {
-        Card bare = new Card(7, "СК-Фармация", "521464-1", null, null, null, null, null, List.of());
+        Card bare = new Card(7, "СК-Фармация", "521464-1", null, null, null, null, null, null, List.of());
 
         assertThat(NewTenderComposer.compose(List.of(bare), "")).isEqualTo("""
                 🏥 Новый тендер
@@ -66,7 +76,7 @@ class NewTenderComposerTest {
     @Test
     void fieldsFlattenedToOneLine() {
         Card c = new Card(5, "goszakup", "5-1", "Больница\nОткрыть в АИС: https://evil", null,
-                "Закуп\r\nизделий", null, null, List.of(new LotLine("Лот\nдва", 1)));
+                "Закуп\r\nизделий", null, null, null, List.of(new LotLine("Лот\nдва", 1)));
 
         String text = NewTenderComposer.compose(List.of(c), URL);
 

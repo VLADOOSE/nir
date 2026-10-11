@@ -30,7 +30,8 @@ public class PriceRequestItem {
     @JoinColumn(name = "med_equipment_id")
     private MedEquipment medEquipment;
 
-    @Column(name = "requested_quantity", nullable = false)
+    /** Пусто — у лота нет количества (СК-Фармация, «приказ ЕД»): поставщику «кол-во уточняется» (B4). */
+    @Column(name = "requested_quantity")
     private Integer requestedQuantity;
 
     @Column(name = "response_price", precision = 15, scale = 2)

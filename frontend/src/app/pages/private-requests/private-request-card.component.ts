@@ -583,7 +583,7 @@ export class PrivateRequestCardComponent implements OnChanges {
       tenderId: this.requestId,
       distributorIds: [this.selectedDistributorId],
       items: this.lines.filter(l => l._selected).map(l => ({
-        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? 1
+        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? null
       }))
     }).subscribe({
       next: (results) => {
@@ -608,7 +608,7 @@ export class PrivateRequestCardComponent implements OnChanges {
       tenderId: this.requestId,
       distributorIds: [group.distributor.id],
       items: group.lines.map((l: any) => ({
-        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? 1
+        tenderLotId: l.lotId, medEquipmentId: null, requestedQuantity: l.quantity ?? null
       }))
     }).subscribe({
       next: (results) => {

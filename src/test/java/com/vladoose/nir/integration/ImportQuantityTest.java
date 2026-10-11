@@ -44,6 +44,23 @@ class ImportQuantityTest {
         assertThat(ImportQuantity.positiveMoneyOrNull(new BigDecimal("180.50"))).isEqualByComparingTo("180.50");
     }
 
+    /** B1: goszakup присылает сумму лота и количество — «Макс. цена» лота должна быть ценой за единицу. */
+    @Test void unitPrice() {
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("54000"), new BigDecimal("300"))).isEqualByComparingTo("180.00");
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("1000"), new BigDecimal("3"))).isEqualByComparingTo("333.33");
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("2"), new BigDecimal("3"))).isEqualByComparingTo("0.67");
+        // дробное количество (кг, литры) — цена за единицу измерения
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("5000"), new BigDecimal("0.5"))).isEqualByComparingTo("10000.00");
+        // после округления 0,00 — пусто, иначе CHECK max_cost > 0 уронит запись тендера
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("0.01"), new BigDecimal("3"))).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("5000"), null)).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("5000"), BigDecimal.ZERO)).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("5000"), new BigDecimal("-2"))).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(BigDecimal.ZERO, new BigDecimal("3"))).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(null, new BigDecimal("3"))).isNull();
+        assertThat(ImportQuantity.unitPriceOrNull(new BigDecimal("12345678901234"), BigDecimal.ONE)).isNull();
+    }
+
     @Test void withNote() {
         assertThat(ImportQuantity.withNote(null, "Описание")).isEqualTo("Описание");
         assertThat(ImportQuantity.withNote(null, null)).isNull();

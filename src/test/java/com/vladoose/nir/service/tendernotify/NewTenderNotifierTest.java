@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -69,6 +70,10 @@ class NewTenderNotifierTest {
     }
 
     Tender tender(String ext, String region, String status, LocalDate deadline) {
+        return tender(ext, region, status, deadline, null);
+    }
+
+    Tender tender(String ext, String region, String status, LocalDate deadline, LocalDateTime deadlineAt) {
         tenderRepository.findBySourceExtId(ext).ifPresent(tenderRepository::delete);
         Tender t = new Tender();
         t.setSourceExtId(ext);
@@ -78,6 +83,7 @@ class NewTenderNotifierTest {
         t.setCurrency("KZT");
         t.setStatus(status);
         t.setDeadline(deadline);
+        t.setDeadlineAt(deadlineAt);
         t.setRegion(region);
         t.setCustomerName("Больница " + ext);
         t.setDescription("Закуп " + ext);
@@ -114,6 +120,18 @@ class NewTenderNotifierTest {
                 .doesNotContain("NT-B").doesNotContain("NT-C").doesNotContain("NT-D")
                 .contains("openId=" + a.getId() + "&market=KZ").contains("openId=" + e.getId() + "&market=KZ")
                 .contains("Лоты (1): Кушетка медицинская — 2 шт.");
+    }
+
+    /** B2: срок сегодня, но время приёма уже прошло — не «новый тендер», а закрытый; время — в тексте. */
+    @Test
+    void deadlineTimeAlreadyPassedToday_notNotified() {
+        tender("NT-T1", ZKO, "ACTIVE", TODAY, TODAY.atTime(9, 0));          // CLOCK — 10:00 по Уральску
+        tender("NT-T2", ZKO, "ACTIVE", TODAY, TODAY.atTime(18, 0));
+
+        notifier(true, TG_ON, ZKO).afterImport(created("NT-T1", "NT-T2"));
+
+        assertThat(sent).singleElement().asString()
+                .contains("NT-T2").doesNotContain("NT-T1").contains("приём до 07.10.2026 18:00");
     }
 
     @Test

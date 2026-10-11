@@ -5,6 +5,7 @@ import com.vladoose.nir.util.DocFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,11 +22,12 @@ final class NewTenderComposer {
     static final int MAX_TEXT = 3500;
     private static final int SHOWN_LOTS = 3;
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     record LotLine(String name, Integer qty) {}
 
     record Card(long tenderId, String platformLabel, String number, String customer, String region, String subject,
-                BigDecimal total, LocalDate deadline, List<LotLine> lots) {}
+                BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots) {}
 
     private NewTenderComposer() {
     }
@@ -66,7 +68,10 @@ final class NewTenderComposer {
             if (c.lots().size() > SHOWN_LOTS) b.append("; и ещё ").append(c.lots().size() - SHOWN_LOTS);
         }
         String money = c.total() == null ? "" : "Сумма: " + DocFormat.money(c.total()) + " ₸";
-        String until = c.deadline() == null ? "" : (money.isEmpty() ? "Приём до " : "приём до ") + c.deadline().format(DATE);
+        // время окончания приёма — если площадка его назвала (B2): тендеры ЗКО живут 2–4 дня
+        String deadline = c.deadlineAt() != null ? c.deadlineAt().format(DATE_TIME)
+                : c.deadline() != null ? c.deadline().format(DATE) : null;
+        String until = deadline == null ? "" : (money.isEmpty() ? "Приём до " : "приём до ") + deadline;
         String sum = join(money, until);
         if (!sum.isEmpty()) b.append('\n').append(sum);
         b.append('\n').append(TelegramText.oneLine(c.platformLabel(), 40)).append(" № ")

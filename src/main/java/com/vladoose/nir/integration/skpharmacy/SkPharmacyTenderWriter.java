@@ -1,14 +1,20 @@
 package com.vladoose.nir.integration.skpharmacy;
 
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.ImportQuantity;
 import com.vladoose.nir.integration.LotMergeIndex;
+import com.vladoose.nir.integration.SourceRemovedLots;
 import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.repository.TenderRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -21,10 +27,21 @@ public class SkPharmacyTenderWriter {
 
     private final TenderRepository tenderRepository;
     private final RegionResolver regionResolver;
+    private final SourceRemovedLots removedLots;
+    private final Clock clock;
 
-    public SkPharmacyTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver) {
+    @Autowired
+    public SkPharmacyTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver,
+                                  SourceRemovedLots removedLots) {
+        this(tenderRepository, regionResolver, removedLots, Clock.systemUTC());
+    }
+
+    public SkPharmacyTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver,
+                                  SourceRemovedLots removedLots, Clock clock) {
         this.tenderRepository = tenderRepository;
         this.regionResolver = regionResolver;
+        this.removedLots = removedLots;
+        this.clock = clock;
     }
 
     public enum Result { CREATED, UPDATED }
@@ -46,9 +63,10 @@ public class SkPharmacyTenderWriter {
         t.setTotalCost(a.totalSum());
         t.setPurchaseType(trunc(a.purchaseType(), 50));
         t.setPublishDate(dateOf(a.acceptStart()));
-        LocalDate deadline = dateOf(a.acceptEnd());
-        t.setDeadline(deadline);
-        t.setStatus(statusFrom(a.status(), deadline));
+        t.setDeadline(dateOf(a.acceptEnd()));
+        t.setDeadlineAt(ImportDeadline.parse(a.acceptEnd()));   // «2026-07-13 09:00:00» — время площадки (B2)
+        t.setStatus(statusFrom(a.status(), t.getDeadline(), t.getDeadlineAt(),
+                LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone())));
         applyGeneral(t, a, general);
 
         rebuildLots(t, lots, complete);
@@ -111,6 +129,7 @@ public class SkPharmacyTenderWriter {
             applyPortalDescription(lot, l.description(), l.rawQuantity());
             lot.setQuantity(l.quantity());                // дробное/нулевое уже пусто — сырое ушло в пометку
             lot.setMaxCost(ImportQuantity.positiveMoneyOrNull(l.unitPrice()));   // 0/overflow → null (CHECK max_cost>0, NUMERIC(15,2))
+            lot.setSourceRemovedAt(null);                 // лот есть на площадке (в том числе вернулся)
             result.add(lot);
         }
         if (!complete) {
@@ -123,7 +142,12 @@ public class SkPharmacyTenderWriter {
                 result.add(old);
             }
         }
-        // полный список: всё, чего больше нет на площадке, уходит через orphanRemoval
+        // полный список: всё, чего больше нет на площадке, уходит через orphanRemoval — кроме лотов с запросом КП
+        // или позицией заявки (B5): их удаление упёрлось бы во внешний ключ и откатило бы весь тендер.
+        // Номера им — после лотов площадки: номер здесь — позиция в списке площадки, а лота в нём больше нет.
+        for (TenderLot kept : removedLots.keepReferenced(t.getLots(), result, OffsetDateTime.now(clock))) {
+            kept.setLotNumber(n++);
+        }
         t.getLots().clear();
         t.getLots().addAll(result);
     }
@@ -154,11 +178,11 @@ public class SkPharmacyTenderWriter {
         try { return LocalDate.parse(s.trim().substring(0, 10)); } catch (Exception e) { return null; }
     }
 
-    /** Приём/опубликовано → ACTIVE; дедлайн прошёл → COMPLETED; отменён → CANCELLED. */
-    private static String statusFrom(String portalStatus, LocalDate deadline) {
+    /** Приём/опубликовано → ACTIVE; срок прошёл (по времени, если оно есть) → COMPLETED; отменён → CANCELLED. */
+    private static String statusFrom(String portalStatus, LocalDate deadline, LocalDateTime deadlineAt, LocalDateTime now) {
         String s = portalStatus == null ? "" : portalStatus.toLowerCase();
         if (s.contains("отмен")) return "CANCELLED";
-        if (deadline != null && deadline.isBefore(LocalDate.now())) return "COMPLETED";
+        if (ImportDeadline.passed(deadline, deadlineAt, now)) return "COMPLETED";
         if (s.contains("заверш") || s.contains("итог") || s.contains("рассмотр")) return "COMPLETED";
         return "ACTIVE";
     }

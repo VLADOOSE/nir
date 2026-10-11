@@ -31,6 +31,7 @@ class GoszakupImportServiceTest {
     @Autowired TenderRepository tenderRepository;
     @Autowired FacilityRepository facilityRepository;
     @Autowired RegionResolver regionResolver;
+    @Autowired com.vladoose.nir.integration.SourceRemovedLots removedLots;
 
     FakeGoszakupClient fake;
     GoszakupTenderWriter writer;
@@ -40,7 +41,7 @@ class GoszakupImportServiceTest {
     void setUp() {
         MarketContext.set(Market.KZ);
         fake = new FakeGoszakupClient();
-        writer = new GoszakupTenderWriter(tenderRepository, regionResolver);
+        writer = new GoszakupTenderWriter(tenderRepository, regionResolver, removedLots);
         service = svc("", 3650);
     }
 

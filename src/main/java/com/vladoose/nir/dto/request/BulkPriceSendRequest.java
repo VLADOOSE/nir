@@ -17,6 +17,6 @@ public class BulkPriceSendRequest {
     public static class Item {
         @NotNull private Long tenderLotId;
         @NotNull private Long medEquipmentId;
-        @NotNull @Positive private Integer requestedQuantity;
+        @Positive private Integer requestedQuantity;   // null — «кол-во уточняется» (B4)
     }
 }

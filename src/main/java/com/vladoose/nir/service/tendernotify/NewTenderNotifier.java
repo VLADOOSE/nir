@@ -3,6 +3,7 @@ package com.vladoose.nir.service.tendernotify;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
+import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.integration.telegram.TelegramClient;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
@@ -20,7 +21,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -157,11 +158,11 @@ public class NewTenderNotifier {
     private record Prepared(String text, List<String> extIds) {}
 
     private Prepared prepare(Collection<String> extIds) {
-        LocalDate today = LocalDate.ofInstant(clock.instant(), ZONE);
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZONE);
         List<Card> cards = new ArrayList<>();
         List<String> used = new ArrayList<>();
         for (String extId : extIds) {
-            tenderRepository.findBySourceExtId(extId).filter(t -> qualifies(t, today)).ifPresent(t -> {
+            tenderRepository.findBySourceExtId(extId).filter(t -> qualifies(t, now)).ifPresent(t -> {
                 cards.add(card(t));
                 used.add(extId);
             });
@@ -169,9 +170,10 @@ public class NewTenderNotifier {
         return new Prepared(NewTenderComposer.compose(cards, publicUrl), used);
     }
 
-    private boolean qualifies(Tender t, LocalDate today) {
+    private boolean qualifies(Tender t, LocalDateTime now) {
         if (!"ACTIVE".equals(t.getStatus())) return false;
-        if (t.getDeadline() != null && t.getDeadline().isBefore(today)) return false;
+        // срок с временем (B2): приём «до 10:25» в 14:10 уже закрыт, даже если площадка ещё не сменила статус
+        if (ImportDeadline.passed(t.getDeadline(), t.getDeadlineAt(), now)) return false;
         return regions.isEmpty() || regions.contains(norm(t.getRegion()));
     }
 
@@ -182,7 +184,7 @@ public class NewTenderNotifier {
                 .map(l -> new LotLine(l.getEquipName(), l.getQuantity()))
                 .toList();
         return new Card(t.getId(), platformLabel(t.getPlatform()), t.getTenderNumber(), t.getCustomerName(), t.getRegion(),
-                t.getDescription(), t.getTotalCost(), t.getDeadline(), lots);
+                t.getDescription(), t.getTotalCost(), t.getDeadline(), t.getDeadlineAt(), lots);
     }
 
     private static String platformLabel(TenderPlatform p) {

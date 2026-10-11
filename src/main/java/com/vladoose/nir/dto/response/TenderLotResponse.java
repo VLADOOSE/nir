@@ -3,6 +3,7 @@ package com.vladoose.nir.dto.response;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 
 @Data
 public class TenderLotResponse {
@@ -20,4 +21,6 @@ public class TenderLotResponse {
     private BigDecimal maxWeightKg;
     private String requiredSpec;
     private ProposedEquipmentResponse proposedEquipment;
+    /** Лота больше нет на площадке; остался, потому что на него есть запрос КП или позиция заявки (B5). */
+    private OffsetDateTime sourceRemovedAt;
 }

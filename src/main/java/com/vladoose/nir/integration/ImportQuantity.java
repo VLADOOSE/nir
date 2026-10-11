@@ -1,6 +1,7 @@
 package com.vladoose.nir.integration;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * Количество и сумма лота с площадки (B3) — общие правила обоих импортов.
@@ -49,6 +50,17 @@ public final class ImportQuantity {
         if (p == null || p.signum() <= 0) return null;
         if (p.precision() - p.scale() > 13) return null;
         return p;
+    }
+
+    /**
+     * Цена за единицу из суммы лота и количества (B1, goszakup). Площадка присылает СУММУ лота ({@code amount}),
+     * а {@code max_cost} — «Макс. цена» лота за единицу: сумма шла туда как есть, и карточка писала
+     * «300 шт · до 54 000 ₸» при 180 ₸ за штуку. Дробное количество (кг, литры) — цена за единицу измерения.
+     * Нет количества или суммы, 0,00 после округления, переполнение {@code NUMERIC(15,2)} → null.
+     */
+    public static BigDecimal unitPriceOrNull(BigDecimal amount, BigDecimal count) {
+        if (amount == null || count == null || amount.signum() <= 0 || count.signum() <= 0) return null;
+        return positiveMoneyOrNull(amount.divide(count, 2, RoundingMode.HALF_UP));
     }
 
     /** Пометка перед текстом; повторный вызов текст не меняет (пометка не двоится). */

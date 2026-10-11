@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,7 +46,7 @@ class TenderStatusServiceTest {
         Tender cancelled = tender("CAN-1", "CANCELLED", LocalDate.now().minusDays(5));
         Tender noDeadline = tender("NOD-1", "ACTIVE", null);
 
-        int changed = service.completeExpired(LocalDate.now());
+        int changed = service.completeExpired(LocalDateTime.now());
 
         assertThat(changed).isEqualTo(1);
         assertThat(tenderRepository.findById(expired.getId()).orElseThrow().getStatus()).isEqualTo("COMPLETED");
@@ -54,13 +55,35 @@ class TenderStatusServiceTest {
         assertThat(tenderRepository.findById(noDeadline.getId()).orElseThrow().getStatus()).isEqualTo("ACTIVE");
     }
 
+    /**
+     * B2: площадка назвала время окончания приёма — тендер закрывается по нему, а не в полночь следующего дня.
+     * Без времени (ручной тендер) весь день срока приём ещё идёт.
+     */
+    @Test
+    void deadlineTime_closesByTime_dateOnlyWaitsForNextDay() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 9, 14, 10);
+        Tender closedAtTen = tender("TM-1", "ACTIVE", now.toLocalDate());
+        closedAtTen.setDeadlineAt(now.toLocalDate().atTime(10, 25));
+        Tender closesTonight = tender("TM-2", "ACTIVE", now.toLocalDate());
+        closesTonight.setDeadlineAt(now.toLocalDate().atTime(18, 0));
+        Tender dateOnlyToday = tender("TM-3", "ACTIVE", now.toLocalDate());
+        tenderRepository.saveAllAndFlush(java.util.List.of(closedAtTen, closesTonight));
+
+        int changed = service.completeExpired(now);
+
+        assertThat(changed).isEqualTo(1);
+        assertThat(tenderRepository.findById(closedAtTen.getId()).orElseThrow().getStatus()).isEqualTo("COMPLETED");
+        assertThat(tenderRepository.findById(closesTonight.getId()).orElseThrow().getStatus()).isEqualTo("ACTIVE");
+        assertThat(tenderRepository.findById(dateOnlyToday.getId()).orElseThrow().getStatus()).isEqualTo("ACTIVE");
+    }
+
     @Test
     void respectsMarketIsolation_kzRunDoesNotTouchRf() {
         MarketContext.set(Market.RF);
         Tender rfExpired = tender("RF-EXP", "ACTIVE", LocalDate.now().minusDays(2));
 
         MarketContext.set(Market.KZ);
-        service.completeExpired(LocalDate.now());
+        service.completeExpired(LocalDateTime.now());
 
         MarketContext.set(Market.RF);
         assertThat(tenderRepository.findById(rfExpired.getId()).orElseThrow().getStatus()).isEqualTo("ACTIVE");

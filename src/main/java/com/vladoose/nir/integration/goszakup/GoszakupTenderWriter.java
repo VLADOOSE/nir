@@ -13,8 +13,15 @@ import com.vladoose.nir.repository.TenderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.ImportQuantity;
 import com.vladoose.nir.integration.LotMergeIndex;
+import com.vladoose.nir.integration.SourceRemovedLots;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,10 +38,21 @@ public class GoszakupTenderWriter {
 
     private final TenderRepository tenderRepository;
     private final RegionResolver regionResolver;
+    private final SourceRemovedLots removedLots;
+    private final Clock clock;
 
-    public GoszakupTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver) {
+    @Autowired
+    public GoszakupTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver,
+                                SourceRemovedLots removedLots) {
+        this(tenderRepository, regionResolver, removedLots, Clock.systemUTC());
+    }
+
+    public GoszakupTenderWriter(TenderRepository tenderRepository, RegionResolver regionResolver,
+                                SourceRemovedLots removedLots, Clock clock) {
         this.tenderRepository = tenderRepository;
         this.regionResolver = regionResolver;
+        this.removedLots = removedLots;
+        this.clock = clock;
     }
 
     @Transactional
@@ -68,10 +86,12 @@ public class GoszakupTenderWriter {
         t.setTotalCost(d.getTotalSum());
         t.setPublishDate(GoszakupParse.localDate(d.getPublishDate()));
         t.setDeadline(GoszakupParse.localDate(d.getEndDate()));
+        t.setDeadlineAt(ImportDeadline.parse(d.getEndDate()));   // «2026-10-09 10:25:00» — время площадки (B2)
         t.setCustomerBin(d.effectiveBin());
         String status = mapStatus(d.getRefBuyStatusId());
-        // площадка может держать «Опубликовано…» и после дедлайна — локально приём уже закрыт
-        if ("ACTIVE".equals(status) && t.getDeadline() != null && t.getDeadline().isBefore(java.time.LocalDate.now())) {
+        // площадка может держать «Опубликовано…» и после срока — локально приём уже закрыт (по времени, если оно есть)
+        if ("ACTIVE".equals(status)
+                && ImportDeadline.passed(t.getDeadline(), t.getDeadlineAt(), LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone()))) {
             status = "COMPLETED";
         }
         t.setStatus(status);
@@ -140,7 +160,9 @@ public class GoszakupTenderWriter {
             // (CHECK max_cost > 0 ронял запись всего тендера)
             Integer qty = ImportQuantity.wholePositiveOrNull(d.getCount());
             lot.setQuantity(qty);
-            lot.setMaxCost(ImportQuantity.positiveMoneyOrNull(d.getAmount()));
+            // B1: площадка присылает сумму лота, «Макс. цена» — за единицу
+            lot.setMaxCost(ImportQuantity.unitPriceOrNull(d.getAmount(), d.getCount()));
+            lot.setSourceRemovedAt(null);                        // лот есть на площадке (в том числе вернулся)
             String note = d.getCount() != null && qty == null
                     ? ImportQuantity.note(d.getCount().stripTrailingZeros().toPlainString()) : null;
             // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru
@@ -149,7 +171,9 @@ public class GoszakupTenderWriter {
             }
             result.add(lot);
         }
-        // всё, чего больше нет на площадке, уходит через orphanRemoval
+        // всё, чего больше нет на площадке, уходит через orphanRemoval — кроме лотов с запросом КП или позицией
+        // заявки (B5): их удаление упёрлось бы во внешний ключ и откатило бы весь тендер
+        removedLots.keepReferenced(t.getLots(), result, OffsetDateTime.now(clock));
         t.getLots().clear();
         t.getLots().addAll(result);
     }

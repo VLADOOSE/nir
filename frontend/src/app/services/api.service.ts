@@ -206,7 +206,7 @@ export class ApiService {
   sendPriceRequests(body: {
     tenderId: number;
     distributorIds: number[];
-    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number }[];
+    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number | null }[];
     subjectOverride?: string;
     bodyOverride?: string;
   }): Observable<any[]> {
@@ -217,7 +217,7 @@ export class ApiService {
   previewKp(body: {
     tenderId: number;
     distributorIds: number[];
-    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number }[];
+    items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number | null }[];
   }): Observable<{ subject: string; body: string }> {
     return this.http.post<{ subject: string; body: string }>(`${this.base}/price-requests/preview`, body);
   }

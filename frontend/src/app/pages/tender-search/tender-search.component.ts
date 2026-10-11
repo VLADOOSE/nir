@@ -4,6 +4,8 @@ import { ReactiveFormsModule, FormGroup, FormControl } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
+import { MarketService } from '../../services/market.service';
+import { Deadlined, deadlinePassed, deadlineText } from '../../shared/deadline';
 
 @Component({
   selector: 'app-tender-search',
@@ -67,7 +69,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
       <div class="tender-card-details">
         <div class="detail-row">
           <div class="detail"><span class="detail-label">Заказчик</span><span>{{ t.facility?.name || '—' }}</span></div>
-          <div class="detail"><span class="detail-label">Дата окончания</span><span class="deadline" [class.overdue]="isOverdue(t.deadline)">{{ formatDate(t.deadline) }}</span></div>
+          <div class="detail"><span class="detail-label">Дата окончания</span><span class="deadline" [class.overdue]="isOverdue(t)">{{ deadlineText(t) }}</span></div>
         </div>
       </div>
     </div>
@@ -124,7 +126,8 @@ export class TenderSearchComponent {
     dateTo: new FormControl('')
   });
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private router: Router) {
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private router: Router,
+              private market: MarketService) {
     this.api.getFacilities().subscribe(data => { this.facilities = data; this.cdr.detectChanges(); });
     this.onSearch();
   }
@@ -161,8 +164,7 @@ export class TenderSearchComponent {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
-  isOverdue(d: string): boolean {
-    if (!d) return false;
-    return new Date(d) < new Date();
-  }
+  /** Срок с временем площадки (B2): «до 10:25» в 14:10 уже прошёл; ручной тендер — весь день срока. */
+  isOverdue(t: Deadlined): boolean { return deadlinePassed(t, this.market.value); }
+  deadlineText(t: Deadlined): string { return deadlineText(t); }
 }
