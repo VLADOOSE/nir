@@ -398,4 +398,38 @@ class SkPharmacyImportServiceTest {
                 "объявление 521464-1: список лотов неполный (получено 2 из 36) — релевантность не определена");
         assertThat(tenderRepository.findBySourceExtId("521464-1")).isEmpty();
     }
+
+    /**
+     * Уже заведённый тендер СК-Фармации обновляется, даже если лоты больше не медизделия: фильтр решает только,
+     * заводить ли НОВЫЙ (как у goszakup — живой случай 17758057-1).
+     */
+    @Test
+    void import_existingTender_refreshedEvenWhenLotsNoLongerMedical() throws IOException {
+        MarketContext.set(Market.KZ);
+        tenderRepository.findBySourceExtId("521464-1").ifPresent(tenderRepository::delete);
+        writer.upsert(new SkAnnounce("521464", "521464-1", "ТОО «СК-Фармация»", "Закуп медицинской техники", "Тендер",
+                        "Товар", "2026-07-01 09:00:00", "2030-07-20 10:00:00", 1, new java.math.BigDecimal("1000"),
+                        "Опубликовано"),
+                java.util.List.of(new SkLot("L-1", "Томограф компьютерный", new java.math.BigDecimal("1000"), 1, null, null)),
+                null, true);
+        servicesForOthers();
+        String feed = searchWithName("Закуп товаров").replaceFirst("(521464-1[\\s\\S]*?)<td>12</td>", "$1<td>2</td>");
+        when(client.searchPage(anyInt())).thenAnswer(inv -> inv.getArgument(0, Integer.class) == 1 ? feed : "");
+        when(client.lotsPage(eq("521464"), anyInt())).thenReturn("""
+                <html><body><table>
+                <tr><th>№ п/п</th><th>№ лота</th><th>Наименование лота</th><th>Цена выделенная</th><th>Количество</th></tr>
+                <tr><td>1</td><td>L-1</td><td>Парацетамол таблетки 500 мг</td><td>100.00</td><td>10</td></tr>
+                <tr><td>2</td><td>L-2</td><td>Инсулин человеческий</td><td>200.00</td><td>5</td></tr>
+                </table></body></html>""");
+        when(client.generalPage(anyString())).thenReturn(fixture("general-distributor.html"));
+
+        ImportSummary sum = new ImportSummary();
+        importService.fillImport(sum);
+
+        assertThat(sum.getErrors()).isZero();
+        assertThat(sum.getUpdated()).isEqualTo(1);
+        assertThat(tenderRepository.findBySourceExtId("521464-1").orElseThrow().getLots())
+                .extracting(com.vladoose.nir.entity.TenderLot::getEquipName)
+                .containsExactlyInAnyOrder("Парацетамол таблетки 500 мг", "Инсулин человеческий");
+    }
 }

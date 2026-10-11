@@ -20,6 +20,8 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     Optional<Tender> findBySourceExtId(String sourceExtId);
 
+    boolean existsBySourceExtId(String sourceExtId);
+
     List<Tender> findByStatusAndDeadlineBefore(String status, LocalDate deadline);
 
     List<Tender> findByStatusAndDeadlineAtLessThanEqual(String status, LocalDateTime deadlineAt);

@@ -55,6 +55,16 @@ public class GoszakupTenderWriter {
         this.clock = clock;
     }
 
+    /**
+     * Тендер уже заведён в АИС. Фильтр «медтовар» решает только, заводить ли НОВЫЙ: уже заведённый импорт обновляет
+     * всегда — иначе тендер, у которого заказчик переписал лоты (живой случай 17758057-1, 2026-10-11), выпадал из
+     * обновлений: ни времени срока, ни отмены на площадке.
+     */
+    @Transactional(readOnly = true)
+    public boolean exists(String sourceExtId) {
+        return tenderRepository.existsBySourceExtId(sourceExtId);
+    }
+
     @Transactional
     public Result upsertOne(TrdBuyDto d, SubjectDto subj, List<LotDto> lots) {
         return upsertOne(d, subj, lots, null);

@@ -46,6 +46,16 @@ public class SkPharmacyTenderWriter {
 
     public enum Result { CREATED, UPDATED }
 
+    /**
+     * Тендер уже заведён в АИС. Фильтр «медтовар» решает только, заводить ли НОВЫЙ: уже заведённый импорт обновляет
+     * всегда — иначе тендер, у которого заказчик переписал лоты (живой случай 17758057-1, 2026-10-11), выпадал из
+     * обновлений: ни времени срока, ни отмены на площадке.
+     */
+    @Transactional(readOnly = true)
+    public boolean exists(String sourceExtId) {
+        return tenderRepository.existsBySourceExtId(sourceExtId);
+    }
+
     @Transactional
     public Result upsert(SkAnnounce a, List<SkLot> lots, SkGeneral general, boolean complete) {
         Tender t = tenderRepository.findBySourceExtId(a.numberAnno()).orElse(null);

@@ -5,6 +5,7 @@ import com.vladoose.nir.entity.Facility;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.integration.LotText;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.repository.FacilityRepository;
@@ -144,6 +145,39 @@ class GoszakupImportServiceTest {
         assertThat(s.getCreated()).isEqualTo(1);
         assertThat(tenderRepository.findBySourceExtId("MED-1")).isPresent();
         assertThat(tenderRepository.findBySourceExtId("FOOD-1")).isEmpty();
+    }
+
+    /**
+     * Фильтр «медтовар» решает только, заводить ли НОВЫЙ тендер; уже заведённый обновляется всегда. Живой случай
+     * 17758057-1 (2026-10-11): заказчик переписал лот «Тележка медицинская внутрикорпусная» на «Тележка — ручная,
+     * четырехколесная», фильтр стал его отсекать, и тендер выпал из обновлений: ни времени срока, ни отмены.
+     */
+    @Test
+    void existingTender_refreshedEvenWhenLotsNoLongerMedical() {
+        hospital("Больница с тележкой", "BIN-CART");
+        fake.orgPage("BIN-CART", FakeGoszakupClient.buy("CART-1", "Тележка медицинская внутрикорпусная", 230, "BIN-CART",
+                "2026-06-01T00:00:00", "2026-06-20T00:00:00"));
+        fake.lotsByAnno.put("CART-1", List.of(lot("Тележка медицинская внутрикорпусная", null)));
+        service.importMedicalTenders(REGION);
+        assertThat(tenderRepository.findBySourceExtId("CART-1")).isPresent();
+
+        // заказчик переписал лот, площадка отменила закупку
+        fake.orgPage("BIN-CART", FakeGoszakupClient.buy("CART-1", "Тележка медицинская внутрикорпусная", 430, "BIN-CART",
+                "2026-06-01T00:00:00", "2026-06-20 18:00:00"));
+        fake.lotsByAnno.put("CART-1", List.of(lot("Тележка", "ручная, четырехколесная")));
+        assertThat(MedicalRelevanceFilter.isRelevant("Тележка медицинская внутрикорпусная",
+                List.of(new LotText("Тележка", "ручная, четырехколесная"))))
+                .as("предусловие: новый лот фильтр не пропускает").isFalse();
+
+        ImportSummary second = service.importMedicalTenders(REGION);
+
+        assertThat(second.getUpdated()).isEqualTo(1);
+        assertThat(second.getSkipped()).isZero();
+        assertThat(second.getMatched()).as("«подходящих» — только медтоварные").isZero();
+        Tender t = tenderRepository.findBySourceExtId("CART-1").orElseThrow();
+        assertThat(t.getStatus()).isEqualTo("CANCELLED");
+        assertThat(t.getDeadlineAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 20, 18, 0));
+        assertThat(t.getLots()).extracting(com.vladoose.nir.entity.TenderLot::getEquipName).containsExactly("Тележка");
     }
 
     @Test

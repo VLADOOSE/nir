@@ -147,7 +147,10 @@ public class SkPharmacyImportService {
                     // lotsCount ленты = числу лотов вкладки (сверено 2026-10-07: 49/49 объявлений корпуса, 3/3 живьём)
                     boolean complete = !fetched.truncated() && (expected == null || got >= expected);
                     List<String> lotNames = lots.stream().map(SkLot::name).toList();
-                    if (!SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames)) {   // ступень 2 — по лотам
+                    boolean relevant = SkPharmacyRelevanceFilter.isRelevant(a.nameRu(), lotNames);   // ступень 2 — по лотам
+                    // ступень 2 решает только, заводить ли НОВЫЙ тендер; уже заведённый обновляется всегда (как у
+                    // goszakup). Ступень 1 (лекарства и допуски по названию) и закупки услуг — отсечение безусловное
+                    if (!relevant && !writer.exists(a.numberAnno())) {
                         if (!complete) {
                             // профильный лот мог остаться на недочитанной странице — тихий пропуск потерял бы тендер
                             String of = expected != null && got < expected ? " из " + expected : ", на площадке больше";
@@ -158,7 +161,7 @@ public class SkPharmacyImportService {
                         sum.setSkipped(sum.getSkipped() + 1);
                         continue;
                     }
-                    sum.setMatched(sum.getMatched() + 1);
+                    if (relevant) sum.setMatched(sum.getMatched() + 1);
                     SkGeneral general = fetchGeneral(a);   // регион/БИН/контакт со вкладки «Общие сведения» — fail-soft
                     if (writer.upsert(a, lots, general, complete) == SkPharmacyTenderWriter.Result.CREATED) {
                         sum.addCreated(a.numberAnno());

@@ -160,15 +160,19 @@ public class GoszakupImportService {
             List<LotText> lotTexts = lots.stream()
                     .map(l -> new LotText(l.getNameRu(), l.getDescriptionRu()))
                     .toList();
-            if (!MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts)) {
+            boolean relevant = MedicalRelevanceFilter.isRelevant(d.getNameRu(), lotTexts);
+            // фильтр решает только, заводить ли НОВЫЙ тендер; уже заведённый обновляется всегда (статус, срок, лоты),
+            // даже если заказчик переписал лоты так, что фильтр их больше не пропускает (живой случай 17758057-1)
+            if (!relevant && !writer.exists(d.getNumberAnno())) {
                 sum.setSkipped(sum.getSkipped() + 1); // лоты — не медтовар (лекарства/еда/хозтовары/услуги)
                 return;
             }
-            SubjectDto subj = subjectOf(d.effectiveBin(), subjects);
+            // subject — только профильным: у уже заведённого writer поля заказчика без subject не трогает
+            SubjectDto subj = relevant ? subjectOf(d.effectiveBin(), subjects) : null;
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.addCreated(d.getNumberAnno());
             else sum.setUpdated(sum.getUpdated() + 1);
-            sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
+            if (relevant) sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
         } catch (RuntimeException e) {
             sum.addError("объявление " + d.getNumberAnno() + ": " + ErrorText.of(e));
             log.warn("goszakup: ошибка импорта объявления {}: {}", d.getNumberAnno(), e.toString());
