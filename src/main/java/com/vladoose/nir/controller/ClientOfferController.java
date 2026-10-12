@@ -4,6 +4,7 @@ import com.vladoose.nir.dto.request.ClientOfferStatusRequest;
 import com.vladoose.nir.dto.request.ClientOfferUpdateRequest;
 import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
+import com.vladoose.nir.dto.response.NewPricesResponse;
 import com.vladoose.nir.dto.response.PreviewPagesResponse;
 import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
@@ -95,6 +96,18 @@ public class ClientOfferController {
     @GetMapping("/{id}/items/{itemId}/offers")
     public List<SupplierOfferResponse> itemOffers(@PathVariable Long id, @PathVariable Long itemId) {
         return requestOffers.offers(id, itemId);
+    }
+
+    /** Плашка «Пришли новые цены» — только у черновика из заявки; иначе пусто. */
+    @GetMapping("/{id}/new-prices")
+    public NewPricesResponse newPrices(@PathVariable Long id) {
+        return requestOffers.newPrices(id);
+    }
+
+    @PostMapping("/{id}/apply-new-prices")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ClientOfferResponse applyNewPrices(@PathVariable Long id) {
+        return full(requestOffers.applyNewPrices(id));
     }
 
     @GetMapping("/{id}/preview")

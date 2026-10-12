@@ -1,7 +1,9 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.dto.response.NewPricesResponse;
 import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
@@ -15,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * КП клиенту из частной заявки (спека 2026-10-12 §8): черновик — как «+ Новое КП» (номер из счётчика, умолчания
@@ -84,6 +88,69 @@ public class ClientOfferRequestService {
         return current.stream().map(c -> new SupplierOfferResponse(c.priceRequestItemId(), c.supplierName(), c.price(),
                 c.respondedOn(), "ACCEPTED".equals(c.status()), c.price().compareTo(min) == 0,
                 Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()))).toList();
+    }
+
+    /** Что подставить строке: цена и ответ, из которого она. */
+    private record Update(ClientOfferItem item, PurchaseOffer offer, BigDecimal price) {}
+
+    /**
+     * Строки черновика из заявки, которым есть что подставить (спека §8): пустая закупка, а для позиции теперь есть цена по
+     * правилу умолчания, — или цена выбранного ответа изменилась. Сознательно выбранный не самый дешёвый ответ с прежней
+     * ценой и ручная закупка (без ссылки) не трогаются; строка без позиции (позицию удалили) — тоже.
+     */
+    private List<Update> updates(ClientOffer o) {
+        if (o.getStatus() != ClientOfferStatus.DRAFT || o.getTenderId() == null) return List.of();
+        Map<Long, List<PurchaseOffer>> byLot = offersByLot(o.getTenderId());
+        Map<Long, PurchaseOffer> byAnswer = new HashMap<>();
+        byLot.values().forEach(list -> list.forEach(c -> byAnswer.put(c.priceRequestItemId(), c)));
+        Set<Long> linked = o.getItems().stream().map(ClientOfferItem::getPriceRequestItemId).filter(Objects::nonNull)
+                .filter(id -> !byAnswer.containsKey(id)).collect(Collectors.toSet());
+        for (PriceRequestItem i : priceItems.findAllById(linked)) {
+            if (i.getResponsePrice() != null && i.getTenderLot() != null) byAnswer.put(i.getId(), PurchaseOffer.of(i));
+        }
+        List<Update> out = new ArrayList<>();
+        for (ClientOfferItem it : o.getItems()) {
+            if (it.getKind() != ClientOfferItemKind.ITEM) continue;
+            if (it.getPurchasePrice() == null) {
+                if (it.getTenderLotId() == null) continue;
+                PurchaseOffers.best(byLot.getOrDefault(it.getTenderLotId(), List.of()))
+                        .ifPresent(best -> out.add(new Update(it, best, scaled(best.price()))));
+            } else if (it.getPriceRequestItemId() != null) {
+                PurchaseOffer answer = byAnswer.get(it.getPriceRequestItemId());
+                if (answer != null && scaled(answer.price()).compareTo(it.getPurchasePrice()) != 0) {
+                    out.add(new Update(it, answer, scaled(answer.price())));
+                }
+            }
+        }
+        return out;
+    }
+
+    @Transactional(readOnly = true)
+    public NewPricesResponse newPrices(Long offerId) {
+        ClientOffer o = offers.get(offerId);
+        return new NewPricesResponse(updates(o).stream().map(u -> new NewPricesResponse.Line(u.item().getId(),
+                u.item().getLineNo(), u.item().getName(), u.item().getPurchasePrice(), u.price(),
+                u.offer().supplierName())).toList());
+    }
+
+    /** «Подставить»: цены из плашки — в строки черновика; версия растёт, вторая вкладка получит 409 (решение плана 8). */
+    @Transactional
+    public ClientOffer applyNewPrices(Long offerId) {
+        ClientOffer o = offers.get(offerId);
+        if (o.getStatus() != ClientOfferStatus.DRAFT) throw new BadRequestException("Новые цены подставляются только в черновик");
+        if (o.getTenderId() == null) throw new BadRequestException("КП не из заявки — подставлять нечего");
+        for (Update u : updates(o)) link(u.item(), u.offer());
+        OfferCalculation calc = offers.calculate(o);
+        ClientOfferService.checkAmounts(o, calc);
+        o.setTotalAmount(calc.totals().sum());
+        o.setItemCount(calc.totals().itemCount());
+        o.setUpdatedAt(OffsetDateTime.now());
+        repository.flush();
+        return o;
+    }
+
+    private static BigDecimal scaled(BigDecimal v) {
+        return v.setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Кандидаты в закупку по позициям заявки (решение плана 2). */
