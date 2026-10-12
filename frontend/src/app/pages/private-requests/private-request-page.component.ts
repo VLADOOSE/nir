@@ -11,6 +11,8 @@ import { CLOSE_OUTCOMES, PrStatus, PrView, SaveState, stageTone, timeText } from
 import { errorText } from '../../shared/error-text';
 import { fullDateTime } from '../../shared/relative-time';
 import { PrClientSectionComponent } from './pr-client-section.component';
+import { PrLinesComponent } from './pr-lines.component';
+import { MarketService } from '../../services/market.service';
 
 /**
  * Страница частной заявки (спека 2026-10-12 §5): шапка с этапом и меню, разделы — клиент, позиции, поставщики и цены.
@@ -19,7 +21,7 @@ import { PrClientSectionComponent } from './pr-client-section.component';
 @Component({
   selector: 'app-private-request-page',
   standalone: true,
-  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent],
+  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -48,6 +50,8 @@ import { PrClientSectionComponent } from './pr-client-section.component';
       </div>
       <app-pr-client-section [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onView($event)"
                              (saveState)="onSaveState($event)"></app-pr-client-section>
+      <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
+                    (saveState)="onSaveState($event)"></app-pr-lines>
       <!-- sections -->
     </div>
     <ng-template #stateTpl>
@@ -91,7 +95,7 @@ export class PrivateRequestPageComponent {
 
   constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public auth: AuthService,
               private notify: NotificationService, private confirm: ConfirmService, private cdr: ChangeDetectorRef,
-              private destroyRef: DestroyRef) {
+              private destroyRef: DestroyRef, private market: MarketService) {
     // маршрут переиспользует компонент при переходе на другую заявку — грузим по каждому id
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(p => {
       const id = Number(p.get('id'));
@@ -139,8 +143,17 @@ export class PrivateRequestPageComponent {
     });
   }
 
-  /** Сразу после загрузки (задача 13 добавит проверку РУ у позиций без статуса). */
-  private afterLoad() {}
+  get isKz() { return this.market.value === 'KZ'; }
+
+  /** Позиции без статуса РУ (заявки до V26, старые пути) — одна проверка при открытии; только KZ и только админ. */
+  private afterLoad() {
+    const v = this.view;
+    if (!v || !this.isKz || !this.auth.isAdmin() || !v.lines.some(l => l.regStatus == null)) return;
+    this.api.checkPrivateRequestRegistry(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: nv => { if (this.view?.id === nv.id) { this.view = nv; this.cdr.markForCheck(); } },
+      error: () => {},   // не вышло — метки остаются «РУ —», повтор при следующем открытии
+    });
+  }
 
   onView(v: PrView) {
     this.view = v;

@@ -90,7 +90,7 @@ let openChip: RegistryChipComponent | null = null;
     .res-meta { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
     .error-banner { margin: 0; }
     @media (max-width: 900px) {
-      .chip { min-height: 32px; }
+      .chip { min-height: 40px; padding: 0 12px; }   /* цель 40 px (спека §5.6) — строка позиции на телефоне и так 40 px */
       .pop { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-height: 70vh; overflow-y: auto; }
       .pop-actions .btn, .results button { min-height: 40px; }
       .search input { font-size: 16px; min-height: 40px; }
@@ -141,7 +141,9 @@ export class RegistryChipComponent implements OnDestroy {
   noneText(): string {
     switch (this.line.regStatus) {
       case 'NOT_REQUIRED': return 'Отмечено: не подлежит регистрации.';
-      case 'NOT_FOUND': return 'Реестр не подсказал подходящего РУ — найдите вручную или отметьте «не подлежит».';
+      case 'NOT_FOUND': return this.readonly
+        ? 'Реестр не подсказал подходящего РУ.'   // оператору без прав — без советов, которые ему не выполнить
+        : 'Реестр не подсказал подходящего РУ — найдите вручную или отметьте «не подлежит».';
       default: return 'Регистрация ещё не проверялась.';
     }
   }
@@ -151,9 +153,10 @@ export class RegistryChipComponent implements OnDestroy {
       this.close();
       return;
     }
-    if (openChip && openChip !== this) {
-      openChip.close();
-      openChip.cdr.markForCheck();
+    const prev = openChip;   // close() обнуляет openChip — держим ссылку, чтобы отметить вид прежней метки
+    if (prev && prev !== this) {
+      prev.close();
+      prev.cdr.markForCheck();
     }
     openChip = this;
     this.open = true;
@@ -165,6 +168,8 @@ export class RegistryChipComponent implements OnDestroy {
   openSearch() {
     this.searching = true;
     this.query = [this.line.name, this.line.brand].filter(Boolean).join(' ');
+    this.results = [];          // прошлый поиск не мелькает, пока грузятся кандидаты этой позиции
+    this.searchedOnce = false;
     this.loadingResults = true;
     this.searchSub?.unsubscribe();
     this.searchSub = this.api.getPrivateRequestLineCandidates(this.requestId, this.line.lotId)
