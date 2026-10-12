@@ -7,6 +7,7 @@ import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
+import com.vladoose.nir.service.privaterequest.PrivateRequestPricesService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestRfqService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.util.PastedLinesParser;
@@ -31,15 +32,17 @@ public class PrivateRequestController {
     private final PrivateRequestSourcingService sourcingService;
     private final PrivateRequestImportService importService;
     private final PrivateRequestRfqService rfqService;
+    private final PrivateRequestPricesService pricesService;
 
     public PrivateRequestController(PrivateRequestService service, PrivateRequestViewBuilder viewBuilder,
                                     PrivateRequestSourcingService sourcingService, PrivateRequestImportService importService,
-                                    PrivateRequestRfqService rfqService) {
+                                    PrivateRequestRfqService rfqService, PrivateRequestPricesService pricesService) {
         this.service = service;
         this.viewBuilder = viewBuilder;
         this.sourcingService = sourcingService;
         this.importService = importService;
         this.rfqService = rfqService;
+        this.pricesService = pricesService;
     }
 
     @GetMapping
@@ -172,6 +175,11 @@ public class PrivateRequestController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<PriceRequestSendService.SendResult> rfqSend(@PathVariable Long id, @Valid @RequestBody RfqSendRequest req) {
         return rfqService.send(id, req);
+    }
+
+    @GetMapping("/{id}/prices")
+    public PrivateRequestPricesResponse prices(@PathVariable Long id) {
+        return pricesService.build(id);
     }
 
     @GetMapping("/{id}/sourcing")

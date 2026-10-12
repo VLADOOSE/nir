@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long> {
@@ -21,4 +22,12 @@ public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long
     List<PendingNotification> findPendingNotifications(@Param("status") NotifyStatus status, Pageable page);
 
     long countByNotifyStatus(NotifyStatus status);
+
+    /**
+     * Запросы цен, на письмо которых пришёл возврат. Нативный SQL рыночным фильтром не режется — и не должен: возврат на
+     * запрос РФ лежит строкой ящика KZ (R17, CLAUDE.md §8).
+     */
+    @Query(value = "SELECT DISTINCT matched_price_request_id FROM inbound_email WHERE type = 'BOUNCE' "
+            + "AND matched_price_request_id IN (:ids)", nativeQuery = true)
+    List<Long> findBouncedPriceRequestIds(@Param("ids") Collection<Long> ids);
 }

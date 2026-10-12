@@ -1,5 +1,6 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.PriceRequestRequest;
 import com.vladoose.nir.dto.request.PriceRequestSendRequest;
 import com.vladoose.nir.dto.response.KpPreviewResponse;
@@ -7,6 +8,7 @@ import com.vladoose.nir.dto.response.PriceRequestResponse;
 import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.PriceRequestMapper;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.DistributorService;
@@ -107,6 +109,7 @@ public class PriceRequestController {
 
     @PostMapping
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestResponse create(@Valid @RequestBody PriceRequestRequest request) {
         if (request.getTenderId() == null) throw new BadRequestException("Не указан тендер");
         if (request.getDistributorId() == null) throw new BadRequestException("Не указан дистрибьютор");
@@ -140,6 +143,7 @@ public class PriceRequestController {
 
     @PutMapping("/{id}")
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestResponse update(@PathVariable Long id, @Valid @RequestBody PriceRequestRequest request) {
         PriceRequest existing = service.findById(id);
         mapper.updateEntity(request, existing);
@@ -150,8 +154,13 @@ public class PriceRequestController {
 
     @PutMapping("/{id}/responses")
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestResponse updateResponses(@PathVariable Long id, @RequestBody List<ItemResponseDto> updates) {
         PriceRequest pr = service.findById(id);
+        // findById = em.find — фильтр рынка его не режет (§14): запрос другого рынка — как несуществующий
+        if (pr.getMarket() != null && pr.getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Запрос КП не найден: " + id);
+        }
         boolean anyPriceSet = false;
         for (ItemResponseDto u : updates) {
             if (u.itemId() == null) {
@@ -162,6 +171,9 @@ public class PriceRequestController {
             }
             PriceRequestItem item = itemRepository.findById(u.itemId())
                     .orElseThrow(() -> new BadRequestException("Позиция КП не найдена: " + u.itemId()));
+            if (item.getPriceRequest() == null || !item.getPriceRequest().getId().equals(id)) {
+                throw new BadRequestException("Позиция " + u.itemId() + " не из этого запроса КП");
+            }
             item.setResponsePrice(u.responsePrice());
             item.setResponseNote(u.responseNote());
             itemRepository.save(item);
@@ -177,6 +189,7 @@ public class PriceRequestController {
 
     @PostMapping("/{id}/close")
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestResponse close(@PathVariable Long id) {
         PriceRequest pr = service.findById(id);
         pr.setStatus("CLOSED");
@@ -185,6 +198,7 @@ public class PriceRequestController {
 
     @PostMapping("/{id}/accept")
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestResponse accept(@PathVariable Long id) {
         PriceRequest pr = service.findById(id);
         if (!"RESPONDED".equals(pr.getStatus())) {
@@ -195,6 +209,7 @@ public class PriceRequestController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long id) {
         service.deleteById(id);
     }

@@ -307,7 +307,7 @@ class MailIngestWriterTest {
         PriceRequest p = pr("SENT", 0, Source.PRIVATE_REQUEST);
         writer().write(mail().subject("Re: " + KpToken.subjectToken(p.getId())).text("Получили, ответим завтра").build(), 5);
         assertThat(rows().get(0).getNotifyText()).contains("частная заявка ZZW-")
-                .endsWith("/private-requests?openId=" + p.getTender().getId() + "&market=KZ");
+                .endsWith("/private-requests/" + p.getTender().getId() + "?market=KZ");
     }
 
     @Test

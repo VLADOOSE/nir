@@ -114,7 +114,7 @@ class MailNotificationComposerTest {
         KpSnapshot pr = new KpSnapshot(5, "Дистр", null, 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null);
         String t = MailNotificationComposer.compose(mail().build(), sup(), pr, KpOutcome.NO_PRICE, KZ).text();
         assertThat(t).contains("Запрос КП №5 · частная заявка ЧЗ-2026-0007")
-                .endsWith("https://ais.westmed.kz/private-requests?openId=42&market=KZ");
+                .endsWith("https://ais.westmed.kz/private-requests/42?market=KZ");
     }
 
     @Test
@@ -425,9 +425,9 @@ class MailNotificationComposerTest {
                 ⚠️ Письмо не доставлено · Дистр (d@x.kz)
                 Запрос КП №5 · частная заявка ЧЗ-2026-0007
                 Причина: 550 5.1.1 User unknown
-                Исправьте адрес в карточке поставщика и запросите КП заново в карточке заявки.
+                Исправьте адрес в карточке поставщика и нажмите «Переслать» в таблице цен заявки.
 
-                Открыть в АИС: https://ais.westmed.kz/private-requests?openId=42&market=KZ""");
+                Открыть в АИС: https://ais.westmed.kz/private-requests/42?market=KZ""");
     }
 
     /** Разрывы, которые клиенты показывают новой строкой: \r\n, \n, \r, VT, FF, NEL, LS, PS. */

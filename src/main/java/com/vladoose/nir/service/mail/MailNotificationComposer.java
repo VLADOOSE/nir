@@ -102,9 +102,9 @@ public final class MailNotificationComposer {
         if (retrying) {
             head.append("Сервер получателя ещё повторяет доставку — если не получится, придёт отдельное уведомление.\n");
         } else if (kp != null) {
-            // «↻ Переслать» есть только в карточке тендера; у частной заявки КП запрашивают заново
+            // «↻ Переслать» есть и у тендера (запросы КП), и в таблице цен частной заявки
             head.append(kp.privateRequest()
-                    ? "Исправьте адрес в карточке поставщика и запросите КП заново в карточке заявки.\n"
+                    ? "Исправьте адрес в карточке поставщика и нажмите «Переслать» в таблице цен заявки.\n"
                     : "Исправьте адрес в карточке поставщика и нажмите «Переслать» в запросах КП тендера.\n");
         }
         receivedLate(head, m.receivedAt(), ctx);
@@ -195,7 +195,7 @@ public final class MailNotificationComposer {
     }
 
     private static String kpLink(KpSnapshot kp, ComposeContext ctx) {
-        return link(ctx, (kp.privateRequest() ? "/private-requests" : "/tenders") + "?openId=" + kp.tenderId());
+        return link(ctx, kp.privateRequest() ? "/private-requests/" + kp.tenderId() : "/tenders?openId=" + kp.tenderId());
     }
 
     /** Ссылка с рынком (?market=): браузер, открытый впервые, стартует на РФ. Пустой publicUrl — без ссылки. */
