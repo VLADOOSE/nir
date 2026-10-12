@@ -75,4 +75,24 @@ public class TenderLot {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "proposed_equipment_id")
     private MedEquipment proposedEquipment;
+
+    /** Ед. изм. позиции частной заявки; пусто = «шт». */
+    @Column(length = 30)
+    private String unit;
+
+    /** Ссылка на товар westmed.kz, если позиция выбрана из каталога сайта. */
+    @Column(name = "product_url", length = 500)
+    private String productUrl;
+
+    /** РУ позиции частной заявки; пусто — не проверено. Правка наименования или бренда пересчитывает подсказку. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reg_status", length = 20)
+    private LineRegStatus regStatus;
+
+    @Column(name = "reg_number", length = 100)
+    private String regNumber;
+
+    /** Похожесть подсказки реестра — для калибровки порога; на экране не печатается. */
+    @Column(name = "reg_score", precision = 5, scale = 3)
+    private BigDecimal regScore;
 }

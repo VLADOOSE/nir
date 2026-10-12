@@ -9,6 +9,7 @@ import org.hibernate.annotations.ParamDef;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -92,6 +93,14 @@ public class Tender implements MarketScoped {
     @Column(name = "contact_email")
     private String contactEmail;
 
+    /** Контактное лицо частной заявки одной строкой, как написал клиент (у тендеров площадок — разнесённые поля выше). */
+    @Column(name = "contact_name")
+    private String contactName;
+
+    /** Дата создания (V26): новые строки любого источника; у старых частных заявок заполнена миграцией. */
+    @Column(name = "created_at")
+    private OffsetDateTime createdAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
     private Market market;
@@ -114,6 +123,11 @@ public class Tender implements MarketScoped {
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TenderLot> lots = new ArrayList<>();
+
+    @PrePersist
+    void stampCreatedAt() {
+        if (createdAt == null) createdAt = OffsetDateTime.now();
+    }
 
     /**
      * Срок приёма. Время площадки относится только к своей дате: перенос даты в форме тендера снимает его — иначе

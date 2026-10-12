@@ -48,6 +48,19 @@ public class PriceRequest implements MarketScoped {
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
+    /** «Ответить до» из окна запроса цен; в письме — вместо срока тендера. */
+    @Column(name = "reply_by")
+    private LocalDate replyBy;
+
+    /** Адрес, на который письмо приняла почта; пусто — письма не было или оно не ушло. */
+    @Column(name = "sent_to")
+    private String sentTo;
+
+    /** Исход последней отправки письма; пусто у запросов до V26. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "letter_status", length = 20)
+    private LetterStatus letterStatus;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
     private Market market;
