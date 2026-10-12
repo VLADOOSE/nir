@@ -79,6 +79,7 @@ public class ClientOfferMapper {
         d.setRegistrationText(it.getRegistrationText());
         d.setRegNumber(it.getRegNumber());
         d.setNote(it.getNote());
+        d.setTenderLotId(it.getTenderLotId());
         d.setCalc(calc);
         return d;
     }

@@ -9,6 +9,7 @@ import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.service.ClientOfferMapper;
+import com.vladoose.nir.service.ClientOfferRequestService;
 import com.vladoose.nir.service.ClientOfferService;
 import jakarta.validation.Valid;
 import org.springframework.http.*;
@@ -32,10 +33,12 @@ public class ClientOfferController {
 
     private final ClientOfferService service;
     private final ClientOfferMapper mapper;
+    private final ClientOfferRequestService requestOffers;
 
-    public ClientOfferController(ClientOfferService service, ClientOfferMapper mapper) {
+    public ClientOfferController(ClientOfferService service, ClientOfferMapper mapper, ClientOfferRequestService requestOffers) {
         this.service = service;
         this.mapper = mapper;
+        this.requestOffers = requestOffers;
     }
 
     @GetMapping
@@ -48,6 +51,13 @@ public class ClientOfferController {
     @PreAuthorize("hasRole('ADMIN')")
     public ClientOfferResponse create() {
         return full(service.create(currentUser()));
+    }
+
+    /** КП клиенту из частной заявки (спека 2026-10-12 §8): черновик с позициями, РУ и ценами ответов. */
+    @PostMapping("/from-private-request/{tenderId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ClientOfferResponse fromPrivateRequest(@PathVariable Long tenderId) {
+        return full(requestOffers.createFromPrivateRequest(tenderId, currentUser()));
     }
 
     @GetMapping("/{id}")

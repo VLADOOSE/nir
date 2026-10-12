@@ -410,7 +410,7 @@ public class ClientOfferService {
      * на total_amount и не пропись, упавшая в документе. Цены не отрицательны, поэтому итог не меньше любой строки;
      * строки проверяются отдельно, чтобы назвать позицию.
      */
-    private static void checkAmounts(ClientOffer o, OfferCalculation calc) {
+    static void checkAmounts(ClientOffer o, OfferCalculation calc) {
         int itemNo = 0;
         for (int i = 0; i < o.getItems().size(); i++) {
             ClientOfferItem it = o.getItems().get(i);

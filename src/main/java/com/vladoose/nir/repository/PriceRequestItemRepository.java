@@ -19,6 +19,11 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
     @Query("SELECT i FROM PriceRequestItem i WHERE i.priceRequest.tender.id = :tenderId")
     List<PriceRequestItem> findByTenderId(@Param("tenderId") Long tenderId);
 
+    /** Строки ответов с ценой по заявке — с запросом, поставщиком и позицией (КП из заявки, спека 2026-10-12 §8). */
+    @Query("SELECT i FROM PriceRequestItem i JOIN FETCH i.priceRequest pr JOIN FETCH pr.distributor JOIN FETCH i.tenderLot " +
+           "WHERE pr.tender.id = :tenderId AND i.responsePrice IS NOT NULL")
+    List<PriceRequestItem> findPricedByTenderId(@Param("tenderId") Long tenderId);
+
     @Query("SELECT i FROM PriceRequestItem i WHERE i.tenderLot.id = :lotId")
     List<PriceRequestItem> findByTenderLotId(@Param("lotId") Long lotId);
 

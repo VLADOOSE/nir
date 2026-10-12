@@ -47,6 +47,9 @@ public class ClientOfferItemDto {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String regNumber;
     @Size(max = 4000) private String note;
+    /** Позиция заявки, из которой строка (ставит сервер при создании КП из заявки); с клиента не меняется. */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long tenderLotId;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private ItemCalc calc;
 }
