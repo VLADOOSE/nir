@@ -3,6 +3,7 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.*;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.mapper.FacilityMapper;
 import com.vladoose.nir.mapper.LeadResponseMapper;
 import com.vladoose.nir.service.LeadService;
@@ -96,11 +97,42 @@ public class PrivateRequestController {
         service.delete(id, currentUser());
     }
 
-    /** Старая правка строк целиком (задача 4 заменит её позициями по одной). */
-    @PutMapping("/{id}")
+    @PostMapping("/{id}/lines")
     @PreAuthorize("hasRole('ADMIN')")
-    public PrivateRequestResponse update(@PathVariable Long id, @Valid @RequestBody PrivateRequestUpdate request) {
-        return buildFull(service.update(id, request));
+    public PrivateRequestViewResponse addLines(@PathVariable Long id, @Valid @RequestBody PrivateRequestLinesAdd req) {
+        return viewBuilder.build(service.addLines(id, req.getLines(), req.getMode() == null ? LinesMode.APPEND : req.getMode()));
+    }
+
+    @PatchMapping("/{id}/lines/{lotId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestLineView updateLine(@PathVariable Long id, @PathVariable Long lotId,
+                                             @Valid @RequestBody PrivateRequestLineFieldUpdate req) {
+        TenderLot lot = service.updateLineField(id, lotId, req.getField(), req.getValue());
+        return viewBuilder.line(lot);
+    }
+
+    @DeleteMapping("/{id}/lines/{lotId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse deleteLine(@PathVariable Long id, @PathVariable Long lotId) {
+        return viewBuilder.build(service.deleteLine(id, lotId));
+    }
+
+    @PostMapping("/{id}/lines/{lotId}/registry")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestLineView lineRegistry(@PathVariable Long id, @PathVariable Long lotId,
+                                               @Valid @RequestBody LineRegistryActionRequest req) {
+        return viewBuilder.line(service.lineRegistry(id, lotId, req.getAction(), req.getRegNumber()));
+    }
+
+    @GetMapping("/{id}/lines/{lotId}/registry-candidates")
+    public List<RegistryCandidateResponse> lineCandidates(@PathVariable Long id, @PathVariable Long lotId) {
+        return service.lineCandidates(id, lotId);
+    }
+
+    @PostMapping("/{id}/registry-check")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse registryCheck(@PathVariable Long id) {
+        return viewBuilder.build(service.registryCheck(id));
     }
 
     @PostMapping("/import/preview")

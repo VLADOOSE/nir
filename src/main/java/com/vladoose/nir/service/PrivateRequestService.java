@@ -1,24 +1,25 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
-import com.vladoose.nir.dto.request.PrivateRequestCreate;
-import com.vladoose.nir.dto.request.PrivateRequestField;
-import com.vladoose.nir.dto.request.PrivateRequestUpdate;
+import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
+import com.vladoose.nir.service.privaterequest.PrivateRequestRegistry;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,6 +42,7 @@ public class PrivateRequestService {
     private final ClientOfferRepository clientOfferRepository;
     private final LeadRepository leadRepository;
     private final TenderLotRepository tenderLotRepository;
+    private final PrivateRequestRegistry registry;
 
     public PrivateRequestService(TenderRepository tenderRepository,
                                  FacilityRepository facilityRepository,
@@ -49,7 +51,8 @@ public class PrivateRequestService {
                                  PriceRequestRepository priceRequestRepository,
                                  ClientOfferRepository clientOfferRepository,
                                  LeadRepository leadRepository,
-                                 TenderLotRepository tenderLotRepository) {
+                                 TenderLotRepository tenderLotRepository,
+                                 PrivateRequestRegistry registry) {
         this.tenderRepository = tenderRepository;
         this.facilityRepository = facilityRepository;
         this.registryMatchService = registryMatchService;
@@ -58,6 +61,7 @@ public class PrivateRequestService {
         this.clientOfferRepository = clientOfferRepository;
         this.leadRepository = leadRepository;
         this.tenderLotRepository = tenderLotRepository;
+        this.registry = registry;
     }
 
     /** «+ Новая заявка»: пустой черновик — номер, «в работе», рынок (ставит листенер), дата (@PrePersist). */
@@ -175,6 +179,8 @@ public class PrivateRequestService {
         tenderRepository.delete(t);
     }
 
+    public static final int MAX_LINES = 500;
+
     /** Заявка со строками (импорт Excel, превращение обращения из старого диалога). Клиент необязателен. */
     @Transactional
     public Tender createFromLines(PrivateRequestCreate dto) {
@@ -184,54 +190,184 @@ public class PrivateRequestService {
         Tender t = createEmpty();
         if (dto.getClientFacilityId() != null) t.setFacility(facility(dto.getClientFacilityId()));
         t.setDescription(dto.getNote());
-        int lotNo = 1;
-        for (PrivateRequestCreate.Line line : dto.getLines()) {
-            t.getLots().add(TenderLot.builder()
-                    .tender(t)
-                    .lotNumber(lotNo++)
-                    .equipName(line.getName())
-                    .manufact(line.getManufact())
-                    .quantity(line.getQuantity())
-                    .build());
+        appendLines(t, dto.getLines().stream()
+                .map(l -> input(l.getName(), l.getManufact(), l.getQuantity(), null, null, null)).toList());
+        tenderRepository.flush();
+        return t;
+    }
+
+    /** Добавить позиции (сайт, свой текст, список, Excel). REPLACE удаляет только позиции без запросов цен. */
+    @Transactional
+    public Tender addLines(Long id, List<PrivateRequestLineInput> inputs, LinesMode mode) {
+        Tender t = findById(id);
+        if (inputs == null || inputs.isEmpty()) throw new BadRequestException("Нет позиций для добавления");
+        if (mode == LinesMode.REPLACE) {
+            Set<Long> requested = requestedLotIds(t.getId());
+            t.getLots().removeIf(l -> !requested.contains(l.getId()));
+        }
+        if (t.getLots().size() + inputs.size() > MAX_LINES) {
+            throw new BadRequestException("В заявке не больше " + MAX_LINES + " позиций");
+        }
+        appendLines(t, inputs);
+        tenderRepository.flush();
+        return t;
+    }
+
+    /** Общий путь добавления: номера в конец, подсказка РУ, сплошная нумерация. */
+    void appendLines(Tender t, List<PrivateRequestLineInput> inputs) {
+        int no = t.getLots().stream().map(TenderLot::getLotNumber).filter(Objects::nonNull)
+                .max(Integer::compare).orElse(0);
+        for (PrivateRequestLineInput in : inputs) {
+            TenderLot lot = TenderLot.builder().tender(t).lotNumber(++no).build();
+            applyInput(lot, in);
+            t.getLots().add(lot);
+            registry.suggest(lot);
+        }
+        renumber(t);
+    }
+
+    /** Одно поле позиции. Смена наименования или бренда пересчитывает подсказку РУ (подтверждение сбрасывается). */
+    @Transactional
+    public TenderLot updateLineField(Long id, Long lotId, PrivateRequestLineField field, String value) {
+        if (field == null) throw new BadRequestException("Не указано поле позиции");
+        Tender t = findById(id);
+        TenderLot lot = lotOf(t, lotId);
+        String v = blankToNull(value);
+        switch (field) {
+            case NAME -> {
+                String name = name(v);
+                if (!name.equals(lot.getEquipName())) {
+                    lot.setEquipName(name);
+                    registry.suggest(lot);
+                }
+            }
+            case BRAND -> {
+                String brand = limit(v, 255, "Бренд");
+                if (!Objects.equals(brand, lot.getManufact())) {
+                    lot.setManufact(brand);
+                    registry.suggest(lot);
+                }
+            }
+            case QUANTITY -> lot.setQuantity(quantity(v));
+            case UNIT -> lot.setUnit(limit(v, 30, "Ед. изм."));
+            case SPEC -> lot.setRequiredSpec(limit(v, 10000, "Характеристики"));
+        }
+        tenderRepository.flush();
+        return lot;
+    }
+
+    /** Удалить позицию (через коллекцию — orphanRemoval). С запросами цен — нельзя (внешний ключ). */
+    @Transactional
+    public Tender deleteLine(Long id, Long lotId) {
+        Tender t = findById(id);
+        TenderLot lot = lotOf(t, lotId);
+        if (priceRequestItemRepository.existsByTenderLotId(lotId)) {
+            throw new BadRequestException("Удалить нельзя: по позиции есть запросы цен");
+        }
+        t.getLots().remove(lot);
+        renumber(t);
+        tenderRepository.flush();
+        return t;
+    }
+
+    @Transactional
+    public TenderLot lineRegistry(Long id, Long lotId, LineRegistryAction action, String regNumber) {
+        if (action == null) throw new BadRequestException("Не указано действие");
+        Tender t = findById(id);
+        TenderLot lot = lotOf(t, lotId);
+        switch (action) {
+            case CONFIRM -> registry.confirm(lot, regNumber);
+            case NOT_REQUIRED -> registry.notRequired(lot);
+            case RESET -> registry.suggest(lot);
+        }
+        tenderRepository.flush();
+        return lot;
+    }
+
+    /** Подсказки позициям без статуса (заявки до V26, позиции из старых путей) — один вызов при открытии страницы. */
+    @Transactional
+    public Tender registryCheck(Long id) {
+        Tender t = findById(id);
+        for (TenderLot lot : t.getLots()) {
+            if (lot.getRegStatus() == null) registry.suggest(lot);
         }
         tenderRepository.flush();
         return t;
     }
 
-    /** Правка строк целиком (старый PUT боковой панели) — уходит в задаче 4 вместе с панелью. */
-    @Transactional
-    public Tender update(Long id, PrivateRequestUpdate dto) {
-        Tender t = findById(id);
-        if (dto.getNote() != null) {
-            t.setDescription(dto.getNote());
+    @Transactional(readOnly = true)
+    public List<RegistryCandidateResponse> lineCandidates(Long id, Long lotId) {
+        return registry.candidates(lotOf(findById(id), lotId));
+    }
+
+    /** Новая позиция одной строкой — для импорта, обращений и тестов. */
+    public static PrivateRequestLineInput input(String name, String brand, Integer quantity, String unit, String spec,
+                                                String productUrl) {
+        PrivateRequestLineInput in = new PrivateRequestLineInput();
+        in.setName(name);
+        in.setBrand(brand);
+        in.setQuantity(quantity);
+        in.setUnit(unit);
+        in.setSpec(spec);
+        in.setProductUrl(productUrl);
+        return in;
+    }
+
+    private Set<Long> requestedLotIds(Long tenderId) {
+        Set<Long> ids = new HashSet<>();
+        for (PriceRequestItem i : priceRequestItemRepository.findByTenderId(tenderId)) ids.add(i.getTenderLot().getId());
+        return ids;
+    }
+
+    private static TenderLot lotOf(Tender t, Long lotId) {
+        return t.getLots().stream().filter(l -> lotId != null && lotId.equals(l.getId())).findFirst()
+                .orElseThrow(() -> new NotFoundException("Позиция не найдена: id=" + lotId));
+    }
+
+    /** Сплошная нумерация 1..n в прежнем порядке; у новых позиций id ещё нет — они в конце. */
+    private static void renumber(Tender t) {
+        List<TenderLot> lots = new ArrayList<>(t.getLots());
+        lots.sort(Comparator.comparing((TenderLot l) -> l.getLotNumber() == null ? Integer.MAX_VALUE : l.getLotNumber())
+                .thenComparing(l -> l.getId() == null ? Long.MAX_VALUE : l.getId()));
+        int no = 1;
+        for (TenderLot l : lots) l.setLotNumber(no++);
+    }
+
+    private static void applyInput(TenderLot lot, PrivateRequestLineInput in) {
+        lot.setEquipName(name(in.getName()));
+        lot.setManufact(trunc(blankToNull(in.getBrand()), 255));
+        // пути без @Valid (импорт Excel, обращение) могут прислать 0 или минус — это «1», а не ошибка всего файла
+        Integer q = in.getQuantity();
+        lot.setQuantity(q == null || q < 1 ? 1 : Math.min(q, 1_000_000));
+        lot.setUnit(trunc(blankToNull(in.getUnit()), 30));
+        lot.setRequiredSpec(blankToNull(in.getSpec()));
+        lot.setProductUrl(url(in.getProductUrl()));
+    }
+
+    private static String name(String raw) {
+        String v = blankToNull(raw);
+        if (v == null) throw new BadRequestException("Наименование позиции пустое");
+        return trunc(v.replaceAll("\\s+", " "), 255);
+    }
+
+    private static String url(String raw) {
+        String v = blankToNull(raw);
+        if (v == null) return null;
+        if (!(v.startsWith("https://") || v.startsWith("http://")) || v.length() > 500) {
+            throw new BadRequestException("Ссылка на товар должна начинаться с http:// или https://");
         }
-        List<PrivateRequestUpdate.Line> incoming = dto.getLines() != null ? dto.getLines() : List.of();
-        Set<Long> incomingIds = new HashSet<>();
-        for (PrivateRequestUpdate.Line line : incoming) {
-            if (line.getLotId() != null) incomingIds.add(line.getLotId());
+        return v;
+    }
+
+    private static int quantity(String v) {
+        if (v == null) throw new BadRequestException("Количество обязательно");
+        try {
+            int n = Integer.parseInt(v.trim());
+            if (n < 1 || n > 1_000_000) throw new NumberFormatException();
+            return n;
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("Количество — целое число от 1 до 1 000 000");
         }
-        t.getLots().removeIf(lot -> !incomingIds.contains(lot.getId())
-                && priceRequestItemRepository.findByTenderLotId(lot.getId()).isEmpty());
-        int lotNo = 1;
-        for (PrivateRequestUpdate.Line line : incoming) {
-            if (line.getName() == null || line.getName().isBlank()) continue;
-            TenderLot lot = null;
-            if (line.getLotId() != null) {
-                for (TenderLot e : t.getLots()) {
-                    if (e.getId() != null && e.getId().equals(line.getLotId())) { lot = e; break; }
-                }
-            }
-            if (lot == null) {
-                lot = TenderLot.builder().tender(t).build();
-                t.getLots().add(lot);
-            }
-            lot.setLotNumber(lotNo++);
-            lot.setEquipName(line.getName());
-            lot.setManufact(line.getManufact());
-            lot.setQuantity(line.getQuantity() != null ? line.getQuantity() : 1);
-        }
-        tenderRepository.save(t);
-        return findById(id);
     }
 
     public static final int LIST_LIMIT = 300;
