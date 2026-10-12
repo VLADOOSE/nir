@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long> {
@@ -31,4 +32,8 @@ public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long
     @Query("SELECT DISTINCT pri.priceRequest.tender.id FROM PriceRequestItem pri "
             + "WHERE pri.responsePrice IS NOT NULL AND pri.priceRequest.market = :market")
     List<Long> findTenderIdsWithResponsePrice(@Param("market") Market market);
+
+    /** Для этапа заявки: (заявка, поставщик, статус запроса). */
+    @Query("SELECT pr.tender.id, pr.distributor.id, pr.status FROM PriceRequest pr WHERE pr.tender.id IN :ids")
+    List<Object[]> findStageRows(@Param("ids") Collection<Long> ids);
 }

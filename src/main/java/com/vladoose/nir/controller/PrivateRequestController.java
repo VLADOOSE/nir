@@ -47,15 +47,11 @@ public class PrivateRequestController {
         this.leadResponseMapper = leadResponseMapper;
     }
 
-    /** Старый список (задача 3 заменит его списком с этапом и поиском). */
     @GetMapping
-    public List<PrivateRequestResponse> findAll() {
-        return service.findAll().stream().map(t -> {
-            PrivateRequestResponse r = toShort(t);
-            r.setLineCount(t.getLots().size());
-            r.setRegisteredCount(-1);
-            return r;
-        }).toList();
+    public List<PrivateRequestListItemResponse> list(
+            @RequestParam(defaultValue = "OPEN") PrivateRequestService.ListFilter status,
+            @RequestParam(required = false) String q) {
+        return viewBuilder.list(service.list(status, q));
     }
 
     @PostMapping

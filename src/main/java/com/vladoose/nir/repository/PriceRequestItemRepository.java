@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface PriceRequestItemRepository extends JpaRepository<PriceRequestItem, Long> {
@@ -32,4 +33,9 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
     List<PriceRequestItem> findResponseFor(@Param("lotId") Long lotId,
                                             @Param("eqId") Long eqId,
                                             @Param("distId") Long distId);
+
+    /** Для этапа заявки: (заявка, позиция) с введённой ценой ответа. */
+    @Query("SELECT DISTINCT i.priceRequest.tender.id, i.tenderLot.id FROM PriceRequestItem i "
+         + "WHERE i.priceRequest.tender.id IN :ids AND i.responsePrice IS NOT NULL")
+    List<Object[]> findPricedLots(@Param("ids") Collection<Long> ids);
 }

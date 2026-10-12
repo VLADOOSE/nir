@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
@@ -50,4 +51,12 @@ public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
 
     @Query("SELECT l.equipmentType.name, COUNT(l) FROM TenderLot l WHERE l.equipmentType IS NOT NULL AND l.tender.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER GROUP BY l.equipmentType.name ORDER BY COUNT(l) DESC")
     List<Object[]> countByEquipType();
+
+    @Query("SELECT l.tender.id, COUNT(l) FROM TenderLot l WHERE l.tender.id IN :ids GROUP BY l.tender.id")
+    List<Object[]> countByTenderIds(@Param("ids") Collection<Long> ids);
+
+    /** Частные заявки, у которых наименование или бренд позиции подходит под шаблон LIKE (с экранированием \). */
+    @Query("SELECT DISTINCT l.tender.id FROM TenderLot l WHERE l.tender.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
+         + "AND (LOWER(l.equipName) LIKE :pattern ESCAPE '\\' OR LOWER(l.manufact) LIKE :pattern ESCAPE '\\')")
+    List<Long> findPrivateTenderIdsByLineText(@Param("pattern") String pattern);
 }

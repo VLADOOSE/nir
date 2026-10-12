@@ -2,6 +2,7 @@ package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -9,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,4 +49,9 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     @Query("SELECT t.tenderNumber FROM Tender t WHERE t.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
          + "AND t.tenderNumber LIKE :pattern")
     List<String> findPrivateNumbers(@Param("pattern") String pattern);
+
+    /** Частные заявки рынка в статусах — новые сверху (у заявок до V26 дата может быть пустой — они в конце). */
+    @Query("SELECT t FROM Tender t WHERE t.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
+         + "AND t.status IN :statuses ORDER BY t.createdAt DESC NULLS LAST, t.id DESC")
+    List<Tender> findPrivate(@Param("statuses") Collection<String> statuses, Pageable pageable);
 }

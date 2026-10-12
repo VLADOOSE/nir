@@ -1,6 +1,7 @@
 package com.vladoose.nir.service.privaterequest;
 
 import com.vladoose.nir.dto.response.PrivateRequestLineView;
+import com.vladoose.nir.dto.response.PrivateRequestListItemResponse;
 import com.vladoose.nir.dto.response.PrivateRequestViewResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
@@ -24,13 +25,16 @@ public class PrivateRequestViewBuilder {
     private final MedRegistryRepository registryRepository;
     private final LeadRepository leadRepository;
     private final LeadResponseMapper leadMapper;
+    private final PrivateRequestStageCalculator stages;
 
     public PrivateRequestViewBuilder(PriceRequestItemRepository itemRepository, MedRegistryRepository registryRepository,
-                                     LeadRepository leadRepository, LeadResponseMapper leadMapper) {
+                                     LeadRepository leadRepository, LeadResponseMapper leadMapper,
+                                     PrivateRequestStageCalculator stages) {
         this.itemRepository = itemRepository;
         this.registryRepository = registryRepository;
         this.leadRepository = leadRepository;
         this.leadMapper = leadMapper;
+        this.stages = stages;
     }
 
     public PrivateRequestViewResponse build(Tender t) {
@@ -38,6 +42,9 @@ public class PrivateRequestViewBuilder {
         r.setId(t.getId());
         r.setNumber(t.getTenderNumber());
         r.setStatus(PrivateRequestStatus.of(t.getStatus()).name());
+        PrivateRequestStageCalculator.Summary stage = stages.of(t);
+        r.setStage(stage.code());
+        r.setStageText(stage.text());
         if (t.getFacility() != null) {
             r.setFacilityId(t.getFacility().getId());
             r.setFacilityName(t.getFacility().getName());
@@ -62,6 +69,31 @@ public class PrivateRequestViewBuilder {
                 .map(l -> line(l, requested.contains(l.getId()), records.get(l.getRegNumber())))
                 .toList());
         return r;
+    }
+
+    /** Карточки списка: этап и число позиций — одним проходом калькулятора, обращения — одним запросом. */
+    public List<PrivateRequestListItemResponse> list(List<Tender> requests) {
+        Map<Long, PrivateRequestStageCalculator.Summary> summaries = stages.of(requests);
+        Map<Long, Long> leadIds = new HashMap<>();
+        if (!requests.isEmpty()) {
+            for (Lead l : leadRepository.findByPrivateRequestIdIn(requests.stream().map(Tender::getId).toList())) {
+                leadIds.putIfAbsent(l.getPrivateRequest().getId(), l.getId());
+            }
+        }
+        return requests.stream().map(t -> {
+            PrivateRequestStageCalculator.Summary s = summaries.get(t.getId());
+            PrivateRequestListItemResponse r = new PrivateRequestListItemResponse();
+            r.setId(t.getId());
+            r.setNumber(t.getTenderNumber());
+            r.setStatus(PrivateRequestStatus.of(t.getStatus()).name());
+            r.setStage(s.code());
+            r.setStageText(s.text());
+            r.setClientLabel(clientLabel(t));
+            r.setLineCount(s.lineCount());
+            r.setCreatedAt(t.getCreatedAt());
+            r.setLeadId(leadIds.get(t.getId()));
+            return r;
+        }).toList();
     }
 
     /** Одна позиция — ответ на правку строки и на действие с РУ. */

@@ -35,4 +35,6 @@ public interface LeadRepository extends JpaRepository<Lead, Long> {
     List<Lead> findByPhoneNormAndStatusIn(String phoneNorm, Collection<LeadStatus> statuses);
 
     List<Lead> findByChatIdIn(Collection<Long> chatIds);
+
+    List<Lead> findByPrivateRequestIdIn(Collection<Long> privateRequestIds);
 }

@@ -10,6 +10,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,6 +40,7 @@ public class PrivateRequestService {
     private final PriceRequestRepository priceRequestRepository;
     private final ClientOfferRepository clientOfferRepository;
     private final LeadRepository leadRepository;
+    private final TenderLotRepository tenderLotRepository;
 
     public PrivateRequestService(TenderRepository tenderRepository,
                                  FacilityRepository facilityRepository,
@@ -45,7 +48,8 @@ public class PrivateRequestService {
                                  PriceRequestItemRepository priceRequestItemRepository,
                                  PriceRequestRepository priceRequestRepository,
                                  ClientOfferRepository clientOfferRepository,
-                                 LeadRepository leadRepository) {
+                                 LeadRepository leadRepository,
+                                 TenderLotRepository tenderLotRepository) {
         this.tenderRepository = tenderRepository;
         this.facilityRepository = facilityRepository;
         this.registryMatchService = registryMatchService;
@@ -53,6 +57,7 @@ public class PrivateRequestService {
         this.priceRequestRepository = priceRequestRepository;
         this.clientOfferRepository = clientOfferRepository;
         this.leadRepository = leadRepository;
+        this.tenderLotRepository = tenderLotRepository;
     }
 
     /** «+ Новая заявка»: пустой черновик — номер, «в работе», рынок (ставит листенер), дата (@PrePersist). */
@@ -229,9 +234,45 @@ public class PrivateRequestService {
         return findById(id);
     }
 
-    /** Список для старого GET (уходит в задаче 3). */
-    public List<Tender> findAll() {
-        return tenderRepository.findBySource(Source.PRIVATE_REQUEST);
+    public static final int LIST_LIMIT = 300;
+
+    public enum ListFilter { OPEN, CLOSED, ALL }
+
+    /** Список рынка: фильтр статуса, новые сверху, до LIST_LIMIT; поиск — номер, клиент, контакт, телефон, позиции. */
+    @Transactional(readOnly = true)
+    public List<Tender> list(ListFilter filter, String q) {
+        Set<String> statuses = switch (filter == null ? ListFilter.OPEN : filter) {
+            case OPEN -> Set.of(PrivateRequestStatus.NEW.name());
+            case CLOSED -> Set.of(PrivateRequestStatus.WON.name(), PrivateRequestStatus.LOST.name(),
+                    PrivateRequestStatus.CANCELLED.name());
+            case ALL -> Set.of(PrivateRequestStatus.NEW.name(), PrivateRequestStatus.WON.name(),
+                    PrivateRequestStatus.LOST.name(), PrivateRequestStatus.CANCELLED.name());
+        };
+        List<Tender> rows = tenderRepository.findPrivate(statuses, PageRequest.of(0, LIST_LIMIT));
+        if (q == null || q.isBlank()) return rows;
+        String needle = q.trim().toLowerCase(Locale.ROOT);
+        String digits = q.replaceAll("\\D", "");
+        Set<Long> byLines = new HashSet<>(tenderLotRepository.findPrivateTenderIdsByLineText(likePattern(needle)));
+        return rows.stream().filter(t -> byLines.contains(t.getId()) || headerMatches(t, needle, digits)).toList();
+    }
+
+    private static boolean headerMatches(Tender t, String needle, String digits) {
+        if (contains(t.getTenderNumber(), needle) || contains(t.getCustomerName(), needle)
+                || contains(t.getContactName(), needle) || contains(t.getContactEmail(), needle)) {
+            return true;
+        }
+        if (t.getFacility() != null && contains(t.getFacility().getName(), needle)) return true;
+        return digits.length() >= 3 && t.getContactPhone() != null
+                && t.getContactPhone().replaceAll("\\D", "").contains(digits);
+    }
+
+    private static boolean contains(String haystack, String needle) {
+        return haystack != null && haystack.toLowerCase(Locale.ROOT).contains(needle);
+    }
+
+    /** «%текст%» для LIKE … ESCAPE '\': знаки % и _ из запроса — буквально. */
+    private static String likePattern(String needle) {
+        return "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
     }
 
     /** Реестр-догадка по строкам для старого подбора поставщиков (уходит в задаче 7). */

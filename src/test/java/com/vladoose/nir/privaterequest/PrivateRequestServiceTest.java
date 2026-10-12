@@ -52,19 +52,6 @@ class PrivateRequestServiceTest {
     }
 
     @Test
-    void findAll_returnsOnlyPrivateRequests() {
-        PrivateRequestCreate dto = new PrivateRequestCreate();
-        dto.setClientFacilityId(client());
-        PrivateRequestCreate.Line l = new PrivateRequestCreate.Line();
-        l.setName("ZZPRS Аппарат"); l.setManufact("ZZBrand"); l.setQuantity(1);
-        dto.setLines(List.of(l));
-        Tender created = service.createFromLines(dto);
-
-        assertThat(service.findAll()).extracting(Tender::getId).contains(created.getId());
-        assertThat(service.findAll()).allMatch(t -> t.getSource() == Source.PRIVATE_REQUEST);
-    }
-
-    @Test
     void linesWithRegistration_returnsCandidateForRegisteredModel() {
         registryRepository.save(MedRegistry.builder()
                 .regNumber("ZZPRS-RU-1").name("Тонометр ZZUNIQMODEL автоматический")
