@@ -2,7 +2,10 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.dto.request.ColumnMapping;
 import com.vladoose.nir.dto.request.ImportCommitRequest;
+import com.vladoose.nir.dto.request.ImportLinesRequest;
+import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
+import com.vladoose.nir.dto.request.PrivateRequestLineInput;
 import com.vladoose.nir.dto.response.ImportPreviewResponse;
 import com.vladoose.nir.entity.HeaderSynonym;
 import com.vladoose.nir.entity.LineField;
@@ -41,7 +44,20 @@ public class PrivateRequestImportService {
         create.setClientFacilityId(dto.getClientFacilityId());
         create.setNote(dto.getNote());
         create.setLines(dto.getLines());
-        return privateRequestService.createFromLines(create);
+        Tender t = privateRequestService.createFromLines(create);
+        t.setContactName(PrivateRequestService.trunc(PrivateRequestService.blankToNull(dto.getContactName()), 255));
+        t.setContactEmail(PrivateRequestService.trunc(PrivateRequestService.blankToNull(dto.getContactEmail()), 255));
+        return t;
+    }
+
+    /** Excel в существующую заявку: разметка учит словарь, позиции — в конец или вместо незапрошенных у поставщиков. */
+    @Transactional
+    public Tender importInto(Long requestId, ImportLinesRequest dto) {
+        learn(dto.getMappings());
+        List<PrivateRequestLineInput> inputs = dto.getLines().stream()
+                .map(l -> PrivateRequestService.input(l.getName(), l.getManufact(), l.getQuantity(), null, null, null))
+                .toList();
+        return privateRequestService.addLines(requestId, inputs, dto.getMode() == null ? LinesMode.APPEND : dto.getMode());
     }
 
     /** Разметка колонок оператора учит словарь заголовков: и при импорте заявки, и при разборе Excel в обращение. */

@@ -2,11 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.*;
-import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
-import com.vladoose.nir.mapper.FacilityMapper;
-import com.vladoose.nir.mapper.LeadResponseMapper;
-import com.vladoose.nir.service.LeadService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
@@ -30,23 +26,15 @@ public class PrivateRequestController {
 
     private final PrivateRequestService service;
     private final PrivateRequestViewBuilder viewBuilder;
-    private final FacilityMapper facilityMapper;
     private final PrivateRequestSourcingService sourcingService;
     private final PrivateRequestImportService importService;
-    private final LeadService leadService;
-    private final LeadResponseMapper leadResponseMapper;
 
     public PrivateRequestController(PrivateRequestService service, PrivateRequestViewBuilder viewBuilder,
-                                    FacilityMapper facilityMapper, PrivateRequestSourcingService sourcingService,
-                                    PrivateRequestImportService importService,
-                                    LeadService leadService, LeadResponseMapper leadResponseMapper) {
+                                    PrivateRequestSourcingService sourcingService, PrivateRequestImportService importService) {
         this.service = service;
         this.viewBuilder = viewBuilder;
-        this.facilityMapper = facilityMapper;
         this.sourcingService = sourcingService;
         this.importService = importService;
-        this.leadService = leadService;
-        this.leadResponseMapper = leadResponseMapper;
     }
 
     @GetMapping
@@ -153,8 +141,14 @@ public class PrivateRequestController {
 
     @PostMapping("/import/commit")
     @PreAuthorize("hasRole('ADMIN')")
-    public PrivateRequestResponse importCommit(@Valid @RequestBody ImportCommitRequest request) {
-        return buildFull(importService.commit(request));
+    public PrivateRequestViewResponse importCommit(@Valid @RequestBody ImportCommitRequest request) {
+        return viewBuilder.build(importService.commit(request));
+    }
+
+    @PostMapping("/{id}/lines/import")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse importLines(@PathVariable Long id, @Valid @RequestBody ImportLinesRequest request) {
+        return viewBuilder.build(importService.importInto(id, request));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -166,25 +160,6 @@ public class PrivateRequestController {
     @GetMapping("/{id}/sourcing")
     public SourcingPreviewResponse sourcing(@PathVariable Long id) {
         return sourcingService.buildSourcing(id);
-    }
-
-    private PrivateRequestResponse buildFull(Tender t) {
-        PrivateRequestResponse r = toShort(t);
-        List<PrivateRequestLineResponse> lines = service.linesWithRegistration(t.getId());
-        r.setLineCount(lines.size());
-        r.setRegisteredCount((int) lines.stream().filter(l -> "REGISTERED".equals(l.getRegistrationStatus())).count());
-        r.setLines(lines);
-        leadService.findByPrivateRequest(t.getId()).map(leadResponseMapper::toRef).ifPresent(r::setLead);
-        return r;
-    }
-
-    private PrivateRequestResponse toShort(Tender t) {
-        PrivateRequestResponse r = new PrivateRequestResponse();
-        r.setId(t.getId());
-        r.setNumber(t.getTenderNumber());
-        r.setStatus(t.getStatus());
-        if (t.getFacility() != null) r.setClient(facilityMapper.toResponse(t.getFacility()));
-        return r;
     }
 
     private static String currentUser() {

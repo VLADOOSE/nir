@@ -1,5 +1,6 @@
 package com.vladoose.nir.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -13,6 +14,12 @@ public class LeadConvertRequest {
     @Valid private NewClient newClient;
     @Size(max = 5000) private String note;
     private List<PrivateRequestCreate.Line> lines;
+
+    /** Пустое тело — «Создать заявку» одной кнопкой: клиент, контакт, текст и позиции берутся из обращения. */
+    @JsonIgnore
+    public boolean isOneClick() {
+        return clientFacilityId == null && newClient == null && (lines == null || lines.isEmpty());
+    }
 
     @Data
     public static class NewClient {

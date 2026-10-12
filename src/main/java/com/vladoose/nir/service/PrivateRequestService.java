@@ -196,6 +196,35 @@ public class PrivateRequestService {
         return t;
     }
 
+    /** «Создать заявку» из обращения одной кнопкой (спека §4): клиент, если обращение его узнало, иначе текст компании. */
+    @Transactional
+    public Tender createFromLead(Lead lead) {
+        Tender t = createEmpty();
+        Facility f = lead.getFacility();
+        if (f != null && (f.getMarket() == null || f.getMarket() == MarketContext.get())) {
+            t.setFacility(f);
+        } else {
+            t.setCustomerName(trunc(blankToNull(lead.getCompany()), 500));
+        }
+        t.setContactName(trunc(blankToNull(lead.getContactName()), 255));
+        t.setContactPhone(trunc(blankToNull(lead.getContactPhone()), 50));
+        t.setContactEmail(trunc(blankToNull(lead.getContactEmail()), 255));
+        t.setDescription(blankToNull(lead.getMessage()));
+        List<PrivateRequestLineInput> inputs = lead.getItems().stream()
+                .filter(i -> blankToNull(i.getName()) != null)
+                .map(i -> input(i.getName(), i.getBrand(), i.getQuantity(), null, null, httpOrNull(i.getProductUrl())))
+                .toList();
+        if (!inputs.isEmpty()) appendLines(t, inputs);
+        tenderRepository.flush();
+        return t;
+    }
+
+    /** Ссылка из обращения — только http(s) и не длиннее колонки: иначе позиция без ссылки, а не отказ всей заявки. */
+    private static String httpOrNull(String raw) {
+        String v = blankToNull(raw);
+        return v != null && v.length() <= 500 && (v.startsWith("https://") || v.startsWith("http://")) ? v : null;
+    }
+
     /** Добавить позиции (сайт, свой текст, список, Excel). REPLACE удаляет только позиции без запросов цен. */
     @Transactional
     public Tender addLines(Long id, List<PrivateRequestLineInput> inputs, LinesMode mode) {

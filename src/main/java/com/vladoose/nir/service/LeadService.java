@@ -215,11 +215,19 @@ public class LeadService {
     /**
      * Частная заявка из обращения — одна транзакция (спека §9): любая ошибка откатывает всё,
      * ни клиента-сироты, ни заявки без обращения. Проверки идут ДО создания чего-либо.
+     * Пустое тело ({@code isOneClick}) — заявка одной кнопкой из данных обращения (спека 2026-10-12 §4); старые поля —
+     * путь прежнего диалога.
      */
     @Transactional
     public LeadConvertResponse convert(Long id, LeadConvertRequest req, String author) {
         Lead lead = get(id);
         require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK), "создать частную заявку");
+        if (req == null || req.isOneClick()) {
+            Tender request = privateRequestService.createFromLead(lead);
+            lead.setPrivateRequest(request);
+            transition(lead, LeadStatus.CONVERTED, author, "создана частная заявка " + request.getTenderNumber());
+            return new LeadConvertResponse(request.getId(), request.getTenderNumber());
+        }
         boolean existing = req.getClientFacilityId() != null;
         boolean fresh = req.getNewClient() != null;
         if (existing == fresh) {

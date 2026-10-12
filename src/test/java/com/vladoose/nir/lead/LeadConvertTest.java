@@ -192,4 +192,57 @@ class LeadConvertTest {
         assertThat(pr.getLead().getSubject()).isEqualTo("Запрос КП");
         assertThat(pr.getLead().getSource()).isEqualTo("westmed.kz");
     }
+
+    @Test
+    void oneClick_takesClientTextContactNoteAndItemsFromLead() {
+        Lead l = siteLead();
+
+        LeadConvertResponse r = service.convert(l.getId(), null, "admin");
+
+        Tender t = tenderRepository.findById(r.getPrivateRequestId()).orElseThrow();
+        assertThat(t.getSource()).isEqualTo(Source.PRIVATE_REQUEST);
+        assertThat(t.getFacility()).isNull();
+        assertThat(t.getCustomerName()).isEqualTo("ТОО «ZZ Клиника»");
+        assertThat(t.getContactName()).isEqualTo("Айгерим Сапарова");
+        assertThat(t.getContactPhone()).isEqualTo("+7 777 000 00 03");
+        assertThat(t.getContactEmail()).startsWith("aigerim-");
+        assertThat(t.getDescription()).isEqualTo("Нужны облучатели");
+        assertThat(t.getLots()).singleElement().satisfies(lot -> {
+            assertThat(lot.getEquipName()).isEqualTo("Облучатель ОБН-150");
+            assertThat(lot.getManufact()).isEqualTo("Азов");
+            assertThat(lot.getQuantity()).isEqualTo(2);
+            assertThat(lot.getRegStatus()).isNotNull();   // KZ: подсказка РУ посчитана сразу
+        });
+        assertThat(l.getStatus()).isEqualTo(LeadStatus.CONVERTED);
+        assertThat(l.getPrivateRequest().getId()).isEqualTo(t.getId());
+    }
+
+    @Test
+    void oneClick_knownClientIsLinked_emptyBodyMeansOneClick() {
+        Lead l = siteLead();
+        Facility f = client(Market.KZ);
+        l.setFacility(f);
+
+        LeadConvertResponse r = service.convert(l.getId(), new LeadConvertRequest(), "admin");
+
+        Tender t = tenderRepository.findById(r.getPrivateRequestId()).orElseThrow();
+        assertThat(t.getFacility().getId()).isEqualTo(f.getId());
+        assertThat(t.getCustomerName()).isNull();
+    }
+
+    @Test
+    void oneClick_truncatesLongItemName_andLeadWithoutItemsGivesEmptyRequest() {
+        Lead longItem = intake.ingest(new IncomingLead(LeadSources.WESTMED, "quote:zz-long-" + System.nanoTime(),
+                LeadChannel.SITE, "Запрос КП", null, "Тест", "+7 777 000 00 04", null, null, null,
+                List.of(new IncomingLead.Item("Д".repeat(480), null, 1, null)), LeadStatus.NEW, "NEW", null)).orElseThrow();
+        Tender t = tenderRepository.findById(service.convert(longItem.getId(), null, "admin").getPrivateRequestId()).orElseThrow();
+        assertThat(t.getLots().get(0).getEquipName()).hasSize(255);
+
+        Lead noItems = intake.ingest(new IncomingLead(LeadSources.WESTMED, "quote:zz-noitems-" + System.nanoTime(),
+                LeadChannel.SITE, "Запрос КП", null, "Тест", "+7 777 000 00 05", null, null, "Нужна кушетка и ширма",
+                List.of(), LeadStatus.NEW, "NEW", null)).orElseThrow();
+        Tender empty = tenderRepository.findById(service.convert(noItems.getId(), null, "admin").getPrivateRequestId()).orElseThrow();
+        assertThat(empty.getLots()).isEmpty();
+        assertThat(empty.getDescription()).isEqualTo("Нужна кушетка и ширма");
+    }
 }

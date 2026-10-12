@@ -114,7 +114,7 @@ public class LeadController {
 
     @PostMapping("/{id}/convert")
     @PreAuthorize("hasRole('ADMIN')")
-    public LeadConvertResponse convert(@PathVariable Long id, @Valid @RequestBody LeadConvertRequest req) {
+    public LeadConvertResponse convert(@PathVariable Long id, @Valid @RequestBody(required = false) LeadConvertRequest req) {
         return service.convert(id, req, currentUser());
     }
 
