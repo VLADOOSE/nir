@@ -6,6 +6,7 @@ import com.vladoose.nir.util.KpToken;
 import com.vladoose.nir.util.LotDescriptiveText;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -92,16 +93,28 @@ public class KpEmailComposer {
         v.put("компания", market.companyShortName());
         v.put("реестр", market == Market.KZ ? "НЦЭЛС РК" : "Росздравнадзора");
         v.put("позиции", buildPositions(pr));
-        v.put("дедлайн", tender.getDeadline() != null
-                ? "Просим ответить до " + DATE.format(tender.getDeadline()) + ".\n\n" : "");
+        v.put("дедлайн", deadlineLine(pr, tender));
         return v;
+    }
+
+    /** «Ответить до» из окна запроса цен важнее срока тендера; нет ни того ни другого — пусто. */
+    private static String deadlineLine(PriceRequest pr, Tender tender) {
+        LocalDate d = pr.getReplyBy() != null ? pr.getReplyBy() : tender.getDeadline();
+        return d != null ? "Просим ответить до " + DATE.format(d) + ".\n\n" : "";
+    }
+
+    /** Количество с ед. изм. позиции: «5 упак», без неё — «2 шт.» (как раньше). */
+    private static String quantity(Integer qty, TenderLot lot) {
+        if (qty == null) return "кол-во уточняется";
+        String unit = lot.getUnit();
+        return unit == null || unit.isBlank() ? qty + " шт." : qty + " " + unit.trim();
     }
 
     private String buildPositions(PriceRequest pr) {
         StringBuilder sb = new StringBuilder();
         for (PriceRequestItem it : pr.getItems()) {
             TenderLot lot = it.getTenderLot();
-            String qty = it.getRequestedQuantity() != null ? it.getRequestedQuantity() + " шт." : "кол-во уточняется";
+            String qty = quantity(it.getRequestedQuantity(), lot);
             // анти-лик: без «Лот N:» и номера лота — поставщик не должен видеть, что позиция под тендер
             sb.append("— ");
             MedEquipment eq = it.getMedEquipment();
@@ -115,6 +128,9 @@ public class KpEmailComposer {
                 sb.append(lot.getEquipName());
                 if (lot.getManufact() != null && !lot.getManufact().isBlank()) {
                     sb.append(" (").append(lot.getManufact()).append(")");
+                }
+                if (lot.getRegStatus() == LineRegStatus.CONFIRMED && lot.getRegNumber() != null) {
+                    sb.append(", РУ № ").append(lot.getRegNumber());
                 }
                 sb.append(" — ").append(qty).append("\n");
                 // санитизируем ТЗ: только тех.характеристики, без goszakup-шапки (номер закупки/лота,

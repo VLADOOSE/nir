@@ -3,9 +3,11 @@ package com.vladoose.nir.controller;
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.*;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
+import com.vladoose.nir.service.privaterequest.PrivateRequestRfqService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.util.PastedLinesParser;
 import jakarta.validation.Valid;
@@ -28,13 +30,16 @@ public class PrivateRequestController {
     private final PrivateRequestViewBuilder viewBuilder;
     private final PrivateRequestSourcingService sourcingService;
     private final PrivateRequestImportService importService;
+    private final PrivateRequestRfqService rfqService;
 
     public PrivateRequestController(PrivateRequestService service, PrivateRequestViewBuilder viewBuilder,
-                                    PrivateRequestSourcingService sourcingService, PrivateRequestImportService importService) {
+                                    PrivateRequestSourcingService sourcingService, PrivateRequestImportService importService,
+                                    PrivateRequestRfqService rfqService) {
         this.service = service;
         this.viewBuilder = viewBuilder;
         this.sourcingService = sourcingService;
         this.importService = importService;
+        this.rfqService = rfqService;
     }
 
     @GetMapping
@@ -155,6 +160,18 @@ public class PrivateRequestController {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> badFile(IllegalArgumentException e) {
         return Map.of("message", e.getMessage());
+    }
+
+    @PostMapping("/{id}/rfq/preview")
+    @PreAuthorize("hasRole('ADMIN')")
+    public KpPreviewResponse rfqPreview(@PathVariable Long id, @Valid @RequestBody RfqPreviewRequest req) {
+        return rfqService.preview(id, req);
+    }
+
+    @PostMapping("/{id}/rfq/send")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<PriceRequestSendService.SendResult> rfqSend(@PathVariable Long id, @Valid @RequestBody RfqSendRequest req) {
+        return rfqService.send(id, req);
     }
 
     @GetMapping("/{id}/sourcing")

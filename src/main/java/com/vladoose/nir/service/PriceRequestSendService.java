@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -60,8 +61,18 @@ public class PriceRequestSendService {
         this.priceRequestRepository = priceRequestRepository;
     }
 
+    /** Настройки письма запроса цен. Этап 2 добавит вложение, клиента и адрес. */
+    public record SendOptions(LocalDate replyBy) {
+        public static final SendOptions NONE = new SendOptions(null);
+    }
+
     public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items,
                                  String subjectOverride, String bodyOverride) {
+        return send(tenderId, distributorIds, items, subjectOverride, bodyOverride, SendOptions.NONE);
+    }
+
+    public List<SendResult> send(Long tenderId, List<Long> distributorIds, List<SendItem> items,
+                                 String subjectOverride, String bodyOverride, SendOptions options) {
         if (tenderId == null) throw new BadRequestException("Не указан тендер");
         if (distributorIds == null || distributorIds.isEmpty()) throw new BadRequestException("Не выбраны поставщики");
         if (items == null || items.isEmpty()) throw new BadRequestException("Не выбраны позиции");
@@ -93,7 +104,7 @@ public class PriceRequestSendService {
         for (Long distId : new LinkedHashSet<>(distributorIds)) { // дедуп: один поставщик — одно КП/письмо
             Distributor dist = distributorService.findById(distId);
             requireCurrentMarket(dist.getMarket(), "Поставщик не найден: " + distId);
-            PriceRequest pr = writer.persist(tender, dist, lines); // коммит записи
+            PriceRequest pr = writer.persist(tender, dist, lines, options == null ? null : options.replyBy()); // коммит записи
             results.add(dispatch(pr, dist, subjectOverride, bodyOverride)); // письмо ПОСЛЕ коммита
         }
         return results;
@@ -117,6 +128,7 @@ public class PriceRequestSendService {
         String to = dist.getEmail();
         if (to == null || to.isBlank()) {
             log.warn("КП id={} создан, но у поставщика «{}» нет email — письмо не отправлено", pr.getId(), dist.getName());
+            letter(pr, LetterStatus.NO_EMAIL, null);
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), false, REASON_NO_EMAIL);
         }
         KpEmailComposer.Composed def = composer.compose(pr);
@@ -127,15 +139,21 @@ public class PriceRequestSendService {
         String body = (bodyOverride != null && !bodyOverride.isBlank()) ? bodyOverride : def.body();
         try {
             emailService.sendEmail(to, subject, body);
+            letter(pr, LetterStatus.SENT, to);
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), true, null);
         } catch (Exception ex) {
             log.warn("Не удалось отправить КП id={} на {}: {}. Запрос сохранён в БД.", pr.getId(), to, ex.getMessage());
+            letter(pr, LetterStatus.FAILED, null);
             return new SendResult(pr.getId(), dist.getId(), dist.getName(), false, REASON_SEND_FAILED);
         }
     }
 
-    /** Черновой предпросмотр текста КП (образец по первому поставщику, PriceRequest НЕ сохраняется, темы без токена). */
     public KpPreviewResponse preview(Long tenderId, List<Long> distributorIds, List<SendItem> items) {
+        return preview(tenderId, distributorIds, items, SendOptions.NONE);
+    }
+
+    /** Черновой предпросмотр текста КП (образец по первому поставщику, PriceRequest НЕ сохраняется, темы без токена). */
+    public KpPreviewResponse preview(Long tenderId, List<Long> distributorIds, List<SendItem> items, SendOptions options) {
         if (tenderId == null) throw new BadRequestException("Не указан тендер");
         if (distributorIds == null || distributorIds.isEmpty()) throw new BadRequestException("Не выбраны поставщики");
         if (items == null || items.isEmpty()) throw new BadRequestException("Не выбраны позиции");
@@ -155,8 +173,18 @@ public class PriceRequestSendService {
         Distributor sample = distributorService.findById(distributorIds.get(0));
         requireCurrentMarket(sample.getMarket(), "Поставщик не найден");
         PriceRequest draft = PriceRequest.builder().tender(tender).distributor(sample)
-                .market(tender.getMarket()).items(prItems).build();
+                .market(tender.getMarket()).items(prItems)
+                .replyBy(options == null ? null : options.replyBy()).build();
         KpEmailComposer.Composed c = composer.composeForPreview(draft);
         return new KpPreviewResponse(c.subject(), c.body());
+    }
+
+    /** Исход письма в запрос; сбой записи не прячет результат отправки — только предупреждение в лог. */
+    private void letter(PriceRequest pr, LetterStatus status, String sentTo) {
+        try {
+            writer.markLetter(pr.getId(), status, sentTo);
+        } catch (RuntimeException e) {
+            log.warn("КП id={}: исход письма {} не записан: {}", pr.getId(), status, e.getClass().getSimpleName());
+        }
     }
 }

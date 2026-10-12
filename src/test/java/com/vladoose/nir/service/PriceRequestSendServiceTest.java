@@ -10,15 +10,13 @@ import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.PriceRequestSendService.SendItem;
 import com.vladoose.nir.service.PriceRequestSendService.SendResult;
+import com.vladoose.nir.support.SmtpIntegrationTest;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -26,14 +24,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
-@Transactional
-@TestPropertySource(properties = {
-        "spring.mail.host=127.0.0.1",
-        "spring.mail.port=3025",
-        "spring.mail.username=zakup-test@westmed.local",
-        "spring.mail.password=secret"
-})
+@SmtpIntegrationTest
 class PriceRequestSendServiceTest {
 
     @RegisterExtension
