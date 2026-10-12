@@ -70,7 +70,7 @@ public class PrivateRequestPricesService {
             final Cell winner = best;
             List<Cell> marked = cells.stream()
                     .map(c -> c == winner ? new Cell(c.distributorId(), c.state(), c.price(), c.note(), c.priceRequestId(),
-                            c.itemId(), true) : c)
+                            c.itemId(), true, c.emailOverride()) : c)
                     .toList();
             BigDecimal bestPrice = winner == null ? null : winner.price();
             String bestName = winner == null ? null : suppliers.get(winner.distributorId()).name();
@@ -113,7 +113,7 @@ public class PrivateRequestPricesService {
     }
 
     static Cell cell(Long distributorId, PriceRequestItem i, Map<Long, Instant> bounced) {
-        if (i == null) return new Cell(distributorId, "NONE", null, null, null, null, false);
+        if (i == null) return new Cell(distributorId, "NONE", null, null, null, null, false, false);
         PriceRequest pr = i.getPriceRequest();
         String state;
         // цена — сильнейший факт: отказ письмом, а потом цена по телефону — это цена (и лучшая, если ниже других)
@@ -122,7 +122,8 @@ public class PrivateRequestPricesService {
         else if (bouncedAfterSend(pr, bounced)) state = "BOUNCED";
         else if (pr.getLetterStatus() == LetterStatus.NO_EMAIL || pr.getLetterStatus() == LetterStatus.FAILED) state = "NOT_SENT";
         else state = "WAITING";
-        return new Cell(distributorId, state, i.getResponsePrice(), i.getResponseNote(), pr.getId(), i.getId(), false);
+        return new Cell(distributorId, state, i.getResponsePrice(), i.getResponseNote(), pr.getId(), i.getId(), false,
+                pr.isEmailOverride());
     }
 
     private static String key(Long lotId, Long distributorId) {

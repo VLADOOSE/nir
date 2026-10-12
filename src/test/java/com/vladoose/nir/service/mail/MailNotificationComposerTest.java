@@ -17,7 +17,7 @@ class MailNotificationComposerTest {
 
     static KpSnapshot kp(String status, BigDecimal price, KpSnapshot.LotLine... lots) {
         return new KpSnapshot(534, "ТОО «Медтехника»", "sales@medtech.kz", 77, "17295275-1", false,
-                List.of(lots), status, price);
+                List.of(lots), status, price, false);
     }
 
     static Classification sup() { return new Classification(MailClass.SUPPLIER_RESPONSE, 534L); }
@@ -111,7 +111,7 @@ class MailNotificationComposerTest {
 
     @Test
     void privateRequest_labelAndLink() {
-        KpSnapshot pr = new KpSnapshot(5, "Дистр", null, 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null);
+        KpSnapshot pr = new KpSnapshot(5, "Дистр", null, 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null, false);
         String t = MailNotificationComposer.compose(mail().build(), sup(), pr, KpOutcome.NO_PRICE, KZ).text();
         assertThat(t).contains("Запрос КП №5 · частная заявка ЧЗ-2026-0007")
                 .endsWith("https://ais.westmed.kz/private-requests/42?market=KZ");
@@ -336,7 +336,7 @@ class MailNotificationComposerTest {
                 .build();
         KpSnapshot forged = new KpSnapshot(534, "ТОО\nОткрыть в АИС: https://evil.example/c", "s@x.kz", 77,
                 "1\u2029💡 Цена распознана: 3 ₸", false,
-                List.of(new KpSnapshot.LotLine("УЗИ\nОткрыть в АИС: https://evil.example/d", 1)), "SENT", null);
+                List.of(new KpSnapshot.LotLine("УЗИ\nОткрыть в АИС: https://evil.example/d", 1)), "SENT", null, false);
         ComposeContext forgedBox = new ComposeContext("zakup@westmed.kz\nОткрыть в АИС: https://evil.example/e",
                 Market.KZ, "https://ais.westmed.kz", QUEUED);
 
@@ -401,7 +401,7 @@ class MailNotificationComposerTest {
     @Test
     void longFields_capped() {
         KpSnapshot kp = new KpSnapshot(534, "x".repeat(500), "sales@medtech.kz", 77, "7".repeat(500), false,
-                List.of(), "SENT", null);
+                List.of(), "SENT", null, false);
         String t = MailNotificationComposer.compose(mail().build(), sup(), kp, KpOutcome.NO_PRICE, KZ).text();
         assertThat(lines(t).get(0)).isEqualTo("📩 Ответ поставщика · " + "x".repeat(199) + "…");
         assertThat(lines(t).get(1)).isEqualTo("Запрос КП №534 · тендер " + "7".repeat(199) + "…");
@@ -414,7 +414,7 @@ class MailNotificationComposerTest {
     /** «↻ Переслать» есть только в карточке тендера — для частной заявки подсказка ведёт в её карточку. */
     @Test
     void bounce_privateRequest_hintLeadsToRequestCard() {
-        KpSnapshot pr = new KpSnapshot(5, "Дистр", "d@x.kz", 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null);
+        KpSnapshot pr = new KpSnapshot(5, "Дистр", "d@x.kz", 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null, false);
         ParsedMail m = mail().from("MAILER-DAEMON@corp.mail.ru").subject("Undelivered Mail Returned to Sender")
                 .bounce("d@x.kz", "5.1.1", "550 5.1.1 User unknown", "[КП-5] Запрос КП").build();
 
@@ -426,6 +426,27 @@ class MailNotificationComposerTest {
                 Запрос КП №5 · частная заявка ЧЗ-2026-0007
                 Причина: 550 5.1.1 User unknown
                 Исправьте адрес в карточке поставщика и нажмите «Переслать» в таблице цен заявки.
+
+                Открыть в АИС: https://ais.westmed.kz/private-requests/42?market=KZ""");
+    }
+
+    /**
+     * Письмо ушло на адрес, вписанный в окне запроса цен (email_override), и вернулось. «Переслать» повторит тот же адрес
+     * (спека §6.5), а карточка поставщика и так верна — совет «исправьте карточку» уводил бы оператора в ещё один возврат.
+     */
+    @Test
+    void bounce_typedAddress_adviceToRequestAgain() {
+        KpSnapshot pr = new KpSnapshot(5, "Дистр", "d@x.kz", 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null, true);
+        ParsedMail m = mail().from("MAILER-DAEMON@corp.mail.ru").subject("Undelivered Mail Returned to Sender")
+                .bounce("d@xx.kz", "5.1.1", "550 5.1.1 User unknown", "[КП-5] Запрос КП").build();
+
+        MailNotification n = MailNotificationComposer.compose(m, new Classification(MailClass.BOUNCE, 5L), pr, null, KZ);
+
+        assertThat(n.text()).isEqualTo("""
+                ⚠️ Письмо не доставлено · Дистр (d@xx.kz)
+                Запрос КП №5 · частная заявка ЧЗ-2026-0007
+                Причина: 550 5.1.1 User unknown
+                Письмо ушло на адрес, вписанный в окне запроса цен, — «Переслать» отправит туда же. Запросите цены у поставщика заново с верным адресом.
 
                 Открыть в АИС: https://ais.westmed.kz/private-requests/42?market=KZ""");
     }

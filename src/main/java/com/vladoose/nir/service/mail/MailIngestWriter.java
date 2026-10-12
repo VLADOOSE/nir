@@ -195,7 +195,8 @@ public class MailIngestWriter {
                 .toList();
         BigDecimal price = pr.getItems().size() == 1 ? pr.getItems().get(0).getResponsePrice() : null;
         return new KpSnapshot(pr.getId(), d == null ? "поставщик" : d.getName(), d == null ? null : d.getEmail(),
-                t.getId(), t.getTenderNumber(), t.getSource() == Source.PRIVATE_REQUEST, lots, pr.getStatus(), price);
+                t.getId(), t.getTenderNumber(), t.getSource() == Source.PRIVATE_REQUEST, lots, pr.getStatus(), price,
+                pr.isEmailOverride());
     }
 
     /**

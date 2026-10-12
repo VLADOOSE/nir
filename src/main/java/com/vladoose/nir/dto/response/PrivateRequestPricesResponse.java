@@ -13,7 +13,10 @@ public record PrivateRequestPricesResponse(List<Supplier> suppliers, List<Line> 
     public record Line(Long lotId, String name, Integer quantity, String unit, List<Cell> cells,
                        BigDecimal bestPrice, String bestDistributorName) {}
 
-    /** state: PRICE | DECLINED | BOUNCED | NOT_SENT | WAITING | NONE (позицию у поставщика не запрашивали). */
+    /**
+     * state: PRICE | DECLINED | BOUNCED | NOT_SENT | WAITING | NONE (позицию у поставщика не запрашивали).
+     * emailOverride — письмо ушло на адрес, вписанный в окне запроса: у «не доставлено» подсказка — запросить заново.
+     */
     public record Cell(Long distributorId, String state, BigDecimal price, String note, Long priceRequestId,
-                       Long itemId, boolean best) {}
+                       Long itemId, boolean best, boolean emailOverride) {}
 }

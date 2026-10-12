@@ -150,6 +150,21 @@ class MailIngestWriterTest {
                 .contains("Причина: 550 5.1.1 User unknown");
     }
 
+    /** Признак «письмо ушло на вписанный в окне адрес» доходит от запроса до текста: совет — запросить заново, не карточка. */
+    @Test
+    void bounce_typedAddress_adviceFromTheRequest() {
+        PriceRequest p = pr("SENT", 1, Source.PRIVATE_REQUEST);
+        p.setEmailOverride(true);
+        p.setSentTo("sales@zzw-typo.kz");
+        writer().write(mail().from("MAILER-DAEMON@corp.mail.ru").subject("Undelivered Mail Returned to Sender")
+                .contentType("multipart/report; report-type=delivery-status; boundary=x")
+                .bounce("sales@zzw-typo.kz", "5.1.1", "550 5.1.1 User unknown", KpToken.subjectToken(p.getId()) + " Запрос КП")
+                .build(), 5);
+
+        assertThat(rows().get(0).getNotifyText()).contains("Письмо ушло на адрес, вписанный в окне запроса цен")
+                .doesNotContain("Исправьте адрес в карточке");
+    }
+
     /**
      * Отложенная доставка (Action: delayed) — свой вид «Задерживается», а не «Не доставлено»: запрос КП не трогается,
      * связь с ним есть, уведомление — «⏳ Доставка задерживается», без звука.

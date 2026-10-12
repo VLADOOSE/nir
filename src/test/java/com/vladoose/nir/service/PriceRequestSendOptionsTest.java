@@ -53,6 +53,7 @@ class PriceRequestSendOptionsTest {
     @Autowired TenderLotRepository tenderLotRepository;
     @Autowired DistributorRepository distributorRepository;
     @Autowired CompanyProfileRepository profileRepository;
+    @Autowired EmailTemplateRepository templateRepository;
 
     Tender tender;
     TenderLot lot;
@@ -60,6 +61,9 @@ class PriceRequestSendOptionsTest {
     @BeforeEach
     void setUp() {
         MarketContext.set(Market.KZ);
+        // шаблон письма рынка правит оператор на «Шаблоне письма КП» (nirdb постоянная): тесты ждут зашитый — без него
+        // своя строка о заказчике или тело без {{дедлайн}} уронили бы гейт без регресса (CLAUDE.md §14); откат — транзакцией теста
+        templateRepository.deleteAllInBatch();
         tender = tenderRepository.save(Tender.builder().tenderNumber("ZZ-OPT-1").status("ACTIVE")
                 .source(Source.PUBLIC_TENDER).build());
         lot = tenderLotRepository.save(TenderLot.builder().tender(tender).lotNumber(1).equipName("ZZ Облучатель")

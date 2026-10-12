@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, DestroyRef, EventEmitter, HostListener, Input, OnInit, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, EventEmitter, HostListener, Input, OnInit, Output, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -59,7 +59,6 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
       <div class="modal" role="dialog" aria-label="Запросить цены" (click)="$event.stopPropagation()">
         <h3>Запросить цены<ng-container *ngIf="suppliers.length"> — {{ suppliers.length }} {{ supplierWord(suppliers.length) }}</ng-container></h3>
         <div class="empty" *ngIf="loading">Подбираю поставщиков…</div>
-        <div class="error-banner" *ngIf="error">{{ error }}</div>
 
         <div class="sup" *ngFor="let s of suppliers; trackBy: trackSupplier" [class.on]="isOn(s)">
           <div class="sup-head">
@@ -135,7 +134,9 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
           <pre class="pv-body">{{ preview.body }}</pre>
         </div>
 
-        <div class="form-actions">
+        <!-- плашка — над кнопками: при 3+ поставщиках оператор внизу, у «Отправить», и верх окна ему не виден -->
+        <div class="error-banner" *ngIf="error" role="alert">{{ error }}</div>
+        <div class="form-actions" #actions>
           <button type="button" class="btn btn-primary" [disabled]="sending || !planCount()" (click)="send()">{{ sendLabel() }}</button>
           <button type="button" class="btn btn-cancel" [disabled]="sending" (click)="dismiss()">Отмена</button>
         </div>
@@ -227,9 +228,13 @@ export class PrRfqDialogComponent implements OnInit {
   preview: { subject: string; body: string } | null = null;
   previewFor = '';
   private directory: DirEntry[] = [];
+  @ViewChild('actions') private actions?: ElementRef<HTMLElement>;
+  private destroyed = false;
 
   constructor(private api: ApiService, private profiles: CompanyProfileService, private cdr: ChangeDetectorRef,
-              private destroyRef: DestroyRef) {}
+              private destroyRef: DestroyRef) {
+    destroyRef.onDestroy(() => this.destroyed = true);
+  }
 
   ngOnInit() {
     // профиль из кеша приходит синхронно — markForCheck, не detectChanges (CLAUDE.md §12)
@@ -251,7 +256,7 @@ export class PrRfqDialogComponent implements OnInit {
         this.loading = false;
         this.cdr.markForCheck();
       },
-      error: e => { this.loading = false; this.error = 'Подбор поставщиков не загрузился: ' + errorText(e); this.cdr.markForCheck(); },
+      error: e => { this.loading = false; this.fail('Подбор поставщиков не загрузился: ' + errorText(e)); },
     });
   }
 
@@ -320,7 +325,7 @@ export class PrRfqDialogComponent implements OnInit {
                                                          trusted: !!d.trusted, manufacturer: !!d.manufacturer }));
         this.cdr.markForCheck();
       },
-      error: e => { this.error = 'Справочник поставщиков не загрузился: ' + errorText(e); this.cdr.markForCheck(); },
+      error: e => this.fail('Справочник поставщиков не загрузился: ' + errorText(e)),
     });
   }
 
@@ -390,7 +395,7 @@ export class PrRfqDialogComponent implements OnInit {
     this.busy = true;
     this.api.previewRfq(this.requestId, body).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: p => { this.busy = false; this.preview = p; this.previewFor = s.name; this.cdr.markForCheck(); },
-      error: e => { this.busy = false; this.error = errorText(e); this.cdr.markForCheck(); },
+      error: e => { this.busy = false; this.fail(errorText(e)); },
     });
   }
 
@@ -414,13 +419,25 @@ export class PrRfqDialogComponent implements OnInit {
     this.busy = false;
     if (e?.error instanceof Blob) {
       e.error.text().then((t: string) => {
-        try { this.error = JSON.parse(t).message || errorText(e); } catch { this.error = errorText(e); }
-        this.cdr.markForCheck();
+        let text = errorText(e);
+        try { text = JSON.parse(t).message || text; } catch { /* тело не JSON — общий текст */ }
+        this.fail(text);
       });
     } else {
-      this.error = errorText(e);
+      this.fail(errorText(e));
     }
-    this.cdr.markForCheck();
+  }
+
+  /**
+   * Ошибка — в плашке прямо над кнопками, и окно прокручивается к кнопкам (плашка над ними видна тоже): иначе «Отправить»
+   * просто возвращалась бы в исходное состояние (ошибка вверху окна, а оператор — внизу). detectChanges — чтобы плашка
+   * уже стояла в DOM и сдвинула кнопки до прокрутки.
+   */
+  private fail(text: string) {
+    if (this.destroyed) return;
+    this.error = text;
+    this.cdr.detectChanges();
+    this.actions?.nativeElement.scrollIntoView({ block: 'nearest' });
   }
 
   private plan() {
@@ -461,7 +478,7 @@ export class PrRfqDialogComponent implements OnInit {
       })),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: results => { this.sending = false; this.sent.emit(results); },
-      error: e => { this.sending = false; this.error = errorText(e); this.cdr.markForCheck(); },
+      error: e => { this.sending = false; this.fail(errorText(e)); },
     });
   }
 }

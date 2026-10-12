@@ -134,6 +134,36 @@ class PrivateRequestPricesTest {
         assertThat(cell(prices.build(t.getId()), 0, d).state()).isEqualTo("WAITING");
     }
 
+    /**
+     * Ячейка «не доставлено» знает, что письмо ушло на адрес, вписанный в окне (email_override): «Переслать» повторит тот же
+     * адрес (спека §6.5), поэтому подсказка у неё — запросить цены заново с верным адресом, а не исправить карточку.
+     */
+    @Test
+    void bouncedCellKnowsTheLetterWentToTheTypedAddress() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены вписанный", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor typed = dist("ZZ Цены Вписанный");
+        Distributor card = dist("ZZ Цены Карточка");
+        PriceRequestItem viaWindow = ask(t, typed, lot, "SENT", LetterStatus.SENT, null);
+        viaWindow.getPriceRequest().setEmailOverride(true);
+        PriceRequestItem viaCard = ask(t, card, lot, "SENT", LetterStatus.SENT, null);
+        for (PriceRequest pr : List.of(viaWindow.getPriceRequest(), viaCard.getPriceRequest())) {
+            pr.setSentAt(OffsetDateTime.now().minusHours(2));
+            inboundRepository.save(InboundEmail.builder().fromAddress("MAILER-DAEMON@mail.ru").subject("Undelivered")
+                    .type(InboundType.BOUNCE).matchedPriceRequestId(pr.getId()).status(InboundStatus.NEW)
+                    .receivedAt(OffsetDateTime.now().minusHours(1)).build());
+        }
+        em.flush();
+
+        PrivateRequestPricesResponse r = prices.build(t.getId());
+
+        assertThat(cell(r, 0, typed).state()).isEqualTo("BOUNCED");
+        assertThat(cell(r, 0, typed).emailOverride()).isTrue();
+        assertThat(cell(r, 0, card).state()).isEqualTo("BOUNCED");
+        assertThat(cell(r, 0, card).emailOverride()).isFalse();
+    }
+
     @Test
     void instantBounceDatedSecondsBeforeSendMarkIsStillBounced() {
         Tender t = service.createEmpty();

@@ -12,6 +12,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.repository.CompanyProfileRepository;
 import com.vladoose.nir.repository.DistributorRepository;
+import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.service.PriceRequestSendService.SendResult;
 import com.vladoose.nir.service.PrivateRequestService;
@@ -49,8 +50,14 @@ class PrivateRequestRfqStage2Test {
     @Autowired DistributorRepository distributorRepository;
     @Autowired PriceRequestRepository priceRequestRepository;
     @Autowired CompanyProfileRepository profileRepository;
+    @Autowired EmailTemplateRepository templateRepository;
 
-    @BeforeEach void kz() { MarketContext.set(Market.KZ); }
+    // шаблон письма рынка правит оператор на «Шаблоне письма КП» (nirdb постоянная): тесты ждут зашитый — без него
+    // своя строка о заказчике или тело без {{дедлайн}} уронили бы гейт без регресса (CLAUDE.md §14); откат — транзакцией теста
+    @BeforeEach void kz() {
+        MarketContext.set(Market.KZ);
+        templateRepository.deleteAllInBatch();
+    }
     @AfterEach void clear() { MarketContext.clear(); }
 
     private Distributor dist(String name, String email) {

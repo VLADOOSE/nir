@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.dto.request.PrivateRequestField;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.DistributorRepository;
+import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
@@ -17,6 +18,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,8 +36,14 @@ class RfqDocumentServiceTest {
     @Autowired DistributorRepository distributorRepository;
     @Autowired TenderRepository tenderRepository;
     @Autowired TenderLotRepository lotRepository;
+    @Autowired EmailTemplateRepository templateRepository;
 
-    @BeforeEach void kz() { MarketContext.set(Market.KZ); }
+    // шаблон письма рынка правит оператор на «Шаблоне письма КП» (nirdb постоянная): тесты ждут зашитый — без него
+    // своя строка о заказчике или тело без {{дедлайн}} уронили бы гейт без регресса (CLAUDE.md §14); откат — транзакцией теста
+    @BeforeEach void kz() {
+        MarketContext.set(Market.KZ);
+        templateRepository.deleteAllInBatch();
+    }
     @AfterEach void clear() { MarketContext.clear(); }
 
     private Distributor dist() {
@@ -83,6 +92,49 @@ class RfqDocumentServiceTest {
 
         assertThat(text).contains("ZZ Монитор пациента").contains("Экран не менее 12 дюймов")
                 .doesNotContain("ZZ-17295275-1").doesNotContain("ZZ ГКП Областная больница");
+    }
+
+    /** Сырой ТЗ goszakup (как в LotDescriptiveTextTest): номер закупки, номер лота площадки и КАТО места поставки. */
+    private static final String GOSZAKUP_TZ = String.join("\n",
+            "Приложение 2", "к конкурсной документации", "Номер закупки: № 17279420-1", "Наименование", "закупки:",
+            "Резиновые пластинки для аппарата электрофореза \"Элэскулап\"", "Номер лота: № 86887302-ЗЦП3",
+            "Наименование лота: Электрод", "Описание лота: платиновый", "Дополнительное", "описание лота:",
+            "электроды силиконовые 55*80 мм", "Количество: 10", "Единица измерения: Комплект",
+            "Места поставки: 231010000, Атырауская область, г.Атырау",
+            "Срок поставки: в течение 2026 года (по заявке Заказчика)");
+
+    private static String skSpec(String fixture) throws Exception {
+        try (InputStream in = RfqDocumentServiceTest.class.getResourceAsStream("/skpharmacy/specs/" + fixture + ".txt")) {
+            assertThat(in).as("фикстура %s", fixture).isNotNull();
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Против утечки (спека §10): ТЗ лота площадки уходит в документ очищенным, как в письме. Сырой goszakup-ТЗ несёт номер
+     * закупки, номер лота и место поставки, ТЗ СК-Фармации — код лота площадки в шапке (адресует объявление); в документе
+     * их нет, а характеристики есть. Держит {@code LotDescriptiveText.requirementsForEmail} в {@code RfqDocumentService}:
+     * без него документ, приложенный в панели КП тендера, раскрыл бы тендер поставщику.
+     */
+    @Test
+    void platformSpecIsSanitizedLikeTheLetter() throws Exception {
+        Tender t = tenderRepository.save(Tender.builder().tenderNumber("ZZ-DOC-SPEC").status("ACTIVE")
+                .source(Source.PUBLIC_TENDER).build());
+        TenderLot goszakup = lotRepository.save(TenderLot.builder().tender(t).lotNumber(1).equipName("ZZ Электрод")
+                .quantity(10).requiredSpec(GOSZAKUP_TZ).build());
+        TenderLot sk = lotRepository.save(TenderLot.builder().tender(t).lotNumber(2).equipName("ZZ Аппарат УЗИ")
+                .quantity(1).requiredSpec(skSpec("lot-4875083-t1")).build());
+        PriceRequest pr = PriceRequest.builder().tender(t).distributor(dist()).market(Market.KZ).withDocument(true)
+                .items(new ArrayList<>(List.of(
+                        PriceRequestItem.builder().tenderLot(goszakup).requestedQuantity(10).build(),
+                        PriceRequestItem.builder().tenderLot(sk).requestedQuantity(1).build()))).build();
+
+        String text = text(documents.render(pr).bytes());
+
+        assertThat(text).contains("электроды силиконовые 55*80 мм");
+        assertThat(text).doesNotContain("17279420").doesNotContain("86887302").doesNotContain("231010000")
+                .doesNotContain("Атырауская");
+        assertThat(text).doesNotContain("4875083").doesNotContain("522144").doesNotContain("Техническая спецификация");
     }
 
     @Test

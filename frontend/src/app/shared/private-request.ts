@@ -120,6 +120,8 @@ export interface PriceCell {
   priceRequestId: number | null;
   itemId: number | null;
   best: boolean;
+  /** Письмо ушло на адрес, вписанный в окне запроса, а не на почту карточки: «Переслать» отправит туда же. */
+  emailOverride: boolean;
 }
 export interface PriceLine {
   lotId: number;
