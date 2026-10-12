@@ -10,6 +10,7 @@ import { ConfirmService } from '../../services/confirm.service';
 import { CLOSE_OUTCOMES, PrStatus, PrView, SaveState, stageTone, timeText } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
 import { fullDateTime } from '../../shared/relative-time';
+import { PrClientSectionComponent } from './pr-client-section.component';
 
 /**
  * Страница частной заявки (спека 2026-10-12 §5): шапка с этапом и меню, разделы — клиент, позиции, поставщики и цены.
@@ -18,7 +19,7 @@ import { fullDateTime } from '../../shared/relative-time';
 @Component({
   selector: 'app-private-request-page',
   standalone: true,
-  imports: [NgIf, NgFor, RouterLink],
+  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -45,6 +46,8 @@ import { fullDateTime } from '../../shared/relative-time';
         Из обращения:
         <a [routerLink]="['/leads']" [queryParams]="{ openId: ld.id }">«{{ ld.subject }}» · {{ leadSource(ld.source) }} · {{ when(ld.receivedAt) }}</a>
       </div>
+      <app-pr-client-section [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onView($event)"
+                             (saveState)="onSaveState($event)"></app-pr-client-section>
       <!-- sections -->
     </div>
     <ng-template #stateTpl>
