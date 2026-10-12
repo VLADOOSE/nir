@@ -16,4 +16,9 @@ public class EmailTemplateResponse {
     private String body;
     private OffsetDateTime updatedAt;
     private List<String> warnings;
+    /** Тексты запроса на бланке — сохранённые или зашитые (RfqTexts); пункты — по одному на строку. */
+    private String rfqTitle;
+    private String rfqIntro;
+    private String rfqAsk;
+    private String rfqClientLine;
 }

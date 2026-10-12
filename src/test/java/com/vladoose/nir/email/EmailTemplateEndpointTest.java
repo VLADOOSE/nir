@@ -1,8 +1,10 @@
 package com.vladoose.nir.email;
 
+import com.vladoose.nir.dto.request.EmailTemplateRequest;
 import com.vladoose.nir.entity.EmailTemplate;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.repository.EmailTemplateRepository;
+import com.vladoose.nir.service.RfqTexts;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -76,5 +78,52 @@ class EmailTemplateEndpointTest {
         var resp = controller.getDefault();
         assertThat(resp.getSubject()).isEqualTo(com.vladoose.nir.service.KpEmailComposer.DEFAULT_SUBJECT);
         assertThat(resp.getBody()).isEqualTo(com.vladoose.nir.service.KpEmailComposer.DEFAULT_BODY);
+    }
+
+    @Test
+    void rfqTextsAreDefaultsUntilSaved_textsLikeDefaultsAreNotStored() {
+        com.vladoose.nir.context.MarketContext.set(Market.KZ);
+        var resp = controller.get();
+        assertThat(resp.getRfqTitle()).isEqualTo(RfqTexts.DEFAULT_TITLE);
+        assertThat(resp.getRfqIntro()).isEqualTo(RfqTexts.DEFAULT_INTRO);
+        assertThat(resp.getRfqAsk()).isEqualTo(RfqTexts.defaultAsk(Market.KZ));
+        assertThat(resp.getRfqClientLine()).isEqualTo(RfqTexts.DEFAULT_CLIENT_LINE);
+
+        EmailTemplateRequest req = new EmailTemplateRequest();
+        req.setSubject("Т");
+        req.setBody("{{позиции}}");
+        req.setRfqTitle("ЗАПРОС ЦЕН");
+        req.setRfqAsk(RfqTexts.defaultAsk(Market.KZ));           // как зашитый — не хранится
+        req.setRfqClientLine("Для: {{клиент}}");
+        controller.put(req);
+
+        EmailTemplate row = repository.findByMarket(Market.KZ).orElseThrow();
+        assertThat(row.getRfqTitle()).isEqualTo("ЗАПРОС ЦЕН");
+        assertThat(row.getRfqAsk()).isNull();
+        assertThat(row.getRfqClientLine()).isEqualTo("Для: {{клиент}}");
+        assertThat(controller.get().getRfqTitle()).isEqualTo("ЗАПРОС ЦЕН");
+        assertThat(controller.get().getRfqAsk()).isEqualTo(RfqTexts.defaultAsk(Market.KZ));
+    }
+
+    @Test
+    void rfqFieldsNotSentKeepSavedValues() {
+        com.vladoose.nir.context.MarketContext.set(Market.KZ);
+        EmailTemplateRequest first = new EmailTemplateRequest();
+        first.setSubject("Т");
+        first.setBody("{{позиции}}");
+        first.setRfqIntro("Своя вводная");
+        controller.put(first);
+        EmailTemplateRequest second = new EmailTemplateRequest();   // старый экран: rfq-полей не шлёт
+        second.setSubject("Т2");
+        second.setBody("{{позиции}}");
+        controller.put(second);
+        assertThat(repository.findByMarket(Market.KZ).orElseThrow().getRfqIntro()).isEqualTo("Своя вводная");
+    }
+
+    @Test
+    void defaultEndpointReturnsRfqDefaultsOfTheMarket() {
+        com.vladoose.nir.context.MarketContext.set(Market.RF);
+        var resp = controller.getDefault();
+        assertThat(resp.getRfqAsk()).isEqualTo(RfqTexts.defaultAsk(Market.RF)).contains("Росздравнадзора");
     }
 }

@@ -33,6 +33,6 @@ public class EmailTemplateController {
     @PutMapping
     @PreAuthorize("hasRole('ADMIN')")
     public EmailTemplateResponse put(@Valid @RequestBody EmailTemplateRequest req) {
-        return service.save(req.getSubject(), req.getBody());
+        return service.save(req);
     }
 }

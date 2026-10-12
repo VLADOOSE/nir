@@ -14,9 +14,10 @@ import java.util.Optional;
 
 /**
  * Построение темы/тела письма КП из редактируемого шаблона рынка (email_template) с фолбэком на
- * зашитый дефолт. Плейсхолдеры: {{приветствие}} {{компания}} {{позиции}} {{дедлайн}} {{реестр}}.
+ * зашитый дефолт. Плейсхолдеры: {{приветствие}} {{компания}} {{позиции}} {{дедлайн}} {{реестр}} {{заказчик}} {{вложение}}.
  * Письмо НЕ раскрывает конкретный тендер/заявку (нет номера и ссылки на объявление) — решение
- * оператора 2026-07-09. Токен [КП-id] в теме — серверный, в шаблон не входит.
+ * оператора 2026-07-09; клиент заявки — только строкой {{заказчик}} у запроса с отметкой «Указать клиента»
+ * (спека 2026-10-12 §6.2). Токен [КП-id] в теме — серверный, в шаблон не входит.
  */
 @Component
 public class KpEmailComposer {
@@ -40,10 +41,14 @@ public class KpEmailComposer {
             "{{приветствие}}\n\n" +
             "{{компания}} просит предоставить коммерческое предложение по следующим позициям:\n\n" +
             "{{позиции}}\n" +
-            "{{дедлайн}}Просим указать: цену за единицу, № регистрационного удостоверения " +
+            "{{заказчик}}{{вложение}}{{дедлайн}}Просим указать: цену за единицу, № регистрационного удостоверения " +
             "на предлагаемую модель, сроки поставки, условия оплаты, гарантию.\n\n" +
             "С уважением,\n{{компания}}\n\n" +
             "Ответ на этот запрос просим направить ответным письмом (Reply) — он поступит в наш отдел закупок.";
+
+    /** Строка о вложении (спека §6.3) — только когда к письму приложен запрос на бланке. */
+    public static final String ATTACHMENT_LINE = "Запрос на бланке компании — во вложении.";
+    private static final String POSITIONS = "{{позиции}}", CLIENT = "{{заказчик}}", ATTACHMENT = "{{вложение}}";
 
     private final EmailTemplateRepository templateRepository;
     private final EmailTemplateRenderer renderer;
@@ -56,31 +61,46 @@ public class KpEmailComposer {
     public record Composed(String subject, String body) {}
 
     public Composed compose(PriceRequest pr) {
-        Tmpl t = loadTemplate(pr);
-        Map<String, String> vars = vars(pr);
-        String subject = KpToken.subjectToken(pr.getId()) + " " + renderer.render(t.subject(), vars);
-        return new Composed(subject, renderer.render(t.body(), vars));
+        Composed c = build(pr);
+        return new Composed(KpToken.subjectToken(pr.getId()) + " " + c.subject(), c.body());
     }
 
     /** Черновой предпросмотр (id ещё нет) — тема без токена. */
     public Composed composeForPreview(PriceRequest draft) {
-        Tmpl t = loadTemplate(draft);
-        Map<String, String> vars = vars(draft);
-        return new Composed(renderer.render(t.subject(), vars), renderer.render(t.body(), vars));
+        return build(draft);
     }
 
-    private record Tmpl(String subject, String body) {}
-
-    private Tmpl loadTemplate(PriceRequest pr) {
+    private Composed build(PriceRequest pr) {
         Market market = pr.getMarket() != null ? pr.getMarket() : Market.RF;
-        String subj = DEFAULT_SUBJECT, body = DEFAULT_BODY;
-        Optional<EmailTemplate> opt = templateRepository.findByMarket(market);
-        if (opt.isPresent()) {
-            EmailTemplate et = opt.get();
-            if (et.getSubjectTemplate() != null && !et.getSubjectTemplate().isBlank()) subj = et.getSubjectTemplate();
-            if (et.getBodyTemplate() != null && !et.getBodyTemplate().isBlank()) body = et.getBodyTemplate();
-        }
-        return new Tmpl(subj, body);
+        Optional<EmailTemplate> saved = templateRepository.findByMarket(market);
+        String subject = saved.map(EmailTemplate::getSubjectTemplate).filter(s -> !s.isBlank()).orElse(DEFAULT_SUBJECT);
+        String body = saved.map(EmailTemplate::getBodyTemplate).filter(s -> !s.isBlank()).orElse(DEFAULT_BODY);
+        String client = pr.isDiscloseClient()
+                ? RfqClientLine.render(RfqTexts.of(saved.orElse(null), market).clientLine(), pr.getTender(),
+                        market.companyShortName())
+                : null;
+        String attachment = pr.isWithDocument() ? ATTACHMENT_LINE : null;
+        Map<String, String> vars = vars(pr);
+        vars.put("заказчик", client == null ? "" : client + "\n\n");
+        vars.put("вложение", attachment == null ? "" : attachment + "\n\n");
+        String fullBody = withMissingLines(body, client != null, attachment != null);
+        return new Composed(renderer.render(subject, vars), renderer.render(fullBody, vars));
+    }
+
+    /**
+     * Свой шаблон оператора, сохранённый до этапа 2, не знает {{заказчик}} и {{вложение}}: без них клиент, указанный
+     * поставщику, и строка о вложении молча пропали бы из письма. Недостающие — и только когда им есть что сказать —
+     * встают отдельным абзацем сразу после {{позиции}} (нет и её — в конец письма). Без клиента и вложения шаблон
+     * не меняется.
+     */
+    static String withMissingLines(String body, boolean client, boolean attachment) {
+        String missing = (client && !body.contains(CLIENT) ? CLIENT : "")
+                + (attachment && !body.contains(ATTACHMENT) ? ATTACHMENT : "");
+        if (missing.isEmpty()) return body;
+        int at = body.indexOf(POSITIONS);
+        if (at < 0) return body.stripTrailing() + "\n\n" + missing;
+        int end = at + POSITIONS.length();
+        return body.substring(0, end) + "\n" + missing + body.substring(end);
     }
 
     private Map<String, String> vars(PriceRequest pr) {
@@ -144,7 +164,8 @@ public class KpEmailComposer {
         return sb.toString();
     }
 
-    private String trimSpec(String spec) {
+    /** Обрезка ТЗ — одна для письма и документа на бланке (RfqDocumentService). */
+    static String trimSpec(String spec) {
         String s = spec.strip();
         if (s.length() <= SPEC_LIMIT) return s;
         return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ — по запросу)";

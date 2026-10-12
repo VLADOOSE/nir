@@ -548,7 +548,8 @@ export class ApiService {
   getEmailTemplateDefault(): Observable<any> {
     return this.http.get<any>(`${this.base}/email-template/default`);
   }
-  saveEmailTemplate(body: { subject: string; body: string }): Observable<any> {
+  saveEmailTemplate(body: { subject: string; body: string; rfqTitle?: string; rfqIntro?: string; rfqAsk?: string;
+                            rfqClientLine?: string }): Observable<any> {
     return this.http.put<any>(`${this.base}/email-template`, body);
   }
 

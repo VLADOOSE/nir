@@ -28,6 +28,26 @@ import { MarketService } from '../../services/market.service';
       </div>
       <p class="et-note">Метка [КП-№] и подстановка позиций/дат — автоматические. Письмо намеренно не указывает номер тендера.</p>
 
+      <h3 class="et-sec">Запрос на бланке (Word)</h3>
+      <p class="et-note">Прикладывается к письму поставщику по галочке «Приложить запрос на бланке». Бланк, подпись и
+        печать — из «Реквизитов и печати».</p>
+
+      <label class="et-lbl">Заголовок</label>
+      <input class="et-input" [(ngModel)]="rfqTitle" maxlength="500" />
+
+      <label class="et-lbl">Вводная</label>
+      <textarea class="et-body" rows="3" maxlength="2000" [(ngModel)]="rfqIntro"></textarea>
+
+      <label class="et-lbl">«В предложении просим указать» — по пункту на строку</label>
+      <textarea class="et-body" rows="7" maxlength="4000" [(ngModel)]="rfqAsk"></textarea>
+
+      <label class="et-lbl">Строка о конечном заказчике — и в письме, и в документе</label>
+      <textarea class="et-body" rows="2" maxlength="1000" [(ngModel)]="rfqClientLine"></textarea>
+      <p class="et-note">В вводной и строке о заказчике: <code>{{ ph.company }}</code> — ваша компания; в строке ещё
+        <code>{{ ph.client }}</code> — клиент заявки и <code>{{ ph.place }}</code> — «, место поставки: …». Клиент попадает
+        в запрос только у поставщиков с галочкой «Указать клиента».</p>
+      <button class="btn btn-line" (click)="resetRfq()">Сбросить тексты запроса</button>
+
       <div class="et-actions">
         <button class="btn btn-save" [disabled]="saving" (click)="save()">{{ saving ? 'Сохранение…' : 'Сохранить' }}</button>
         <button class="btn btn-line" (click)="reset()">Сбросить</button>
@@ -51,6 +71,8 @@ import { MarketService } from '../../services/market.service';
     .et-chip:hover { background: color-mix(in srgb, var(--accent) 25%, transparent); }
     .et-note { color: var(--text-muted); font-size: 12px; }
     .et-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .et-sec { margin: 28px 0 4px; font-size: 16px; }
+    code { font-size: 12px; }
     /* .btn / .btn-save / .btn-line удалены — их даёт kit. Обе кнопки шаблона
        несут базовый класс btn, поэтому геометрию повторять не нужно; заодно ушли
        два случайных расхождения: своя геометрия .btn (8px 16px / 6px / 14px) и
@@ -67,8 +89,16 @@ export class EmailTemplateComponent implements OnInit {
     { key: '{{компания}}', desc: 'Название вашей компании' },
     { key: '{{позиции}}', desc: 'Список оборудования (обязательно)' },
     { key: '{{дедлайн}}', desc: 'Просим ответить до даты' },
+    { key: '{{заказчик}}', desc: 'Строка о конечном заказчике — только у поставщиков с «Указать клиента»' },
+    { key: '{{вложение}}', desc: '«Запрос на бланке компании — во вложении.» — если документ приложен' },
     { key: '{{реестр}}', desc: 'НЦЭЛС РК / Росздравнадзора' },
   ];
+  /** Плейсхолдеры строки о заказчике — полями: «{{…}}» прямо в шаблоне Angular принял бы за привязку. */
+  readonly ph = { company: '{{компания}}', client: '{{клиент}}', place: '{{место}}' };
+  rfqTitle = '';
+  rfqIntro = '';
+  rfqAsk = '';
+  rfqClientLine = '';
 
   constructor(private api: ApiService, private notify: NotificationService,
               private market: MarketService, private cdr: ChangeDetectorRef) {}
@@ -77,9 +107,16 @@ export class EmailTemplateComponent implements OnInit {
 
   ngOnInit() {
     this.api.getEmailTemplate().subscribe({
-      next: (t) => { this.subject = t.subject || ''; this.body = t.body || ''; this.cdr.detectChanges(); },
+      next: (t) => { this.subject = t.subject || ''; this.body = t.body || ''; this.applyRfq(t); this.cdr.detectChanges(); },
       error: (e) => this.notify.error('Не удалось загрузить шаблон: ' + (e.error?.message || e.message)),
     });
+  }
+
+  private applyRfq(t: any) {
+    this.rfqTitle = t.rfqTitle || '';
+    this.rfqIntro = t.rfqIntro || '';
+    this.rfqAsk = t.rfqAsk || '';
+    this.rfqClientLine = t.rfqClientLine || '';
   }
 
   insert(key: string) {
@@ -90,7 +127,8 @@ export class EmailTemplateComponent implements OnInit {
 
   save() {
     this.saving = true;
-    this.api.saveEmailTemplate({ subject: this.subject, body: this.body }).subscribe({
+    this.api.saveEmailTemplate({ subject: this.subject, body: this.body, rfqTitle: this.rfqTitle, rfqIntro: this.rfqIntro,
+                                 rfqAsk: this.rfqAsk, rfqClientLine: this.rfqClientLine }).subscribe({
       next: (r) => {
         this.saving = false;
         if ((r.warnings || []).includes('no-positions'))
@@ -107,6 +145,18 @@ export class EmailTemplateComponent implements OnInit {
       next: (t) => {
         this.subject = t.subject || ''; this.body = t.body || '';
         this.notify.success('Загружен стандартный шаблон — нажмите «Сохранить», чтобы применить');
+        this.cdr.detectChanges();
+      },
+      error: (e) => this.notify.error('Ошибка: ' + (e.error?.message || e.message)),
+    });
+  }
+
+  /** Только тексты запроса — тему и тело письма не трогает. */
+  resetRfq() {
+    this.api.getEmailTemplateDefault().subscribe({
+      next: (t) => {
+        this.applyRfq(t);
+        this.notify.success('Загружены стандартные тексты запроса — нажмите «Сохранить», чтобы применить');
         this.cdr.detectChanges();
       },
       error: (e) => this.notify.error('Ошибка: ' + (e.error?.message || e.message)),
