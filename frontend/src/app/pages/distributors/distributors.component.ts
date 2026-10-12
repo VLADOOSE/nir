@@ -32,8 +32,14 @@ import { AuthService } from '../../services/auth.service';
       <label>Имя<input formControlName="firstName" [class.input-error]="validationErrors.firstName" /><span class="field-error" *ngIf="validationErrors.firstName">{{ validationErrors.firstName }}</span></label>
       <label>Отчество<input formControlName="middleName" [class.input-error]="validationErrors.middleName" /><span class="field-error" *ngIf="validationErrors.middleName">{{ validationErrors.middleName }}</span></label>
       <label>Телефон<input formControlName="phone" [class.input-error]="validationErrors.phone" /><span class="field-error" *ngIf="validationErrors.phone">{{ validationErrors.phone }}</span></label>
-      <label>Эл. почта<input formControlName="email" [class.input-error]="validationErrors.email" /><span class="field-error" *ngIf="validationErrors.email">{{ validationErrors.email }}</span></label>
+      <label>Эл. почта<input formControlName="email" placeholder="несколько — через запятую" [class.input-error]="validationErrors.email" /><span class="field-error" *ngIf="validationErrors.email">{{ validationErrors.email }}</span></label>
       <label>Сайт<input formControlName="website" [class.input-error]="validationErrors.website" /><span class="field-error" *ngIf="validationErrors.website">{{ validationErrors.website }}</span></label>
+      <div class="flags">
+        <label class="type-checkbox"><input type="checkbox" formControlName="trusted">
+          <span><b>Доверенный</b> — в запросах цен клиент заявки указывается по умолчанию</span></label>
+        <label class="type-checkbox"><input type="checkbox" formControlName="manufacturer">
+          <span><b>Производитель</b> — по его брендам запрос цен уходит ему по умолчанию</span></label>
+      </div>
 
       <label class="specialization-label">Специализация</label>
       <div class="specialization-block">
@@ -74,7 +80,7 @@ import { AuthService } from '../../services/auth.service';
                (.brands-col), таблица там остаётся прежней. Бренды уже приходят в
                ответе списка (DistributorResponse.brands) — это тот же массив, что
                показывает форма редактирования. -->
-          <td data-label="Название">{{ d.name }}</td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
+          <td data-label="Название">{{ d.name }} <span class="flag" *ngIf="d.manufacturer">производитель</span> <span class="flag" *ngIf="d.trusted">доверенный</span></td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
           <td data-label="Контактное лицо">{{ d.lastName }} {{ d.firstName }}</td><td data-label="Телефон">{{ d.phone }}</td><td data-label="Эл. почта">{{ d.email }}</td>
           <td data-label="Специализация">
             <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
@@ -133,6 +139,11 @@ import { AuthService } from '../../services/auth.service';
        чтобы таблица осталась ровно такой, какой была (там бренды видны при
        редактировании). Показывается правилом в @media ниже. */
     .brands-col { display: none; }
+
+    /* отметки «Доверенный» / «Производитель» (спека 2026-10-12 §3.2): в форме — столбиком, в списке — чипами у названия */
+    .flags { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+    .flag { display: inline-block; font-size: 11px; font-weight: 500; border-radius: 999px; padding: 1px 8px; vertical-align: middle;
+            background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
 
     /* ============================================================
        МОБИЛЬНАЯ КАРТОЧКА — ПОСЛЕДНИЙ БЛОК В styles (CLAUDE.md §14: при равной
@@ -226,7 +237,9 @@ export class DistributorsComponent {
     middleName: new FormControl(''),
     phone: new FormControl(''),
     email: new FormControl(''),
-    website: new FormControl('')
+    website: new FormControl(''),
+    trusted: new FormControl(false),
+    manufacturer: new FormControl(false)
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
@@ -268,7 +281,7 @@ export class DistributorsComponent {
   }
 
   onAdd() {
-    this.editingId = null; this.form.reset(); this.validationErrors = {};
+    this.editingId = null; this.form.reset({ trusted: false, manufacturer: false }); this.validationErrors = {};
     this.selectedTypeIds = new Set();
     this.brands = [];
     this.showForm = true;

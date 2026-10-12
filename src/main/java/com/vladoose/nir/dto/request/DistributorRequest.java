@@ -26,4 +26,8 @@ public class DistributorRequest {
     private String website;
     private List<Long> equipmentTypeIds;
     private java.util.List<String> brands;
+
+    /** null — не прислано (поле не меняется). */
+    private Boolean trusted;
+    private Boolean manufacturer;
 }
