@@ -70,7 +70,7 @@ import { WhatsappStatus } from '../../shared/whatsapp-status';
           <span class="who">{{ l.contactName || '—' }}<ng-container *ngIf="l.company"> · {{ l.company }}</ng-container><ng-container *ngIf="l.contactPhone"> · {{ l.contactPhone }}</ng-container></span>
           <span class="meta">
             <span class="warn" *ngIf="l.syncError" title="Статус на сайте не обновлён — повторим автоматически">⚠</span>
-            <a *ngIf="l.privateRequestId" [routerLink]="['/private-requests']" [queryParams]="{ openId: l.privateRequestId }"
+            <a *ngIf="l.privateRequestId" [routerLink]="['/private-requests', l.privateRequestId]"
                (click)="$event.stopPropagation()">{{ l.privateRequestNumber }}</a>
             <time [attr.title]="full(l.receivedAt)">{{ ago(l.receivedAt) }}</time>
           </span>

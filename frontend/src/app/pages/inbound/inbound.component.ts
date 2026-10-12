@@ -1,6 +1,7 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ImportGridComponent } from '../../shared/import-grid.component';
@@ -76,7 +77,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
         <label class="lbl">Клиент</label>
         <div class="client-row">
           <select [(ngModel)]="importClientId" class="client-sel" [disabled]="newClientMode">
-            <option [ngValue]="null" disabled>— выберите —</option>
+            <option [ngValue]="null">— без клиента —</option>
             <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
           </select>
           <button type="button" class="btn-line-solid" (click)="toggleNewClient()">
@@ -246,7 +247,7 @@ export class InboundComponent {
   newClientName = '';
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService) {
+              private notify: NotificationService, private router: Router) {
     this.api.getFacilities().subscribe({ next: d => { this.facilities = d; this.cdr.detectChanges(); } });
     this.load();
   }
@@ -351,22 +352,30 @@ export class InboundComponent {
         },
       });
     } else {
-      if (!this.importClientId) { this.importError = 'Выберите клиента или создайте нового'; return; }
       this.importing = true;
       this.doCommit(this.importClientId, mappings, lines);
     }
   }
 
-  private doCommit(clientId: number, mappings: any[], lines: any[]) {
+  /** Клиент необязателен; отправитель письма — контакт заявки: «Имя <адрес>» → имя и адрес, голый адрес — только адрес. */
+  private doCommit(clientId: number | null, mappings: any[], lines: any[]) {
     const emailId = this.importEmailId;
-    this.api.commitImport({ clientFacilityId: clientId, mappings, lines }).subscribe({
-      next: () => {
+    const from = this.importFrom || '';
+    const address = (from.match(/<([^>]+)>/)?.[1] ?? (from.includes('@') ? from : '')).trim().slice(0, 255);
+    const name = this.displayName(from).slice(0, 255);
+    this.api.commitImport({
+      clientFacilityId: clientId,
+      contactName: name && name !== address ? name : null,
+      contactEmail: address || null,
+      mappings, lines,
+    }).subscribe({
+      next: (created: any) => {
         this.api.markInboundProcessed(emailId as number).subscribe({ next: () => {}, error: () => {} });
         this.importing = false;
         this.closeImport();
         this.notify.success('Заявка создана из письма');
-        this.load();
-        this.cdr.detectChanges();
+        if (created?.id) this.router.navigate(['/private-requests', created.id]);
+        else { this.load(); this.cdr.detectChanges(); }
       },
       error: (e: any) => {
         this.importing = false;

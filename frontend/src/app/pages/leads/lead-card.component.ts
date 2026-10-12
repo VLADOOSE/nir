@@ -8,9 +8,9 @@ import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { relativeTime, fullDateTime } from '../../shared/relative-time';
 import { LEAD_CLOSE_REASONS, LEAD_STATUS_LABELS, leadChannelLabel } from '../../shared/lead-labels';
-import { LeadConvertDialogComponent } from './lead-convert-dialog.component';
 import { ChatMessageComponent } from '../../shared/chat-message.component';
 import { LeadItemsImportComponent } from '../../shared/lead-items-import.component';
+import { errorText } from '../../shared/error-text';
 
 type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 
@@ -18,7 +18,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 @Component({
   selector: 'app-lead-card',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RouterLink, LeadConvertDialogComponent, ChatMessageComponent, LeadItemsImportComponent],
+  imports: [NgIf, NgFor, FormsModule, RouterLink, ChatMessageComponent, LeadItemsImportComponent],
   template: `
     <div *ngIf="leadId !== null" class="overlay" (click)="close.emit()">
       <aside class="drawer" (click)="$event.stopPropagation()" aria-label="Карточка обращения">
@@ -46,11 +46,10 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
             <div class="actions">
               <ng-container *ngIf="auth.isAdmin()">
                 <button type="button" class="btn btn-primary" *ngIf="lead.status === 'NEW'" [disabled]="busy" (click)="take()">Взять в работу</button>
-                <button type="button" class="btn btn-primary" *ngIf="lead.status === 'NEW' || lead.status === 'IN_WORK'" [disabled]="busy" (click)="convertOpen = true">Создать частную заявку</button>
+                <button type="button" class="btn btn-primary" *ngIf="lead.status === 'NEW' || lead.status === 'IN_WORK'" [disabled]="busy" (click)="createRequest()">Создать заявку</button>
                 <button type="button" class="btn btn-line" *ngIf="lead.status === 'CLOSED'" [disabled]="busy" (click)="reopen()">Вернуть в работу</button>
               </ng-container>
-              <a class="btn btn-line" *ngIf="lead.privateRequestId" [routerLink]="['/private-requests']"
-                 [queryParams]="{ openId: lead.privateRequestId }">Открыть заявку {{ lead.privateRequestNumber }}</a>
+              <a class="btn btn-line" *ngIf="lead.privateRequestId" [routerLink]="['/private-requests', lead.privateRequestId]">Открыть заявку {{ lead.privateRequestNumber }}</a>
               <ng-container *ngIf="auth.isAdmin()">
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('note')">+ Заметка</button>
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('call')">+ Звонок</button>
@@ -176,8 +175,6 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
         </div>
       </aside>
     </div>
-    <app-lead-convert-dialog *ngIf="convertOpen && lead" [lead]="lead"
-                             (close)="convertOpen = false" (converted)="onConverted($event)"></app-lead-convert-dialog>
   `,
   styles: [`
     /* rgba-вуаль НЕ токенизируется: затемнение под дровером уместно в обеих темах (самое частое значение в приложении) */
@@ -261,7 +258,6 @@ export class LeadCardComponent implements OnChanges {
   closeReason = '';
   closeComment = '';
   editItems: any[] = [];
-  convertOpen = false;
   readonly reasons = LEAD_CLOSE_REASONS;
   /** Переписка чата обращения (спека whatsapp-chats §9.3) и лента вперемешку с ней. */
   chatMessages: any[] = [];
@@ -285,7 +281,7 @@ export class LeadCardComponent implements OnChanges {
 
   @HostListener('document:keydown.escape')
   onEscape() {
-    if (this.leadId !== null && !this.convertOpen) this.close.emit();   // открыт диалог — Esc закрывает только его
+    if (this.leadId !== null) this.close.emit();
   }
 
   load(id: number) {
@@ -392,11 +388,19 @@ export class LeadCardComponent implements OnChanges {
     this.cdr.detectChanges();
   }
 
-  onConverted(r: { privateRequestId: number; number: string }) {
-    this.convertOpen = false;
-    this.notify.success('Частная заявка ' + r.number + ' создана');
-    this.changed.emit();
-    this.router.navigate(['/private-requests'], { queryParams: { openId: r.privateRequestId } });
+  /** «Создать заявку» одной кнопкой (спека 2026-10-12 §4): клиент, контакт, текст и позиции — из обращения; сразу страница заявки. */
+  createRequest() {
+    if (!this.lead) return;
+    this.busy = true;
+    this.api.convertLead(this.lead.id).subscribe({
+      next: r => {
+        this.busy = false;
+        this.notify.success('Заявка ' + r.number + ' создана');
+        this.changed.emit();
+        this.router.navigate(['/private-requests', r.privateRequestId]);
+      },
+      error: e => { this.busy = false; this.notify.error('Заявка не создана: ' + errorText(e)); this.cdr.detectChanges(); },
+    });
   }
 
   togglePanel(p: Panel) {
