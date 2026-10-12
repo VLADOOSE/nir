@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, DestroyRef, HostListener } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, HostListener, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -12,6 +12,7 @@ import { errorText } from '../../shared/error-text';
 import { fullDateTime } from '../../shared/relative-time';
 import { PrClientSectionComponent } from './pr-client-section.component';
 import { PrLinesComponent } from './pr-lines.component';
+import { PrSupplyComponent } from './pr-supply.component';
 import { MarketService } from '../../services/market.service';
 
 /**
@@ -21,7 +22,7 @@ import { MarketService } from '../../services/market.service';
 @Component({
   selector: 'app-private-request-page',
   standalone: true,
-  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent],
+  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -52,6 +53,10 @@ import { MarketService } from '../../services/market.service';
                              (saveState)="onSaveState($event)"></app-pr-client-section>
       <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
                     (saveState)="onSaveState($event)"></app-pr-lines>
+      <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
+      <div class="pr-bar" *ngIf="auth.isAdmin() && v.stage === 'NEW'">
+        <button type="button" class="btn btn-primary" (click)="supply?.openRfq()">Запросить цены</button>
+      </div>
       <!-- sections -->
     </div>
     <ng-template #stateTpl>
@@ -74,10 +79,17 @@ import { MarketService } from '../../services/market.service';
     .pr-menu { position: relative; }
     .from-lead { font-size: 13px; color: var(--text-muted); }
     .from-lead a { color: var(--accent); text-decoration: none; }
+    .pr-bar { display: none; }
     @media (max-width: 900px) {
       .pr-top { gap: 8px; }
       .back { width: 100%; padding-top: 0; }
       .btn-more { min-width: 40px; }
+      /* липкая панель следующего шага (спека §5.6): «Запросить цены» — пока запросов нет (этап «Новая»); «КП клиенту» при
+         ценах — этап 3. Граница — край прокрутки: нижний отступ main.content на телефоне 12 px */
+      .pr-bar { display: flex; position: sticky; bottom: -12px; z-index: 5; justify-content: stretch;
+                padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface);
+                border-top: 1px solid var(--border); box-shadow: var(--shadow); }
+      .pr-bar .btn { flex: 1; min-height: 44px; font-size: 15px; }
     }
   `],
 })
@@ -92,6 +104,7 @@ export class PrivateRequestPageComponent {
   retryFn?: () => void;
   readonly outcomes = CLOSE_OUTCOMES;
   private loadSub?: Subscription;
+  @ViewChild('supply') supply?: PrSupplyComponent;
 
   constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public auth: AuthService,
               private notify: NotificationService, private confirm: ConfirmService, private cdr: ChangeDetectorRef,
@@ -152,6 +165,16 @@ export class PrivateRequestPageComponent {
     this.api.checkPrivateRequestRegistry(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: nv => { if (this.view?.id === nv.id) { this.view = nv; this.cdr.markForCheck(); } },
       error: () => {},   // не вышло — метки остаются «РУ —», повтор при следующем открытии
+    });
+  }
+
+  /** Перечитать вид без «Загрузка…» — после отправки запросов и правки ответов этап меняется на сервере. */
+  refresh() {
+    const v = this.view;
+    if (!v) return;
+    this.api.getPrivateRequest(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: nv => { if (this.view?.id === nv.id) { this.view = nv; this.cdr.markForCheck(); } },
+      error: () => {},
     });
   }
 
