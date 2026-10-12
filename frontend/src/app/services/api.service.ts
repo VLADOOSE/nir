@@ -213,6 +213,9 @@ export class ApiService {
     items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number | null }[];
     subjectOverride?: string;
     bodyOverride?: string;
+    replyBy?: string | null;
+    withDocument?: boolean;
+    withStamp?: boolean;
   }): Observable<any[]> {
     return this.http.post<any[]>(`${this.base}/price-requests/send`, body);
   }
@@ -222,6 +225,9 @@ export class ApiService {
     tenderId: number;
     distributorIds: number[];
     items: { tenderLotId: number; medEquipmentId: number | null; requestedQuantity: number | null }[];
+    replyBy?: string | null;
+    withDocument?: boolean;
+    withStamp?: boolean;
   }): Observable<{ subject: string; body: string }> {
     return this.http.post<{ subject: string; body: string }>(`${this.base}/price-requests/preview`, body);
   }

@@ -1,8 +1,11 @@
-import { Component, ChangeDetectorRef, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, ChangeDetectorRef, DestroyRef, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
+import { CompanyProfileService } from '../../services/company-profile.service';
+import { readWithDocument, storeWithDocument, todayIso } from '../../shared/rfq-options';
 import { kpToastFromResults } from '../../shared/kp-toast';
 
 /** Панель «Запрос КП» по одному или нескольким лотам: подбор поставщиков, превью письма, отправка. */
@@ -81,6 +84,16 @@ import { kpToastFromResults } from '../../shared/kp-toast';
           </ng-container>
         </div>
 
+        <div class="kp-opts" *ngIf="panel.entries.length">
+          <label>Ответить до <input type="date" [(ngModel)]="replyBy" [min]="today" /></label>
+          <label class="kp-opt"><input type="checkbox" [ngModel]="withDocument" (ngModelChange)="setWithDocument($event)" />
+            Приложить запрос на бланке (Word)</label>
+          <label class="kp-opt" [class.off]="!hasStamp || !withDocument"
+                 [attr.title]="hasStamp ? null : 'Печать не загружена — «Система → Реквизиты и печать»'">
+            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Подпись и печать
+          </label>
+        </div>
+
         <div class="kp-actions" *ngIf="panel.entries.length">
           <button class="btn btn-save" [disabled]="panel.sending || checkedSuppliers().length === 0" (click)="sendKpRequests()">
             {{ panel.sending ? 'Отправка…' : 'Отправить запросы (' + checkedSuppliers().length + ')' }}
@@ -92,7 +105,7 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     <div class="kp-preview-overlay" *ngIf="preview" (click)="cancelPreview()">
       <div class="kp-preview" (click)="$event.stopPropagation()">
         <h3>Текст письма — проверьте перед отправкой</h3>
-        <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ preview.distributorIds.length }} поставщик(ам).</p>
+        <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ preview.distributorIds.length }} поставщик(ам).<ng-container *ngIf="withDocument"> К письму приложится запрос на бланке (Word).</ng-container></p>
         <label class="kp-preview-lbl">Тема</label>
         <input class="kp-preview-subject" [(ngModel)]="preview.subject" />
         <label class="kp-preview-lbl">Текст</label>
@@ -135,6 +148,11 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
     .zero-toggle:hover { color: var(--text); text-decoration: underline; }
     .kp-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+    .kp-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 10px; font-size: 13px; }
+    .kp-opts input[type="date"] { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+                                  color: var(--text); font: inherit; }
+    .kp-opt { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .kp-opt.off { color: var(--text-muted); cursor: default; }
     .kp-preview-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center;
                           justify-content: center; z-index: 1000; }
     .kp-preview { background: var(--surface); color: var(--text); border-radius: 10px; padding: 20px;
@@ -148,6 +166,8 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     @media (max-width: 900px) {
       .kp-controls { flex-direction: column; align-items: stretch; }
       .kp-actions .btn { width: 100%; }
+      .kp-opts label { min-height: 40px; }
+      .kp-opts input[type="date"] { font-size: 16px; min-height: 40px; }
     }
   `],
 })
@@ -178,7 +198,31 @@ export class LotKpPanelComponent implements OnChanges {
    */
   typeSelId: number | '' = '';
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService) {}
+  replyBy = '';
+  readonly today = todayIso();
+  withDocument = readWithDocument();
+  withStamp = false;
+  hasStamp = false;
+
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService,
+              profiles: CompanyProfileService, destroyRef: DestroyRef) {
+    // «Подпись и печать» — только при загруженной печати; из кеша приходит синхронно — без detectChanges (§12)
+    profiles.profile$().pipe(takeUntilDestroyed(destroyRef)).subscribe({
+      next: p => { this.hasStamp = !!p?.hasStamp; this.cdr.markForCheck(); },
+      error: () => { /* без профиля галочка просто недоступна */ },
+    });
+  }
+
+  setWithDocument(on: boolean) {
+    this.withDocument = on;
+    if (!on) this.withStamp = false;
+    storeWithDocument(on);
+  }
+
+  /** Опции письма для превью и отправки — одни и те же (спека §6.6). */
+  private options() {
+    return { replyBy: this.replyBy || null, withDocument: this.withDocument, withStamp: this.withDocument && this.withStamp };
+  }
 
   /** Смена набора лотов = новый подбор. */
   ngOnChanges(ch: SimpleChanges) {
@@ -258,7 +302,7 @@ export class LotKpPanelComponent implements OnChanges {
       .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? null }));   // нет количества — «кол-во уточняется» (B4)
     if (!distributorIds.length || !items.length) return;
     this.panel.sending = true;
-    this.api.previewKp({ tenderId, distributorIds, items }).subscribe({
+    this.api.previewKp({ tenderId, distributorIds, items, ...this.options() }).subscribe({
       next: (p) => {
         this.preview = { subject: p.subject, body: p.body, sending: false, distributorIds, items };
         if (this.panel) this.panel.sending = false;
@@ -282,6 +326,7 @@ export class LotKpPanelComponent implements OnChanges {
       items: this.preview.items,
       subjectOverride: this.subjectHuman(this.preview.subject),
       bodyOverride: this.preview.body,
+      ...this.options(),
     }).subscribe({
       next: (results) => {
         const t = kpToastFromResults(results);
