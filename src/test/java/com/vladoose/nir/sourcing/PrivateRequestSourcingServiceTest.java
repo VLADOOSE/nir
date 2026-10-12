@@ -116,4 +116,50 @@ class PrivateRequestSourcingServiceTest {
         assertThat(r.suppliers()).noneMatch(s -> s.distributorId().equals(rf.getId()));
         assertThat(r.unmatched()).hasSize(1);
     }
+
+    @Test
+    void manufacturerPreselected_brandDealersShownUnchecked_flagsInResponse() {
+        Distributor maker = distributorRepository.save(Distributor.builder().name("ZZ Производитель " + System.nanoTime())
+                .email("m@zz.kz").brands(new ArrayList<>(List.of("ZZMKR"))).manufacturer(true).build());
+        Distributor dealer = distributorRepository.save(Distributor.builder().name("ZZ Дилер " + System.nanoTime())
+                .email("d@zz.kz").brands(new ArrayList<>(List.of("ZZMKR"))).trusted(true).build());
+        Tender t = privateRequestService.createEmpty();
+        privateRequestService.addLines(t.getId(), List.of(input("ZZ Облучатель", "Завод ZZMKR", 1, null, null, null)),
+                LinesMode.APPEND);
+
+        PrivateRequestSourcingResponse r = sourcing.build(t.getId());
+
+        Supplier m = supplier(r, maker);
+        assertThat(m.manufacturer()).isTrue();
+        assertThat(m.preselected()).isTrue();
+        assertThat(m.lines()).singleElement().satisfies(l -> {
+            assertThat(l.reason()).isEqualTo("MANUFACTURER");
+            assertThat(l.label()).isEqualTo("производитель");
+            assertThat(l.preselected()).isTrue();
+        });
+        Supplier d = supplier(r, dealer);
+        assertThat(d.trusted()).isTrue();
+        assertThat(d.preselected()).isFalse();
+        assertThat(d.lines()).singleElement().satisfies(l -> {
+            assertThat(l.reason()).isEqualTo("BRAND");
+            assertThat(l.label()).isEqualTo("возит ZZMKR");
+            assertThat(l.preselected()).isFalse();
+        });
+        assertThat(r.suppliers().indexOf(m)).isLessThan(r.suppliers().indexOf(d));
+    }
+
+    @Test
+    void manufacturerWithoutEmailLeavesDealersPreselected() {
+        Distributor maker = distributorRepository.save(Distributor.builder().name("ZZ Производитель без почты " + System.nanoTime())
+                .brands(new ArrayList<>(List.of("ZZNOMAIL"))).manufacturer(true).build());
+        Distributor dealer = distributorRepository.save(Distributor.builder().name("ZZ Дилер с почтой " + System.nanoTime())
+                .email("dd@zz.kz").brands(new ArrayList<>(List.of("ZZNOMAIL"))).build());
+        Tender t = privateRequestService.createEmpty();
+        privateRequestService.addLines(t.getId(), List.of(input("ZZ Прибор", "ZZNOMAIL", 1, null, null, null)), LinesMode.APPEND);
+
+        PrivateRequestSourcingResponse r = sourcing.build(t.getId());
+
+        assertThat(supplier(r, maker).preselected()).isFalse();
+        assertThat(supplier(r, dealer).preselected()).isTrue();
+    }
 }

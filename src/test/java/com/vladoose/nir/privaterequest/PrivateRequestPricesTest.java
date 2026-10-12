@@ -167,4 +167,23 @@ class PrivateRequestPricesTest {
         assertThat(cell(r, 0, d).best()).isTrue();
         assertThat(r.lines().get(0).bestPrice()).isEqualByComparingTo("15000.00");
     }
+
+    @Test
+    void clientDisclosedMarksTheSupplierColumn() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Позиция 👤", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor told = dist("ZZ Сказали");
+        Distributor silent = dist("ZZ Молчок");
+        ask(t, told, lot, "SENT", LetterStatus.SENT, null).getPriceRequest().setDiscloseClient(true);
+        ask(t, silent, lot, "SENT", LetterStatus.SENT, null);
+        em.flush();
+
+        PrivateRequestPricesResponse r = prices.build(t.getId());
+
+        assertThat(r.suppliers()).filteredOn(s -> s.distributorId().equals(told.getId()))
+                .singleElement().satisfies(s -> assertThat(s.clientDisclosed()).isTrue());
+        assertThat(r.suppliers()).filteredOn(s -> s.distributorId().equals(silent.getId()))
+                .singleElement().satisfies(s -> assertThat(s.clientDisclosed()).isFalse());
+    }
 }

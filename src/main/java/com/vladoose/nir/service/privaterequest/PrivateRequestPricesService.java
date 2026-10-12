@@ -43,12 +43,14 @@ public class PrivateRequestPricesService {
         items.sort(Comparator.comparing((PriceRequestItem i) -> i.getPriceRequest().getId()).thenComparing(PriceRequestItem::getId));
 
         Map<Long, Supplier> suppliers = new LinkedHashMap<>();
+        Set<Long> disclosed = new HashSet<>();
         Map<String, PriceRequestItem> latest = new HashMap<>();
         Set<Long> prIds = new LinkedHashSet<>();
         for (PriceRequestItem i : items) {
             PriceRequest pr = i.getPriceRequest();
             Distributor d = pr.getDistributor();
-            suppliers.putIfAbsent(d.getId(), new Supplier(d.getId(), d.getName(), pr.getSentAt()));
+            suppliers.putIfAbsent(d.getId(), new Supplier(d.getId(), d.getName(), pr.getSentAt(), false));
+            if (pr.isDiscloseClient()) disclosed.add(d.getId());
             latest.put(key(i.getTenderLot().getId(), d.getId()), i);   // отсортировано по запросу — последний свежее
             prIds.add(pr.getId());
         }
@@ -74,7 +76,11 @@ public class PrivateRequestPricesService {
             String bestName = winner == null ? null : suppliers.get(winner.distributorId()).name();
             lines.add(new Line(lot.getId(), lot.getEquipName(), lot.getQuantity(), lot.getUnit(), marked, bestPrice, bestName));
         }
-        return new PrivateRequestPricesResponse(new ArrayList<>(suppliers.values()), lines);
+        List<Supplier> header = suppliers.values().stream()
+                .map(s -> disclosed.contains(s.distributorId())
+                        ? new Supplier(s.distributorId(), s.name(), s.firstSentAt(), true) : s)
+                .toList();
+        return new PrivateRequestPricesResponse(header, lines);
     }
 
     /** Последний возврат по запросу; время возврата неизвестно (старые строки) — считаем «сейчас»: возврат свежий. */

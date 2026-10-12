@@ -16,7 +16,8 @@ import java.util.*;
 /**
  * Кто подходит для запроса цен по позициям частной заявки (спека 2026-10-12 §6.1). Дистрибьюторы с брендом строки
  * отмечаются по умолчанию. Если бренда нет или его никто не возит — поставщики того же вида изделия, без отметки.
- * Уже запрошенная у поставщика позиция видна с датой и не отмечается. Производитель бренда по умолчанию — этап 2.
+ * Уже запрошенная у поставщика позиция видна с датой и не отмечается. У бренда с производителем (с почтой) по умолчанию
+ * отмечен производитель, дистрибьюторы бренда — без отметки.
  */
 @Service
 public class PrivateRequestSourcingService {
@@ -46,19 +47,23 @@ public class PrivateRequestSourcingService {
         List<LineRef> unmatched = new ArrayList<>();
         for (TenderLot lot : lots) {
             boolean matched = false;
+            // производитель с почтой забирает отметку у дилеров бренда; без почты — нет, иначе позиция осталась бы
+            // вовсе без отмеченных поставщиков
+            boolean makerWithMail = distributors.stream().anyMatch(d -> d.isManufacturer() && !blank(d.getEmail())
+                    && BrandMatch.firstCarried(d.getBrands(), lot.getManufact()) != null);
             for (Distributor d : distributors) {
                 String carried = BrandMatch.firstCarried(d.getBrands(), lot.getManufact());
-                if (carried != null) {
-                    acc(bySupplier, d).add(lot, "BRAND", "возит " + carried.trim(), requestedAt);
-                    matched = true;
-                }
+                if (carried == null) continue;
+                matched = true;
+                if (d.isManufacturer()) acc(bySupplier, d).add(lot, "MANUFACTURER", "производитель", true, requestedAt);
+                else acc(bySupplier, d).add(lot, "BRAND", "возит " + carried.trim(), !makerWithMail, requestedAt);
             }
             if (!matched) {
                 LotTypeClassifier.TypeGuess guess = typeClassifier.classify(lot);
                 if (guess.typeId() != null) {
                     for (Distributor d : distributors) {
                         if (d.getEquipmentTypes().stream().anyMatch(et -> guess.typeId().equals(et.getId()))) {
-                            acc(bySupplier, d).add(lot, "TYPE", "по виду: " + guess.typeName(), requestedAt);
+                            acc(bySupplier, d).add(lot, "TYPE", "по виду: " + guess.typeName(), false, requestedAt);
                             matched = true;
                         }
                     }
@@ -68,6 +73,7 @@ public class PrivateRequestSourcingService {
         }
         List<Supplier> suppliers = bySupplier.values().stream().map(Acc::toSupplier)
                 .sorted(Comparator.comparing(Supplier::preselected).reversed()
+                        .thenComparing(Supplier::manufacturer, Comparator.reverseOrder())
                         .thenComparing((Supplier s) -> -s.lines().size())
                         .thenComparing(Supplier::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -92,6 +98,10 @@ public class PrivateRequestSourcingService {
         return bySupplier.computeIfAbsent(d.getId(), k -> new Acc(d));
     }
 
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
+    }
+
     private static final class Acc {
         final Distributor d;
         final boolean hasEmail;
@@ -103,16 +113,17 @@ public class PrivateRequestSourcingService {
             this.hasEmail = d.getEmail() != null && !d.getEmail().isBlank();
         }
 
-        void add(TenderLot lot, String reason, String label, Map<String, OffsetDateTime> requestedAt) {
+        void add(TenderLot lot, String reason, String label, boolean byDefault, Map<String, OffsetDateTime> requestedAt) {
             if (!lotIds.add(lot.getId())) return;
             OffsetDateTime at = requestedAt.get(lot.getId() + ":" + d.getId());
-            boolean pre = "BRAND".equals(reason) && hasEmail && at == null;
+            boolean pre = byDefault && hasEmail && at == null;
             lines.add(new Line(lot.getId(), lot.getEquipName(), lot.getQuantity(), lot.getUnit(), reason, label, pre, at));
         }
 
         Supplier toSupplier() {
             boolean pre = lines.stream().anyMatch(Line::preselected);
-            return new Supplier(d.getId(), d.getName(), hasEmail ? d.getEmail().trim() : null, hasEmail, pre, List.copyOf(lines));
+            return new Supplier(d.getId(), d.getName(), hasEmail ? d.getEmail().trim() : null, hasEmail, pre,
+                    d.isManufacturer(), d.isTrusted(), List.copyOf(lines));
         }
     }
 }
