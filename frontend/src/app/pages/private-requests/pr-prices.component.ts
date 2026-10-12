@@ -15,6 +15,9 @@ function priceText(v: number | null): string {
   return v == null ? '' : Number.isInteger(v) ? numText(v) : money(v);
 }
 
+/** Пометка приёма почты в начале примечания (MailIngestWriter): «💡 Цена распознана автоматически, проверьте.» */
+const AUTO_MARK = /^💡[^.]*\.?\s*/u;
+
 interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: string; note: string; }
 
 /**
@@ -200,8 +203,9 @@ export class PrPricesComponent implements OnChanges {
     if (cell.state === 'NONE' || !this.prices) return;
     const supplier = this.prices.suppliers.find(s => s.distributorId === cell.distributorId)?.name || '';
     this.editError = '';
-    // пометку «💡 …проверьте» в поле не переносим: «Сохранить» и есть проверка
-    const note = this.autoPriced(cell) ? '' : cell.note || '';
+    // пометку «💡 Цена распознана автоматически, проверьте.» в поле не переносим — «Сохранить» и есть проверка;
+    // «Срок…» и «Контекст…» из письма остаются в примечании
+    const note = (cell.note || '').replace(AUTO_MARK, '');
     this.editing = { line, cell, supplier, price: cell.price == null ? '' : numText(cell.price), note };
   }
 

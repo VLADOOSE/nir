@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
-import { PrField, PrView, SaveState } from '../../shared/private-request';
+import { PrField, PrView, SaveState, nextSaveSeq } from '../../shared/private-request';
 import { errorText, retriable } from '../../shared/error-text';
 
 interface FacilityOption { id: number; name: string; }
@@ -208,11 +208,13 @@ export class PrClientSectionComponent implements OnChanges {
   }
 
   private save(field: PrField, value: string | null) {
-    this.saveState.emit({ kind: 'saving' });
+    const key = 'head:' + field, seq = nextSaveSeq();
+    this.saveState.emit({ kind: 'saving', key, seq });
     this.api.updatePrivateRequestField(this.view.id, field, value).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: v => { this.saveState.emit({ kind: 'saved' }); this.viewChange.emit(v); },
+      next: v => { this.saveState.emit({ kind: 'saved', key, seq }); this.viewChange.emit(v); },
       error: e => {
-        this.saveState.emit({ kind: 'error', message: errorText(e), retry: retriable(e) ? () => this.save(field, value) : undefined });
+        this.saveState.emit({ kind: 'error', key, seq, message: errorText(e),
+          retry: retriable(e) ? () => this.save(field, value) : undefined });
         if (field === 'FACILITY' || field === 'CUSTOMER_NAME') this.clientText = this.label();
         this.cdr.markForCheck();
       },

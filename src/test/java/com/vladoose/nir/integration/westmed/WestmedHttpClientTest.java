@@ -123,6 +123,22 @@ class WestmedHttpClientTest {
         assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(5));
     }
 
+    /**
+     * Выпадающий список частной заявки ждёт ответа сайта не дольше своего дедлайна (5 с в SiteProductService), а не общих
+     * 20 с клиента: поиск с дедлайном вызова обрывается раньше общего (Review Focus №2 плана 2026-10-12).
+     */
+    @Test
+    void searchWithOwnDeadlineIsCutOffBeforeClientDeadline() {
+        stall = true;
+        WestmedHttpClient c = new WestmedHttpClient(new ObjectMapper(), "http://localhost:" + port, "u", "p", Duration.ofSeconds(30));
+        long t0 = System.nanoTime();
+
+        assertThatThrownBy(() -> c.searchProducts("облучатель", 10, Duration.ofMillis(1500)))
+                .isInstanceOfSatisfying(WestmedApiException.class, e -> assertThat(e.status()).isZero());
+
+        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(5));
+    }
+
     private static WestmedHttpClient client(String password) {
         return new WestmedHttpClient(new ObjectMapper(), "http://localhost:" + port + "/", "ais@westmed.kz", password);
     }

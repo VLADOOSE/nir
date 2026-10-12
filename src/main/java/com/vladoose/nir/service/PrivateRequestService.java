@@ -230,16 +230,19 @@ public class PrivateRequestService {
             Set<Long> requested = requestedLotIds(t.getId());
             t.getLots().removeIf(l -> !requested.contains(l.getId()));
         }
-        if (t.getLots().size() + inputs.size() > MAX_LINES) {
-            throw new BadRequestException("В заявке не больше " + MAX_LINES + " позиций");
-        }
         appendLines(t, inputs);
         tenderRepository.flush();
         return t;
     }
 
-    /** Общий путь добавления: номера в конец, подсказка РУ, сплошная нумерация. */
+    /**
+     * Общий путь добавления: номера в конец, подсказка РУ, сплошная нумерация. Предел MAX_LINES — здесь, а не в addLines:
+     * сюда же приходят импорт из «Входящих» (createFromLines) и обращение (createFromLead).
+     */
     void appendLines(Tender t, List<PrivateRequestLineInput> inputs) {
+        if (t.getLots().size() + inputs.size() > MAX_LINES) {
+            throw new BadRequestException("В заявке не больше " + MAX_LINES + " позиций");
+        }
         int no = t.getLots().stream().map(TenderLot::getLotNumber).filter(Objects::nonNull)
                 .max(Integer::compare).orElse(0);
         for (PrivateRequestLineInput in : inputs) {

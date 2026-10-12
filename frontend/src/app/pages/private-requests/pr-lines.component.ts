@@ -10,7 +10,7 @@ import { SiteProductSearchComponent } from '../../shared/site-product-search.com
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
 import {
-  LineInput, LinesMode, ParsedLine, PrLine, PrLineField, PrView, SaveState, SiteProduct, UNIT_SUGGESTIONS,
+  LineInput, LinesMode, ParsedLine, PrLine, PrLineField, PrView, SaveState, SiteProduct, UNIT_SUGGESTIONS, nextSaveSeq,
 } from '../../shared/private-request';
 import { errorText, retriable } from '../../shared/error-text';
 
@@ -271,12 +271,13 @@ export class PrLinesComponent {
   }
 
   private saveLine(lotId: number, field: PrLineField, value: string | null) {
-    this.saveState.emit({ kind: 'saving' });
+    const key = `line:${lotId}:${field}`, seq = nextSaveSeq();
+    this.saveState.emit({ kind: 'saving', key, seq });
     this.api.updatePrivateRequestLine(this.view.id, lotId, field, value)
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: line => { this.saveState.emit({ kind: 'saved' }); this.onLine(line); },
+        next: line => { this.saveState.emit({ kind: 'saved', key, seq }); this.onLine(line); },
         error: err => {
-          this.saveState.emit({ kind: 'error', message: errorText(err),
+          this.saveState.emit({ kind: 'error', key, seq, message: errorText(err),
             retry: retriable(err) ? () => this.saveLine(lotId, field, value) : undefined });
           this.cdr.markForCheck();
         },
@@ -298,12 +299,13 @@ export class PrLinesComponent {
 
   private add(lines: LineInput[], mode: LinesMode = 'APPEND', done?: () => void) {
     this.busy = true;
-    this.saveState.emit({ kind: 'saving' });
+    const seq = nextSaveSeq();
+    this.saveState.emit({ kind: 'saving', seq });
     this.api.addPrivateRequestLines(this.view.id, lines, mode).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: v => { this.busy = false; this.saveState.emit({ kind: 'saved' }); this.viewChange.emit(v); done?.(); this.cdr.markForCheck(); },
+      next: v => { this.busy = false; this.saveState.emit({ kind: 'saved', seq }); this.viewChange.emit(v); done?.(); this.cdr.markForCheck(); },
       error: err => {
         this.busy = false;
-        this.saveState.emit({ kind: 'error', message: errorText(err) });
+        this.saveState.emit({ kind: 'error', seq, message: errorText(err) });
         this.dialogError = errorText(err);
         this.cdr.markForCheck();
       },

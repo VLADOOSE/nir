@@ -31,7 +31,7 @@ import { MarketService } from '../../services/market.service';
           <h2>{{ v.number }}</h2>
           <span class="pr-stage" [attr.data-tone]="tone(v.stage)">{{ v.stageText }}</span>
           <span class="save-state" [class.err]="saveError" aria-live="polite">{{ saveText }}</span>
-          <button type="button" class="retry" *ngIf="saveError && retryFn" (click)="retry()">Повторить</button>
+          <button type="button" class="retry" *ngIf="canRetry" (click)="retry()">Повторить</button>
         </div>
         <span class="pr-menu" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
           <button type="button" class="btn btn-more" (click)="menuOpen = !menuOpen" [attr.aria-expanded]="menuOpen"
@@ -101,7 +101,13 @@ export class PrivateRequestPageComponent {
   menuOpen = false;
   saveText = '';
   saveError = false;
-  retryFn?: () => void;
+  canRetry = false;
+  /** Попытки сохранения в пути (номера), последняя попытка каждого поля, ошибки полей — см. SaveState. */
+  private savePending = new Set<number>();
+  private saveLatest = new Map<string, number>();
+  private fieldErrors = new Map<string, { message: string; retry?: () => void }>();
+  private addError = '';
+  private savedAt = '';
   readonly outcomes = CLOSE_OUTCOMES;
   private loadSub?: Subscription;
   @ViewChild('supply') supply?: PrSupplyComponent;
@@ -146,6 +152,12 @@ export class PrivateRequestPageComponent {
     this.view = null;
     this.saveText = '';
     this.saveError = false;
+    this.canRetry = false;
+    this.savePending.clear();
+    this.saveLatest.clear();
+    this.fieldErrors.clear();
+    this.addError = '';
+    this.savedAt = '';
     this.loadSub = this.api.getPrivateRequest(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: v => { this.view = v; this.loading = false; this.afterLoad(); this.cdr.markForCheck(); },
       error: e => {
@@ -180,30 +192,56 @@ export class PrivateRequestPageComponent {
 
   onView(v: PrView) {
     this.view = v;
+    // правки удалённых (или заменённых из Excel) позиций сохранять уже некуда — их ошибки не держим
+    const ids = new Set(v.lines.map(l => String(l.lotId)));
+    const gone = [...this.fieldErrors.keys()].filter(k => k.startsWith('line:') && !ids.has(k.split(':')[1]));
+    gone.forEach(k => this.fieldErrors.delete(k));
+    if (gone.length) this.renderSave();
     this.cdr.markForCheck();
   }
 
   onSaveState(s: SaveState) {
     if (s.kind === 'saving') {
-      this.saveText = 'Сохраняю…';
-      this.saveError = false;
-      this.retryFn = undefined;
-    } else if (s.kind === 'saved') {
-      this.saveText = 'Сохранено · ' + timeText();
-      this.saveError = false;
-      this.retryFn = undefined;
+      this.savePending.add(s.seq);
+      this.addError = '';
+      if (s.key) {
+        this.saveLatest.set(s.key, s.seq);
+        this.fieldErrors.delete(s.key);   // поле сохраняется заново — прежняя ошибка уже не про его значение
+      }
     } else {
-      this.saveText = 'Не сохранено: ' + (s.message || 'ошибка');
-      this.saveError = true;
-      this.retryFn = s.retry;
+      this.savePending.delete(s.seq);
+      const latest = !s.key || this.saveLatest.get(s.key) === s.seq;
+      if (s.kind === 'saved') {
+        this.savedAt = timeText();
+        if (s.key && latest) this.fieldErrors.delete(s.key);
+      } else if (!s.key) {
+        this.addError = s.message || 'ошибка';
+      } else if (latest) {
+        this.fieldErrors.set(s.key, { message: s.message || 'ошибка', retry: s.retry });
+      }
     }
+    this.renderSave();
+  }
+
+  /** Ошибка поля важнее «Сохраняю…» и «Сохранено»: значение на экране расходится с сохранённым. */
+  private renderSave() {
+    const errors = [...this.fieldErrors.values()];
+    const last = errors[errors.length - 1];
+    if (last) {
+      this.saveText = 'Не сохранено: ' + last.message + (errors.length > 1 ? ` (полей: ${errors.length})` : '');
+    } else if (this.addError) {
+      this.saveText = 'Не сохранено: ' + this.addError;
+    } else {
+      this.saveText = this.savePending.size ? 'Сохраняю…' : this.savedAt ? 'Сохранено · ' + this.savedAt : '';
+    }
+    this.saveError = !!last || !!this.addError;
+    this.canRetry = errors.some(e => e.retry);
     this.cdr.markForCheck();
   }
 
+  /** Повторить все неудавшиеся правки полей, которые можно повторить (PATCH идемпотентен). */
   retry() {
-    const f = this.retryFn;
-    this.retryFn = undefined;
-    f?.();
+    for (const e of [...this.fieldErrors.values()]) e.retry?.();
   }
 
   close(outcome: PrStatus) {

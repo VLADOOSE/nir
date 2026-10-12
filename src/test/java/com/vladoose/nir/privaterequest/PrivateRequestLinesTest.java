@@ -206,6 +206,24 @@ class PrivateRequestLinesTest {
     }
 
     @Test
+    void importAndLeadPathsAlsoCapAt500() {
+        MarketContext.set(Market.RF);   // без подсказок РУ — 501 позиция без 501 запроса к реестру
+        com.vladoose.nir.dto.request.PrivateRequestCreate dto = new com.vladoose.nir.dto.request.PrivateRequestCreate();
+        List<com.vladoose.nir.dto.request.PrivateRequestCreate.Line> lines = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            com.vladoose.nir.dto.request.PrivateRequestCreate.Line l = new com.vladoose.nir.dto.request.PrivateRequestCreate.Line();
+            l.setName("ZZ Смета " + i);
+            l.setQuantity(1);
+            lines.add(l);
+        }
+        dto.setLines(lines);
+
+        // путь импорта из «Входящих» (PrivateRequestImportService.commit → createFromLines) и обращения (appendLines)
+        assertThatThrownBy(() -> service.createFromLines(dto))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("500");
+    }
+
+    @Test
     void deleteRenumbers_requestedLineIs400_foreignLotIs404() {
         Tender t = service.createEmpty();
         service.addLines(t.getId(), List.of(input("ZZ 1", null, 1, null, null, null), input("ZZ 2", null, 1, null, null, null),

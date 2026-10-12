@@ -135,6 +135,24 @@ class PrivateRequestPricesTest {
     }
 
     @Test
+    void instantBounceDatedSecondsBeforeSendMarkIsStillBounced() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены быстрый возврат", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor d = dist("ZZ Цены Мгновенный возврат");
+        PriceRequestItem i = ask(t, d, lot, "SENT", LetterStatus.SENT, null);
+        PriceRequest pr = i.getPriceRequest();
+        // отметку отправки ставим после ответа SMTP, а дата возврата — с часов чужого сервера и с точностью до секунды
+        pr.setSentAt(OffsetDateTime.now());
+        inboundRepository.save(InboundEmail.builder().fromAddress("MAILER-DAEMON@mail.ru").subject("Undelivered")
+                .type(InboundType.BOUNCE).matchedPriceRequestId(pr.getId()).status(InboundStatus.NEW)
+                .receivedAt(OffsetDateTime.now().minusSeconds(10)).build());
+        em.flush();
+
+        assertThat(cell(prices.build(t.getId()), 0, d).state()).isEqualTo("BOUNCED");
+    }
+
+    @Test
     void priceEnteredAfterDeclineCounts() {
         Tender t = service.createEmpty();
         service.addLines(t.getId(), List.of(input("ZZ Цены передумал", null, 1, null, null, null)), LinesMode.APPEND);

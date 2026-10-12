@@ -36,7 +36,7 @@ interface DlgSupplier {
   standalone: true,
   imports: [NgIf, NgFor, FormsModule],
   template: `
-    <div class="overlay" (click)="close.emit()">
+    <div class="overlay" (click)="dismiss()">
       <div class="modal" role="dialog" aria-label="Запросить цены" (click)="$event.stopPropagation()">
         <h3>Запросить цены<ng-container *ngIf="suppliers.length"> — {{ suppliers.length }} {{ supplierWord(suppliers.length) }}</ng-container></h3>
         <div class="empty" *ngIf="loading">Подбираю поставщиков…</div>
@@ -90,7 +90,7 @@ interface DlgSupplier {
 
         <div class="form-actions">
           <button type="button" class="btn btn-primary" [disabled]="sending || !planCount()" (click)="send()">{{ sendLabel() }}</button>
-          <button type="button" class="btn btn-cancel" (click)="close.emit()">Отмена</button>
+          <button type="button" class="btn btn-cancel" [disabled]="sending" (click)="dismiss()">Отмена</button>
         </div>
       </div>
     </div>
@@ -182,8 +182,13 @@ export class PrRfqDialogComponent implements OnInit {
     });
   }
 
+  /**
+   * Закрыть окно (фон, Esc, «Отмена»), но не во время отправки: закрытие отписало бы ответ — письма ушли бы,
+   * а итог по поставщикам (тост) пользователь не увидел бы.
+   */
   @HostListener('document:keydown.escape')
-  onEscape() {
+  dismiss() {
+    if (this.sending) return;
     this.close.emit();
   }
 
@@ -271,6 +276,7 @@ export class PrRfqDialogComponent implements OnInit {
   }
 
   sendLabel(): string {
+    if (this.sending) return 'Отправляю…';
     const plan = this.plan();
     const mails = plan.filter(p => p.s.hasEmail).length;
     const noMail = plan.length - mails;

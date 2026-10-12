@@ -20,12 +20,13 @@ public final class PastedLinesParser {
     private static final int MAX_NAME = 255;
     private static final int MAX_QTY = 1_000_000;
 
+    /** Единицы СЧЁТА. «кг», «л», «м» сюда не входят: «Весы до 200 кг», «Баллон 10 л» — характеристика изделия. */
     private static final String UNIT =
-            "(шт|штук[аи]?|ед|компл|комплект(?:а|ов)?|набор(?:а|ов)?|упак|уп|фл|флакон(?:а|ов)?|пар[аы]?|кг|л|м)";
+            "(шт|штук[аи]?|ед|компл|комплект(?:а|ов)?|набор(?:а|ов)?|упак|уп|фл|флакон(?:а|ов)?|пар[аы]?)";
     private static final Pattern MARKER = Pattern.compile("^\\s*(?:\\d{1,3}\\s*[.)]|[-–—•*·])\\s+");
-    /** «… 2 шт», «… — 2 шт.», «…: 3 компл», «…, 4 упак» */
+    /** «… 2 шт», «… — 2 шт.», «…: 3 компл», «…, 4 упак»; запятая — разделитель, только если за ней пробел («1,5» — дробь) */
     private static final Pattern QTY_UNIT =
-            Pattern.compile("(?iu)(?:\\s*[-–—:,]\\s*|\\s+)(\\d{1,7})\\s*" + UNIT + "\\.?\\s*$");
+            Pattern.compile("(?iu)(?:\\s*[-–—:]\\s*|\\s*,\\s+|\\s+)(\\d{1,7})\\s*" + UNIT + "\\.?\\s*$");
     /** «… (2)», «… (2 шт)» */
     private static final Pattern QTY_PAREN = Pattern.compile("(?iu)\\s*\\((\\d{1,7})(?:\\s*" + UNIT + "\\.?)?\\)\\s*$");
     /** «… x2», «… × 3», «… х2» (кириллическая «х») — только после пробела: «SX2» — модель */
@@ -62,7 +63,8 @@ public final class PastedLinesParser {
             qty = quantity(m.group(1));
             unit = m.group(2) == null ? null : normUnit(m.group(2));
             s = s.substring(0, m.start());
-        } else if ((m = QTY_TIMES.matcher(s)).find()) {
+        } else if ((m = QTY_TIMES.matcher(s)).find() && !endsWithDigit(s.substring(0, m.start()))) {
+            // «60 х 90» — размер, а не «x 90 штук»: перед знаком умножения число
             qty = quantity(m.group(1));
             s = s.substring(0, m.start());
         } else if ((m = QTY_DASH.matcher(s)).find()) {
@@ -73,6 +75,11 @@ public final class PastedLinesParser {
         if (name.isEmpty() || name.chars().noneMatch(Character::isLetter)) return null;
         if (name.length() > MAX_NAME) name = name.substring(0, MAX_NAME);
         return new ParsedLine(name, qty, unit);
+    }
+
+    private static boolean endsWithDigit(String s) {
+        String t = s.stripTrailing();
+        return !t.isEmpty() && Character.isDigit(t.charAt(t.length() - 1));
     }
 
     private static int quantity(String digits) {

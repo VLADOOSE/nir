@@ -92,6 +92,9 @@ class PrivateRequestRfqTest {
         Distributor b = dist("ZZ RFQ Б", "b@rfq.kz");
         Distributor noMail = dist("ZZ RFQ без почты", null);
         LocalDate replyBy = LocalDate.now(Market.KZ.zone()).plusDays(3);
+        // клиент и контакт заявки поставщику не раскрываются (спека §10, анти-лик; «Указать клиента» — этап 2)
+        service.updateField(t.getId(), com.vladoose.nir.dto.request.PrivateRequestField.CUSTOMER_NAME, "ZZ Клиника Секретная");
+        service.updateField(t.getId(), com.vladoose.nir.dto.request.PrivateRequestField.CONTACT_NAME, "ZZ Контакт Секретный");
 
         List<SendResult> results = rfq.send(t.getId(), request(replyBy,
                 supplier(a, lots.get(0)), supplier(b, lots.get(0), lots.get(1)), supplier(noMail, lots.get(1))));
@@ -105,7 +108,9 @@ class PrivateRequestRfqTest {
                 .contains("Требования: Манжета 22–42 см")
                 .contains("Просим ответить до " + replyBy.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")))
                 .doesNotContain("ZZ Кушетка RFQ")
-                .doesNotContain(t.getTenderNumber());
+                .doesNotContain(t.getTenderNumber())
+                .doesNotContain("ZZ Клиника Секретная")
+                .doesNotContain("ZZ Контакт Секретный");
         assertThat(bodyTo(mails, "b@rfq.kz")).contains("ZZ Тонометр RFQ").contains("ZZ Кушетка RFQ — 2 шт.");
 
         PriceRequest prA = priceRequestRepository.findById(results.get(0).priceRequestId()).orElseThrow();

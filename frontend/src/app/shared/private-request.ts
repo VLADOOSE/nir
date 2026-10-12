@@ -135,8 +135,17 @@ export interface Prices { suppliers: PriceSupplier[]; lines: PriceLine[]; }
  * Сохранение по выходу из поля: разделы сообщают странице, та показывает «Сохраняю… / Сохранено · 14:05 / Не сохранено —
  * повторить» (спека §5.2). `retry` — только у идемпотентных правок поля (PATCH); добавление позиций не повторяется
  * (ответ мог потеряться после записи — повтор задвоил бы позиции).
+ * `key` — какое поле сохраняется ('head:CONTACT_EMAIL', 'line:12:NAME'): ошибка поля держится, пока не сохранится ЭТО поле, —
+ * удачное сохранение другого её не снимает (иначе «Сохранено» при значении, которого на сервере нет). Без `key`
+ * (добавление позиций) ошибка живёт до следующего сохранения. `seq` — номер попытки (`nextSaveSeq`): ответ на прежнюю
+ * попытку поля, пришедший после новой, состояние не меняет — «Повторить» отправил бы старое значение поверх нового.
  */
-export interface SaveState { kind: 'saving' | 'saved' | 'error'; message?: string; retry?: () => void; }
+export interface SaveState { kind: 'saving' | 'saved' | 'error'; seq: number; key?: string; message?: string; retry?: () => void; }
+
+let saveSeq = 0;
+export function nextSaveSeq(): number {
+  return ++saveSeq;
+}
 
 /** Тон чипа этапа — data-tone для глобального .pr-stage (styles.scss). */
 export function stageTone(stage: string | null | undefined): string {

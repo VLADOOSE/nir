@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
+import { AuthService } from '../../services/auth.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { Deadlined, deadlineEnd, deadlinePassed, deadlineText } from '../../shared/deadline';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
@@ -284,25 +285,26 @@ import { TenderLotsComponent } from './tender-lots.component';
                   <td data-label="Лот">{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
                   <td data-label="Модель">{{ it.medEquipment?.name || '— по лоту' }}</td>
                   <td data-label="Кол-во">{{ it.requestedQuantity ?? '—' }}</td>
-                  <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" /></td>
+                  <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" [readonly]="!auth.isAdmin()" /></td>
                   <td class="pmc-calc" [attr.data-label]="'Предл. цена при ' + (pr._markup ?? 25) + '%'">{{ markedPrice(it, pr) | money }}
                     <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
                   </td>
                   <td class="pmc-profit" data-label="Маржа">+{{ markedProfit(it, pr) | money }}</td>
-                  <td data-label="Заметка"><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" /></td>
+                  <td data-label="Заметка"><input [(ngModel)]="it._editNote" [ngModelOptions]="{standalone: true}" [readonly]="!auth.isAdmin()" /></td>
                 </tr>
               </tbody>
             </table>
             </div>
+            <!-- запись ответов, пересылка, принятие, закрытие и удаление КП — только администратор (на сервере — ADMIN) -->
             <div class="pr-actions">
-              <button class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
-              <button *ngIf="pr.status === 'SENT' || pr.status === 'CREATED'" class="btn btn-line" (click)="resendPr(pr)">↻ Переслать</button>
-              <button *ngIf="pr.status === 'RESPONDED'" class="btn btn-accept-pr cta-pulse" (click)="acceptPr(pr)">Принять КП</button>
+              <button *ngIf="auth.isAdmin()" class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
+              <button *ngIf="auth.isAdmin() && (pr.status === 'SENT' || pr.status === 'CREATED')" class="btn btn-line" (click)="resendPr(pr)">↻ Переслать</button>
+              <button *ngIf="auth.isAdmin() && pr.status === 'RESPONDED'" class="btn btn-accept-pr cta-pulse" (click)="acceptPr(pr)">Принять КП</button>
               <button *ngIf="pr.status === 'ACCEPTED' || pr.status === 'RESPONDED'" class="btn btn-create-apply cta-pulse" (click)="createApplyFromPr(pr)">
                 <svg lucideIcon="clipboard-list" [size]="14"></svg> Сформировать заявку
               </button>
-              <button *ngIf="pr.status === 'RESPONDED' || pr.status === 'ACCEPTED' || pr.status === 'DECLINED'" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
-              <button class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
+              <button *ngIf="auth.isAdmin() && (pr.status === 'RESPONDED' || pr.status === 'ACCEPTED' || pr.status === 'DECLINED')" class="btn btn-close-pr" (click)="closePr(pr)">Закрыть запрос</button>
+              <button *ngIf="auth.isAdmin()" class="btn btn-delete" (click)="deletePr(pr.id)">Удалить запрос</button>
             </div>
           </div>
         </div>
@@ -565,7 +567,8 @@ export class TendersComponent {
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
               private router: Router,
-              private notify: NotificationService, private confirm: ConfirmService, public market: MarketService) {
+              private notify: NotificationService, private confirm: ConfirmService, public market: MarketService,
+              public auth: AuthService) {
     this.loadTenders();
     this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });

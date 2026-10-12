@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.*;
@@ -93,10 +94,16 @@ public class PrivateRequestPricesService {
         return Instant.now();
     }
 
-    /** Возврат — только если он пришёл после последней отправки письма: «↻ Переслать» его снимает. */
+    /**
+     * Запас на часы: отметку отправки ставим после ответа SMTP, а дата возврата — с часов чужого сервера и с точностью
+     * до секунды, поэтому мгновенный возврат бывает «раньше» отметки. Пересылают после исправления адреса — минуты спустя.
+     */
+    static final Duration BOUNCE_SKEW = Duration.ofMinutes(1);
+
+    /** Возврат — только если он пришёл после последней отправки письма (с запасом на часы): «↻ Переслать» его снимает. */
     private static boolean bouncedAfterSend(PriceRequest pr, Map<Long, Instant> bounced) {
         Instant at = bounced.get(pr.getId());
-        return at != null && (pr.getSentAt() == null || !at.isBefore(pr.getSentAt().toInstant()));
+        return at != null && (pr.getSentAt() == null || !at.isBefore(pr.getSentAt().toInstant().minus(BOUNCE_SKEW)));
     }
 
     static Cell cell(Long distributorId, PriceRequestItem i, Map<Long, Instant> bounced) {

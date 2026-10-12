@@ -2,6 +2,7 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.ParamDef;
@@ -18,6 +19,9 @@ import java.util.List;
 @EntityListeners(MarketStampingListener.class)
 @Entity
 @Table(name = "tender")
+/* UPDATE пишет только изменённые колонки: страница частной заявки сохраняет поле по выходу из него, два наложившихся
+   PATCH разных полей иначе затирали бы друг друга (PrivateRequestOverlappingSavesTest) */
+@DynamicUpdate
 @Getter
 @Setter
 @NoArgsConstructor

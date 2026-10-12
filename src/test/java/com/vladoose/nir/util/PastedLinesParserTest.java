@@ -45,6 +45,22 @@ class PastedLinesParserTest {
     }
 
     @Test
+    void sizesDecimalsAndProductUnitsAreNotQuantities() {
+        // размер «N х M» в конце строки — не «x M штук»
+        assertThat(one("Пелёнка впитывающая 60 х 90")).isEqualTo(new ParsedLine("Пелёнка впитывающая 60 х 90", 1, null));
+        assertThat(one("Матрас 90 x 200")).isEqualTo(new ParsedLine("Матрас 90 x 200", 1, null));
+        assertThat(one("Салфетка 45×45")).isEqualTo(new ParsedLine("Салфетка 45×45", 1, null));
+        // десятичная запятая — часть характеристики, а не разделитель количества
+        assertThat(one("Мешок Амбу 1,5 л")).isEqualTo(new ParsedLine("Мешок Амбу 1,5 л", 1, null));
+        // кг, л, м описывают изделие, а не количество
+        assertThat(one("Весы медицинские до 200 кг")).isEqualTo(new ParsedLine("Весы медицинские до 200 кг", 1, null));
+        assertThat(one("Баллон кислородный 10 л")).isEqualTo(new ParsedLine("Баллон кислородный 10 л", 1, null));
+        assertThat(one("Бинт марлевый 5 м")).isEqualTo(new ParsedLine("Бинт марлевый 5 м", 1, null));
+        // а запятая с пробелом после — по-прежнему разделитель количества
+        assertThat(one("Тонометр OMRON M2, 5 шт")).isEqualTo(new ParsedLine("Тонометр OMRON M2", 5, "шт"));
+    }
+
+    @Test
     void markersBlankLinesAndNumbersOnlyAreDropped() {
         List<ParsedLine> r = PastedLinesParser.parse("""
                 1. Тонометр — 2 шт
