@@ -37,7 +37,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
             <tr>
               <th class="pos">Позиция</th>
               <th *ngFor="let s of prices.suppliers">
-                {{ s.name }}<div class="sent" *ngIf="s.firstSentAt">письмо {{ shortDate(s.firstSentAt) }}</div>
+                {{ s.name }}<span class="who" *ngIf="s.clientDisclosed" title="Клиент указан в запросе">👤</span><div class="sent" *ngIf="s.firstSentAt">письмо {{ shortDate(s.firstSentAt) }}</div>
               </th>
             </tr>
           </thead>
@@ -60,7 +60,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
             <ng-container *ngFor="let c of l.cells; let i = index">
               <li *ngIf="c.state !== 'NONE'">
                 <button type="button" class="cell-row" [attr.data-state]="c.state" [class.best]="c.best" (click)="edit(l, c)">
-                  <span>{{ prices.suppliers[i].name }}</span><span>{{ cellText(c) }}</span>
+                  <span>{{ prices.suppliers[i].name }}<ng-container *ngIf="prices.suppliers[i].clientDisclosed"> 👤</ng-container></span><span>{{ cellText(c) }}</span>
                 </button>
               </li>
             </ng-container>
@@ -93,6 +93,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
     .pt td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
     .pt td.pos, .pt th.pos { min-width: 220px; }
     .sent { font-weight: 400; color: var(--text-muted); font-size: 11px; }
+    .who { margin-left: 4px; }
     .q { color: var(--text-muted); white-space: nowrap; }
     .cell { width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px 8px;
             cursor: pointer; color: var(--text); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }

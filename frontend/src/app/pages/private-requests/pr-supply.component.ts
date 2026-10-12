@@ -40,8 +40,8 @@ export function rfqToast(results: SendResult[]): string {
       <app-pr-prices [requestId]="view.id" [version]="pricesVersion" [readonly]="readonly"
                      (changed)="changed.emit()"></app-pr-prices>
     </section>
-    <app-pr-rfq-dialog *ngIf="rfqOpen" [requestId]="view.id" [lines]="view.lines" (close)="rfqOpen = false"
-                       (sent)="onSent($event)"></app-pr-rfq-dialog>
+    <app-pr-rfq-dialog *ngIf="rfqOpen" [requestId]="view.id" [lines]="view.lines" [clientName]="clientName()"
+                       (close)="rfqOpen = false" (sent)="onSent($event)"></app-pr-rfq-dialog>
   `,
   styles: [`
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
@@ -84,6 +84,12 @@ export class PrSupplyComponent implements OnChanges {
 
   openRfq() {
     if (this.canRequest()) this.rfqOpen = true;
+  }
+
+  /** Клиент для поставщика — учреждение или название; контакт и телефон поставщику не раскрываются (как на сервере). */
+  clientName(): string | null {
+    const v = this.view;
+    return (v.facilityName && v.facilityName.trim()) || (v.customerName && v.customerName.trim()) || null;
   }
 
   private loadSourcing() {

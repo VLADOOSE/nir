@@ -86,7 +86,7 @@ export interface SourcingLine {
   name: string;
   quantity: number | null;
   unit: string | null;
-  reason: 'BRAND' | 'TYPE';
+  reason: 'MANUFACTURER' | 'BRAND' | 'TYPE';
   label: string;
   preselected: boolean;
   requestedAt: string | null;
@@ -97,6 +97,8 @@ export interface SourcingSupplier {
   email: string | null;
   hasEmail: boolean;
   preselected: boolean;
+  manufacturer: boolean;
+  trusted: boolean;
   lines: SourcingLine[];
 }
 export interface Sourcing { suppliers: SourcingSupplier[]; unmatched: { lotId: number; name: string; brand: string | null }[]; }
@@ -128,7 +130,7 @@ export interface PriceLine {
   bestPrice: number | null;
   bestDistributorName: string | null;
 }
-export interface PriceSupplier { distributorId: number; name: string; firstSentAt: string | null; }
+export interface PriceSupplier { distributorId: number; name: string; firstSentAt: string | null; clientDisclosed: boolean; }
 export interface Prices { suppliers: PriceSupplier[]; lines: PriceLine[]; }
 
 /**
@@ -207,4 +209,45 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (m10 === 1 && m100 !== 11) return one;
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
   return many;
+}
+
+/** Письмо или документ для одного поставщика до отправки: из справочника или ещё не заведённый. */
+export interface RfqPreviewBody {
+  distributorId?: number;
+  newSupplierName?: string;
+  lotIds: number[];
+  replyBy: string | null;
+  discloseClient: boolean;
+  withDocument: boolean;
+  withStamp: boolean;
+}
+
+export interface RfqSendSupplier {
+  distributorId: number | null;
+  newSupplier: { name: string; rememberBrands: boolean } | null;
+  /** Почта из окна: пустая — запрос без письма. */
+  email: string;
+  discloseClient: boolean;
+  lotIds: number[];
+}
+
+export interface RfqSendBody { replyBy: string | null; withDocument: boolean; withStamp: boolean; suppliers: RfqSendSupplier[]; }
+
+/** Те же адреса без учёта регистра и разделителей — как EmailAddresses.same на сервере. */
+export function sameEmails(a: string | null, b: string | null): boolean {
+  const norm = (s: string | null) => (s || '').split(/[,;\s]+/).map(x => x.trim().toLowerCase()).filter(Boolean).join(',');
+  return norm(a) === norm(b);
+}
+
+/** Имя файла из Content-Disposition (RFC 5987: filename*=UTF-8''…), иначе запасное. */
+export function dispositionFileName(header: string | null, fallback: string): string {
+  const m = /filename\*=UTF-8''([^;]+)/i.exec(header || '');
+  if (m) {
+    try {
+      return decodeURIComponent(m[1]);
+    } catch {
+      /* битое имя — запасное */
+    }
+  }
+  return fallback;
 }

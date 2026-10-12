@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { PreviewPages } from '../shared/client-offer';
 import type {
   LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
-  RegistryRecord, SendResult, SiteProduct, Sourcing,
+  RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
 } from '../shared/private-request';
 
 @Injectable({ providedIn: 'root' })
@@ -379,13 +379,15 @@ export class ApiService {
   getPrivateRequestSourcing(id: number): Observable<Sourcing> {
     return this.http.get<Sourcing>(`${this.base}/private-requests/${id}/sourcing`);
   }
-  previewRfq(id: number, body: { distributorId: number; lotIds: number[]; replyBy: string | null }):
-      Observable<{ subject: string; body: string }> {
+  previewRfq(id: number, body: RfqPreviewBody): Observable<{ subject: string; body: string }> {
     return this.http.post<{ subject: string; body: string }>(`${this.base}/private-requests/${id}/rfq/preview`, body);
   }
-  sendRfq(id: number, body: { replyBy: string | null; suppliers: { distributorId: number; lotIds: number[] }[] }):
-      Observable<SendResult[]> {
+  sendRfq(id: number, body: RfqSendBody): Observable<SendResult[]> {
     return this.http.post<SendResult[]>(`${this.base}/private-requests/${id}/rfq/send`, body);
+  }
+  /** Word запроса до отправки («№ —»); имя файла — в Content-Disposition; только blob через HttpClient (§14). */
+  downloadRfqDocument(id: number, body: RfqPreviewBody): Observable<HttpResponse<Blob>> {
+    return this.http.post(`${this.base}/private-requests/${id}/rfq/document`, body, { responseType: 'blob', observe: 'response' });
   }
   getPrivateRequestPrices(id: number): Observable<Prices> {
     return this.http.get<Prices>(`${this.base}/private-requests/${id}/prices`);
