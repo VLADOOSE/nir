@@ -2,10 +2,8 @@ package com.vladoose.nir.privaterequest;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
-import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.FacilityRepository;
-import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.service.PrivateRequestService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +21,6 @@ class PrivateRequestServiceTest {
 
     @Autowired PrivateRequestService service;
     @Autowired FacilityRepository facilityRepository;
-    @Autowired MedRegistryRepository registryRepository;
 
     @AfterEach
     void tearDown() { MarketContext.clear(); }
@@ -49,26 +46,5 @@ class PrivateRequestServiceTest {
         assertThat(lot.getEquipName()).isEqualTo("Тонометр OMRON M2");
         assertThat(lot.getManufact()).isEqualTo("OMRON");
         assertThat(lot.getQuantity()).isEqualTo(3);
-    }
-
-    @Test
-    void linesWithRegistration_returnsCandidateForRegisteredModel() {
-        registryRepository.save(MedRegistry.builder()
-                .regNumber("ZZPRS-RU-1").name("Тонометр ZZUNIQMODEL автоматический")
-                .producer("ZZUNIQVENDOR").country("ЯПОНИЯ").unlimited(true).build());
-        registryRepository.flush();
-
-        PrivateRequestCreate dto = new PrivateRequestCreate();
-        dto.setClientFacilityId(client());
-        PrivateRequestCreate.Line l = new PrivateRequestCreate.Line();
-        l.setName("Тонометр ZZUNIQMODEL автоматический"); l.setManufact("ZZUNIQVENDOR"); l.setQuantity(1);
-        dto.setLines(List.of(l));
-        Tender t = service.createFromLines(dto);
-
-        List<PrivateRequestLineResponse> lines = service.linesWithRegistration(t.getId());
-        assertThat(lines).hasSize(1);
-        assertThat(lines.get(0).getTopCandidate()).isNotNull();
-        assertThat(lines.get(0).getTopCandidate().getRegNumber()).isEqualTo("ZZPRS-RU-1");
-        assertThat(lines.get(0).getRegistrationStatus()).isEqualTo("REGISTERED");
     }
 }

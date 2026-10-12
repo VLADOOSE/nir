@@ -2,7 +2,6 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.*;
-import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
@@ -36,7 +35,6 @@ public class PrivateRequestService {
 
     private final TenderRepository tenderRepository;
     private final FacilityRepository facilityRepository;
-    private final RegistryMatchService registryMatchService;
     private final PriceRequestItemRepository priceRequestItemRepository;
     private final PriceRequestRepository priceRequestRepository;
     private final ClientOfferRepository clientOfferRepository;
@@ -46,7 +44,6 @@ public class PrivateRequestService {
 
     public PrivateRequestService(TenderRepository tenderRepository,
                                  FacilityRepository facilityRepository,
-                                 RegistryMatchService registryMatchService,
                                  PriceRequestItemRepository priceRequestItemRepository,
                                  PriceRequestRepository priceRequestRepository,
                                  ClientOfferRepository clientOfferRepository,
@@ -55,7 +52,6 @@ public class PrivateRequestService {
                                  PrivateRequestRegistry registry) {
         this.tenderRepository = tenderRepository;
         this.facilityRepository = facilityRepository;
-        this.registryMatchService = registryMatchService;
         this.priceRequestItemRepository = priceRequestItemRepository;
         this.priceRequestRepository = priceRequestRepository;
         this.clientOfferRepository = clientOfferRepository;
@@ -438,29 +434,6 @@ public class PrivateRequestService {
     /** «%текст%» для LIKE … ESCAPE '\': знаки % и _ из запроса — буквально. */
     private static String likePattern(String needle) {
         return "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
-    }
-
-    /** Реестр-догадка по строкам для старого подбора поставщиков (уходит в задаче 7). */
-    public List<PrivateRequestLineResponse> linesWithRegistration(Long tenderId) {
-        Tender t = findById(tenderId);
-        List<PrivateRequestLineResponse> result = new ArrayList<>();
-        for (TenderLot lot : t.getLots()) {
-            PrivateRequestLineResponse r = new PrivateRequestLineResponse();
-            r.setLotId(lot.getId());
-            r.setName(lot.getEquipName());
-            r.setManufact(lot.getManufact());
-            r.setQuantity(lot.getQuantity());
-            List<RegistryCandidateResponse> cands =
-                    registryMatchService.findCandidates(lot.getEquipName(), lot.getManufact(), 1);
-            if (!cands.isEmpty()) {
-                r.setTopCandidate(cands.get(0));
-                r.setRegistrationStatus("REGISTERED");
-            } else {
-                r.setRegistrationStatus("NOT_FOUND");
-            }
-            result.add(r);
-        }
-        return result;
     }
 
     /** «ЧЗ-<год>-NNNN»: наибольший номер этого года на рынке + 1, а не количество — после удаления дубля не будет. */

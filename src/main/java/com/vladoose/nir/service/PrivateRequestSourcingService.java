@@ -1,66 +1,118 @@
 package com.vladoose.nir.service;
 
-import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
-import com.vladoose.nir.dto.response.SourcingGroupResponse;
-import com.vladoose.nir.dto.response.SourcingPreviewResponse;
-import com.vladoose.nir.entity.Distributor;
-import com.vladoose.nir.mapper.DistributorMapper;
+import com.vladoose.nir.dto.response.PrivateRequestSourcingResponse;
+import com.vladoose.nir.dto.response.PrivateRequestSourcingResponse.Line;
+import com.vladoose.nir.dto.response.PrivateRequestSourcingResponse.LineRef;
+import com.vladoose.nir.dto.response.PrivateRequestSourcingResponse.Supplier;
+import com.vladoose.nir.entity.*;
+import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.util.BrandMatch;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.OffsetDateTime;
+import java.util.*;
 
-/** Группирует строки частной заявки по поставщикам, у кого есть бренд строки (case-insensitive). */
+/**
+ * Кто подходит для запроса цен по позициям частной заявки (спека 2026-10-12 §6.1). Дистрибьюторы с брендом строки
+ * отмечаются по умолчанию. Если бренда нет или его никто не возит — поставщики того же вида изделия, без отметки.
+ * Уже запрошенная у поставщика позиция видна с датой и не отмечается. Производитель бренда по умолчанию — этап 2.
+ */
 @Service
 public class PrivateRequestSourcingService {
 
     private final PrivateRequestService privateRequestService;
     private final DistributorService distributorService;
-    private final DistributorMapper distributorMapper;
+    private final LotTypeClassifier typeClassifier;
+    private final PriceRequestItemRepository itemRepository;
 
-    public PrivateRequestSourcingService(PrivateRequestService privateRequestService,
-                                         DistributorService distributorService,
-                                         DistributorMapper distributorMapper) {
+    public PrivateRequestSourcingService(PrivateRequestService privateRequestService, DistributorService distributorService,
+                                         LotTypeClassifier typeClassifier, PriceRequestItemRepository itemRepository) {
         this.privateRequestService = privateRequestService;
         this.distributorService = distributorService;
-        this.distributorMapper = distributorMapper;
+        this.typeClassifier = typeClassifier;
+        this.itemRepository = itemRepository;
     }
 
-    public SourcingPreviewResponse buildSourcing(Long privateRequestId) {
-        List<PrivateRequestLineResponse> lines = privateRequestService.linesWithRegistration(privateRequestId);
-        List<Distributor> distributors = distributorService.findAll(); // скоуплен рынком
+    @Transactional(readOnly = true)
+    public PrivateRequestSourcingResponse build(Long requestId) {
+        Tender t = privateRequestService.findById(requestId);
+        List<TenderLot> lots = new ArrayList<>(t.getLots());
+        lots.sort(Comparator.comparing((TenderLot l) -> l.getLotNumber() == null ? Integer.MAX_VALUE : l.getLotNumber()));
+        List<Distributor> distributors = distributorService.findAll();   // рынок режет аспект
+        Map<String, OffsetDateTime> requestedAt = requestedAt(requestId);
 
-        Map<Long, SourcingGroupResponse> byDistributor = new LinkedHashMap<>();
-        List<PrivateRequestLineResponse> unmatched = new ArrayList<>();
-
-        for (PrivateRequestLineResponse line : lines) {
-            List<Distributor> matching = new ArrayList<>();
+        Map<Long, Acc> bySupplier = new LinkedHashMap<>();
+        List<LineRef> unmatched = new ArrayList<>();
+        for (TenderLot lot : lots) {
+            boolean matched = false;
             for (Distributor d : distributors) {
-                if (BrandMatch.firstCarried(d.getBrands(), line.getManufact()) != null) {
-                    matching.add(d);
+                String carried = BrandMatch.firstCarried(d.getBrands(), lot.getManufact());
+                if (carried != null) {
+                    acc(bySupplier, d).add(lot, "BRAND", "возит " + carried.trim(), requestedAt);
+                    matched = true;
                 }
             }
-            if (matching.isEmpty()) {
-                unmatched.add(line);
-                continue;
+            if (!matched) {
+                LotTypeClassifier.TypeGuess guess = typeClassifier.classify(lot);
+                if (guess.typeId() != null) {
+                    for (Distributor d : distributors) {
+                        if (d.getEquipmentTypes().stream().anyMatch(et -> guess.typeId().equals(et.getId()))) {
+                            acc(bySupplier, d).add(lot, "TYPE", "по виду: " + guess.typeName(), requestedAt);
+                            matched = true;
+                        }
+                    }
+                }
             }
-            for (Distributor d : matching) {
-                SourcingGroupResponse g = byDistributor.computeIfAbsent(d.getId(), k -> {
-                    SourcingGroupResponse ng = new SourcingGroupResponse();
-                    ng.setDistributor(distributorMapper.toResponse(d));
-                    ng.setLines(new ArrayList<>());
-                    return ng;
-                });
-                g.getLines().add(line);
-            }
+            if (!matched) unmatched.add(new LineRef(lot.getId(), lot.getEquipName(), lot.getManufact()));
+        }
+        List<Supplier> suppliers = bySupplier.values().stream().map(Acc::toSupplier)
+                .sorted(Comparator.comparing(Supplier::preselected).reversed()
+                        .thenComparing((Supplier s) -> -s.lines().size())
+                        .thenComparing(Supplier::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        return new PrivateRequestSourcingResponse(suppliers, unmatched);
+    }
+
+    /** «позиция:поставщик» → когда запрашивали последний раз (у старых запросов без дат — момент чтения). */
+    private Map<String, OffsetDateTime> requestedAt(Long requestId) {
+        Map<String, OffsetDateTime> out = new HashMap<>();
+        OffsetDateTime now = OffsetDateTime.now();
+        for (PriceRequestItem i : itemRepository.findByTenderId(requestId)) {
+            PriceRequest pr = i.getPriceRequest();
+            OffsetDateTime at = pr.getSentAt() != null ? pr.getSentAt()
+                    : pr.getCreatedAt() != null ? pr.getCreatedAt() : now;
+            out.merge(i.getTenderLot().getId() + ":" + pr.getDistributor().getId(), at,
+                    (a, b) -> a.isAfter(b) ? a : b);
+        }
+        return out;
+    }
+
+    private static Acc acc(Map<Long, Acc> bySupplier, Distributor d) {
+        return bySupplier.computeIfAbsent(d.getId(), k -> new Acc(d));
+    }
+
+    private static final class Acc {
+        final Distributor d;
+        final boolean hasEmail;
+        final List<Line> lines = new ArrayList<>();
+        final Set<Long> lotIds = new HashSet<>();
+
+        Acc(Distributor d) {
+            this.d = d;
+            this.hasEmail = d.getEmail() != null && !d.getEmail().isBlank();
         }
 
-        SourcingPreviewResponse preview = new SourcingPreviewResponse();
-        preview.setGroups(new ArrayList<>(byDistributor.values()));
-        preview.setUnmatchedLines(unmatched);
-        return preview;
+        void add(TenderLot lot, String reason, String label, Map<String, OffsetDateTime> requestedAt) {
+            if (!lotIds.add(lot.getId())) return;
+            OffsetDateTime at = requestedAt.get(lot.getId() + ":" + d.getId());
+            boolean pre = "BRAND".equals(reason) && hasEmail && at == null;
+            lines.add(new Line(lot.getId(), lot.getEquipName(), lot.getQuantity(), lot.getUnit(), reason, label, pre, at));
+        }
+
+        Supplier toSupplier() {
+            boolean pre = lines.stream().anyMatch(Line::preselected);
+            return new Supplier(d.getId(), d.getName(), hasEmail ? d.getEmail().trim() : null, hasEmail, pre, List.copyOf(lines));
+        }
     }
 }

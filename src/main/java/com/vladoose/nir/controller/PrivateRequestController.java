@@ -158,8 +158,8 @@ public class PrivateRequestController {
     }
 
     @GetMapping("/{id}/sourcing")
-    public SourcingPreviewResponse sourcing(@PathVariable Long id) {
-        return sourcingService.buildSourcing(id);
+    public PrivateRequestSourcingResponse sourcing(@PathVariable Long id) {
+        return sourcingService.build(id);
     }
 
     private static String currentUser() {
