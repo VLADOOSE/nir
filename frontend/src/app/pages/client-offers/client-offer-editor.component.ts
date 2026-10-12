@@ -21,6 +21,11 @@ import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
 
 /** Пределы общей наценки — те же, что проверяет сервер (ClientOfferUpdateRequest). */
+/** Закупка и ссылка строки на ответ — по ним «Подставить» отличает свои правки строк от набранного во время запроса. */
+function appliedKey(it: OfferItem): string {
+  return (it.purchasePrice ?? '') + '|' + (it.priceRequestItemId ?? '');
+}
+
 const MIN_MARKUP = -100;
 const MAX_MARKUP = 1000;
 
@@ -76,7 +81,7 @@ const MAX_MARKUP = 1000;
         <section class="pane-edit" [class.off]="tab !== 'edit'">
           <div class="new-prices" *ngIf="auth.isAdmin() && o.status === 'DRAFT' && newPrices.length && !conflict" role="status">
             <span>Пришли новые цены по {{ newPrices.length }} {{ newPrices.length === 1 ? 'позиции' : 'позициям' }}</span>
-            <button type="button" class="btn btn-line" [disabled]="busy || conflict" (click)="applyNewPrices()">Подставить</button>
+            <button type="button" class="btn btn-line" [disabled]="busy || conflict || applying" (click)="applyNewPrices()">{{ applying ? 'Подставляю…' : 'Подставить' }}</button>
           </div>
           <fieldset [disabled]="!auth.isAdmin() || conflict">
             <div class="card">
@@ -321,6 +326,10 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   previewTick = 0;
   /** «Пришли новые цены» — строки, у которых в ответах поставщиков появилась или сменилась цена (спека §8). */
   newPrices: NewPriceLine[] = [];
+  /** Идёт «Подставить» (кнопка — «Подставляю…»); очередь запросов с версией держит statusBusy, как смена статуса. */
+  applying = false;
+  /** Номер последней проверки плашки: ответ проверки, обогнанный «Подставить» или новой проверкой, не в счёт. */
+  private newPricesSeq = 0;
   /** Последний предпросмотр: таблица тесная — и для какой ориентации он собран (подсказка гаснет, пока нет нового). */
   crowded = false;
   busy = false;
@@ -418,6 +427,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.saveError = '';
     this.saving = false;
     this.statusBusy = false;
+    this.applying = false;
     this.dirty = false;
     this.busy = false;
     this.sharePreparing = false;
@@ -577,39 +587,78 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     const o = this.offer;
     if (!o || o.status !== 'DRAFT' || !o.tenderId || !this.auth.isAdmin()) { this.newPrices = []; return; }
     const gen = this.gen;
+    const seq = ++this.newPricesSeq;
     this.api.getClientOfferNewPrices(o.id).subscribe({
-      next: r => { if (gen === this.gen) { this.newPrices = r.lines; this.render(); } },
+      next: r => { if (gen === this.gen && seq === this.newPricesSeq) { this.newPrices = r.lines; this.render(); } },
       error: () => { /* подсказка, без неё КП работает */ },
     });
   }
 
-  /** «Подставить»: сперва дописать свои правки, затем POST — и КП из ответа целиком (решение плана 8). */
+  /**
+   * «Подставить»: сперва дописать свои правки, затем POST. Это запрос, меняющий версию, — как смена статуса: пока он идёт,
+   * автосохранение, статус и выгрузка ждут (statusBusy — save, flushThen, leave и список статусов его уважают), иначе
+   * набранное во время запроса ушло бы PUT-ом со старой версией и вкладка встала бы с ложным «изменено в другой вкладке»
+   * (ревью ветки). Ответ — в строки по id (mergeApplied): набранное не теряется и уходит следующим сохранением.
+   */
   applyNewPrices() {
     const o = this.offer;
-    if (!o || this.conflict) return;
+    if (!o || this.conflict || this.applying) return;
     this.flushThen(() => {
-      if (this.busy) return;
-      this.busy = true;
+      if (this.applying || this.conflict) return;
       const gen = this.gen;
+      const before = new Map(o.items.filter(it => it.id != null).map(it => [it.id!, appliedKey(it)]));
+      this.applying = true;
+      this.statusBusy = true;
+      this.newPricesSeq++;   // проверка плашки, ушедшая до «Подставить», пришла бы со старыми строками
+      this.render();
       this.api.applyClientOfferNewPrices(o.id).subscribe({
         next: (r: ClientOffer) => {
-          if (gen !== this.gen) return;
-          this.busy = false;
-          r.items.forEach((it: OfferItem) => { if (!it.key) it.key = 'i' + it.id; });
-          this.offer = r;
+          // ушли с КП во время запроса: подставленное — в тот же объект, иначе дописывающий PUT (finishAway) вернул бы
+          // строкам прежнюю закупку
+          if (gen !== this.gen) { this.mergeApplied(o, r, before); this.finishAway(o, r.version); return; }
+          this.applying = false;
+          this.statusBusy = false;
+          this.mergeApplied(o, r, before);
           this.newPrices = [];
           this.previewTick++;
           this.notify.success('Цены подставлены');
-          this.render();
+          this.afterStatus();
         },
         error: e => {
           if (gen !== this.gen) return;
-          this.busy = false;
+          this.applying = false;
+          this.statusBusy = false;
           this.notify.error('Цены не подставлены: ' + errorText(e));
-          this.render();
+          this.afterStatus();
         },
       });
     });
+  }
+
+  /**
+   * Ответ «Подставить» — в строки по id: где «Подставить» сменил закупку или ссылку на ответ — его закупка, поставщик и
+   * ссылка; где не менял — остаётся набранное во время запроса. Расчёт, версия и итоги — с сервера; раскрытые строки
+   * и ключи остаются.
+   */
+  private mergeApplied(o: ClientOffer, r: ClientOffer, before: Map<number, string>) {
+    o.version = r.version;
+    o.totals = r.totals;
+    o.updatedAt = r.updatedAt;
+    o.fileBaseName = r.fileBaseName;
+    const byId = new Map(r.items.filter(s => s.id != null).map(s => [s.id!, s]));
+    for (const it of o.items) {
+      const s = it.id != null ? byId.get(it.id) : undefined;
+      if (!s) continue;
+      it.calc = s.calc;
+      it.lineNo = s.lineNo;
+      it.tenderLotId = s.tenderLotId;
+      if (before.get(s.id!) !== appliedKey(s)) {
+        it.purchasePrice = s.purchasePrice;
+        it.supplierName = s.supplierName;
+        it.priceRequestItemId = s.priceRequestItemId;
+        it.distributorId = s.distributorId;
+      }
+    }
   }
 
   saveText(): string {
