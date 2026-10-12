@@ -83,9 +83,8 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
             <li *ngFor="let l of s.lines">
               <label class="check">
                 <input type="checkbox" [(ngModel)]="l.on" />
-                <span class="ln">{{ l.name }} · {{ l.quantity ?? '—' }} {{ l.unit || 'шт' }}</span>
-                <span class="why" *ngIf="l.label">{{ l.label }}</span>
-                <span class="was" *ngIf="l.requestedAt">запрошено {{ shortDate(l.requestedAt) }}</span>
+                <span class="lt"><span class="ln">{{ l.name }} · {{ l.quantity ?? '—' }} {{ l.unit || 'шт' }}</span><span class="why"
+                      *ngIf="l.label">{{ l.label }}</span><span class="was" *ngIf="l.requestedAt">запрошено {{ shortDate(l.requestedAt) }}</span></span>
               </label>
             </li>
           </ul>
@@ -164,7 +163,11 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
     .sup-mail { font-size: 12px; color: var(--text-muted); }
     .sup-mail.none { color: var(--warn-text); }
     .sup-lines { list-style: none; margin: 0; padding: 0 0 0 24px; display: flex; flex-direction: column; gap: 4px; }
-    .check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+    /* флажок слева, текст позиции с пометками течёт справа: длинное наименование переносится рядом с флажком */
+    .check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+    .check input { flex: none; margin-top: 2px; }
+    .lt { flex: 1; min-width: 0; }
+    .ln, .why { margin-right: 8px; }
     .why, .was { font-size: 12px; color: var(--text-muted); }
     .was { color: var(--warn-text); }
     .warn { margin: 0; font-size: 12px; color: var(--warn-text); }
