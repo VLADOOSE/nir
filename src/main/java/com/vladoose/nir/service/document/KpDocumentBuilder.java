@@ -643,7 +643,7 @@ public class KpDocumentBuilder {
     }
 
     private static List<String> money(BigDecimal value) {
-        return List.of(value == null ? "—" : DocFormat.money(value));
+        return List.of(value == null ? DocFormat.DASH : DocFormat.money(value));
     }
 
     private static List<String> lines(String text) {

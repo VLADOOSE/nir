@@ -16,6 +16,13 @@ public final class DocFormat {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
+    /**
+     * Тире в тексте, который документы (КП клиенту, запрос на бланке) и их имена файлов ставят сами, — среднее «–»:
+     * длинного «—» в документах нет (решение оператора 2026-10-12). Текст, вписанный оператором или пришедший с
+     * площадки, не трогается.
+     */
+    public static final String DASH = "\u2013";
+
     private DocFormat() {}
 
     private static DecimalFormat format(String pattern) {

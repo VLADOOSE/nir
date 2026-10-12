@@ -129,10 +129,10 @@ public class PriceRequestSendService {
         return dispatch(pr, pr.getDistributor(), null, null, to);
     }
 
-    /** «Подпись и печать» без загруженной печати — 400 до первой записи (спека §6.2: галочка недоступна, пока печати нет). */
+    /** «Печать» без загруженной печати — 400 до первой записи (спека §6.2: галочка недоступна, пока печати нет). */
     public void requireStamp(Market market) {
         if (profiles.forMarket(market).getStampPng() == null) {
-            throw new BadRequestException("Печать не загружена — загрузите её в «Реквизитах и печати» или снимите «Подпись и печать»");
+            throw new BadRequestException("Печать не загружена — загрузите её в «Реквизитах и печати» или снимите «Печать»");
         }
     }
 

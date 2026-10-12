@@ -87,15 +87,15 @@ public class JasperReportService {
         BigDecimal totalSum = BigDecimal.ZERO;
         for (Tender t : tenders) {
             table.addCell(new PdfPCell(new Phrase(String.valueOf(idx++), cellFont)));
-            table.addCell(new PdfPCell(new Phrase(t.getTenderNumber() != null ? t.getTenderNumber() : "—", cellFont)));
-            table.addCell(new PdfPCell(new Phrase(t.getFacility() != null ? t.getFacility().getName() : "—", cellFont)));
+            table.addCell(new PdfPCell(new Phrase(t.getTenderNumber() != null ? t.getTenderNumber() : DocFormat.DASH, cellFont)));
+            table.addCell(new PdfPCell(new Phrase(t.getFacility() != null ? t.getFacility().getName() : DocFormat.DASH, cellFont)));
             table.addCell(new PdfPCell(new Phrase(getStatusLabel(t.getStatus()), cellFont)));
             table.addCell(new PdfPCell(new Phrase(getPurchaseTypeLabel(t.getPurchaseType()), cellFont)));
             table.addCell(new PdfPCell(new Phrase(
-                    t.getDeadline() != null ? t.getDeadline().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) : "—",
+                    t.getDeadline() != null ? t.getDeadline().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) : DocFormat.DASH,
                     cellFont)));
 
-            String cost = "—";
+            String cost = DocFormat.DASH;
             if (t.getTotalCost() != null) {
                 cost = money(t.getTotalCost(), company);
                 totalSum = totalSum.add(t.getTotalCost());
@@ -150,10 +150,10 @@ public class JasperReportService {
         document.add(title);
 
         Tender tender = apply.getTender();
-        document.add(new Paragraph("Номер тендера: " + (tender != null ? tender.getTenderNumber() : "—"), labelFont));
-        document.add(new Paragraph("Заказчик: " + (tender != null && tender.getFacility() != null ? tender.getFacility().getName() : "—"), valueFont));
+        document.add(new Paragraph("Номер тендера: " + (tender != null ? tender.getTenderNumber() : DocFormat.DASH), labelFont));
+        document.add(new Paragraph("Заказчик: " + (tender != null && tender.getFacility() != null ? tender.getFacility().getName() : DocFormat.DASH), valueFont));
         document.add(new Paragraph("Статус заявки: " + getApplyStatusLabel(apply.getStatus()), valueFont));
-        document.add(new Paragraph("Дата создания: " + (apply.getCreatedAt() != null ? apply.getCreatedAt().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) : "—"), valueFont));
+        document.add(new Paragraph("Дата создания: " + (apply.getCreatedAt() != null ? apply.getCreatedAt().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) : DocFormat.DASH), valueFont));
         document.add(new Paragraph(" ", valueFont));
 
         if (!items.isEmpty()) {
@@ -172,12 +172,12 @@ public class JasperReportService {
             BigDecimal total = BigDecimal.ZERO;
             for (ApplyItem item : items) {
                 table.addCell(new PdfPCell(new Phrase(String.valueOf(idx++), cellFont)));
-                table.addCell(new PdfPCell(new Phrase(item.getTenderLot() != null ? item.getTenderLot().getEquipName() : "—", cellFont)));
-                table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getName() : "—", cellFont)));
-                table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getManufact() : "—", cellFont)));
-                table.addCell(new PdfPCell(new Phrase(item.getQuantity() != null ? String.valueOf(item.getQuantity()) : "—", cellFont)));
-                String unitCost = "—";
-                String itemTotalStr = "—";
+                table.addCell(new PdfPCell(new Phrase(item.getTenderLot() != null ? item.getTenderLot().getEquipName() : DocFormat.DASH, cellFont)));
+                table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getName() : DocFormat.DASH, cellFont)));
+                table.addCell(new PdfPCell(new Phrase(item.getMedEquipment() != null ? item.getMedEquipment().getManufact() : DocFormat.DASH, cellFont)));
+                table.addCell(new PdfPCell(new Phrase(item.getQuantity() != null ? String.valueOf(item.getQuantity()) : DocFormat.DASH, cellFont)));
+                String unitCost = DocFormat.DASH;
+                String itemTotalStr = DocFormat.DASH;
                 if (item.getOfferedCost() != null) {
                     unitCost = money(item.getOfferedCost(), company);
                     BigDecimal itemTotal = item.getOfferedCost().multiply(BigDecimal.valueOf(item.getQuantity() != null ? item.getQuantity() : 1));
@@ -214,7 +214,7 @@ public class JasperReportService {
     }
 
     private String getApplyStatusLabel(String s) {
-        if (s == null) return "—";
+        if (s == null) return DocFormat.DASH;
         return switch (s) {
             case "DRAFT" -> "Черновик";
             case "SUBMITTED" -> "Подана";
@@ -225,7 +225,7 @@ public class JasperReportService {
     }
 
     private String getStatusLabel(String s) {
-        if (s == null) return "—";
+        if (s == null) return DocFormat.DASH;
         return switch (s) {
             case "DRAFT" -> "Подготовка";
             case "ACTIVE" -> "Приём заявок";
@@ -235,7 +235,7 @@ public class JasperReportService {
     }
 
     private String getPurchaseTypeLabel(String s) {
-        if (s == null) return "—";
+        if (s == null) return DocFormat.DASH;
         return switch (s) {
             case "ELECTRONIC_AUCTION" -> "Электронный аукцион";
             case "PAPER_TENDER" -> "Конкурс с подачей документов";

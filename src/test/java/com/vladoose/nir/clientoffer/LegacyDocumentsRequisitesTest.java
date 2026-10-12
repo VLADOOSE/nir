@@ -152,7 +152,9 @@ class LegacyDocumentsRequisitesTest {
         assertThat(text).contains(KZ_FULL_NAME, KZ_IDS, "Тест Банк KZ", "TESTKZKA",
                         "1 234 567,89 тг", "2 469 135,78 тг", "1 000,50 тг", "3 001,50 тг", "Итого: 2 472 137,28 тг",
                         "Директор ТОО «Тест-KZ»", KZ_DIRECTOR, "test-kz@example.kz")
-                .doesNotContain("1112223334", "Тест Банк RF", RF_DIRECTOR, "руб.");
+                .doesNotContain("1112223334", "Тест Банк RF", RF_DIRECTOR, "руб.")
+                // пустые поля (заказчик, наименования строк) — средним тире: длинного в документах нет (2026-10-12)
+                .contains("Заказчик: \u2013").doesNotContain("\u2014");
     }
 
     @Test
@@ -180,7 +182,7 @@ class LegacyDocumentsRequisitesTest {
         assertThat(text).contains(KZ_FULL_NAME, KZ_IDS, "Тест Банк KZ", "Отчёт по тендерам (статус: T9-REPORT)",
                         "T9-A", "T9-B", "1 234 567,89 тг", "1 000,50 тг",
                         "Итого тендеров: 2", "Общая сумма: 1 235 568,39 тг")
-                .doesNotContain("1112223334", "Тест Банк RF", "руб.");
+                .doesNotContain("1112223334", "Тест Банк RF", "руб.").doesNotContain("\u2014");
     }
 
     @Test

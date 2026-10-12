@@ -263,8 +263,8 @@ class PrivateRequestRfqStage2Test {
 
         var file = rfq.document(t.getId(), p);
 
-        assertThat(file.fileName()).startsWith("Запрос КП № — от ").endsWith(".docx");
-        assertThat(docxText(new ByteArrayInputStream(file.bytes()))).contains("Исх. № —").contains("ZZ Ещё не заведён")
+        assertThat(file.fileName()).startsWith("Запрос КП № \u2013 от ").endsWith(".docx");
+        assertThat(docxText(new ByteArrayInputStream(file.bytes()))).contains("Исх. № \u2013").contains("ZZ Ещё не заведён")
                 .contains("ZZ Облучатель окна");
         assertThat(priceRequestRepository.findAll()).noneMatch(pr -> pr.getTender().getId().equals(t.getId()));
     }

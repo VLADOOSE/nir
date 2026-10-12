@@ -13,8 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Запрос коммерческого предложения на бланке (спека 2026-10-12 §6.4) → KpDocument для KpDocxRenderer: тот же бланк,
- * геометрия, подпись и печать, что у КП клиенту; цен и итогов нет. Колонки «Характеристики» и «Регистрация» — только
+ * Запрос коммерческого предложения на бланке (спека 2026-10-12 §6.4) → KpDocument для KpDocxRenderer: тот же бланк и
+ * геометрия, что у КП клиенту; цен и итогов нет. Подписи нет — «С уважением,» и название компании, печать по отметке. Колонки «Характеристики» и «Регистрация» — только
  * если заполнены хоть у одной позиции; ширины — общий подбор KpDocumentBuilder.fitTable. Клиента, номера заявки и
  * тендера документ не знает вовсе: строку о заказчике ему дают готовой, и только по отметке «Указать клиента».
  */
@@ -25,7 +25,7 @@ public class RfqDocumentBuilder {
     public record Line(String name, String characteristics, String quantity, String unit, String registration) {}
 
     /**
-     * number — id запроса (метка темы письма); null — документ до отправки, «№ —». clientLine — готовая строка о
+     * number — id запроса (метка темы письма); null — документ до отправки, «№ –». clientLine — готовая строка о
      * заказчике или null. replyTo — ящик ответов; replyBy — «Ответить до» или null.
      */
     public record Input(CompanyProfile profile, Long number, LocalDate date, String recipientName, String recipientContact,
@@ -76,7 +76,7 @@ public class RfqDocumentBuilder {
         return new KpDocument(
                 false,
                 KpDocumentBuilder.letterhead(p),
-                "Исх. № " + (in.number() == null ? "—" : in.number()) + " от " + DocFormat.date(in.date()) + " г.",
+                "Исх. № " + (in.number() == null ? DocFormat.DASH : in.number()) + " от " + DocFormat.date(in.date()) + " г.",
                 recipient,
                 in.texts().title(),
                 null,
@@ -107,14 +107,14 @@ public class RfqDocumentBuilder {
     }
 
     /**
-     * Подпись директора из профиля; подпись и печать — по отметке, если они загружены. Контактов под подписью нет:
-     * строка ответа уже называет ящик приёма, а контакты профиля уводили бы ответ мимо него.
+     * «С уважением,» и название компании — без линии подписи, должности и имени директора: запросу цен подпись не нужна
+     * (решение оператора 2026-10-12). Печать — по отметке, рядом с названием (как у КП с подписью «от компании»);
+     * картинка подписи не ставится никогда. Контактов нет: строка ответа уже называет ящик приёма.
      */
     private static KpDocument.Signoff signoff(CompanyProfile p, boolean withStamp) {
         String shortName = p.getShortName() == null ? "" : p.getShortName().trim();
-        String title = notBlank(p.getDirectorTitle()) ? p.getDirectorTitle().trim() + " " + shortName : shortName;
-        return new KpDocument.Signoff(true, title, KpDocumentBuilder.surnameWithInitials(p.getDirectorName()), null,
-                withStamp ? p.getSignaturePng() : null, withStamp ? p.getStampPng() : null, p.getStampSizeMm());
+        return new KpDocument.Signoff(false, shortName, null, null, null, withStamp ? p.getStampPng() : null,
+                p.getStampSizeMm());
     }
 
     private static KpDocument.Column column(OfferColumnKey key, String label) {

@@ -2,6 +2,7 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.EmailTemplate;
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.util.DocFormat;
 
 import java.util.Arrays;
 import java.util.List;
@@ -22,7 +23,7 @@ public record RfqTexts(String title, String intro, List<String> ask, String clie
     /** Пункты «В предложении просим указать», по одному на строку; регистрация — реестра своего рынка. */
     public static String defaultAsk(Market market) {
         String registration = market == Market.KZ
-                ? "Номер РУ РК и сертификат соответствия (СТ-KZ / СТ-1) — при наличии"
+                ? "Номер РУ РК и сертификат соответствия (СТ-KZ / СТ-1) " + DocFormat.DASH + " при наличии"
                 : "Номер регистрационного удостоверения Росздравнадзора";
         return String.join("\n", "Модель и производитель", "Цена за единицу с НДС и срок действия цены",
                 "Срок поставки и наличие", registration, "Гарантийный срок", "Условия доставки");

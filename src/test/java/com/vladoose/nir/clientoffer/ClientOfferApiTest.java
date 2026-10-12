@@ -206,7 +206,7 @@ class ClientOfferApiTest {
         JsonNode r = save(o.get("id").asLong(), body);
         assertThat(r.get("facilityId").asLong()).isEqualTo(kz.getId());
         assertThat(r.get("facilityName").asText()).isEqualTo(kz.getName());
-        assertThat(r.get("fileBaseName").asText()).endsWith(" — " + kz.getName());
+        assertThat(r.get("fileBaseName").asText()).endsWith(" \u2013 " + kz.getName());
     }
 
     /**

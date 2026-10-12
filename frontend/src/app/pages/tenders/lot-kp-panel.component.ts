@@ -90,7 +90,7 @@ import { kpToastFromResults } from '../../shared/kp-toast';
             Приложить запрос на бланке (Word)</label>
           <label class="kp-opt" [class.off]="!hasStamp || !withDocument"
                  [attr.title]="hasStamp ? null : 'Печать не загружена — «Система → Реквизиты и печать»'">
-            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Подпись и печать
+            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Печать
           </label>
         </div>
 
@@ -206,7 +206,7 @@ export class LotKpPanelComponent implements OnChanges {
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private notify: NotificationService,
               profiles: CompanyProfileService, destroyRef: DestroyRef) {
-    // «Подпись и печать» — только при загруженной печати; из кеша приходит синхронно — без detectChanges (§12)
+    // «Печать» — только при загруженной печати; из кеша приходит синхронно — без detectChanges (§12)
     profiles.profile$().pipe(takeUntilDestroyed(destroyRef)).subscribe({
       next: p => { this.hasStamp = !!p?.hasStamp; this.cdr.markForCheck(); },
       error: () => { /* без профиля галочка просто недоступна */ },

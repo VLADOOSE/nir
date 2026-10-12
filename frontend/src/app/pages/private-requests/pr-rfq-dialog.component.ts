@@ -124,7 +124,7 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
             Приложить запрос на бланке (Word)</label>
           <label class="opt" [class.off]="!hasStamp || !withDocument"
                  [attr.title]="hasStamp ? null : 'Печать не загружена — «Система → Реквизиты и печать»'">
-            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Подпись и печать
+            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Печать
           </label>
         </div>
 
@@ -240,7 +240,7 @@ export class PrRfqDialogComponent implements OnInit {
     // профиль из кеша приходит синхронно — markForCheck, не detectChanges (CLAUDE.md §12)
     this.profiles.profile$().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: p => { this.hasStamp = !!p?.hasStamp; this.cdr.markForCheck(); },
-      error: () => { /* без профиля «Подпись и печать» просто недоступна */ },
+      error: () => { /* без профиля «Печать» просто недоступна */ },
     });
     this.api.getPrivateRequestSourcing(this.requestId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (s: Sourcing) => {

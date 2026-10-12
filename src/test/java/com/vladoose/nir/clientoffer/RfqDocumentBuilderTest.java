@@ -21,6 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Запрос на бланке читается обратно через POI (спека 2026-10-12 §6.4). */
 class RfqDocumentBuilderTest {
 
+    /** Среднее тире; длинного (U+2014) в документах нет — решение оператора 2026-10-12. */
+    private static final String DASH = "\u2013", EM_DASH = "\u2014";
+
     private final RfqDocumentBuilder builder = new RfqDocumentBuilder();
     private final KpDocxRenderer renderer = new KpDocxRenderer();
 
@@ -63,7 +66,6 @@ class RfqDocumentBuilderTest {
                 .contains("ТОО «West-Med» просит предоставить коммерческое предложение на поставку следующих товаров:")
                 .contains("В предложении просим указать:").contains("1. Модель и производитель;")
                 .contains("6. Условия доставки.").contains("Ответ просим направить на zakup@westmed.kz до 15.10.2026.")
-                .contains("Директор ТОО «West-Med»").contains("Ширяев И. В.")
                 // контакты под подписью («моб: …, e-mail: …») не печатаются; телефон и почта в реквизитах бланка — остаются
                 .doesNotContain("Конечный заказчик").doesNotContain("Итого").doesNotContain("моб: 87770752770");
         try (XWPFDocument d = open(docx)) {
@@ -79,7 +81,7 @@ class RfqDocumentBuilderTest {
     void emptyColumnsAreDropped_draftHasDashNumber() throws Exception {
         List<RfqDocumentBuilder.Line> plain = List.of(new RfqDocumentBuilder.Line("Кушетка медицинская", null, "1", "шт", null));
         byte[] docx = renderer.render(builder.build(input(null, null, plain, false, KpFixtures.profileKz())));
-        assertThat(text(docx)).contains("Исх. № — от 12.10.2026 г.");
+        assertThat(text(docx)).contains("Исх. № " + DASH + " от 12.10.2026 г.");
         try (XWPFDocument d = open(docx)) {
             assertThat(row(items(d), 0)).containsExactly("№", "Наименование", "Кол-во", "Ед. изм.");
         }
@@ -91,16 +93,35 @@ class RfqDocumentBuilderTest {
         assertThat(text(renderer.render(builder.build(input(1L, line, LINES, false, KpFixtures.profileKz()))))).contains(line);
     }
 
+    /**
+     * Подписи нет: «С уважением,» и название компании — без линии подписи, должности и имени директора (решение оператора
+     * 2026-10-12: запросу подпись не нужна). Печать — только по отметке, рядом с названием; картинка подписи — никогда.
+     */
     @Test
-    void stampAndSignatureOnlyWithFlag() throws Exception {
+    void companyClosingWithoutSignatureLineOrDirector_stampOnlyWithFlag() throws Exception {
         CompanyProfile p = KpFixtures.profileKz();
         p.setStampPng(KpTestSupport.circlePng());
         p.setSignaturePng(KpTestSupport.signaturePng());
-        try (XWPFDocument d = open(renderer.render(builder.build(input(1L, null, LINES, false, p))))) {
+        byte[] plain = renderer.render(builder.build(input(1L, null, LINES, false, p)));
+        assertThat(text(plain)).contains("С уважением,\nТОО «West-Med»")
+                .doesNotContain("Ширяев").doesNotContain("Директор ТОО");
+        try (XWPFDocument d = open(plain)) {
             assertThat(anchors(d)).isZero();
         }
         try (XWPFDocument d = open(renderer.render(builder.build(input(1L, null, LINES, true, p))))) {
-            assertThat(anchors(d)).isEqualTo(2);
+            assertThat(anchors(d)).isEqualTo(1);   // только печать
+        }
+    }
+
+    /** Текст, который документ ставит сам (номер черновика, «просим указать», строка ответа, подпись), — без длинного тире. */
+    @Test
+    void generatedTextHasNoEmDash() throws Exception {
+        for (Market market : Market.values()) {
+            CompanyProfile p = KpFixtures.profileKz();
+            p.setMarket(market);   // от рынка зависят только тексты «просим указать» и подпись колонки регистрации
+            RfqDocumentBuilder.Input in = new RfqDocumentBuilder.Input(p, null, LocalDate.of(2026, 10, 12), "ТОО «MEDSYST»",
+                    null, RfqTexts.of(null, market), null, LINES, "zakup@westmed.kz", LocalDate.of(2026, 10, 15), false);
+            assertThat(text(renderer.render(builder.build(in)))).as("рынок %s", market).doesNotContain(EM_DASH);
         }
     }
 

@@ -592,7 +592,7 @@ class KpDocumentBuilderTest {
                 new OfferColumn("VAT_RATE", null), new OfferColumn("SUM", null))));
         o.getItems().add(ClientOfferTestData.item(o, 1, "Кровать функциональная", null, "5"));   // ни закупки, ни ручной цены
         assertThat(KpFixtures.document(o, KpFixtures.profileKz()).rows().get(0).cells())
-                .containsExactly(List.of("Кровать функциональная"), List.of("—"), List.of("5%"), List.of("—"));
+                .containsExactly(List.of("Кровать функциональная"), List.of("\u2013"), List.of("5%"), List.of("\u2013"));
     }
 
     @Test

@@ -75,12 +75,12 @@ public class RfqDocumentService {
         return new RfqDocumentBuilder.Line(name, blank(spec) ? null : KpEmailComposer.trimSpec(spec), qty, unit, reg);
     }
 
-    /** «Запрос КП № 534 от 12.10.2026 — West-Med.docx»: компания — надпись бренда без кавычек, иначе краткое название. */
+    /** «Запрос КП № 534 от 12.10.2026 – West-Med.docx»: компания — надпись бренда без кавычек, иначе краткое название. */
     static String fileName(Long id, LocalDate date, CompanyProfile p) {
         String company = !blank(p.getBrandText()) ? p.getBrandText() : p.getShortName();
         company = company == null ? "" : company.replaceAll("[\"«»]", "").replaceAll("\\s+", " ").trim();
-        return "Запрос КП № " + (id == null ? "—" : id) + " от " + DocFormat.date(date)
-                + (company.isEmpty() ? "" : " — " + company) + ".docx";
+        return "Запрос КП № " + (id == null ? DocFormat.DASH : id) + " от " + DocFormat.date(date)
+                + (company.isEmpty() ? "" : " " + DocFormat.DASH + " " + company) + ".docx";
     }
 
     private static String contact(Distributor d) {

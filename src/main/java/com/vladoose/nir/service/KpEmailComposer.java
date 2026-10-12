@@ -2,6 +2,7 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.EmailTemplateRepository;
+import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.KpToken;
 import com.vladoose.nir.util.LotDescriptiveText;
 import org.springframework.stereotype.Component;
@@ -170,7 +171,7 @@ public class KpEmailComposer {
     static String trimSpec(String spec) {
         String s = spec.strip();
         if (s.length() <= SPEC_LIMIT) return s;
-        return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ — по запросу)";
+        return s.substring(0, SPEC_LIMIT) + "… (полное ТЗ " + DocFormat.DASH + " по запросу)";
     }
 
     private String safe(String s) { return s == null ? "" : s; }

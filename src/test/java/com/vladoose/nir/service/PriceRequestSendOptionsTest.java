@@ -207,7 +207,7 @@ class PriceRequestSendOptionsTest {
     void resendAfterStampDeletedSendsDocumentWithoutStamp() throws Exception {
         stamp(KpTestSupportAccess.circlePng());
         SendResult r = send(dist("st@opt.kz"), new SendOptions(null, true, true, false, null)).get(0);
-        assertThat(anchors(attachment(greenMail.getReceivedMessages()[0]))).isEqualTo(2);
+        assertThat(anchors(attachment(greenMail.getReceivedMessages()[0]))).isEqualTo(1);   // только печать: подписи в запросе нет
 
         stamp(null);
         greenMail.purgeEmailFromAllMailboxes();

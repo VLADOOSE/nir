@@ -145,7 +145,7 @@ class RfqDocumentServiceTest {
 
         String text = text(documents.render(draft(t, t.getLots().get(0), dist(), false)).bytes());
 
-        assertThat(text).contains("(полное ТЗ — по запросу)");
+        assertThat(text).contains("(полное ТЗ \u2013 по запросу)");
         assertThat(text.length()).isLessThan(4000);
     }
 
@@ -156,6 +156,6 @@ class RfqDocumentServiceTest {
 
         String name = documents.render(draft(t, t.getLots().get(0), dist(), false)).fileName();
 
-        assertThat(name).matches("Запрос КП № — от \\d{2}\\.\\d{2}\\.\\d{4} — [^\"«»]+\\.docx");
+        assertThat(name).matches("Запрос КП № \u2013 от \\d{2}\\.\\d{2}\\.\\d{4} \u2013 [^\"«»]+\\.docx");
     }
 }

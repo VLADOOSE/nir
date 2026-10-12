@@ -268,7 +268,7 @@ public class ClientOfferService {
     /** «КП № 443 от 14.09.2026 — ГКП …»: без символов, недопустимых в именах файлов. */
     public String fileBaseName(ClientOffer o) {
         String client = clientName(o);
-        String base = "КП № " + o.getNumber() + " от " + DocFormat.date(o.getOfferDate()) + (client == null ? "" : " — " + client);
+        String base = "КП № " + o.getNumber() + " от " + DocFormat.date(o.getOfferDate()) + (client == null ? "" : " " + DocFormat.DASH + " " + client);
         base = base.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]+", " ").replaceAll("\\s+", " ").trim();
         return base.length() > 150 ? base.substring(0, 150).trim() : base;
     }
