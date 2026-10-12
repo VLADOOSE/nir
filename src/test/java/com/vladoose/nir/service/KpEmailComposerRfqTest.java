@@ -91,6 +91,22 @@ class KpEmailComposerRfqTest {
         assertThat(att).isLessThan(thanks);
     }
 
+    /**
+     * Шаблон в форме прежнего зашитого (сохранён оператором до этапа 2): «{{позиции}}⏎{{дедлайн}}Просим…». Вставленные
+     * строки идут после перевода строки шаблона — абзацы через одну пустую строку, как в зашитом шаблоне, без двух пустых
+     * подряд (найдено живой проверкой).
+     */
+    @Test
+    void insertedLinesKeepTheTemplateSpacing() {
+        when(repo.findByMarket(any())).thenReturn(Optional.of(EmailTemplate.builder().market(Market.KZ).subjectTemplate("З")
+                .bodyTemplate("Здравствуйте!\n\n{{позиции}}\n{{дедлайн}}Просим указать: цену.").build()));
+        String body = composer.compose(pr("ZZ Клиника", true, true)).body();
+        assertThat(body).contains("— Тонометр OMRON M2 (OMRON) — 5 шт.\n\nКонечный заказчик: ZZ Клиника, место поставки: "
+                + "г. Уральск, ул. Мира 5. Просим закрепить проект за ТОО «West-Med».\n\n"
+                + "Запрос на бланке компании — во вложении.\n\nПросим указать: цену.")
+                .doesNotContain("\n\n\n");
+    }
+
     @Test
     void customTemplateUnchangedWhenNothingToAdd() {
         when(repo.findByMarket(any())).thenReturn(Optional.of(EmailTemplate.builder().market(Market.KZ)

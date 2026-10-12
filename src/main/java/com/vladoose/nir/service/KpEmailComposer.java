@@ -91,7 +91,8 @@ public class KpEmailComposer {
      * Свой шаблон оператора, сохранённый до этапа 2, не знает {{заказчик}} и {{вложение}}: без них клиент, указанный
      * поставщику, и строка о вложении молча пропали бы из письма. Недостающие — и только когда им есть что сказать —
      * встают отдельным абзацем сразу после {{позиции}} (нет и её — в конец письма). Без клиента и вложения шаблон
-     * не меняется.
+     * не меняется. Позиции кончаются переводом строки, а значения строк — пустой строкой, поэтому вставка идёт ПОСЛЕ
+     * перевода строки шаблона за {{позиции}} (если он есть): иначе между абзацами вышло бы две пустые строки.
      */
     static String withMissingLines(String body, boolean client, boolean attachment) {
         String missing = (client && !body.contains(CLIENT) ? CLIENT : "")
@@ -100,6 +101,7 @@ public class KpEmailComposer {
         int at = body.indexOf(POSITIONS);
         if (at < 0) return body.stripTrailing() + "\n\n" + missing;
         int end = at + POSITIONS.length();
+        if (body.startsWith("\n", end)) return body.substring(0, end + 1) + missing + body.substring(end + 1);
         return body.substring(0, end) + "\n" + missing + body.substring(end);
     }
 
