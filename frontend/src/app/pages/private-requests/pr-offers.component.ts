@@ -18,13 +18,13 @@ import { errorText } from '../../shared/error-text';
   standalone: true,
   imports: [NgIf, NgFor, RouterLink],
   template: `
-    <section class="pr-offers">
-      <div class="head">
+    <section class="card pr-offers">
+      <div class="sec-head">
         <h3>КП клиенту</h3>
         <button type="button" class="btn btn-primary" *ngIf="!readonly && view.lines.length" [disabled]="busy" (click)="create()">
           {{ busy ? 'Создаю…' : 'Создать КП клиенту' }}</button>
       </div>
-      <p class="empty" *ngIf="!view.offers.length">
+      <p class="hint" *ngIf="!view.offers.length">
         КП по заявке ещё нет{{ view.lines.length ? '' : ' — сначала добавьте позиции' }}.</p>
       <a class="offer" *ngFor="let o of view.offers" [routerLink]="['/client-offers', o.id]">
         <span class="num">№ {{ o.number }} от {{ dateText(o.offerDate) }}</span>
@@ -34,12 +34,14 @@ import { errorText } from '../../shared/error-text';
     </section>
   `,
   styles: [`
-    .pr-offers { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
-    .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    h3 { margin: 0; }
-    .empty { margin: 0; }
+    /* как соседние разделы страницы (pr-supply, pr-lines): карточка, заголовок 15 px */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+            display: flex; flex-direction: column; gap: 8px; }
+    .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    h3 { margin: 0; font-size: 15px; }
+    .hint { margin: 0; font-size: 12px; color: var(--text-muted); }
     .offer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border);
-             border-radius: 10px; color: var(--text); text-decoration: none; background: var(--surface); }
+             border-radius: 10px; color: var(--text); text-decoration: none; }
     .offer:hover { border-color: var(--accent); }
     .num { font-weight: 600; }
     .meta { margin-left: auto; color: var(--text-muted); }
