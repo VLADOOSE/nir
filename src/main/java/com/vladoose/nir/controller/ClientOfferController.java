@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.request.ClientOfferUpdateRequest;
 import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
 import com.vladoose.nir.dto.response.PreviewPagesResponse;
+import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferStatus;
 import com.vladoose.nir.exception.BadRequestException;
@@ -88,6 +89,12 @@ public class ClientOfferController {
     @PreAuthorize("hasRole('ADMIN')")
     public ClientOfferResponse status(@PathVariable Long id, @Valid @RequestBody ClientOfferStatusRequest req) {
         return full(service.setStatus(id, req.getStatus()));
+    }
+
+    /** «Поставщик ▾» в строке КП: ответы поставщиков с ценой на позицию заявки этой строки. */
+    @GetMapping("/{id}/items/{itemId}/offers")
+    public List<SupplierOfferResponse> itemOffers(@PathVariable Long id, @PathVariable Long itemId) {
+        return requestOffers.offers(id, itemId);
     }
 
     @GetMapping("/{id}/preview")

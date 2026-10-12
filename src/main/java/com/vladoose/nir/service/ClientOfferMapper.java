@@ -80,6 +80,8 @@ public class ClientOfferMapper {
         d.setRegNumber(it.getRegNumber());
         d.setNote(it.getNote());
         d.setTenderLotId(it.getTenderLotId());
+        d.setPriceRequestItemId(it.getPriceRequestItemId());
+        d.setDistributorId(it.getDistributorId());
         d.setCalc(calc);
         return d;
     }

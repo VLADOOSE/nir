@@ -1,6 +1,8 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
@@ -67,6 +69,21 @@ public class ClientOfferRequestService {
         o.setItemCount(calc.totals().itemCount());
         repository.flush();
         return o;
+    }
+
+    /** «Поставщик ▾» (спека §8): ответы с ценой на позицию строки — по последнему от поставщика, от дешёвого. */
+    @Transactional(readOnly = true)
+    public List<SupplierOfferResponse> offers(Long offerId, Long itemId) {
+        ClientOffer o = offers.get(offerId);
+        ClientOfferItem it = o.getItems().stream().filter(i -> itemId.equals(i.getId())).findFirst()
+                .orElseThrow(() -> new NotFoundException("Строка КП не найдена: id=" + itemId));
+        if (o.getTenderId() == null || it.getTenderLotId() == null) return List.of();
+        List<PurchaseOffer> current = offersByLot(o.getTenderId()).getOrDefault(it.getTenderLotId(), List.of());
+        if (current.isEmpty()) return List.of();
+        BigDecimal min = current.get(0).price();
+        return current.stream().map(c -> new SupplierOfferResponse(c.priceRequestItemId(), c.supplierName(), c.price(),
+                c.respondedOn(), "ACCEPTED".equals(c.status()), c.price().compareTo(min) == 0,
+                Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()))).toList();
     }
 
     /** Кандидаты в закупку по позициям заявки (решение плана 2). */

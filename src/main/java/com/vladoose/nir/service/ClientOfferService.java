@@ -10,6 +10,7 @@ import com.vladoose.nir.exception.ConflictException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.FacilityRepository;
+import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.document.*;
 import com.vladoose.nir.service.offer.ClientOfferCalculator;
 import com.vladoose.nir.service.offer.OfferCalculation;
@@ -69,11 +70,12 @@ public class ClientOfferService {
     private final KpDocxRenderer docx;
     /** Чтение для файла КП — короткой транзакцией только на чтение, отдельно от рендера (PDFBox — секунды процессора). */
     private final TransactionTemplate readOnly;
+    private final PriceRequestItemRepository priceRequestItems;
 
     public ClientOfferService(ClientOfferRepository repository, CompanyProfileService profiles,
                               FacilityRepository facilities, ClientOfferCalculator calculator, KpDocumentBuilder builder,
                               KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer preview, KpDocxRenderer docx,
-                              PlatformTransactionManager transactions) {
+                              PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems) {
         this.repository = repository;
         this.profiles = profiles;
         this.facilities = facilities;
@@ -85,6 +87,7 @@ public class ClientOfferService {
         this.docx = docx;
         this.readOnly = new TransactionTemplate(transactions);
         this.readOnly.setReadOnly(true);
+        this.priceRequestItems = priceRequestItems;
     }
 
     /** Файл КП для скачивания: имя («КП № 443 от 14.09.2026 — ….pdf») и байты. */
@@ -144,7 +147,7 @@ public class ClientOfferService {
         OfferSettingsValidator.columns(r.getColumns());
         OfferSettingsValidator.terms(r.getTerms());
         CompanyProfile profile = profiles.forMarket(o.getMarket());
-        List<ClientOfferItem> stored = checkItems(o, r.getItems(), profile);
+        Checked checked = checkItems(o, r.getItems(), profile);
         Facility facility = facility(r.getFacilityId());
 
         o.setNumber(r.getNumber());
@@ -168,7 +171,7 @@ public class ClientOfferService {
         o.setSignoffContacts(r.isSignoffContacts());
         o.setWithStamp(r.isWithStamp());
         o.setInternalNote(trim(r.getInternalNote()));
-        syncItems(o, r.getItems(), stored);
+        syncItems(o, r.getItems(), checked);
 
         OfferCalculation calc = calculator.calculate(o);
         checkAmounts(o, calc);   // отказ откатывает транзакцию — правки выше в базу не попадают
@@ -345,10 +348,11 @@ public class ClientOfferService {
      * Числа строк здесь же округляются до точности своих колонок (как округлила бы база), и проверяется уже округлённое:
      * ответ автосохранения посчитан от того же, что ляжет в базу.
      */
-    private static List<ClientOfferItem> checkItems(ClientOffer o, List<ClientOfferItemDto> dtos, CompanyProfile profile) {
+    private Checked checkItems(ClientOffer o, List<ClientOfferItemDto> dtos, CompanyProfile profile) {
         Map<Long, ClientOfferItem> existing = new HashMap<>();
         for (ClientOfferItem it : o.getItems()) existing.put(it.getId(), it);
         List<ClientOfferItem> stored = new ArrayList<>(dtos.size());
+        List<Link> links = new ArrayList<>(dtos.size());
         int itemNo = 0;
         for (int i = 0; i < dtos.size(); i++) {
             ClientOfferItemDto dto = dtos.get(i);
@@ -359,10 +363,44 @@ public class ClientOfferService {
                 if (it == null) throw new BadRequestException("Строка не найдена или повторяется: id=" + dto.getId());
             }
             if (dto.getKind() == null) throw new BadRequestException("Не указан вид строки (строка " + (i + 1) + ")");
-            if (dto.getKind() == ClientOfferItemKind.ITEM) checkItem(dto, it, profile, "№ " + (++itemNo) + quotedName(dto.getName()));
+            Link link = Link.NONE;
+            if (dto.getKind() == ClientOfferItemKind.ITEM) {
+                String row = "№ " + (++itemNo) + quotedName(dto.getName());
+                checkItem(dto, it, profile, row);
+                link = checkLink(o, dto, it, row);
+            }
             stored.add(it);
+            links.add(link);
         }
-        return stored;
+        return new Checked(stored, links);
+    }
+
+    /** Ссылка строки на ответ после проверки (решение плана 5): keep — та, что сохранена; иначе — новые id ответа и поставщика. */
+    private record Link(boolean keep, Long priceRequestItemId, Long distributorId) {
+        static final Link NONE = new Link(false, null, null);
+        static final Link KEEP = new Link(true, null, null);
+    }
+
+    private record Checked(List<ClientOfferItem> stored, List<Link> links) {}
+
+    /**
+     * Ссылка строки на ответ поставщика (решение плана 5). Та же, что сохранена, — не перепроверяется: КП — снимок, запрос
+     * потом закрыли или цену в нём стёрли — ссылка живёт. Новая — только ответ заявки этого КП, по позиции этой строки и с
+     * ценой, иначе 400. Строки ответа нет (удалена вместе с запросом) — ссылка молча снимается: автосохранение не падает.
+     */
+    private Link checkLink(ClientOffer o, ClientOfferItemDto dto, ClientOfferItem stored, String row) {
+        Long id = dto.getPriceRequestItemId();
+        if (id == null) return Link.NONE;
+        if (stored != null && id.equals(stored.getPriceRequestItemId())) return Link.KEEP;
+        PriceRequestItem answer = priceRequestItems.findById(id).orElse(null);
+        if (answer == null) return Link.NONE;
+        Long lotId = stored == null ? null : stored.getTenderLotId();
+        PriceRequest pr = answer.getPriceRequest();
+        boolean ours = o.getTenderId() != null && lotId != null && answer.getResponsePrice() != null
+                && pr.getTender() != null && o.getTenderId().equals(pr.getTender().getId())
+                && answer.getTenderLot() != null && lotId.equals(answer.getTenderLot().getId());
+        if (!ours) throw new BadRequestException("Ответ поставщика не относится к этой позиции заявки — позиция " + row);
+        return new Link(false, id, pr.getDistributor().getId());
     }
 
     /** Позиция (ITEM): количество, цены, наценка, ставки, регистрация; row — «№ 2 «Пульсоксиметр»», как в колонке «№». */
@@ -427,15 +465,15 @@ public class ClientOfferService {
         }
     }
 
-    private static void syncItems(ClientOffer o, List<ClientOfferItemDto> dtos, List<ClientOfferItem> stored) {
+    private static void syncItems(ClientOffer o, List<ClientOfferItemDto> dtos, Checked checked) {
         List<ClientOfferItem> ordered = new ArrayList<>(dtos.size());
         for (int i = 0; i < dtos.size(); i++) {
-            ClientOfferItem it = stored.get(i);
+            ClientOfferItem it = checked.stored().get(i);
             if (it == null) {
                 it = ClientOfferItem.builder().offer(o).build();
                 o.getItems().add(it);
             }
-            applyItem(it, dtos.get(i));
+            applyItem(it, dtos.get(i), checked.links().get(i));
             it.setLineNo(i + 1);
             ordered.add(it);
         }
@@ -445,8 +483,11 @@ public class ClientOfferService {
         o.getItems().sort(Comparator.comparingInt(ClientOfferItem::getLineNo));
     }
 
-    /** Перенос строки — уже проверенной (checkItems). Связи волны 2 (поставщик, лот, строка ответа, каталог) не трогаются. */
-    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto) {
+    /**
+     * Перенос строки — уже проверенной (checkItems). Ссылка на ответ и поставщик — из проверки (checkLink); позиция заявки и
+     * позиция каталога с клиента не меняются.
+     */
+    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto, Link link) {
         ClientOfferItemKind kind = dto.getKind();
         it.setKind(kind);
         it.setName(dto.getName() == null ? "" : dto.getName().trim());
@@ -469,6 +510,8 @@ public class ClientOfferService {
             it.setRegistrationText(null);
             it.setRegNumber(null);
             it.setSuggestionScore(null);
+            it.setPriceRequestItemId(null);
+            it.setDistributorId(null);
             return;
         }
         it.setModel(trim(dto.getModel()));
@@ -484,6 +527,10 @@ public class ClientOfferService {
         it.setPriceOverride(dto.getPriceOverride());
         it.setVatRate(dto.getVatRate());
         applyRegistration(it, dto);
+        if (!link.keep()) {
+            it.setPriceRequestItemId(link.priceRequestItemId());
+            it.setDistributorId(link.distributorId());
+        }
     }
 
     /** UNCHECKED/MANUAL/NOT_REQUIRED задаёт оператор; CONFIRMED/SUGGESTED — только реестр на сервере (волна 2). */
