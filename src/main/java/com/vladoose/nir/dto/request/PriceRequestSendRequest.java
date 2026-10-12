@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Data
@@ -23,6 +24,11 @@ public class PriceRequestSendRequest {
 
     private String subjectOverride; // человеческая часть темы; токен [КП-id] всегда добавляет сервер
     private String bodyOverride;    // если задан — уходит вместо скомпонованного тела
+
+    /** Опции панели КП тендера (спека 2026-10-12 §6.6); «Указать клиента» в тендерах нет. */
+    private LocalDate replyBy;
+    private Boolean withDocument;
+    private Boolean withStamp;
 
     @Data
     public static class Item {

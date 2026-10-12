@@ -6,7 +6,6 @@ import com.vladoose.nir.repository.PriceRequestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -36,18 +35,24 @@ public class PriceRequestWriter {
     /** Создаёт один PriceRequest (SENT) с позициями и коммитит. Письмо шлётся вызывающим уже после коммита. */
     @Transactional
     public PriceRequest persist(Tender tender, Distributor dist, List<Line> lines) {
-        return persist(tender, dist, lines, null);
+        return persist(tender, dist, lines, PriceRequestSendService.SendOptions.NONE);
     }
 
+    /** Запрос помнит свои настройки — «↻ Переслать» повторяет письмо в точности (спека 2026-10-12 §6.5). */
     @Transactional
-    public PriceRequest persist(Tender tender, Distributor dist, List<Line> lines, LocalDate replyBy) {
+    public PriceRequest persist(Tender tender, Distributor dist, List<Line> lines, PriceRequestSendService.SendOptions options) {
+        PriceRequestSendService.SendOptions o = options == null ? PriceRequestSendService.SendOptions.NONE : options;
         PriceRequest pr = PriceRequest.builder()
                 .tender(tender)
                 .distributor(dist)
                 .status("SENT")
                 .sentAt(OffsetDateTime.now())
                 .createdAt(OffsetDateTime.now())
-                .replyBy(replyBy)
+                .replyBy(o.replyBy())
+                .discloseClient(o.discloseClient())
+                .withDocument(o.withDocument())
+                .withStamp(o.withStamp())
+                .emailOverride(o.emailTo() != null && !o.emailTo().isEmpty())
                 .build();
         pr = priceRequestService.save(pr); // штампует market
         for (Line line : lines) {

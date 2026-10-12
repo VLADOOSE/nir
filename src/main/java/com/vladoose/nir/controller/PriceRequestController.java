@@ -14,6 +14,7 @@ import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.DistributorService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.PriceRequestSendService;
+import com.vladoose.nir.service.PriceRequestSendService.SendOptions;
 import com.vladoose.nir.service.PriceRequestService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
@@ -66,7 +67,13 @@ public class PriceRequestController {
                         i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
                 .toList();
         return sendService.send(req.getTenderId(), req.getDistributorIds(), items,
-                req.getSubjectOverride(), req.getBodyOverride());
+                req.getSubjectOverride(), req.getBodyOverride(), options(req));
+    }
+
+    /** Опции панели КП тендера; клиента в тендерах не раскрываем (прежнее решение против утечки, спека §6.6). */
+    private static SendOptions options(PriceRequestSendRequest req) {
+        return new SendOptions(req.getReplyBy(), Boolean.TRUE.equals(req.getWithDocument()),
+                Boolean.TRUE.equals(req.getWithStamp()), false, null);
     }
 
     /** Черновой текст письма КП (образец) — без сохранения PriceRequest и без токена в теме. */
@@ -77,7 +84,7 @@ public class PriceRequestController {
                 .map(i -> new PriceRequestSendService.SendItem(
                         i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
                 .toList();
-        return sendService.preview(req.getTenderId(), req.getDistributorIds(), items);
+        return sendService.preview(req.getTenderId(), req.getDistributorIds(), items, options(req));
     }
 
     /** Переслать письмо существующего КП (повторно / после правки email поставщика). Новый PR не создаётся. */

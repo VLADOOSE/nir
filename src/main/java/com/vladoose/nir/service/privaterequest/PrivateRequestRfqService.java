@@ -46,7 +46,7 @@ public class PrivateRequestRfqService {
         checkReplyBy(req.getReplyBy());
         Distributor d = distributor(req.getDistributorId());
         return sendService.preview(t.getId(), List.of(d.getId()), items(lots(t, req.getLotIds())),
-                new SendOptions(req.getReplyBy()));
+                SendOptions.replyBy(req.getReplyBy()));
     }
 
     public List<SendResult> send(Long requestId, RfqSendRequest req) {
@@ -68,7 +68,7 @@ public class PrivateRequestRfqService {
                 return merged;
             });
         }
-        SendOptions options = new SendOptions(req.getReplyBy());
+        SendOptions options = SendOptions.replyBy(req.getReplyBy());
         List<SendResult> results = new ArrayList<>();
         plan.forEach((distributorId, lots) ->
                 results.addAll(sendService.send(t.getId(), List.of(distributorId), items(lots), null, null, options)));
