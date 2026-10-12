@@ -24,10 +24,10 @@ public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long
     long countByNotifyStatus(NotifyStatus status);
 
     /**
-     * Запросы цен, на письмо которых пришёл возврат. Нативный SQL рыночным фильтром не режется — и не должен: возврат на
-     * запрос РФ лежит строкой ящика KZ (R17, CLAUDE.md §8).
+     * Последний возврат по каждому запросу цен: (id запроса, время). Нативный SQL рыночным фильтром не режется — и не
+     * должен: возврат на запрос РФ лежит строкой ящика KZ (R17, CLAUDE.md §8).
      */
-    @Query(value = "SELECT DISTINCT matched_price_request_id FROM inbound_email WHERE type = 'BOUNCE' "
-            + "AND matched_price_request_id IN (:ids)", nativeQuery = true)
-    List<Long> findBouncedPriceRequestIds(@Param("ids") Collection<Long> ids);
+    @Query(value = "SELECT matched_price_request_id, max(received_at) FROM inbound_email WHERE type = 'BOUNCE' "
+            + "AND matched_price_request_id IN (:ids) GROUP BY matched_price_request_id", nativeQuery = true)
+    List<Object[]> findLastBounces(@Param("ids") Collection<Long> ids);
 }

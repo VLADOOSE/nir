@@ -114,6 +114,27 @@ class PrivateRequestPricesTest {
     }
 
     @Test
+    void bounceBeforeResendIsForgotten() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены возврат", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor d = dist("ZZ Цены Переслали");
+        PriceRequestItem i = ask(t, d, lot, "SENT", LetterStatus.SENT, null);
+        PriceRequest pr = i.getPriceRequest();
+        pr.setSentAt(OffsetDateTime.now().minusHours(2));
+        inboundRepository.save(InboundEmail.builder().fromAddress("MAILER-DAEMON@mail.ru").subject("Undelivered")
+                .type(InboundType.BOUNCE).matchedPriceRequestId(pr.getId()).status(InboundStatus.NEW)
+                .receivedAt(OffsetDateTime.now().minusHours(1)).build());
+        em.flush();
+        assertThat(cell(prices.build(t.getId()), 0, d).state()).isEqualTo("BOUNCED");
+
+        pr.setSentAt(OffsetDateTime.now());   // «↻ Переслать» после исправления адреса — письмо ушло позже возврата
+        em.flush();
+
+        assertThat(cell(prices.build(t.getId()), 0, d).state()).isEqualTo("WAITING");
+    }
+
+    @Test
     void priceEnteredAfterDeclineCounts() {
         Tender t = service.createEmpty();
         service.addLines(t.getId(), List.of(input("ZZ Цены передумал", null, 1, null, null, null)), LinesMode.APPEND);

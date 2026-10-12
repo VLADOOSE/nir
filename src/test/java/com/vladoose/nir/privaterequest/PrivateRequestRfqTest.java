@@ -143,10 +143,18 @@ class PrivateRequestRfqTest {
         String body = bodyTo(greenMail.getReceivedMessages(), "ru@rfq.kz");
         assertThat(body).contains("РУ № ZZ-RFQ-RU-1").contains("Просим ответить до");
 
+        PriceRequest sent = priceRequestRepository.findById(results.get(0).priceRequestId()).orElseThrow();
+        java.time.OffsetDateTime firstSentAt = sent.getSentAt().minusSeconds(1);
+        sent.setSentAt(firstSentAt);   // первое письмо — «раньше», чтобы повторное было заметно позже
+        priceRequestRepository.flush();
+
         sendService.resend(results.get(0).priceRequestId());
         MimeMessage[] mails = greenMail.getReceivedMessages();
         assertThat(mails).hasSize(2);
         assertThat(mails[1].getContent().toString()).contains("Просим ответить до");
+        // время последней отправки — по нему таблица цен забывает возврат, пришедший до «Переслать»
+        assertThat(priceRequestRepository.findById(results.get(0).priceRequestId()).orElseThrow().getSentAt())
+                .isAfter(firstSentAt);
     }
 
     @Test

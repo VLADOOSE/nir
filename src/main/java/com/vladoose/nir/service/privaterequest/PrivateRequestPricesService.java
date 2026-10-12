@@ -12,12 +12,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.*;
 
 /**
  * Таблица цен частной заявки (спека §7). Колонки — поставщики в порядке первой отправки. Ячейка — последняя строка
  * запроса этого поставщика по позиции. Состояния по убыванию: цена → отказ → возврат письма → письмо не ушло →
- * ждём ответа (цена, вписанная после отказа, — цена); не запрашивали — NONE. Лучшая — наименьшая цена; при равенстве — более ранний поставщик.
+ * ждём ответа (цена, вписанная после отказа, — цена; возврат до «↻ Переслать» забывается); не запрашивали — NONE. Лучшая — наименьшая цена; при равенстве — более ранний поставщик.
  */
 @Service
 public class PrivateRequestPricesService {
@@ -49,7 +51,7 @@ public class PrivateRequestPricesService {
             latest.put(key(i.getTenderLot().getId(), d.getId()), i);   // отсортировано по запросу — последний свежее
             prIds.add(pr.getId());
         }
-        Set<Long> bounced = prIds.isEmpty() ? Set.of() : new HashSet<>(inboundRepository.findBouncedPriceRequestIds(prIds));
+        Map<Long, Instant> bounced = lastBounces(prIds);
 
         List<TenderLot> lots = new ArrayList<>(t.getLots());
         lots.sort(Comparator.comparing((TenderLot l) -> l.getLotNumber() == null ? Integer.MAX_VALUE : l.getLotNumber()));
@@ -74,14 +76,37 @@ public class PrivateRequestPricesService {
         return new PrivateRequestPricesResponse(new ArrayList<>(suppliers.values()), lines);
     }
 
-    static Cell cell(Long distributorId, PriceRequestItem i, Set<Long> bounced) {
+    /** Последний возврат по запросу; время возврата неизвестно (старые строки) — считаем «сейчас»: возврат свежий. */
+    private Map<Long, Instant> lastBounces(Collection<Long> prIds) {
+        Map<Long, Instant> out = new HashMap<>();
+        if (prIds.isEmpty()) return out;
+        for (Object[] row : inboundRepository.findLastBounces(prIds)) {
+            out.put(((Number) row[0]).longValue(), instant(row[1]));
+        }
+        return out;
+    }
+
+    private static Instant instant(Object v) {
+        if (v instanceof Instant i) return i;
+        if (v instanceof OffsetDateTime o) return o.toInstant();
+        if (v instanceof java.sql.Timestamp ts) return ts.toInstant();
+        return Instant.now();
+    }
+
+    /** Возврат — только если он пришёл после последней отправки письма: «↻ Переслать» его снимает. */
+    private static boolean bouncedAfterSend(PriceRequest pr, Map<Long, Instant> bounced) {
+        Instant at = bounced.get(pr.getId());
+        return at != null && (pr.getSentAt() == null || !at.isBefore(pr.getSentAt().toInstant()));
+    }
+
+    static Cell cell(Long distributorId, PriceRequestItem i, Map<Long, Instant> bounced) {
         if (i == null) return new Cell(distributorId, "NONE", null, null, null, null, false);
         PriceRequest pr = i.getPriceRequest();
         String state;
         // цена — сильнейший факт: отказ письмом, а потом цена по телефону — это цена (и лучшая, если ниже других)
         if (i.getResponsePrice() != null) state = "PRICE";
         else if ("DECLINED".equals(pr.getStatus())) state = "DECLINED";
-        else if (bounced.contains(pr.getId())) state = "BOUNCED";
+        else if (bouncedAfterSend(pr, bounced)) state = "BOUNCED";
         else if (pr.getLetterStatus() == LetterStatus.NO_EMAIL || pr.getLetterStatus() == LetterStatus.FAILED) state = "NOT_SENT";
         else state = "WAITING";
         return new Cell(distributorId, state, i.getResponsePrice(), i.getResponseNote(), pr.getId(), i.getId(), false);

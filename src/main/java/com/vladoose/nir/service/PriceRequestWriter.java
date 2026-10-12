@@ -62,12 +62,16 @@ public class PriceRequestWriter {
         return pr;
     }
 
-    /** Исход письма — своей короткой транзакцией после отправки (письмо идёт вне транзакции, §6). */
+    /**
+     * Исход письма — своей короткой транзакцией после отправки (письмо идёт вне транзакции, §6). Ушедшее письмо
+     * сдвигает sentAt на время этой отправки: после «↻ Переслать» таблица цен забывает возврат, пришедший раньше.
+     */
     @Transactional
     public void markLetter(Long priceRequestId, LetterStatus status, String sentTo) {
         priceRequestRepository.findById(priceRequestId).ifPresent(pr -> {
             pr.setLetterStatus(status);
             pr.setSentTo(sentTo);
+            if (status == LetterStatus.SENT) pr.setSentAt(OffsetDateTime.now());
         });
     }
 }

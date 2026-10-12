@@ -7,6 +7,7 @@ import { NotificationService } from '../../services/notification.service';
 import { PrView, SendResult, Sourcing, plural } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
 import { PrRfqDialogComponent } from './pr-rfq-dialog.component';
+import { PrPricesComponent } from './pr-prices.component';
 
 /** Итог отправки (спека §6.2): «Отправлено 2 из 3; «Жетысу-Мед» — без письма (нет почты)». */
 export function rfqToast(results: SendResult[]): string {
@@ -26,7 +27,7 @@ export function rfqToast(results: SendResult[]): string {
 @Component({
   selector: 'app-pr-supply',
   standalone: true,
-  imports: [NgIf, PrRfqDialogComponent],
+  imports: [NgIf, PrRfqDialogComponent, PrPricesComponent],
   template: `
     <section class="card">
       <div class="sec-head">
@@ -36,7 +37,8 @@ export function rfqToast(results: SendResult[]): string {
       <p class="summary" *ngIf="view.lines.length && sourcing">{{ summary() }}</p>
       <p class="hint" *ngIf="!view.lines.length">Добавьте позиции — здесь появятся поставщики, у которых их можно запросить.</p>
       <p class="hint warn" *ngIf="sourcingError">{{ sourcingError }}</p>
-      <!-- prices -->
+      <app-pr-prices [requestId]="view.id" [version]="pricesVersion" [readonly]="readonly"
+                     (changed)="changed.emit()"></app-pr-prices>
     </section>
     <app-pr-rfq-dialog *ngIf="rfqOpen" [requestId]="view.id" [lines]="view.lines" (close)="rfqOpen = false"
                        (sent)="onSent($event)"></app-pr-rfq-dialog>
