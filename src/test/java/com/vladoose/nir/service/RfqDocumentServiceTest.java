@@ -48,7 +48,7 @@ class RfqDocumentServiceTest {
 
     private static String text(byte[] docx) throws Exception {
         try (XWPFDocument d = new XWPFDocument(new ByteArrayInputStream(docx)); XWPFWordExtractor x = new XWPFWordExtractor(d)) {
-            return x.getText().replace(' ', ' ');
+            return x.getText().replace('\u00A0', ' ');
         }
     }
 

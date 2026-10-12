@@ -41,7 +41,7 @@ class RfqDocumentBuilderTest {
 
     private static String text(byte[] docx) throws IOException {
         try (XWPFDocument d = open(docx); XWPFWordExtractor x = new XWPFWordExtractor(d)) {
-            return x.getText().replace(' ', ' ');
+            return x.getText().replace('\u00A0', ' ');
         }
     }
 
