@@ -4,11 +4,13 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { LucideDynamicIcon } from '@lucide/angular';
+import { ApiService } from '../../services/api.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { NotificationService } from '../../services/notification.service';
 import {
-  ClientOffer, ItemKind, OfferItem, RegStatus, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
+  ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
 } from '../../shared/client-offer';
+import { errorText } from '../../shared/error-text';
 
 /** Пределы наценки — те же, что проверяет сервер (ClientOfferService): вне них отказало бы всё автосохранение, а не одно поле. */
 const MIN_MARKUP = -100;
@@ -161,7 +163,25 @@ const MAX_MARKUP = 1000;
           <label>Страна <input [(ngModel)]="it.country" (ngModelChange)="emit()" [disabled]="readonly" maxlength="200" /></label>
           <label>Ед. изм. <input [(ngModel)]="it.unit" (ngModelChange)="emit()" [disabled]="readonly" maxlength="30" [attr.list]="'units-' + it.key" /></label>
           <datalist [id]="'units-' + it.key"><option *ngFor="let u of units" [value]="u"></option></datalist>
-          <label class="wide">Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
+          <div class="wide supplier">
+            <label>Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
+            <button type="button" class="btn btn-line pick" *ngIf="canPick(it)" [attr.aria-expanded]="offersFor === it.key"
+                    (click)="toggleOffers(it); $event.stopPropagation()">Поставщик ▾</button>
+            <div class="offers" *ngIf="offersFor === it.key" (click)="$event.stopPropagation()">
+              <div class="muted" *ngIf="offersLoading">Загружаю ответы…</div>
+              <div class="err" *ngIf="offersError">{{ offersError }}</div>
+              <div class="muted" *ngIf="!offersLoading && !offersError && !offersList.length">Ответов с ценой по этой позиции нет</div>
+              <button type="button" class="offer" *ngFor="let s of offersList" [class.on]="s.priceRequestItemId === it.priceRequestItemId"
+                      (click)="pickOffer(it, s)">
+                <span class="ok" aria-hidden="true">{{ s.priceRequestItemId === it.priceRequestItemId ? '✓' : '' }}</span>
+                <span class="nm">{{ s.supplierName }}</span>
+                <span class="pr">{{ money(s.price) }}</span>
+                <span class="wh" *ngIf="s.respondedOn">ответил {{ dayMonth(s.respondedOn) }}</span>
+                <span class="tag" *ngIf="s.cheapest">дешевле всех</span>
+                <span class="tag" *ngIf="s.accepted">принято</span>
+              </button>
+            </div>
+          </div>
           <label class="wide">Регистрация
             <span class="reg">
               <select [ngModel]="it.registrationStatus" (ngModelChange)="setRegStatus(it, $event)" [disabled]="readonly">
@@ -259,6 +279,20 @@ const MAX_MARKUP = 1000;
     .details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
     .details label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-muted); }
     .details .wide { grid-column: 1 / -1; }
+    .supplier { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; position: relative; }
+    .supplier label { flex: 1 1 220px; }
+    .offers { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border);
+              border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+    .offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 40px; padding: 6px 8px; border: 0;
+             border-radius: 8px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+    .offer:hover, .offer.on { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+    .offer .ok { width: 1em; color: var(--accent); }
+    .offer .nm { flex: 1 1 160px; }
+    .offer .pr { font-weight: 600; white-space: nowrap; }
+    .offer .wh { color: var(--text-muted); font-size: 12px; }
+    .offer .tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--success) 15%, transparent);
+                  color: var(--success-text); }
+    .offers .err { color: var(--danger-text); }
     .reg { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .reg select { width: auto; }
     /* номер РУ уже 200 px не сжимается, а уходит под список строкой целиком */
@@ -348,9 +382,14 @@ export class ClientOfferItemsComponent {
   money = money;
   numText = numText;
   vatLabel = vatLabel;
+  /** «Поставщик ▾»: у какой строки открыт список, ответы, загрузка (спека §8). */
+  offersFor: string | null = null;
+  offersList: SupplierOffer[] = [];
+  offersLoading = false;
+  offersError = '';
 
   constructor(private confirm: ConfirmService, private notify: NotificationService, private host: ElementRef<HTMLElement>,
-              private cdr: ChangeDetectorRef, private destroyRef: DestroyRef) {}
+              private cdr: ChangeDetectorRef, private destroyRef: DestroyRef, private api: ApiService) {}
 
   get rates(): (number | null)[] {
     return this.profile?.vatRates ?? [];
@@ -360,6 +399,38 @@ export class ClientOfferItemsComponent {
   @HostListener('document:keydown.escape')
   closeMenu() {
     this.openMenuKey = null;
+    this.offersFor = null;
+  }
+
+  /** «Поставщик ▾» — у сохранённой строки из позиции заявки (решение плана 7: у новой строки позиции нет). */
+  canPick(it: OfferItem): boolean {
+    return !this.readonly && !!this.offer.tenderId && !!it.tenderLotId && !!it.id;
+  }
+
+  toggleOffers(it: OfferItem) {
+    if (this.offersFor === it.key) { this.offersFor = null; return; }
+    this.offersFor = it.key;
+    this.offersList = [];
+    this.offersError = '';
+    this.offersLoading = true;
+    this.api.getClientOfferItemOffers(this.offer.id, it.id!).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: list => { if (this.offersFor === it.key) { this.offersList = list; this.offersLoading = false; this.cdr.markForCheck(); } },
+      error: e => { if (this.offersFor === it.key) { this.offersError = errorText(e); this.offersLoading = false; this.cdr.markForCheck(); } },
+    });
+  }
+
+  /** Выбор ответа: цена, поставщик и ссылка на ответ → автосохранение (сервер выведет поставщика сам). */
+  pickOffer(it: OfferItem, s: SupplierOffer) {
+    it.purchasePrice = s.price;
+    it.supplierName = s.supplierName;
+    it.priceRequestItemId = s.priceRequestItemId;
+    this.offersFor = null;
+    this.emit();
+  }
+
+  /** «12.10» из «2026-10-12». */
+  dayMonth(iso: string): string {
+    return iso.slice(8, 10) + '.' + iso.slice(5, 7);
   }
 
   trackKey(_: number, it: OfferItem) {
@@ -439,6 +510,7 @@ export class ClientOfferItemsComponent {
     if (copy.registrationStatus === 'CONFIRMED') copy.registrationStatus = 'MANUAL';
     if (copy.registrationStatus === 'SUGGESTED') { copy.registrationStatus = 'UNCHECKED'; copy.registrationText = null; }
     copy.regNumber = null;
+    copy.priceRequestItemId = null; copy.tenderLotId = null; copy.distributorId = null;   // у новой строки позиции нет: ссылка дала бы 400 на каждое автосохранение
     // Ставку, которой больше нет в настройках рынка, сервер оставляет только уже сохранённой строке: копия — новая
     // строка, с такой ставкой каждое автосохранение получало бы 400. Пока профиль не пришёл, ставки не известны — не трогаем.
     if (copy.kind === 'ITEM' && this.profile && !this.hasRate(copy.vatRate)) copy.vatRate = this.profile.vatDefault ?? null;
@@ -533,6 +605,7 @@ export class ClientOfferItemsComponent {
       this.notify.error(v === undefined ? 'Цена закупки — числом' : 'Цена закупки не может быть отрицательной');
       return;
     }
+    if (v !== it.purchasePrice) it.priceRequestItemId = null;   // ручная правка снимает ссылку на ответ (решение плана 6)
     it.purchasePrice = v;
     input.value = numText(v);
     this.emit();

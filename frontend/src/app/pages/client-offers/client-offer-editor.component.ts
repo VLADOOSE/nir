@@ -14,7 +14,7 @@ import { CompanyProfileService } from '../../services/company-profile.service';
 import { OfferTermsEditorComponent } from '../../shared/offer-terms-editor.component';
 import { OfferColumnsEditorComponent } from '../../shared/offer-columns-editor.component';
 import {
-  ClientOffer, OFFER_STATUS_LABELS, OfferItem, OfferStatus, ROUNDING_OPTIONS, TermsStyle,
+  ClientOffer, NewPriceLine, OFFER_STATUS_LABELS, OfferItem, OfferStatus, ROUNDING_OPTIONS, TermsStyle,
   dateText, money, numText, parseNum, saveBlob, toRequest, vatLabel,
 } from '../../shared/client-offer';
 import { ClientOfferItemsComponent } from './client-offer-items.component';
@@ -52,6 +52,7 @@ const MAX_MARKUP = 1000;
         <div class="ed-title">
           <h2>КП № {{ o.number }} от {{ dateText(o.offerDate) }}</h2>
           <span class="st" [attr.data-status]="o.status">{{ statusLabel(o.status) }}</span>
+          <a class="from-pr" *ngIf="o.tenderId" [routerLink]="['/private-requests', o.tenderId]">из заявки {{ o.tenderNumber || ('№ ' + o.tenderId) }}</a>
           <span class="save-state" [class.err]="!!saveError || conflict" [class.wrap]="!!saveError && !conflict" [attr.title]="saveText()"
                 aria-live="polite">{{ saveText() }}</span>
           <button type="button" class="btn btn-line" *ngIf="saveError && !conflict" (click)="save()">Повторить</button>
@@ -73,6 +74,10 @@ const MAX_MARKUP = 1000;
 
       <div class="ed-body">
         <section class="pane-edit" [class.off]="tab !== 'edit'">
+          <div class="new-prices" *ngIf="auth.isAdmin() && o.status === 'DRAFT' && newPrices.length && !conflict" role="status">
+            <span>Пришли новые цены по {{ newPrices.length }} {{ newPrices.length === 1 ? 'позиции' : 'позициям' }}</span>
+            <button type="button" class="btn btn-line" [disabled]="busy || conflict" (click)="applyNewPrices()">Подставить</button>
+          </div>
           <fieldset [disabled]="!auth.isAdmin() || conflict">
             <div class="card">
               <h3>Шапка</h3>
@@ -203,6 +208,7 @@ const MAX_MARKUP = 1000;
     .st[data-status="SENT"] { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .st[data-status="ACCEPTED"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .st[data-status="REJECTED"] { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .from-pr { font-size: 13px; color: var(--accent); }
     .save-state { font-size: 12px; color: var(--text-muted); }
     .save-state.err { color: var(--danger-text); }
     .ed-menu { position: relative; }
@@ -218,6 +224,8 @@ const MAX_MARKUP = 1000;
     .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
     .ed-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 44%); gap: 16px; align-items: start; }
     .pane-edit { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .new-prices { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px;
+                  border: 1px solid var(--warn); border-radius: 10px; background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .pane-preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 150px); overflow: auto; }
     /* липкая панель — свой слой, и крупная страница (fixed внутри) уходила бы под нижнюю панель (5). Поднимать панель всегда
        нельзя: пока она не прилипла, её низ заходит на нижнюю панель и закрывает кнопки — поэтому только пока страница крупно */
@@ -311,6 +319,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   conflict = false;
   savedAt: Date | null = null;
   previewTick = 0;
+  /** «Пришли новые цены» — строки, у которых в ответах поставщиков появилась или сменилась цена (спека §8). */
+  newPrices: NewPriceLine[] = [];
   /** Последний предпросмотр: таблица тесная — и для какой ориентации он собран (подсказка гаснет, пока нет нового). */
   crowded = false;
   busy = false;
@@ -419,6 +429,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.zoomed = false;   // предпросмотр пересоздаётся вместе с КП — крупной страницы больше нет
     this.crowded = false;
     this.crowdedLandscape = null;
+    this.newPrices = [];   // плашка прежнего КП не должна мелькнуть на новом, пока идёт проверка
     if (!Number.isInteger(id) || id <= 0) { this.loadError = 'КП не найдено'; return; }
     this.api.getClientOffer(id).subscribe({
       next: o => {
@@ -429,6 +440,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         this.savedLandscape = o.landscape;
         this.previewTick++;
         this.render();
+        this.checkNewPrices();
       },
       error: e => {
         if (gen !== this.gen) return;
@@ -506,6 +518,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         } else {
           this.dirty = false;
           this.previewTick++;
+          this.checkNewPrices();
           this.runAfterSave();
         }
         this.render();
@@ -540,7 +553,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     const byKey = new Map(r.items.map(it => [it.key, it]));
     for (const it of o.items) {
       const s = byKey.get(it.key);
-      if (s) { it.id = s.id; it.lineNo = s.lineNo; it.calc = s.calc; }
+      // поля сервера; ссылку на ответ (priceRequestItemId) держит экран — ручная правка закупки её снимает
+      if (s) { it.id = s.id; it.lineNo = s.lineNo; it.calc = s.calc; it.tenderLotId = s.tenderLotId; it.distributorId = s.distributorId; }
     }
   }
 
@@ -556,6 +570,46 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     const list = this.afterSave;
     this.afterSave = [];
     list.forEach(f => f());
+  }
+
+  /** Плашка новых цен — при открытии и после сохранения; сбой — без плашки (КП работает и без неё). */
+  private checkNewPrices() {
+    const o = this.offer;
+    if (!o || o.status !== 'DRAFT' || !o.tenderId || !this.auth.isAdmin()) { this.newPrices = []; return; }
+    const gen = this.gen;
+    this.api.getClientOfferNewPrices(o.id).subscribe({
+      next: r => { if (gen === this.gen) { this.newPrices = r.lines; this.render(); } },
+      error: () => { /* подсказка, без неё КП работает */ },
+    });
+  }
+
+  /** «Подставить»: сперва дописать свои правки, затем POST — и КП из ответа целиком (решение плана 8). */
+  applyNewPrices() {
+    const o = this.offer;
+    if (!o || this.conflict) return;
+    this.flushThen(() => {
+      if (this.busy) return;
+      this.busy = true;
+      const gen = this.gen;
+      this.api.applyClientOfferNewPrices(o.id).subscribe({
+        next: (r: ClientOffer) => {
+          if (gen !== this.gen) return;
+          this.busy = false;
+          r.items.forEach((it: OfferItem) => { if (!it.key) it.key = 'i' + it.id; });
+          this.offer = r;
+          this.newPrices = [];
+          this.previewTick++;
+          this.notify.success('Цены подставлены');
+          this.render();
+        },
+        error: e => {
+          if (gen !== this.gen) return;
+          this.busy = false;
+          this.notify.error('Цены не подставлены: ' + errorText(e));
+          this.render();
+        },
+      });
+    });
   }
 
   saveText(): string {
