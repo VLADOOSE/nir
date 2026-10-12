@@ -49,6 +49,14 @@ public class Distributor implements MarketScoped {
     @Column(length = 255)
     private String website;
 
+    /** «Доверенный»: в запросах цен клиент заявки указывается по умолчанию (спека 2026-10-12 §6.2). */
+    @Column(nullable = false)
+    private boolean trusted;
+
+    /** «Производитель»: по его бренду запрос цен уходит ему по умолчанию, дистрибьюторы бренда — без отметки (§6.1). */
+    @Column(nullable = false)
+    private boolean manufacturer;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
     private Market market;

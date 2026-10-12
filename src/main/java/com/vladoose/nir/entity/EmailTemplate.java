@@ -23,6 +23,21 @@ public class EmailTemplate {
     @Column(name = "body_template", columnDefinition = "TEXT", nullable = false)
     private String bodyTemplate;
 
+    /** Запрос на бланке (спека 2026-10-12 §6.4); пусто — зашитый текст RfqTexts. */
+    @Column(name = "rfq_title", columnDefinition = "TEXT")
+    private String rfqTitle;
+
+    @Column(name = "rfq_intro", columnDefinition = "TEXT")
+    private String rfqIntro;
+
+    /** Пункты «В предложении просим указать», по одному на строку. */
+    @Column(name = "rfq_ask", columnDefinition = "TEXT")
+    private String rfqAsk;
+
+    /** Строка о конечном заказчике — общая для письма ({{заказчик}}) и документа. */
+    @Column(name = "rfq_client_line", columnDefinition = "TEXT")
+    private String rfqClientLine;
+
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 }

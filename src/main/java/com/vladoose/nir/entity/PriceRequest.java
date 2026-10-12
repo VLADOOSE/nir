@@ -52,7 +52,10 @@ public class PriceRequest implements MarketScoped {
     @Column(name = "reply_by")
     private LocalDate replyBy;
 
-    /** Адрес, на который письмо приняла почта; пусто — письма не было или оно не ушло. */
+    /**
+     * Адрес последней отправки письма (несколько — через запятую); принят ли он — letterStatus. При сбое SMTP адрес
+     * остаётся: «↻ Переслать» вписанной почты знает, куда слать.
+     */
     @Column(name = "sent_to")
     private String sentTo;
 
@@ -60,6 +63,22 @@ public class PriceRequest implements MarketScoped {
     @Enumerated(EnumType.STRING)
     @Column(name = "letter_status", length = 20)
     private LetterStatus letterStatus;
+
+    /** Клиент заявки указан поставщику (галочка «Указать клиента», спека 2026-10-12 §6.2). */
+    @Column(name = "disclose_client", nullable = false)
+    private boolean discloseClient;
+
+    /** К письму приложен запрос на бланке (Word). */
+    @Column(name = "with_document", nullable = false)
+    private boolean withDocument;
+
+    /** В документе — подпись и печать. */
+    @Column(name = "with_stamp", nullable = false)
+    private boolean withStamp;
+
+    /** Письмо ушло не на почту из карточки, а на вписанную в окне запроса (она — в sentTo). */
+    @Column(name = "email_override", nullable = false)
+    private boolean emailOverride;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
