@@ -112,7 +112,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     /* Кнопка не несёт базового класса «btn», поэтому «.btn:disabled» из kit до неё
        не достаёт, а «.btn-primary:hover» — достаёт, и Chrome применяет ховер к
        заблокированной кнопке. Без этих двух строк она подсвечивается как живая
-       ровно тогда, когда не работает. Прецедент: private-request-card. */
+       ровно тогда, когда не работает (так было и у прежней боковой панели частной заявки). */
     .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
     .btn-primary:disabled:hover { background: var(--accent); }
     .grid { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 8px; overflow: hidden; }

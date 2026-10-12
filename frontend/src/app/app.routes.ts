@@ -15,7 +15,6 @@ import { UsersComponent } from './pages/users/users.component';
 import { AboutComponent } from './pages/about/about.component';
 import { EquipmentTypesComponent } from './pages/equipment-types/equipment-types.component';
 import { RegistryReconciliationComponent } from './pages/registry-reconciliation/registry-reconciliation.component';
-import { PrivateRequestsComponent } from './pages/private-requests/private-requests.component';
 import { InboundComponent } from './pages/inbound/inbound.component';
 import { LeadsComponent } from './pages/leads/leads.component';
 import { ChatsComponent } from './pages/chats/chats.component';
@@ -45,7 +44,10 @@ export const routes: Routes = [
       { path: 'equipment-types', component: EquipmentTypesComponent, canActivate: [adminGuard] },
       { path: 'leads', component: LeadsComponent },
       { path: 'chats', component: ChatsComponent },
-      { path: 'private-requests', component: PrivateRequestsComponent },
+      { path: 'private-requests',
+        loadComponent: () => import('./pages/private-requests/private-requests.component').then(m => m.PrivateRequestsComponent) },
+      { path: 'private-requests/:id',
+        loadComponent: () => import('./pages/private-requests/private-request-page.component').then(m => m.PrivateRequestPageComponent) },
       { path: 'client-offers',
         loadComponent: () => import('./pages/client-offers/client-offers.component').then(m => m.ClientOffersComponent) },
       { path: 'client-offers/:id',

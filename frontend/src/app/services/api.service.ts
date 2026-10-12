@@ -2,6 +2,10 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { PreviewPages } from '../shared/client-offer';
+import type {
+  LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
+  RegistryRecord, SendResult, SiteProduct, Sourcing,
+} from '../shared/private-request';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -318,18 +322,76 @@ export class ApiService {
     return this.http.post(`${this.base}/registry/refresh`, {});
   }
 
-  // === Частные заявки ===
-  getPrivateRequests(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/private-requests`);
+  // === Частные заявки (страница-рабочее место, спека 2026-10-12) ===
+  getPrivateRequests(params: { status?: string; q?: string } = {}): Observable<PrListItem[]> {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.q) qs.set('q', params.q);
+    const s = qs.toString();
+    return this.http.get<PrListItem[]>(`${this.base}/private-requests${s ? '?' + s : ''}`);
   }
-  getPrivateRequest(id: number): Observable<any> {
-    return this.http.get<any>(`${this.base}/private-requests/${id}`);
+  getPrivateRequest(id: number): Observable<PrView> {
+    return this.http.get<PrView>(`${this.base}/private-requests/${id}`);
   }
-  getPrivateRequestSourcing(id: number): Observable<any> {
-    return this.http.get<any>(`${this.base}/private-requests/${id}/sourcing`);
+  createPrivateRequest(): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests`, {});
   }
-  createPrivateRequest(body: any): Observable<any> {
-    return this.http.post<any>(`${this.base}/private-requests`, body);
+  updatePrivateRequestField(id: number, field: PrField, value: string | null): Observable<PrView> {
+    return this.http.patch<PrView>(`${this.base}/private-requests/${id}`, { field, value });
+  }
+  savePrivateRequestClient(id: number): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/save-client`, {});
+  }
+  closePrivateRequest(id: number, outcome: string): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/close`, { outcome });
+  }
+  reopenPrivateRequest(id: number): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/reopen`, {});
+  }
+  deletePrivateRequest(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/private-requests/${id}`);
+  }
+  addPrivateRequestLines(id: number, lines: LineInput[], mode: LinesMode = 'APPEND'): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/lines`, { lines, mode });
+  }
+  parsePrivateRequestLines(id: number, text: string): Observable<ParsedLine[]> {
+    return this.http.post<ParsedLine[]>(`${this.base}/private-requests/${id}/lines/parse`, { text });
+  }
+  updatePrivateRequestLine(id: number, lotId: number, field: PrLineField, value: string | null): Observable<PrLine> {
+    return this.http.patch<PrLine>(`${this.base}/private-requests/${id}/lines/${lotId}`, { field, value });
+  }
+  deletePrivateRequestLine(id: number, lotId: number): Observable<PrView> {
+    return this.http.delete<PrView>(`${this.base}/private-requests/${id}/lines/${lotId}`);
+  }
+  setPrivateRequestLineRegistry(id: number, lotId: number, action: RegAction, regNumber?: string): Observable<PrLine> {
+    return this.http.post<PrLine>(`${this.base}/private-requests/${id}/lines/${lotId}/registry`,
+      { action, regNumber: regNumber ?? null });
+  }
+  getPrivateRequestLineCandidates(id: number, lotId: number): Observable<RegistryRecord[]> {
+    return this.http.get<RegistryRecord[]>(`${this.base}/private-requests/${id}/lines/${lotId}/registry-candidates`);
+  }
+  checkPrivateRequestRegistry(id: number): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/registry-check`, {});
+  }
+  importPrivateRequestLines(id: number, body: { mappings: any[]; lines: any[]; mode: LinesMode }): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/lines/import`, body);
+  }
+  getPrivateRequestSourcing(id: number): Observable<Sourcing> {
+    return this.http.get<Sourcing>(`${this.base}/private-requests/${id}/sourcing`);
+  }
+  previewRfq(id: number, body: { distributorId: number; lotIds: number[]; replyBy: string | null }):
+      Observable<{ subject: string; body: string }> {
+    return this.http.post<{ subject: string; body: string }>(`${this.base}/private-requests/${id}/rfq/preview`, body);
+  }
+  sendRfq(id: number, body: { replyBy: string | null; suppliers: { distributorId: number; lotIds: number[] }[] }):
+      Observable<SendResult[]> {
+    return this.http.post<SendResult[]>(`${this.base}/private-requests/${id}/rfq/send`, body);
+  }
+  getPrivateRequestPrices(id: number): Observable<Prices> {
+    return this.http.get<Prices>(`${this.base}/private-requests/${id}/prices`);
+  }
+  searchSiteProducts(q: string): Observable<SiteProduct[]> {
+    return this.http.get<SiteProduct[]>(`${this.base}/site-products?q=${encodeURIComponent(q)}`);
   }
 
   previewImport(file: File): Observable<any> {
@@ -338,8 +400,8 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/private-requests/import/preview`, fd);
   }
 
-  commitImport(body: any): Observable<any> {
-    return this.http.post<any>(`${this.base}/private-requests/import/commit`, body);
+  commitImport(body: any): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/import/commit`, body);
   }
 
   // === Входящие письма ===
@@ -388,7 +450,8 @@ export class ApiService {
   addLeadEvent(id: number, body: { type: 'NOTE' | 'CALL'; direction?: 'IN' | 'OUT'; body: string }): Observable<any> {
     return this.http.post<any>(`${this.base}/leads/${id}/events`, body);
   }
-  convertLead(id: number, body: any): Observable<{ privateRequestId: number; number: string }> {
+  /** Пустое тело — «Создать заявку» одной кнопкой (спека 2026-10-12 §4). */
+  convertLead(id: number, body: any = {}): Observable<{ privateRequestId: number; number: string }> {
     return this.http.post<{ privateRequestId: number; number: string }>(`${this.base}/leads/${id}/convert`, body);
   }
   getLeadSyncStatus(): Observable<any> {

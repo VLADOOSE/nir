@@ -195,6 +195,17 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
   background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); font-weight: 700;
 }
 
+/* --- этап частной заявки (список и страница заявки): правило чипа — 15 % тинта + текстовый токен --- */
+.pr-stage { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600;
+            background: var(--surface-2); color: var(--text); white-space: nowrap; }
+.pr-stage[data-tone="accent"] { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.pr-stage[data-tone="warn"] { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
+.pr-stage[data-tone="success"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+.pr-stage[data-tone="danger"] { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+/* «Пустая» / «отменена»: без заливки — --text-muted на --surface-2 даёт 4,39:1 (ниже 4,5 для 12 px), на --surface — читается */
+.pr-stage[data-tone="muted"] { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+
+
 /* --- общие утилиты страниц --- */
 .subtitle { color: var(--text-muted); font-size: 13px; margin: 4px 0 16px; }
 .counter { color: var(--text-muted); font-size: 13px; }
