@@ -169,9 +169,9 @@ class ClientOfferFromRequestTest {
         assertThat(items.get(2).getVatRate()).isEqualByComparingTo("16");
     }
 
-    /** Отказ, отклонённый и закрытый запрос — не кандидаты; принятый сильнее более дешёвого ответа. */
+    /** Отклонённый и закрытый запрос — не кандидаты; принятый сильнее более дешёвого ответа, в том числе цены после отказа. */
     @Test
-    void priceRule_acceptedFirst_declinedRejectedClosedIgnored() {
+    void priceRule_acceptedFirst_rejectedClosedIgnored() {
         Tender t = request(input("ZZ КП Правило", null, 1, null, null, null));
         TenderLot lot = sorted(t).get(0);
         answer(t, dist("ZZ КП Отказ"), lot, "DECLINED", "10");
@@ -186,6 +186,26 @@ class ClientOfferFromRequestTest {
 
         assertThat(it.getPurchasePrice()).isEqualByComparingTo("700");
         assertThat(it.getDistributorId()).isEqualTo(accepted.getId());
+    }
+
+    /**
+     * Цена, вписанная после отказа, — цена (спека §5: «поставщик передумал по телефону»; разбор письма ставит отказ на весь
+     * запрос — «позицию 2 не поставляем, позиция 1 — 300 000»): таблица цен заявки ставит ей ★, КП берёт её так же.
+     */
+    @Test
+    void priceEnteredAfterDeclineIsPurchase() {
+        Tender t = request(input("ZZ КП Передумал", null, 1, null, null, null));
+        TenderLot lot = sorted(t).get(0);
+        Distributor changedMind = dist("ZZ КП Передумал");
+        PriceRequestItem typed = answer(t, changedMind, lot, "DECLINED", "300");
+        answer(t, dist("ZZ КП Дороже"), lot, "RESPONDED", "500");
+        em.flush();
+
+        ClientOfferItem it = requestOffers.createFromPrivateRequest(t.getId(), "test").getItems().get(0);
+
+        assertThat(it.getPurchasePrice()).isEqualByComparingTo("300");
+        assertThat(it.getPriceRequestItemId()).isEqualTo(typed.getId());
+        assertThat(it.getDistributorId()).isEqualTo(changedMind.getId());
     }
 
     /** «Кому» — печатный текст: «Клиент не указан» и телефон в него не попадают (Review Focus 4, решение плана 1). */

@@ -24,10 +24,12 @@ class PurchaseOffersTest {
     }
 
     @Test
-    void declinedRejectedClosedAreNotCandidates() {
+    void rejectedAndClosedAreNotCandidates_priceEnteredAfterDeclineIs() {
+        // цена у строки отказавшего запроса — цена, вписанная после отказа (спека §5: «поставщик передумал по телефону»):
+        // таблица цен заявки ставит ей ★, значит и КП её берёт; отклонённый и закрытый запрос — нет
         assertThat(PurchaseOffers.current(List.of(o(1, 10, 1, "50", "DECLINED"), o(2, 11, 2, "60", "REJECTED"),
                 o(3, 12, 3, "70", "CLOSED"), o(4, 13, 4, "80", "SENT"))))
-                .extracting(PurchaseOffer::priceRequestItemId).containsExactly(4L);
+                .extracting(PurchaseOffer::priceRequestItemId).containsExactlyInAnyOrder(1L, 4L);
     }
 
     @Test

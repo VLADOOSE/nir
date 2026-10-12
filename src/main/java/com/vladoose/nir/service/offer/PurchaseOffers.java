@@ -4,13 +4,17 @@ import java.util.*;
 
 /**
  * Цена закупки по умолчанию (спека 2026-10-12 §8, решение плана 2). Кандидаты — строки ответов с ценой у запросов не
- * DECLINED / REJECTED / CLOSED; у каждого поставщика — только последняя (как ячейка таблицы цен заявки), иначе цена,
+ * REJECTED / CLOSED; у каждого поставщика — только последняя (как ячейка таблицы цен заявки), иначе цена,
  * которую он потом поменял новым ответом, могла бы стать «лучшей». Лучшая — самая дешёвая среди принятых (ACCEPTED),
  * иначе самая дешёвая; равенство — более ранний запрос.
+ * <p>
+ * Отказ (DECLINED) не исключается: строки без цены и так не кандидаты, а цена у отказавшего запроса — цена, вписанная
+ * после отказа (спека §5: «поставщик передумал по телефону»; разбор письма ставит отказ на весь запрос — «позицию 2 не
+ * поставляем, позиция 1 — …»). Таблица цен заявки ставит ей ★ — КП берёт её так же (ревью ветки этапа 3).
  */
 public final class PurchaseOffers {
 
-    public static final Set<String> EXCLUDED = Set.of("DECLINED", "REJECTED", "CLOSED");
+    public static final Set<String> EXCLUDED = Set.of("REJECTED", "CLOSED");
     private static final Comparator<PurchaseOffer> CHEAPEST =
             Comparator.comparing(PurchaseOffer::price).thenComparingLong(PurchaseOffer::priceRequestId);
 
