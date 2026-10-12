@@ -1,7 +1,9 @@
 package com.vladoose.nir.service.privaterequest;
 
+import com.vladoose.nir.entity.ClientOfferStatus;
 import com.vladoose.nir.entity.PrivateRequestStatus;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
@@ -10,8 +12,8 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 /**
- * Этап частной заявки — считается из данных при каждом чтении (спека §5.4), сверху вниз: закрыта → (КП клиенту — этап 3)
- * → есть цены → запрошены цены → новая → пустая. Три запроса на весь список — без N+1.
+ * Этап частной заявки — считается из данных при каждом чтении (спека §5.4), сверху вниз: закрыта → КП клиенту (по лучшему
+ * статусу) → есть цены → запрошены цены → новая → пустая. Четыре запроса на весь список — без N+1.
  */
 @Component
 public class PrivateRequestStageCalculator {
@@ -24,12 +26,14 @@ public class PrivateRequestStageCalculator {
     private final TenderLotRepository lotRepository;
     private final PriceRequestRepository priceRequestRepository;
     private final PriceRequestItemRepository itemRepository;
+    private final ClientOfferRepository clientOffers;
 
     public PrivateRequestStageCalculator(TenderLotRepository lotRepository, PriceRequestRepository priceRequestRepository,
-                                         PriceRequestItemRepository itemRepository) {
+                                         PriceRequestItemRepository itemRepository, ClientOfferRepository clientOffers) {
         this.lotRepository = lotRepository;
         this.priceRequestRepository = priceRequestRepository;
         this.itemRepository = itemRepository;
+        this.clientOffers = clientOffers;
     }
 
     public Summary of(Tender t) {
@@ -55,18 +59,31 @@ public class PrivateRequestStageCalculator {
             priced.computeIfAbsent((Long) row[0], k -> new HashSet<>()).add((Long) row[1]);
         }
 
+        Map<Long, Set<ClientOfferStatus>> kp = new HashMap<>();   // заявка → статусы её КП
+        for (Object[] row : clientOffers.findStatusesByTenderIds(ids)) {
+            kp.computeIfAbsent((Long) row[0], k -> EnumSet.noneOf(ClientOfferStatus.class)).add((ClientOfferStatus) row[1]);
+        }
+
         for (Tender t : requests) {
             long lineCount = lines.getOrDefault(t.getId(), 0L);
             out.put(t.getId(), summary(PrivateRequestStatus.of(t.getStatus()), lineCount,
-                    asked.getOrDefault(t.getId(), Map.of()), priced.getOrDefault(t.getId(), Set.of()).size()));
+                    asked.getOrDefault(t.getId(), Map.of()), priced.getOrDefault(t.getId(), Set.of()).size(),
+                    kp.getOrDefault(t.getId(), Set.of())));
         }
         return out;
     }
 
-    static Summary summary(PrivateRequestStatus status, long lines, Map<Long, Boolean> asked, int pricedLines) {
+    static Summary summary(PrivateRequestStatus status, long lines, Map<Long, Boolean> asked, int pricedLines,
+                           Set<ClientOfferStatus> offers) {
         if (status == PrivateRequestStatus.WON) return new Summary("WON", "Закрыта: купили у нас", lines);
         if (status == PrivateRequestStatus.LOST) return new Summary("LOST", "Закрыта: не купили", lines);
         if (status == PrivateRequestStatus.CANCELLED) return new Summary("CANCELLED", "Закрыта: отменена", lines);
+        if (!offers.isEmpty()) {   // правило 2 (спека §5.4): по лучшему статусу КП
+            if (offers.contains(ClientOfferStatus.ACCEPTED)) return new Summary("KP_ACCEPTED", "КП принято", lines);
+            if (offers.contains(ClientOfferStatus.SENT)) return new Summary("KP_SENT", "КП отправлено", lines);
+            if (offers.contains(ClientOfferStatus.DRAFT)) return new Summary("KP_DRAFT", "КП — черновик", lines);
+            return new Summary("KP_REJECTED", "КП отклонено", lines);
+        }
         if (pricedLines > 0) {
             return new Summary("PRICED", "Есть цены: " + pricedLines + " из " + lines + " " + positionsGen(lines), lines);
         }

@@ -2,10 +2,12 @@ package com.vladoose.nir.service.privaterequest;
 
 import com.vladoose.nir.dto.response.PrivateRequestLineView;
 import com.vladoose.nir.dto.response.PrivateRequestListItemResponse;
+import com.vladoose.nir.dto.response.PrivateRequestOfferRef;
 import com.vladoose.nir.dto.response.PrivateRequestViewResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.mapper.LeadResponseMapper;
+import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.LeadRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
@@ -26,15 +28,17 @@ public class PrivateRequestViewBuilder {
     private final LeadRepository leadRepository;
     private final LeadResponseMapper leadMapper;
     private final PrivateRequestStageCalculator stages;
+    private final ClientOfferRepository clientOffers;
 
     public PrivateRequestViewBuilder(PriceRequestItemRepository itemRepository, MedRegistryRepository registryRepository,
                                      LeadRepository leadRepository, LeadResponseMapper leadMapper,
-                                     PrivateRequestStageCalculator stages) {
+                                     PrivateRequestStageCalculator stages, ClientOfferRepository clientOffers) {
         this.itemRepository = itemRepository;
         this.registryRepository = registryRepository;
         this.leadRepository = leadRepository;
         this.leadMapper = leadMapper;
         this.stages = stages;
+        this.clientOffers = clientOffers;
     }
 
     public PrivateRequestViewResponse build(Tender t) {
@@ -58,6 +62,10 @@ public class PrivateRequestViewBuilder {
         r.setNote(t.getDescription());
         r.setCreatedAt(t.getCreatedAt());
         leadRepository.findFirstByPrivateRequestId(t.getId()).map(leadMapper::toRef).ifPresent(r::setLead);
+        r.setOffers(clientOffers.findByTenderIdOrderByIdDesc(t.getId()).stream()
+                .map(o -> new PrivateRequestOfferRef(o.getId(), o.getNumber(), o.getOfferDate(), o.getStatus().name(),
+                        o.getItemCount(), o.getTotalAmount(), o.getMarket().currencyCode()))
+                .toList());
 
         Set<Long> requested = new HashSet<>();
         for (PriceRequestItem i : itemRepository.findByTenderId(t.getId())) {

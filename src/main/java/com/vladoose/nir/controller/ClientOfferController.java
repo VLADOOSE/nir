@@ -46,7 +46,7 @@ public class ClientOfferController {
     @GetMapping
     public List<ClientOfferListItemResponse> list(@RequestParam(defaultValue = "ALL") String status,
                                                   @RequestParam(required = false) String q) {
-        return service.list(parseStatuses(status), q).stream().map(mapper::toListItem).toList();
+        return mapper.toListItems(service.list(parseStatuses(status), q));
     }
 
     @PostMapping

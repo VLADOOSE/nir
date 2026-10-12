@@ -5,15 +5,23 @@ import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferItem;
+import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.offer.ItemCalc;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class ClientOfferMapper {
+
+    private final TenderRepository tenders;
+
+    public ClientOfferMapper(TenderRepository tenders) {
+        this.tenders = tenders;
+    }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
         ClientOfferResponse r = new ClientOfferResponse();
@@ -25,6 +33,8 @@ public class ClientOfferMapper {
         r.setFacilityName(o.getFacility() == null ? null : o.getFacility().getName());
         r.setRecipient(o.getRecipient());
         r.setTenderId(o.getTenderId());
+        r.setTenderNumber(o.getTenderId() == null ? null
+                : tenders.findById(o.getTenderId()).map(Tender::getTenderNumber).orElse(null));
         r.setTitle(o.getTitle());
         r.setSubject(o.getSubject());
         r.setIntro(o.getIntro());
@@ -84,6 +94,18 @@ public class ClientOfferMapper {
         d.setDistributorId(it.getDistributorId());
         d.setCalc(calc);
         return d;
+    }
+
+    /** Журнал: номера заявок — одним запросом на всю страницу (без N+1). */
+    public List<ClientOfferListItemResponse> toListItems(List<ClientOffer> list) {
+        Set<Long> ids = list.stream().map(ClientOffer::getTenderId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> numbers = new HashMap<>();
+        if (!ids.isEmpty()) for (Object[] row : tenders.findNumbersByIds(ids)) numbers.put((Long) row[0], (String) row[1]);
+        return list.stream().map(o -> {
+            ClientOfferListItemResponse r = toListItem(o);
+            r.setTenderNumber(o.getTenderId() == null ? null : numbers.get(o.getTenderId()));
+            return r;
+        }).toList();
     }
 
     public ClientOfferListItemResponse toListItem(ClientOffer o) {

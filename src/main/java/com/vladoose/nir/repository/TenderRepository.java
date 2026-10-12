@@ -54,4 +54,8 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     @Query("SELECT t FROM Tender t WHERE t.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
          + "AND t.status IN :statuses ORDER BY t.createdAt DESC NULLS LAST, t.id DESC")
     List<Tender> findPrivate(@Param("statuses") Collection<String> statuses, Pageable pageable);
+
+    /** Номера заявок для журнала КП («из заявки ЧЗ-…») — одним запросом. */
+    @Query("select t.id, t.tenderNumber from Tender t where t.id in :ids")
+    List<Object[]> findNumbersByIds(@Param("ids") Collection<Long> ids);
 }

@@ -31,4 +31,11 @@ public interface ClientOfferRepository extends JpaRepository<ClientOffer, Long> 
                                     @Param("like") String like, @Param("number") Integer number, Pageable pageable);
 
     boolean existsByTenderId(Long tenderId);
+
+    /** КП по заявке — раздел «КП клиенту» на её странице, новые сверху. */
+    List<ClientOffer> findByTenderIdOrderByIdDesc(Long tenderId);
+
+    /** Статусы КП по заявкам — этап заявки (спека §5.4 правило 2): заявка → статус. */
+    @Query("select o.tenderId, o.status from ClientOffer o where o.tenderId in :ids")
+    List<Object[]> findStatusesByTenderIds(@Param("ids") Collection<Long> ids);
 }

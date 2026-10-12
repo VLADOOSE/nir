@@ -20,6 +20,8 @@ public class ClientOfferResponse {
     private String facilityName;
     private String recipient;
     private Long tenderId;
+    /** Номер заявки-источника («из заявки ЧЗ-…»). */
+    private String tenderNumber;
     private String title;
     private String subject;
     private String intro;

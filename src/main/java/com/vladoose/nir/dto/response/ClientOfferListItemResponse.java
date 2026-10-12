@@ -18,5 +18,7 @@ public class ClientOfferListItemResponse {
     private BigDecimal totalAmount;
     private String currency;
     private Long tenderId;
+    /** Номер заявки-источника («из заявки ЧЗ-…»). */
+    private String tenderNumber;
     private OffsetDateTime updatedAt;
 }

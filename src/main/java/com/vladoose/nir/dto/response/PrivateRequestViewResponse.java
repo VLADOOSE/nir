@@ -27,4 +27,6 @@ public class PrivateRequestViewResponse {
     private OffsetDateTime createdAt;
     private LeadRefResponse lead;
     private List<PrivateRequestLineView> lines;
+    /** КП клиенту по заявке, новые сверху (спека §8). */
+    private List<PrivateRequestOfferRef> offers;
 }
