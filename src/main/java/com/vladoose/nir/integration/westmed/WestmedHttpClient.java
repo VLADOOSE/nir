@@ -81,8 +81,13 @@ public class WestmedHttpClient implements WestmedClient {
 
     @Override
     public List<WestmedProduct> searchProducts(String text, int size) {
+        return searchProducts(text, size, deadline);
+    }
+
+    @Override
+    public List<WestmedProduct> searchProducts(String text, int size, Duration searchDeadline) {
         String path = "/api/v1/products?search=" + URLEncoder.encode(text, StandardCharsets.UTF_8) + "&size=" + size;
-        HttpResponse<String> r = send("GET", path, null, null);
+        HttpResponse<String> r = send("GET", path, null, null, searchDeadline);
         if (r.statusCode() != 200) {
             throw new WestmedApiException(r.statusCode(), "поиск товара на сайте: HTTP " + r.statusCode());
         }
@@ -139,8 +144,12 @@ public class WestmedHttpClient implements WestmedClient {
      * разбор корзины в чатах WhatsApp). Поэтому sendAsync с дедлайном на весь обмен и отменой.
      */
     private HttpResponse<String> send(String method, String path, String body, String bearer) {
+        return send(method, path, body, bearer, deadline);
+    }
+
+    private HttpResponse<String> send(String method, String path, String body, String bearer, Duration limit) {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .timeout(deadline)
+                .timeout(limit)
                 .header("Accept", "application/json");
         if (bearer != null) b.header("Authorization", "Bearer " + bearer);
         if (body != null) {
@@ -151,10 +160,10 @@ public class WestmedHttpClient implements WestmedClient {
         }
         CompletableFuture<HttpResponse<String>> f = http.sendAsync(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         try {
-            return f.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
+            return f.get(limit.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             f.cancel(true);
-            throw new WestmedApiException(0, "сайт не ответил за " + deadline.toSeconds() + " с");
+            throw new WestmedApiException(0, "сайт не ответил за " + limit.toSeconds() + " с");
         } catch (ExecutionException e) {
             Throwable c = e.getCause() == null ? e : e.getCause();
             throw new WestmedApiException(0, "сайт недоступен: " + c.getClass().getSimpleName()

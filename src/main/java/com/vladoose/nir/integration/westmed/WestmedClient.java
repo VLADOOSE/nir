@@ -5,6 +5,7 @@ import com.vladoose.nir.integration.westmed.dto.WestmedPriceRequest;
 import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
 import com.vladoose.nir.integration.westmed.dto.WestmedQuoteRequest;
 
+import java.time.Duration;
 import java.util.List;
 
 /** API сайта westmed.kz — те же вызовы, что у его админки (спека §2). Интерфейс — ради фейка в тестах. */
@@ -18,6 +19,11 @@ public interface WestmedClient {
 
     /** Публичный поиск каталога (name ILIKE). Карточку товара /products/{slug} НЕ вызываем — она накручивает просмотры. */
     List<WestmedProduct> searchProducts(String text, int size);
+
+    /** Тот же поиск с собственным дедлайном — для выпадающего списка частной заявки (пользователь ждёт ответа). */
+    default List<WestmedProduct> searchProducts(String text, int size, Duration deadline) {
+        return searchProducts(text, size);
+    }
 
     void updateStatus(WestmedKind kind, String siteId, String status);
 }

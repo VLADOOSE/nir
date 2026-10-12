@@ -11,6 +11,7 @@ import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
+import com.vladoose.nir.util.PastedLinesParser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -122,6 +123,15 @@ public class PrivateRequestController {
     public PrivateRequestLineView lineRegistry(@PathVariable Long id, @PathVariable Long lotId,
                                                @Valid @RequestBody LineRegistryActionRequest req) {
         return viewBuilder.line(service.lineRegistry(id, lotId, req.getAction(), req.getRegNumber()));
+    }
+
+    @PostMapping("/{id}/lines/parse")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<ParsedLineResponse> parseLines(@PathVariable Long id, @Valid @RequestBody PastedLinesRequest req) {
+        service.findById(id);   // гард: заявка своего рынка
+        return PastedLinesParser.parse(req.getText()).stream()
+                .map(p -> new ParsedLineResponse(p.name(), p.quantity(), p.unit()))
+                .toList();
     }
 
     @GetMapping("/{id}/lines/{lotId}/registry-candidates")
