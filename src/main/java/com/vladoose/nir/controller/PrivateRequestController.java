@@ -7,12 +7,18 @@ import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
+import com.vladoose.nir.service.RfqDocumentService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestPricesService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestRfqService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.util.PastedLinesParser;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -175,6 +182,20 @@ public class PrivateRequestController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<PriceRequestSendService.SendResult> rfqSend(@PathVariable Long id, @Valid @RequestBody RfqSendRequest req) {
         return rfqService.send(id, req);
+    }
+
+    /** Word запроса для одного поставщика до отправки («№ —»); только скачивание, без угадывания типа и кеша. */
+    @PostMapping("/{id}/rfq/document")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> rfqDocument(@PathVariable Long id, @Valid @RequestBody RfqPreviewRequest req) {
+        RfqDocumentService.RfqFile f = rfqService.document(id, req);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(RfqDocumentService.DOCX))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(f.fileName(), StandardCharsets.UTF_8).build().toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore())
+                .body(f.bytes());
     }
 
     @GetMapping("/{id}/prices")

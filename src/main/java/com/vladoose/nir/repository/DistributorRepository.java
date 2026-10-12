@@ -12,4 +12,11 @@ public interface DistributorRepository extends JpaRepository<Distributor, Long> 
     @Query("SELECT DISTINCT d FROM Distributor d LEFT JOIN d.equipmentTypes et " +
            "WHERE et.id = :typeId OR SIZE(d.equipmentTypes) = 0")
     List<Distributor> findEligibleForType(@Param("typeId") Long typeId);
+
+    /**
+     * Все рынки: нативный запрос фильтр рынка не режет. Название поставщика уникально глобально (distributor_name_key),
+     * поэтому «новый поставщик» сверяется со всеми рынками.
+     */
+    @Query(value = "SELECT id, market FROM distributor WHERE lower(name) = lower(:name)", nativeQuery = true)
+    List<Object[]> findIdAndMarketByName(@Param("name") String name);
 }
