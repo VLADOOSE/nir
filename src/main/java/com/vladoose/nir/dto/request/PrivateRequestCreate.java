@@ -1,14 +1,13 @@
 package com.vladoose.nir.dto.request;
 
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
 
 @Data
 public class PrivateRequestCreate {
-    @NotNull(message = "Клиент обязателен")
+    /** Клиент из «Учреждений»; необязателен (спека 2026-10-12, решение 4). */
     private Long clientFacilityId;
     private String note;
 

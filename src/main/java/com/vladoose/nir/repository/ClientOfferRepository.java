@@ -29,4 +29,6 @@ public interface ClientOfferRepository extends JpaRepository<ClientOffer, Long> 
             order by o.offerDate desc, o.id desc""")
     List<ClientOffer> searchJournal(@Param("statuses") Collection<ClientOfferStatus> statuses,
                                     @Param("like") String like, @Param("number") Integer number, Pageable pageable);
+
+    boolean existsByTenderId(Long tenderId);
 }

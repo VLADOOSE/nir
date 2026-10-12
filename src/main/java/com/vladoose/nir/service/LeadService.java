@@ -293,7 +293,11 @@ public class LeadService {
         }
     }
 
-    void transition(Lead lead, LeadStatus to, String author, String note) {
+    /**
+     * Переход статуса с событием ленты и записью статуса на сайт — общий для обращений и для удаления частной заявки
+     * (PrivateRequestService.delete не может зависеть от LeadService: тот зависит от него).
+     */
+    public static void transition(Lead lead, LeadStatus to, String author, String note) {
         LeadStatus from = lead.getStatus();
         lead.setStatus(to);
         lead.addEvent(LeadEventType.STATUS, author,

@@ -9,12 +9,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> {
 
     Optional<MedRegistry> findByRegNumber(String regNumber);
+
+    List<MedRegistry> findByRegNumberIn(Collection<String> regNumbers);
 
     /**
      * Кандидаты по нечёткой триграммной похожести: производитель (0.6) + наименование (0.4).

@@ -5,7 +5,7 @@ import com.vladoose.nir.controller.PrivateRequestController;
 import com.vladoose.nir.dto.request.LeadConvertRequest;
 import com.vladoose.nir.dto.request.PrivateRequestCreate;
 import com.vladoose.nir.dto.response.LeadConvertResponse;
-import com.vladoose.nir.dto.response.PrivateRequestResponse;
+import com.vladoose.nir.dto.response.PrivateRequestViewResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
@@ -185,7 +185,7 @@ class LeadConvertTest {
         Lead l = siteLead();
         LeadConvertResponse r = service.convert(l.getId(), withClient(client(Market.KZ).getId()), "admin");
 
-        PrivateRequestResponse pr = privateRequestController.findById(r.getPrivateRequestId());
+        PrivateRequestViewResponse pr = privateRequestController.get(r.getPrivateRequestId());
 
         assertThat(pr.getLead()).isNotNull();
         assertThat(pr.getLead().getId()).isEqualTo(l.getId());

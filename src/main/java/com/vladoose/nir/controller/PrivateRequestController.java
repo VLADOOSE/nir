@@ -1,12 +1,7 @@
 package com.vladoose.nir.controller;
 
-import com.vladoose.nir.dto.request.ImportCommitRequest;
-import com.vladoose.nir.dto.request.PrivateRequestCreate;
-import com.vladoose.nir.dto.request.PrivateRequestUpdate;
-import com.vladoose.nir.dto.response.ImportPreviewResponse;
-import com.vladoose.nir.dto.response.PrivateRequestLineResponse;
-import com.vladoose.nir.dto.response.PrivateRequestResponse;
-import com.vladoose.nir.dto.response.SourcingPreviewResponse;
+import com.vladoose.nir.dto.request.*;
+import com.vladoose.nir.dto.response.*;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.mapper.FacilityMapper;
 import com.vladoose.nir.mapper.LeadResponseMapper;
@@ -14,13 +9,13 @@ import com.vladoose.nir.service.LeadService;
 import com.vladoose.nir.service.PrivateRequestImportService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.PrivateRequestSourcingService;
+import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -32,17 +27,19 @@ import java.util.Map;
 public class PrivateRequestController {
 
     private final PrivateRequestService service;
+    private final PrivateRequestViewBuilder viewBuilder;
     private final FacilityMapper facilityMapper;
     private final PrivateRequestSourcingService sourcingService;
     private final PrivateRequestImportService importService;
     private final LeadService leadService;
     private final LeadResponseMapper leadResponseMapper;
 
-    public PrivateRequestController(PrivateRequestService service, FacilityMapper facilityMapper,
-                                    PrivateRequestSourcingService sourcingService,
+    public PrivateRequestController(PrivateRequestService service, PrivateRequestViewBuilder viewBuilder,
+                                    FacilityMapper facilityMapper, PrivateRequestSourcingService sourcingService,
                                     PrivateRequestImportService importService,
                                     LeadService leadService, LeadResponseMapper leadResponseMapper) {
         this.service = service;
+        this.viewBuilder = viewBuilder;
         this.facilityMapper = facilityMapper;
         this.sourcingService = sourcingService;
         this.importService = importService;
@@ -50,35 +47,60 @@ public class PrivateRequestController {
         this.leadResponseMapper = leadResponseMapper;
     }
 
+    /** Старый список (задача 3 заменит его списком с этапом и поиском). */
     @GetMapping
     public List<PrivateRequestResponse> findAll() {
-        // Реестр-матчинг (trigram по всему реестру на каждую строку) дорогой → в списке его НЕ считаем:
-        // показываем только число позиций; полный реестр-статус строк — в карточке (findById).
         return service.findAll().stream().map(t -> {
             PrivateRequestResponse r = toShort(t);
             r.setLineCount(t.getLots().size());
-            r.setRegisteredCount(-1);   // -1 = не вычислялось в списке
+            r.setRegisteredCount(-1);
             return r;
         }).toList();
     }
 
-    @GetMapping("/{id}")
-    public PrivateRequestResponse findById(@PathVariable Long id) {
-        Tender t = service.findById(id);
-        PrivateRequestResponse r = toShort(t);
-        List<PrivateRequestLineResponse> lines = service.linesWithRegistration(id);
-        applyCounts(r, lines);
-        r.setLines(lines);
-        attachLead(r, t.getId());
-        return r;
-    }
-
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public PrivateRequestResponse create(@Valid @RequestBody PrivateRequestCreate request) {
-        return buildFull(service.createFromLines(request));
+    public PrivateRequestViewResponse create() {
+        return viewBuilder.build(service.createEmpty());
     }
 
+    @GetMapping("/{id}")
+    public PrivateRequestViewResponse get(@PathVariable Long id) {
+        return viewBuilder.build(service.findById(id));
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse updateField(@PathVariable Long id, @Valid @RequestBody PrivateRequestFieldUpdate req) {
+        return viewBuilder.build(service.updateField(id, req.getField(), req.getValue()));
+    }
+
+    @PostMapping("/{id}/save-client")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse saveClient(@PathVariable Long id) {
+        return viewBuilder.build(service.saveClient(id));
+    }
+
+    @PostMapping("/{id}/close")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse close(@PathVariable Long id, @Valid @RequestBody PrivateRequestCloseRequest req) {
+        return viewBuilder.build(service.close(id, req.getOutcome()));
+    }
+
+    @PostMapping("/{id}/reopen")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PrivateRequestViewResponse reopen(@PathVariable Long id) {
+        return viewBuilder.build(service.reopen(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        service.delete(id, currentUser());
+    }
+
+    /** Старая правка строк целиком (задача 4 заменит её позициями по одной). */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public PrivateRequestResponse update(@PathVariable Long id, @Valid @RequestBody PrivateRequestUpdate request) {
@@ -111,14 +133,11 @@ public class PrivateRequestController {
     private PrivateRequestResponse buildFull(Tender t) {
         PrivateRequestResponse r = toShort(t);
         List<PrivateRequestLineResponse> lines = service.linesWithRegistration(t.getId());
-        applyCounts(r, lines);
+        r.setLineCount(lines.size());
+        r.setRegisteredCount((int) lines.stream().filter(l -> "REGISTERED".equals(l.getRegistrationStatus())).count());
         r.setLines(lines);
-        attachLead(r, t.getId());
+        leadService.findByPrivateRequest(t.getId()).map(leadResponseMapper::toRef).ifPresent(r::setLead);
         return r;
-    }
-
-    private void attachLead(PrivateRequestResponse r, Long tenderId) {
-        leadService.findByPrivateRequest(tenderId).map(leadResponseMapper::toRef).ifPresent(r::setLead);
     }
 
     private PrivateRequestResponse toShort(Tender t) {
@@ -126,16 +145,12 @@ public class PrivateRequestController {
         r.setId(t.getId());
         r.setNumber(t.getTenderNumber());
         r.setStatus(t.getStatus());
-        if (t.getFacility() != null) {
-            r.setClient(facilityMapper.toResponse(t.getFacility()));
-        }
+        if (t.getFacility() != null) r.setClient(facilityMapper.toResponse(t.getFacility()));
         return r;
     }
 
-    private void applyCounts(PrivateRequestResponse r, List<PrivateRequestLineResponse> lines) {
-        r.setLineCount(lines.size());
-        r.setRegisteredCount((int) lines.stream()
-                .filter(l -> "REGISTERED".equals(l.getRegistrationStatus()))
-                .count());
+    private static String currentUser() {
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        return a == null ? null : a.getName();
     }
 }

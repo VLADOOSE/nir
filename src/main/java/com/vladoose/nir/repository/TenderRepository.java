@@ -42,4 +42,9 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
                                @Param("maxCost") BigDecimal maxCost,
                                @Param("dateFrom") LocalDate dateFrom,
                                @Param("dateTo") LocalDate dateTo);
+
+    /** Номера частных заявок рынка по шаблону «ЧЗ-<год>-%» (HQL — рынок режет аспект). */
+    @Query("SELECT t.tenderNumber FROM Tender t WHERE t.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
+         + "AND t.tenderNumber LIKE :pattern")
+    List<String> findPrivateNumbers(@Param("pattern") String pattern);
 }
