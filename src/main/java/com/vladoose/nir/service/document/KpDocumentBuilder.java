@@ -102,8 +102,7 @@ public class KpDocumentBuilder {
         TableFit table = fitTable(chosen, rows, offer.isLandscape());
         return new KpDocument(
                 offer.isLandscape(),
-                new KpDocument.Letterhead(CompanyLines.split(profile.getHeaderLeft()), CompanyLines.split(profile.getHeaderRight()),
-                        profile.getLogoPng(), blankToNull(profile.getBrandText()), CompanyLines.of(profile)),
+                letterhead(profile),
                 "Исх. № " + offer.getNumber() + " от " + DocFormat.date(offer.getOfferDate()) + " г.",
                 CompanyLines.split(offer.getRecipient()),
                 blankToNull(offer.getTitle()) == null ? DEFAULT_TITLE : offer.getTitle().trim(),
@@ -117,6 +116,12 @@ public class KpDocumentBuilder {
                 offer.getTermsStyle() == TermsStyle.LIST ? termsList(offer.getTerms()) : List.of(),
                 signoff(offer, profile),
                 table.fontPt());
+    }
+
+    /** Бланк рынка (спека §6.3) — общий для КП клиенту и запроса цен на бланке (RfqDocumentBuilder). */
+    static KpDocument.Letterhead letterhead(CompanyProfile profile) {
+        return new KpDocument.Letterhead(CompanyLines.split(profile.getHeaderLeft()), CompanyLines.split(profile.getHeaderRight()),
+                profile.getLogoPng(), blankToNull(profile.getBrandText()), CompanyLines.of(profile));
     }
 
     static List<KpDocument.Column> columns(List<OfferColumn> config, boolean vat) {
@@ -141,7 +146,7 @@ public class KpDocumentBuilder {
     }
 
     /** Колонки таблицы позиций с долями ширины и кегль таблицы. */
-    private record TableFit(List<KpDocument.Column> columns, double fontPt) {}
+    record TableFit(List<KpDocument.Column> columns, double fontPt) {}
 
     /**
      * Как колонка получает ширину: наименование — остаток; деньги и короткие — по содержимому (деньги, количество и № не
@@ -167,8 +172,9 @@ public class KpDocumentBuilder {
      * редактор предложит альбомный лист).</li>
      * </ol>
      * Обычные КП не меняются: 10 pt и доли по умолчанию держат цену (12 %) до 999 999,99 и сумму (13 %) до 9 999 999,99.
+     * Пакетный: тот же подбор у запроса на бланке (RfqDocumentBuilder).
      */
-    private static TableFit fitTable(List<KpDocument.Column> columns, List<KpDocument.Row> rows, boolean landscape) {
+    static TableFit fitTable(List<KpDocument.Column> columns, List<KpDocument.Row> rows, boolean landscape) {
         double page = landscape ? TEXT_WIDTH_LANDSCAPE_MM : TEXT_WIDTH_PORTRAIT_MM;
         int n = columns.size();
         List<OfferColumnKey> keys = new ArrayList<>();
@@ -597,7 +603,7 @@ public class KpDocumentBuilder {
      * Знак конца пункта: «;», у последнего — «.». Свои «.» и «;» на конце значения снимаются, кроме точки сокращения
      * ({@link #TERM_ABBREVIATIONS}): «до 31.12.2026 г.;», а последний пункт — «… г.», без второй точки.
      */
-    private static String withListItemEnd(String value, boolean last) {
+    static String withListItemEnd(String value, boolean last) {
         String core = value.replaceAll("[;.]+$", "");
         boolean abbreviation = value.startsWith(".", core.length()) && ABBREVIATION_AT_END.matcher(core).find();
         if (abbreviation) core += ".";
