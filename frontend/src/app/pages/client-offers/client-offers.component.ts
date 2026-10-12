@@ -58,7 +58,7 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
             </span>
           </span>
         </div>
-        <div class="client">{{ o.clientName || 'Клиент не указан' }}</div>
+        <div class="client">{{ o.clientName || 'Клиент не указан' }}<span class="from-pr" *ngIf="o.tenderNumber"> · из заявки {{ o.tenderNumber }}</span></div>
         <div class="bottom">
           <span>{{ o.itemCount }} поз.</span>
           <span class="sum">{{ money(o.totalAmount) }}&nbsp;{{ symbol }}</span>
@@ -88,6 +88,7 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
     /* чипы статуса: 15% тинта + текстовый токен (правило kit); черновик — как .badge-DRAFT
        (--text-muted на --surface-2 даёт 4,39:1 — ниже 4,5:1 для 12px) */
     .st { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 10px; background: var(--surface-2); color: var(--text); }
+    .from-pr { color: var(--text-muted); font-weight: 400; }
     .st[data-status="SENT"] { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .st[data-status="ACCEPTED"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .st[data-status="REJECTED"] { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }

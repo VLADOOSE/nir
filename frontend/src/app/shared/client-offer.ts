@@ -46,6 +46,11 @@ export interface OfferItem {
   purchaseVatSame: boolean;
   purchaseVatRate: number | null;
   supplierName?: string | null;
+  /** строка ответа поставщика, из которой закупка («Поставщик ▾»); ручная правка закупки её снимает (спека §8) */
+  priceRequestItemId?: number | null;
+  /** позиция заявки и поставщик ответа — ставит сервер, только для чтения */
+  tenderLotId?: number | null;
+  distributorId?: number | null;
   markupPct: number | null;
   priceOverride: number | null;
   vatRate: number | null;
@@ -70,6 +75,8 @@ export interface OfferTotals {
 export interface ClientOffer {
   id: number; number: number; offerDate: string; status: OfferStatus;
   facilityId: number | null; facilityName: string | null; recipient: string | null; tenderId: number | null;
+  /** номер заявки-источника — «из заявки ЧЗ-…» */
+  tenderNumber: string | null;
   title: string; subject: string | null; intro: string | null;
   vatEnabled: boolean; defaultMarkupPct: number; rounding: Rounding;
   columns: OfferColumn[]; detailsInName: boolean; terms: OfferTerm[]; termsStyle: TermsStyle;
@@ -80,6 +87,17 @@ export interface ClientOffer {
 }
 
 export interface ColumnInfo { key: string; label: string; labelNoVat?: string; vatOnly?: boolean; }
+
+/** Ответ поставщика с ценой на позицию строки — пункт «Поставщик ▾» (спека 2026-10-12 §8). */
+export interface SupplierOffer {
+  priceRequestItemId: number; supplierName: string; price: number; respondedOn: string | null;
+  accepted: boolean; cheapest: boolean; selected: boolean;
+}
+
+/** Строка плашки «Пришли новые цены». */
+export interface NewPriceLine {
+  itemId: number; lineNo: number; name: string; purchasePrice: number | null; newPrice: number; supplierName: string | null;
+}
 
 /** Каталог колонок — подписи по умолчанию как на сервере (OfferColumnKey). */
 export const COLUMN_CATALOG: ColumnInfo[] = [
@@ -203,7 +221,8 @@ export function toRequest(o: ClientOffer): any {
       id: it.id ?? null, key: it.key, kind: it.kind, name: it.name, model: it.model ?? null,
       manufacturer: it.manufacturer ?? null, country: it.country ?? null, unit: it.unit, quantity: it.quantity,
       purchasePrice: it.purchasePrice, purchaseVatSame: it.purchaseVatSame, purchaseVatRate: it.purchaseVatRate,
-      supplierName: it.supplierName ?? null, markupPct: it.markupPct, priceOverride: it.priceOverride, vatRate: it.vatRate,
+      supplierName: it.supplierName ?? null, priceRequestItemId: it.priceRequestItemId ?? null,
+      markupPct: it.markupPct, priceOverride: it.priceOverride, vatRate: it.vatRate,
       registrationStatus: it.registrationStatus, registrationText: it.registrationText ?? null, note: it.note ?? null,
     })),
   };

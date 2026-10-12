@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import type { PreviewPages } from '../shared/client-offer';
+import type { NewPriceLine, PreviewPages, SupplierOffer } from '../shared/client-offer';
 import type {
   LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
@@ -619,5 +619,18 @@ export class ApiService {
   }
   downloadClientOfferDocx(id: number): Observable<Blob> {
     return this.http.get(`${this.base}/client-offers/${id}/docx`, { responseType: 'blob' });
+  }
+  /** КП клиенту из частной заявки (спека 2026-10-12 §8). */
+  createClientOfferFromRequest(requestId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/client-offers/from-private-request/${requestId}`, {});
+  }
+  getClientOfferItemOffers(offerId: number, itemId: number): Observable<SupplierOffer[]> {
+    return this.http.get<SupplierOffer[]>(`${this.base}/client-offers/${offerId}/items/${itemId}/offers`);
+  }
+  getClientOfferNewPrices(offerId: number): Observable<{ lines: NewPriceLine[] }> {
+    return this.http.get<{ lines: NewPriceLine[] }>(`${this.base}/client-offers/${offerId}/new-prices`);
+  }
+  applyClientOfferNewPrices(offerId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/client-offers/${offerId}/apply-new-prices`, {});
   }
 }

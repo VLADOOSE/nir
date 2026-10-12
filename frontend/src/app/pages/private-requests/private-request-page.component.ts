@@ -13,6 +13,9 @@ import { fullDateTime } from '../../shared/relative-time';
 import { PrClientSectionComponent } from './pr-client-section.component';
 import { PrLinesComponent } from './pr-lines.component';
 import { PrSupplyComponent } from './pr-supply.component';
+import { PrOffersComponent } from './pr-offers.component';
+import { OFFER_STATUS_LABELS } from '../../shared/client-offer';
+import type { OfferStatus } from '../../shared/client-offer';
 import { MarketService } from '../../services/market.service';
 
 /**
@@ -22,7 +25,7 @@ import { MarketService } from '../../services/market.service';
 @Component({
   selector: 'app-private-request-page',
   standalone: true,
-  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent],
+  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent, PrOffersComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -49,13 +52,20 @@ import { MarketService } from '../../services/market.service';
         Из обращения:
         <a [routerLink]="['/leads']" [queryParams]="{ openId: ld.id }">«{{ ld.subject }}» · {{ leadSource(ld.source) }} · {{ when(ld.receivedAt) }}</a>
       </div>
+      <div class="from-lead" *ngIf="v.offers.length">
+        КП клиенту: <a [routerLink]="['/client-offers', v.offers[0].id]">№ {{ v.offers[0].number }} · {{ offerStatus(v.offers[0].status) }}</a>
+      </div>
       <app-pr-client-section [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onView($event)"
                              (saveState)="onSaveState($event)"></app-pr-client-section>
       <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
                     (saveState)="onSaveState($event)"></app-pr-lines>
       <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
+      <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()"></app-pr-offers>
       <div class="pr-bar" *ngIf="auth.isAdmin() && v.stage === 'NEW'">
         <button type="button" class="btn btn-primary" (click)="supply?.openRfq()">Запросить цены</button>
+      </div>
+      <div class="pr-bar" *ngIf="auth.isAdmin() && v.stage === 'PRICED'">
+        <button type="button" class="btn btn-primary" [disabled]="offersPart?.busy" (click)="offersPart?.create()">КП клиенту</button>
       </div>
       <!-- sections -->
     </div>
@@ -111,6 +121,7 @@ export class PrivateRequestPageComponent {
   readonly outcomes = CLOSE_OUTCOMES;
   private loadSub?: Subscription;
   @ViewChild('supply') supply?: PrSupplyComponent;
+  @ViewChild('offersPart') offersPart?: PrOffersComponent;
 
   constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public auth: AuthService,
               private notify: NotificationService, private confirm: ConfirmService, private cdr: ChangeDetectorRef,
@@ -135,6 +146,10 @@ export class PrivateRequestPageComponent {
 
   tone(stage: string) {
     return stageTone(stage);
+  }
+
+  offerStatus(s: string): string {
+    return OFFER_STATUS_LABELS[s as OfferStatus] ?? s;
   }
 
   leadSource(source: string): string {

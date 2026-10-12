@@ -55,6 +55,13 @@ export interface PrView {
   createdAt: string | null;
   lead: LeadRef | null;
   lines: PrLine[];
+  /** КП клиенту по заявке, новые сверху (спека §8) */
+  offers: PrOfferRef[];
+}
+
+/** КП клиенту по заявке — раздел «КП клиенту» (спека §8). */
+export interface PrOfferRef {
+  id: number; number: number; offerDate: string; status: string; itemCount: number; totalAmount: number | null; currency: string;
 }
 
 export interface PrListItem {
@@ -156,7 +163,10 @@ export function stageTone(stage: string | null | undefined): string {
   switch (stage) {
     case 'REQUESTED': return 'accent';
     case 'PRICED': return 'warn';
-    case 'WON': return 'success';
+    case 'WON':
+    case 'KP_ACCEPTED': return 'success';
+    case 'KP_SENT': return 'accent';
+    case 'KP_REJECTED': return 'danger';
     case 'LOST': return 'danger';
     case 'CANCELLED':
     case 'EMPTY': return 'muted';
