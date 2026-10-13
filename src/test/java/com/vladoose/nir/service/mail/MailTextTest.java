@@ -12,7 +12,7 @@ class MailTextTest {
 
     private static ParsedMail mail(String text, String html) {
         return new ParsedMail(1, null, "s@x.kz", "s@x.kz", "Тема", OffsetDateTime.now(), "text/plain",
-                Map.of(), text, html, List.of(), null, null, null);
+                Map.of(), text, html, List.of(), null, null, null, List.of(), List.of());
     }
 
     @Test

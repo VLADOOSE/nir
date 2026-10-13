@@ -16,6 +16,7 @@ import java.util.*;
 
 import static com.vladoose.nir.service.mail.TestMimes.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class MailParserTest {
 
@@ -326,6 +327,114 @@ class MailParserTest {
 
         assertThat(p.bounce()).isNotNull();
         assertThat(p.bounce().originalSubject()).isEqualTo("[КП-7] Запрос КП");
+    }
+
+    @Test
+    void recipients_toAndCc_lowercasedWithoutRepeats_groupsSkipped() throws Exception {
+        MimeMessage m = plain("Иван <ivan@clinic.kz>", "Запрос", "Текст");
+        m.setRecipients(Message.RecipientType.TO, InternetAddress.parse("Info@WestMed.kz, buyer@clinic.kz"));
+        m.setRecipients(Message.RecipientType.CC, InternetAddress.parse("buyer@clinic.kz, undisclosed-recipients:;"));
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(p.recipients()).containsExactly("info@westmed.kz", "buyer@clinic.kz");
+    }
+
+    @Test
+    void listHeaders_lowercased() throws Exception {
+        MimeMessage m = plain("news@shop.kz", "Акция", "Скидки");
+        m.setHeader("List-Unsubscribe", "<mailto:Unsub@Shop.kz>");
+        m.setHeader("List-Id", "News <news.shop.kz>");
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(p.autoHeaders()).containsEntry("list-unsubscribe", "<mailto:unsub@shop.kz>").containsKey("list-id");
+    }
+
+    /** Ящик info@: файлы с байтами до предела; больше предела — имя без байтов и без размера. */
+    @Test
+    void files_collectedUnderLimit_overLimitWithoutBytes() throws Exception {
+        MimeMessage m = roundTrip(withAttachments("Клиент <c@clinic.kz>", "Файлы", "Во вложении",
+                "ТЗ.pdf", new byte[]{1, 2, 3}, "видео.mp4", new byte[50]));
+
+        ParsedMail p = MailParser.parse(m, 1, 10);
+
+        assertThat(p.files()).extracting(MailFile::name).containsExactly("ТЗ.pdf", "видео.mp4");
+        assertThat(p.files().get(0).content()).isEqualTo(new byte[]{1, 2, 3});
+        assertThat(p.files().get(0).size()).isEqualTo(3L);
+        assertThat(p.files().get(0).mimeType()).isEqualTo("application/octet-stream");
+        assertThat(p.files().get(1).stored()).isFalse();
+        assertThat(p.files().get(1).size()).isNull();
+    }
+
+    /** Ящик zakup@ (без предела) байтов файлов не собирает; Excel — те же байты, что excelBytes, без второго чтения. */
+    @Test
+    void files_onlyWithLimit_excelBytesReused() throws Exception {
+        MimeMessage m = roundTrip(withAttachments("s@x.kz", "Смета", "Текст", "смета.xlsx", xlsxBytes()));
+
+        assertThat(MailParser.parse(m, 1).files()).isEmpty();
+        ParsedMail p = MailParser.parse(m, 1, 1_000_000);
+        assertThat(p.files()).singleElement().satisfies(f -> {
+            assertThat(f.name()).isEqualTo("смета.xlsx");
+            assertThat(f.content()).isEqualTo(p.excelBytes());
+        });
+    }
+
+    /** Картинка подписи (inline + Content-ID) — не файл письма. */
+    @Test
+    void files_inlineSignatureImageSkipped() throws Exception {
+        MimeMultipart related = new MimeMultipart("related");
+        MimeBodyPart h = new MimeBodyPart();
+        h.setContent("<p>Цена в файле</p><img src=\"cid:logo1\">", "text/html; charset=UTF-8");
+        related.addBodyPart(h);
+        MimeBodyPart img = new MimeBodyPart();
+        img.setDataHandler(new DataHandler(new ByteArrayDataSource(new byte[]{1, 2, 3}, "image/png")));
+        img.setContentID("<logo1>");
+        img.setDisposition(MimeBodyPart.INLINE);
+        img.setFileName("image001.png");
+        related.addBodyPart(img);
+        MimeBodyPart relPart = new MimeBodyPart();
+        relPart.setContent(related);
+        MimeBodyPart pdf = new MimeBodyPart();
+        pdf.setDataHandler(new DataHandler(new ByteArrayDataSource(new byte[]{4, 5}, "application/pdf")));
+        pdf.setFileName("КП.pdf");
+        pdf.setDisposition(MimeBodyPart.ATTACHMENT);
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        mixed.addBodyPart(relPart);
+        mixed.addBodyPart(pdf);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("s@x.kz"));
+        m.setSubject("КП", "UTF-8");
+        m.setContent(mixed);
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1, 1000);
+
+        assertThat(p.files()).extracting(MailFile::name, MailFile::mimeType).containsExactly(tuple("КП.pdf", "application/pdf"));
+    }
+
+    /** U+0000 вычищается и из имён файлов. */
+    @Test
+    void nulCharacter_strippedFromFileNames() throws Exception {
+        MimeBodyPart text = new MimeBodyPart();
+        text.setText("Текст", "UTF-8");
+        MimeBodyPart file = new MimeBodyPart();
+        file.setDataHandler(new DataHandler(new ByteArrayDataSource(new byte[]{1}, "application/pdf")));
+        file.setHeader("Content-Disposition", "attachment; filename=\"" + encodedWord("ТЗ\0.pdf") + "\"");
+        MimeMultipart mixed = new MimeMultipart("mixed");
+        mixed.addBodyPart(text);
+        mixed.addBodyPart(file);
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("c@clinic.kz"));
+        m.setContent(mixed);
+        m.saveChanges();
+
+        ParsedMail p = MailParser.parse(roundTrip(m), 1, 1000);
+
+        assertThat(allStrings(p)).noneMatch(s -> s.indexOf('\0') >= 0);
+        assertThat(p.files()).extracting(MailFile::name).containsExactly("ТЗ.pdf");
     }
 
     /** Все строки записи — по её компонентам, вложенные записи тоже: новое поле попадёт в проверку само. */

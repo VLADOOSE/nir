@@ -22,18 +22,57 @@ public final class MailParser {
     static final int MAX_TEXT = 200_000;      // дальше текст не копим — защита памяти
     static final int MAX_DEPTH = 10;
     static final int MAX_DSN = 20_000;
-    private static final List<String> AUTO_HEADERS = List.of("Auto-Submitted", "X-Autoreply", "X-Autorespond", "Precedence");
+    private static final List<String> AUTO_HEADERS = List.of("Auto-Submitted", "X-Autoreply", "X-Autorespond", "Precedence",
+            "List-Unsubscribe", "List-Id");
 
     private MailParser() {}
 
     public static ParsedMail parse(Message msg, long uid) throws MessagingException, IOException {
+        return parse(msg, uid, 0);
+    }
+
+    /**
+     * maxFileBytes > 0 — собрать и сами файлы вложений (ящик info@: письмо — сообщение переписки с файлами); файл больше
+     * предела — без байтов. 0 — только имена (ящик zakup@: байты ему нужны лишь у Excel, их разбор читает и так).
+     */
+    public static ParsedMail parse(Message msg, long uid, int maxFileBytes) throws MessagingException, IOException {
         String from = from(msg);
         String subject = subject(msg);
-        Walk w = new Walk();
+        Walk w = new Walk(maxFileBytes);
         walk(msg, w, 0);
         return new ParsedMail(uid, header(msg, "Message-ID"), from, addressPart(from),
                 subject == null ? "" : subject, receivedAt(msg), contentType(msg), autoHeaders(msg),
-                w.text.toString(), w.html.toString(), List.copyOf(w.attachments), w.excel, w.excelName, w.bounce());
+                w.text.toString(), w.html.toString(), List.copyOf(w.attachments), w.excel, w.excelName, w.bounce(),
+                recipients(msg), List.copyOf(w.files));
+    }
+
+    /** «Кому» и «Копия»: адреса нижним регистром, без повторов; группы пропускаются; кривой заголовок — мягкий разбор. */
+    static List<String> recipients(Message msg) {
+        Set<String> out = new LinkedHashSet<>();
+        for (Message.RecipientType type : List.of(Message.RecipientType.TO, Message.RecipientType.CC)) {
+            Address[] list;
+            try {
+                list = msg.getRecipients(type);
+            } catch (MessagingException e) {
+                list = lenient(msg, type == Message.RecipientType.TO ? "To" : "Cc");
+            }
+            if (list == null) continue;
+            for (Address a : list) {
+                if (a instanceof InternetAddress ia && !ia.isGroup() && ia.getAddress() != null && !ia.getAddress().isBlank()) {
+                    out.add(noNul(ia.getAddress()).trim().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static Address[] lenient(Message msg, String header) {
+        try {
+            String raw = header(msg, header);
+            return raw == null ? null : InternetAddress.parseHeader(raw, false);
+        } catch (MessagingException e) {
+            return null;
+        }
     }
 
     /**
@@ -125,6 +164,7 @@ public final class MailParser {
             w.originalSubject = nestedSubject(part);
             String name = decode(part.getFileName());
             if (name != null) w.attachments.add(name);
+            if (w.maxFileBytes > 0) w.files.add(file(part, name != null ? name : "письмо.eml", "message/rfc822", w.maxFileBytes));
             return;
         }
         if (part.isMimeType("text/rfc822-headers")) {
@@ -138,14 +178,22 @@ public final class MailParser {
         boolean excel = isExcel(part, fileName);
         boolean attachment = Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
                 || (fileName != null && !embeddedImage(part)) || excel;
+        byte[] excelRead = null;
         if (excel && w.excel == null) {
             try (InputStream in = part.getInputStream()) {
                 w.excel = in.readAllBytes();
             }
             w.excelName = fileName != null ? fileName : "attachment.xlsx";
+            excelRead = w.excel;
         }
         if (attachment) {
-            w.attachments.add(fileName != null ? fileName : "без имени");
+            String name = fileName != null ? fileName : "без имени";
+            w.attachments.add(name);
+            if (w.maxFileBytes > 0) {
+                // Excel уже прочитан целиком — второй раз с сервера его не качаем
+                w.files.add(excelRead != null ? MailFile.of(name, mimeOf(part), excelRead, w.maxFileBytes)
+                        : file(part, name, mimeOf(part), w.maxFileBytes));
+            }
         } else if (part.isMimeType("text/plain")) {
             append(w.text, text(part));
         } else if (part.isMimeType("text/html")) {
@@ -175,6 +223,20 @@ public final class MailParser {
         return n.endsWith(".xlsx") || n.endsWith(".xls")
                 || part.isMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 || part.isMimeType("application/vnd.ms-excel");
+    }
+
+    /** Файл с байтами: читается не больше max + 1 байта — больше предела в память не попадает. */
+    private static MailFile file(Part part, String name, String mime, int max) throws MessagingException, IOException {
+        try (InputStream in = part.getInputStream()) {
+            return MailFile.of(name, mime, in.readNBytes(max + 1), max);
+        }
+    }
+
+    /** Базовый тип части нижним регистром, без параметров отправителя. */
+    private static String mimeOf(Part part) throws MessagingException {
+        String ct = noNul(part.getContentType());
+        String base = ct == null ? "" : ct.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return base.isEmpty() ? "application/octet-stream" : base;
     }
 
     /** Картинка подписи, встроенная в HTML (inline + Content-ID), — не вложение. */
@@ -240,6 +302,8 @@ public final class MailParser {
     }
 
     private static final class Walk {
+        final int maxFileBytes;
+        final List<MailFile> files = new ArrayList<>();
         final StringBuilder text = new StringBuilder();
         final StringBuilder html = new StringBuilder();
         final List<String> attachments = new ArrayList<>();
@@ -251,6 +315,10 @@ public final class MailParser {
         String diagnostic;
         String originalSubject;
         String action;
+
+        Walk(int maxFileBytes) {
+            this.maxFileBytes = maxFileBytes;
+        }
 
         void deliveryStatus(String s) {
             dsn = true;

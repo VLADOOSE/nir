@@ -27,6 +27,8 @@ public final class TestMails {
         private byte[] excel;
         private String excelName;
         private ParsedMail.Bounce bounce;
+        private List<String> recipients = List.of();
+        private List<MailFile> files = List.of();
 
         public Builder uid(long v) { uid = v; return this; }
         public Builder messageId(String v) { messageId = v; return this; }
@@ -52,9 +54,13 @@ public final class TestMails {
             return this;
         }
 
+        /** Адресаты «Кому» и «Копия» (уже нижним регистром, как их отдаёт разбор). */
+        public Builder to(String... v) { recipients = List.of(v); return this; }
+        public Builder files(MailFile... v) { files = List.of(v); return this; }
+
         public ParsedMail build() {
             return new ParsedMail(uid, messageId, from, MailParser.addressPart(from), subject, receivedAt, contentType,
-                    autoHeaders, text, html, attachments, excel, excelName, bounce);
+                    autoHeaders, text, html, attachments, excel, excelName, bounce, recipients, files);
         }
     }
 }

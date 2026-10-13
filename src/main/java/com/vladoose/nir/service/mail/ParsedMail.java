@@ -12,18 +12,21 @@ import java.util.Map;
  * @param from            отправитель для людей: «Имя <адрес>» или адрес; "" — нет
  * @param fromAddress     адрес отправителя нижним регистром; "" — нет
  * @param contentType     верхний Content-Type нижним регистром, пробелы схлопнуты
- * @param autoHeaders     признаки автоответа: имя заголовка нижним регистром → значение нижним регистром
- *                        (auto-submitted, x-autoreply, x-autorespond, precedence)
+ * @param autoHeaders     признаки автоответа и рассылки: имя заголовка нижним регистром → значение нижним регистром
+ *                        (auto-submitted, x-autoreply, x-autorespond, precedence, list-unsubscribe, list-id)
  * @param text            text/plain письма (не вложения); "" — нет
  * @param html            text/html письма (не вложения); "" — нет
  * @param attachmentNames имена вложений; встроенные картинки подписи (inline + Content-ID) не входят
  * @param excelBytes      первое Excel-вложение или null
  * @param bounce          сведения из частей возврата (DSN); null — таких частей нет
+ * @param recipients      адреса «Кому» и «Копия» нижним регистром, без повторов; группы («undisclosed-recipients:;») не входят
+ * @param files           вложения с байтами — только при разборе с пределом файла (ящик info@), иначе пусто
  */
 public record ParsedMail(long uid, String messageId, String from, String fromAddress, String subject,
                          OffsetDateTime receivedAt, String contentType, Map<String, String> autoHeaders,
                          String text, String html, List<String> attachmentNames,
-                         byte[] excelBytes, String excelName, Bounce bounce) {
+                         byte[] excelBytes, String excelName, Bounce bounce,
+                         List<String> recipients, List<MailFile> files) {
 
     /**
      * Возврат: адресат, код статуса, диагностика сервера, тема исходного письма (декодирована) и действие из отчёта —
