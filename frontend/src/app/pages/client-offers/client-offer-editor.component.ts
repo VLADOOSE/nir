@@ -17,6 +17,8 @@ import {
   ClientOffer, NewPriceLine, OFFER_STATUS_LABELS, OfferItem, OfferStatus, ROUNDING_OPTIONS, TermsStyle,
   dateText, money, numText, parseNum, saveBlob, toRequest, vatLabel,
 } from '../../shared/client-offer';
+import { unregistered } from '../../shared/registry';
+import { marketToday } from '../../shared/deadline';
 import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
 
@@ -187,7 +189,8 @@ const MAX_MARKUP = 1000;
         <span class="warns">
           <span *ngIf="!o.totals.itemCount">позиций нет</span>
           <span *ngIf="o.totals.noPurchaseCount">без закупки: {{ o.totals.noPurchaseCount }}</span>
-          <span *ngIf="regWarnings()">без регистрации: {{ regWarnings() }}</span>
+          <span class="reg-danger" *ngIf="isKz() && unregisteredCount()">не зарегистрировано: {{ unregisteredCount() }}</span>
+          <span *ngIf="!isKz() && regWarnings()">без регистрации: {{ regWarnings() }}</span>
         </span>
         <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict || exportQueued"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
         <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict || exportQueued">Word</button>
@@ -273,6 +276,7 @@ const MAX_MARKUP = 1000;
               padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow); }
     .ed-bar .btn { display: inline-flex; align-items: center; gap: 6px; }
     .warns { margin-right: auto; display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--warn-text); }
+    .reg-danger { color: var(--danger-text); font-weight: 600; }
     .status { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 13px; }
     @media (max-width: 1199.98px) {
       .tabs { display: flex; }
@@ -564,7 +568,15 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     for (const it of o.items) {
       const s = byKey.get(it.key);
       // поля сервера; ссылку на ответ (priceRequestItemId) держит экран — ручная правка закупки её снимает
-      if (s) { it.id = s.id; it.lineNo = s.lineNo; it.calc = s.calc; it.tenderLotId = s.tenderLotId; it.distributorId = s.distributorId; }
+      if (s) {
+        it.id = s.id; it.lineNo = s.lineNo; it.calc = s.calc; it.tenderLotId = s.tenderLotId; it.distributorId = s.distributorId;
+        it.medEquipmentId = s.medEquipmentId ?? null;
+        // регистрация, собранная сервером (текст подтверждённой, запись реестра), — только если экран её не сменил за время запроса
+        if (it.registrationStatus === s.registrationStatus && (it.regNumber ?? null) === (s.regNumber ?? null)) {
+          it.registry = s.registry ?? null;
+          if (s.registrationStatus === 'CONFIRMED') it.registrationText = s.registrationText ?? null;
+        }
+      }
     }
   }
 
@@ -880,6 +892,18 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
 
   statusLabel(s: OfferStatus): string {
     return OFFER_STATUS_LABELS[s] || s;
+  }
+
+  isKz(): boolean {
+    return this.market.value === 'KZ';
+  }
+
+  /** Сводка «не зарегистрировано: N» (спека 2026-10-13 §2.1): по строкам на экране, без сохранения; печать колонки не важна. */
+  unregisteredCount(): number {
+    const o = this.offer;
+    if (!o) return 0;
+    const today = marketToday('KZ');
+    return o.items.filter(it => it.kind === 'ITEM' && unregistered(it.registrationStatus, it.registry, today)).length;
   }
 
   regWarnings(): number {

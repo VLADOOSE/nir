@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import type { NewPriceLine, PreviewPages, SupplierOffer } from '../shared/client-offer';
+import type { NewPriceLine, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
 import type {
   LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
@@ -316,8 +316,8 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/registry/candidates/equipment/${equipmentId}?limit=${limit}`);
   }
 
-  searchRegistry(q: string, limit: number = 20): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/registry/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  searchRegistry(q: string, limit: number = 20): Observable<RegistryRecord[]> {
+    return this.http.get<RegistryRecord[]>(`${this.base}/registry/search?q=${encodeURIComponent(q)}&limit=${limit}`);
   }
 
   setEquipmentRegistration(equipmentId: number, action: string, regNumber?: string): Observable<any> {
@@ -595,6 +595,11 @@ export class ApiService {
   createClientOffer(): Observable<any> {
     return this.http.post<any>(`${this.base}/client-offers`, {});
   }
+  /** Подсказки РУ для строк КП — ничего не пишет (спека 2026-10-13 §2.3). */
+  getRegistrySuggestions(rows: SuggestionRow[]): Observable<RegistrySuggestion[]> {
+    return this.http.post<RegistrySuggestion[]>(`${this.base}/client-offers/registry-suggestions`, { rows });
+  }
+
   getClientOffer(id: number): Observable<any> {
     return this.http.get<any>(`${this.base}/client-offers/${id}`);
   }

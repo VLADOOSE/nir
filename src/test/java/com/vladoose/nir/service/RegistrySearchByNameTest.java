@@ -59,6 +59,22 @@ class RegistrySearchByNameTest {
         assertThat(numbers(match.search("ZZRSNVENDOR", 20))).contains("ZZ-RSN-P");
     }
 
+    /**
+     * Слово производителя в запросе засчитывается по производителю: стартовый запрос окошка метки КП —
+     * «наименование модель производитель», и так же ищет человек («ЭКГ Mindray R900»). Наименование при этом
+     * по-прежнему решает: запись с тем же наименованием, но другим производителем — не находится.
+     */
+    @Test
+    void producerWordInQuery_matchesByProducer() {
+        rec("ZZ-RSN-M", "Электрокардиограф ZZRSNECG R900", "ZZRSNMINDRAY Medical");
+        rec("ZZ-RSN-N", "Электрокардиограф ZZRSNECG R900", "ZZRSNOTHER GmbH");
+        registry.flush();
+
+        List<String> found = numbers(match.search("Электрокардиограф ZZRSNECG R900 ZZRSNMINDRAY", 20));
+
+        assertThat(found).contains("ZZ-RSN-M").doesNotContain("ZZ-RSN-N");
+    }
+
     /** Review Focus 2: спецсимволы, одни короткие слова, длинный запрос — пусто или обрезка, не 500. */
     @Test
     void oddQueriesDoNotFail() {

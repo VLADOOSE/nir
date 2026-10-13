@@ -4,9 +4,14 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { LucideDynamicIcon } from '@lucide/angular';
+import { of } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { NotificationService } from '../../services/notification.service';
+import { MarketService } from '../../services/market.service';
+import { RegistryChipComponent } from '../../shared/registry-chip.component';
+import { RegistryChipActions } from '../../shared/registry';
+import type { RegAction, RegistryRecord } from '../../shared/private-request';
 import {
   ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
 } from '../../shared/client-offer';
@@ -15,6 +20,11 @@ import { errorText } from '../../shared/error-text';
 /** Пределы наценки — те же, что проверяет сервер (ClientOfferService): вне них отказало бы всё автосохранение, а не одно поле. */
 const MIN_MARKUP = -100;
 const MAX_MARKUP = 1000;
+
+/** Наименование, модель, производитель и статус — по ним «Проверить регистрацию» видит, что строку правили во время запроса. */
+function rowKey(it: OfferItem): string {
+  return [it.name, it.model, it.manufacturer, it.registrationStatus].map(v => v ?? '').join('|');
+}
 
 /**
  * Строки КП (спека §8.2, блок «Позиции»): позиция / раздел / «включено в стоимость». Главное — в строку, остальное —
@@ -31,12 +41,14 @@ const MAX_MARKUP = 1000;
 @Component({
   selector: 'app-client-offer-items',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon],
+  imports: [NgFor, NgIf, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent],
   template: `
     <div class="toolbar" *ngIf="!readonly">
       <button type="button" class="btn btn-line" (click)="add('ITEM')">+ Позиция</button>
       <button type="button" class="btn btn-line" (click)="add('SECTION')">+ Раздел</button>
       <button type="button" class="btn btn-line" (click)="add('INCLUDED')">+ Включено в стоимость</button>
+      <button type="button" class="btn btn-line" *ngIf="isKz" [disabled]="checking" (click)="checkRegistry()">
+        {{ checking ? 'Проверяю…' : 'Проверить регистрацию' }}</button>
       <label class="sel-all" *ngIf="offer.items.length">
         <input type="checkbox" [checked]="allSelected()" [indeterminate]="someSelected()" (change)="selectAll($any($event.target).checked)" />
         Выбрать все
@@ -89,7 +101,9 @@ const MAX_MARKUP = 1000;
             <div class="c-name">
               <textarea rows="1" class="name" [(ngModel)]="it.name" (ngModelChange)="emit()" [disabled]="readonly" maxlength="4000"
                         placeholder="Наименование" [attr.aria-label]="'Наименование, строка ' + (i + 1)"></textarea>
-              <span class="chip-warn" *ngIf="needsReg(it)">РУ не указано</span>
+              <app-registry-chip *ngIf="isKz" [status]="it.registrationStatus" [record]="it.registry ?? null"
+                                 [seed]="regSeed(it)" [actions]="regActions(it)" [readonly]="readonly" align="start"></app-registry-chip>
+              <span class="chip-warn" *ngIf="!isKz && needsReg(it)">РУ не указано</span>
               <span class="sr" *ngIf="flag(it)">{{ flagText(it) }}</span>
             </div>
             <button type="button" class="c-summary" (click)="toggleOpen(it)" [attr.aria-expanded]="!!it._open">
@@ -185,12 +199,13 @@ const MAX_MARKUP = 1000;
           <label class="wide">Регистрация
             <span class="reg">
               <select [ngModel]="it.registrationStatus" (ngModelChange)="setRegStatus(it, $event)" [disabled]="readonly">
-                <option value="UNCHECKED">не указана</option>
-                <option value="MANUAL">указать номер РУ</option>
+                <option value="UNCHECKED">не проверено</option>
+                <option value="MANUAL">указать номер РУ вручную</option>
                 <option value="NOT_REQUIRED">не подлежит регистрации</option>
-                <!-- подтверждение и подсказку ставит только реестр на сервере: выбрать их нельзя, только оставить -->
+                <!-- подтверждение, подсказку и «нет в реестре» ставит метка РУ: здесь их можно только оставить -->
                 <option *ngIf="it.registrationStatus === 'CONFIRMED'" value="CONFIRMED">подтверждена по реестру</option>
                 <option *ngIf="it.registrationStatus === 'SUGGESTED'" value="SUGGESTED">подсказка реестра</option>
+                <option *ngIf="it.registrationStatus === 'NOT_FOUND'" value="NOT_FOUND">нет в реестре</option>
               </select>
               <input *ngIf="it.registrationStatus === 'MANUAL'" [(ngModel)]="it.registrationText" (ngModelChange)="emit()" [disabled]="readonly"
                      maxlength="1000" placeholder="№ РК-МИ (МТ)-0№023037 от 28.10.2021 г." aria-label="Текст регистрации" />
@@ -387,9 +402,101 @@ export class ClientOfferItemsComponent {
   offersList: SupplierOffer[] = [];
   offersLoading = false;
   offersError = '';
+  /** Реестр РУ — только Казахстан: на РФ меток и «Проверить регистрацию» нет (спека 2026-10-13 §3). */
+  readonly isKz: boolean;
+  checking = false;
+  private regActionsByKey = new Map<string, RegistryChipActions>();
 
   constructor(private confirm: ConfirmService, private notify: NotificationService, private host: ElementRef<HTMLElement>,
-              private cdr: ChangeDetectorRef, private destroyRef: DestroyRef, private api: ApiService) {}
+              private cdr: ChangeDetectorRef, private destroyRef: DestroyRef, private api: ApiService, market: MarketService) {
+    this.isKz = market.value === 'KZ';
+  }
+
+  regSeed(it: OfferItem): string {
+    return [it.name, it.model, it.manufacturer].filter(Boolean).join(' ');
+  }
+
+  /** Действия метки — правкой строки и автосохранением (спека 2026-10-13 §4); строка ищется по ключу при вызове. */
+  regActions(it: OfferItem): RegistryChipActions {
+    const key = it.key;
+    let a = this.regActionsByKey.get(key);
+    if (!a) {
+      a = {
+        candidates: () => {
+          const cur = this.offer.items.find(x => x.key === key);
+          return this.api.searchRegistry(cur ? this.regSeed(cur) : '', 10);
+        },
+        act: (action, record) => {
+          const cur = this.offer.items.find(x => x.key === key);
+          if (cur) this.applyReg(cur, action, record);
+          return of(cur);
+        },
+      };
+      this.regActionsByKey.set(key, a);
+    }
+    return a;
+  }
+
+  /** Подтвердить / «не подлежит» / вернуть проверку: наименование не трогаем, производитель и страна — в пустые. */
+  private applyReg(it: OfferItem, action: RegAction, record?: RegistryRecord) {
+    const p = this.profile;
+    if (action === 'CONFIRM') {
+      const rec = record ?? it.registry ?? null;
+      const number = rec?.regNumber ?? it.regNumber ?? null;
+      if (!number) return;
+      if (record && record.regNumber !== it.regNumber) it.suggestionScore = null;
+      it.registrationStatus = 'CONFIRMED';
+      it.regNumber = number;
+      it.registry = rec;
+      it.registrationText = null;   // текст соберёт сервер из записи реестра — придёт ответом автосохранения
+      if (rec && !it.manufacturer && rec.producer) it.manufacturer = rec.producer.slice(0, 500);
+      if (rec && !it.country && rec.country) it.country = rec.country.slice(0, 200);
+      if (this.offer.vatEnabled && p && 'vatRegistered' in p) it.vatRate = p.vatRegistered;
+    } else if (action === 'NOT_REQUIRED') {
+      it.registrationStatus = 'NOT_REQUIRED';
+      it.registrationText = 'Не подлежит регистрации';
+      it.regNumber = null; it.registry = null; it.suggestionScore = null;
+      if (this.offer.vatEnabled && p && 'vatNotRegistrable' in p) it.vatRate = p.vatNotRegistrable;
+    } else {
+      it.registrationStatus = 'UNCHECKED';
+      it.registrationText = null; it.regNumber = null; it.registry = null; it.suggestionScore = null;
+    }
+    this.emit();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * «Проверить регистрацию» (спека 2026-10-13 §2.3, решение плана 9): подсказки для непроверенных позиций с наименованием;
+   * результат — только строкам, которые всё ещё «не проверено» и не менялись с запроса; дальше — автосохранение.
+   */
+  checkRegistry() {
+    const rows = this.offer.items.filter(it => it.kind === 'ITEM' && it.registrationStatus === 'UNCHECKED' && (it.name ?? '').trim());
+    if (!rows.length) { this.notify.info('Непроверенных позиций нет'); return; }
+    const sent = new Map(rows.map(it => [it.key, rowKey(it)]));
+    this.checking = true;
+    this.api.getRegistrySuggestions(rows.map(it => ({ key: it.key, name: it.name, model: it.model ?? null, manufacturer: it.manufacturer ?? null })))
+      .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: results => {
+          this.checking = false;
+          let suggested = 0, notFound = 0;
+          for (const r of results) {
+            const it = this.offer.items.find(x => x.key === r.key);
+            if (!it || it.registrationStatus !== 'UNCHECKED' || sent.get(it.key) !== rowKey(it)) continue;
+            if (r.status === 'SUGGESTED') {
+              it.registrationStatus = 'SUGGESTED'; it.regNumber = r.regNumber; it.suggestionScore = r.score; it.registry = r.registry;
+              suggested++;
+            } else {
+              it.registrationStatus = 'NOT_FOUND'; it.regNumber = null; it.suggestionScore = null; it.registry = null;
+              notFound++;
+            }
+          }
+          this.notify.success(`Проверено позиций: ${suggested + notFound} — «РУ?»: ${suggested}, нет в реестре: ${notFound}`);
+          if (suggested + notFound) this.emit();
+          this.cdr.markForCheck();
+        },
+        error: e => { this.checking = false; this.notify.error('Проверка не удалась: ' + errorText(e)); this.cdr.markForCheck(); },
+      });
+  }
 
   get rates(): (number | null)[] {
     return this.profile?.vatRates ?? [];
@@ -505,11 +612,7 @@ export class ClientOfferItemsComponent {
   duplicateRow(i: number) {
     const src = this.offer.items[i];
     const copy: OfferItem = { ...src, id: null, key: uid(), lineNo: undefined, calc: src.calc ? { ...src.calc } : null, _sel: false };
-    // «Подтверждена по реестру» и «подсказка реестра» ставит только сервер: новая строка с ними — 400 на каждое
-    // автосохранение. Подтверждённый текст переносится ручным вводом (тот же товар), подсказка — нет.
-    if (copy.registrationStatus === 'CONFIRMED') copy.registrationStatus = 'MANUAL';
-    if (copy.registrationStatus === 'SUGGESTED') { copy.registrationStatus = 'UNCHECKED'; copy.registrationText = null; }
-    copy.regNumber = null;
+    // Регистрация копируется как есть: «РУ ✓» и «РУ?» с № сервер перепроверит у новой строки (решение плана 3)
     copy.priceRequestItemId = null; copy.tenderLotId = null; copy.distributorId = null;   // у новой строки позиции нет: ссылка дала бы 400 на каждое автосохранение
     // Ставку, которой больше нет в настройках рынка, сервер оставляет только уже сохранённой строке: копия — новая
     // строка, с такой ставкой каждое автосохранение получало бы 400. Пока профиль не пришёл, ставки не известны — не трогаем.
@@ -675,6 +778,7 @@ export class ClientOfferItemsComponent {
   setRegStatus(it: OfferItem, status: RegStatus) {
     const prev = it.registrationStatus;
     it.registrationStatus = status;
+    if (status !== 'CONFIRMED' && status !== 'SUGGESTED') { it.regNumber = null; it.registry = null; it.suggestionScore = null; }
     // «Не подлежит регистрации» — не номер РУ: в поле номера его не переносим
     if (status === 'UNCHECKED' || (status === 'MANUAL' && prev === 'NOT_REQUIRED')) it.registrationText = null;
     if (status === 'NOT_REQUIRED') {

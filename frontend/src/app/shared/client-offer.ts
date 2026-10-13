@@ -2,12 +2,14 @@
  * КП клиенту: типы, подписи и общие функции экранов (спека docs/superpowers/specs/2026-10-02-client-kp-constructor-design.md).
  * Формул здесь НЕТ: цены, НДС и маржу считает сервер (ClientOfferCalculator), экран показывает его числа.
  */
+import type { RegistryRecord } from './private-request';
+
 export type OfferStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED';
 export type ItemKind = 'ITEM' | 'SECTION' | 'INCLUDED';
 export type TermsStyle = 'TABLE' | 'LIST' | 'NONE';
 export type Rounding = 'NONE' | 'UNIT' | 'TEN' | 'HUNDRED';
 export type Signoff = 'COMPANY' | 'DIRECTOR';
-export type RegStatus = 'UNCHECKED' | 'SUGGESTED' | 'CONFIRMED' | 'NOT_REQUIRED' | 'MANUAL';
+export type RegStatus = 'UNCHECKED' | 'SUGGESTED' | 'CONFIRMED' | 'NOT_REQUIRED' | 'MANUAL' | 'NOT_FOUND';
 
 export interface OfferColumn { key: string; label?: string | null; }
 export interface OfferTerm { label: string; value: string; }
@@ -57,6 +59,12 @@ export interface OfferItem {
   registrationStatus: RegStatus;
   registrationText?: string | null;
   regNumber?: string | null;
+  /** Оценка подсказки (0…1) — с «Проверить регистрацию»; не печатается. */
+  suggestionScore?: number | null;
+  /** Позиция каталога — только у новой строки из «Из реестра и каталога». */
+  medEquipmentId?: number | null;
+  /** Запись реестра для № строки (ответ сервера) — запись и срок в метке. */
+  registry?: RegistryRecord | null;
   note?: string | null;
   calc?: ItemCalc | null;
   /** только экран: строка раскрыта / отмечена галочкой */
@@ -195,6 +203,12 @@ export function longDateText(iso: string): string {
   return `«${d}» ${MONTHS_GEN[Number(m) - 1]} ${y} г.`;
 }
 
+/** Строка для подсказок РУ и ответ (спека 2026-10-13 §2.3). */
+export interface SuggestionRow { key: string; name: string; model: string | null; manufacturer: string | null; }
+export interface RegistrySuggestion {
+  key: string; status: 'SUGGESTED' | 'NOT_FOUND'; regNumber: string | null; score: number | null; registry: RegistryRecord | null;
+}
+
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -223,7 +237,9 @@ export function toRequest(o: ClientOffer): any {
       purchasePrice: it.purchasePrice, purchaseVatSame: it.purchaseVatSame, purchaseVatRate: it.purchaseVatRate,
       supplierName: it.supplierName ?? null, priceRequestItemId: it.priceRequestItemId ?? null,
       markupPct: it.markupPct, priceOverride: it.priceOverride, vatRate: it.vatRate,
-      registrationStatus: it.registrationStatus, registrationText: it.registrationText ?? null, note: it.note ?? null,
+      registrationStatus: it.registrationStatus, registrationText: it.registrationText ?? null,
+      regNumber: it.regNumber ?? null, suggestionScore: it.suggestionScore ?? null, medEquipmentId: it.medEquipmentId ?? null,
+      note: it.note ?? null,
     })),
   };
 }

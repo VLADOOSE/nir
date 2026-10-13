@@ -26,7 +26,7 @@ let openChip: RegistryChipComponent | null = null;
     <span class="rc" (click)="$event.stopPropagation()">
       <button type="button" class="chip" [attr.data-status]="tone()" (click)="toggle()"
               [attr.aria-expanded]="open" [attr.aria-label]="'Регистрация: ' + label()">{{ label() }}</button>
-      <div class="pop" *ngIf="open" role="dialog" aria-label="Регистрация в реестре">
+      <div class="pop" *ngIf="open" [class.start]="align === 'start'" role="dialog" aria-label="Регистрация в реестре">
         <div class="rec" *ngIf="record as r">
           <div class="rec-kind">{{ status === 'CONFIRMED' ? 'Подтверждено' : 'Похоже на' }}</div>
           <div class="rec-name">{{ r.name }}</div>
@@ -81,6 +81,8 @@ let openChip: RegistryChipComponent | null = null;
     .pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 360px; max-width: calc(100vw - 32px);
            background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg);
            padding: 12px; display: flex; flex-direction: column; gap: 10px; text-align: left; }
+    /* метка у левого края строки (наименование позиции КП): окошко открывается вправо, а не под боковое меню */
+    .pop.start { left: 0; right: auto; }
     .rec-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
     .rec-name { font-size: 14px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
     .rec-meta, .rec-none { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
@@ -98,7 +100,7 @@ let openChip: RegistryChipComponent | null = null;
     .error-banner { margin: 0; }
     @media (max-width: 900px) {
       .chip { min-height: 40px; padding: 0 12px; }   /* цель 40 px (спека §5.6) — строка позиции на телефоне и так 40 px */
-      .pop { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-height: 70vh; overflow-y: auto; }
+      .pop, .pop.start { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-height: 70vh; overflow-y: auto; }
       .pop-actions .btn, .results button { min-height: 40px; }
       .search input { font-size: 16px; min-height: 40px; }
     }
@@ -111,6 +113,8 @@ export class RegistryChipComponent implements OnDestroy {
   @Input() seed = '';
   @Input({ required: true }) actions!: RegistryChipActions;
   @Input() readonly = false;
+  /** С какой стороны метки открывается окошко: 'end' — влево от правого края (метка в конце строки), 'start' — вправо. */
+  @Input() align: 'start' | 'end' = 'end';
   @Output() changed = new EventEmitter<unknown>();
 
   open = false;

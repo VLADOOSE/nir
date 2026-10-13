@@ -42,22 +42,27 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
 
     /**
      * Поиск по наименованию (спека 2026-10-13 §2.5): каждое слово запроса встречается в наименовании записи
-     * (word_similarity, любой порядок), оценка — средняя похожесть слов; или весь запрос похож на производителя.
-     * Отбор по индексу — по самому длинному слову (:first <% name); слова — через «|» (как searchByTokensV2).
-     * Равная оценка — по № РУ: выдача не зависит от LIMIT.
+     * или в её производителе (word_similarity, любой порядок), оценка — средняя похожесть слов (по лучшему из двух
+     * полей); или весь запрос похож на производителя. Слово производителя засчитывается по производителю: стартовый
+     * запрос окошка метки КП — «наименование модель производитель», так же ищет и человек («ЭКГ Mindray R900»).
+     * Отбор по индексу — по самому длинному слову (:first <% name или producer); слова — через «|» (как
+     * searchByTokensV2). Равная оценка — по № РУ: выдача не зависит от LIMIT.
      */
     @Query(nativeQuery = true, value =
             "SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, m.country AS country, " +
             "m.reg_date AS regDate, m.expiration_date AS expirationDate, m.unlimited AS unlimited, " +
             "GREATEST(" +
-            " CASE WHEN (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) WHERE tk.tok <% m.name) " +
+            " CASE WHEN (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) " +
+            "            WHERE tk.tok <% m.name OR tk.tok <% m.producer) " +
             "           = array_length(string_to_array(:tokens,'|'), 1) " +
-            "      THEN (SELECT avg(word_similarity(tk.tok, m.name)) FROM unnest(string_to_array(:tokens,'|')) tk(tok)) " +
+            "      THEN (SELECT avg(GREATEST(word_similarity(tk.tok, m.name), word_similarity(tk.tok, m.producer))) " +
+            "            FROM unnest(string_to_array(:tokens,'|')) tk(tok)) " +
             "      ELSE 0 END, " +
             " CASE WHEN :q <% m.producer THEN word_similarity(:q, m.producer) ELSE 0 END) AS score " +
             "FROM med_registry m " +
-            "WHERE (:first <% m.name " +
-            "       AND (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) WHERE tk.tok <% m.name) " +
+            "WHERE ((:first <% m.name OR :first <% m.producer) " +
+            "       AND (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) " +
+            "            WHERE tk.tok <% m.name OR tk.tok <% m.producer) " +
             "           = array_length(string_to_array(:tokens,'|'), 1)) " +
             "   OR :q <% m.producer " +
             "ORDER BY score DESC, m.reg_number " +
