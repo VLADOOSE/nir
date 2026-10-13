@@ -215,7 +215,7 @@ public class MailIngestWriter {
      * Message-ID для дедупа: пустой заголовок или {@code <>} — как отсутствующий (null), иначе все такие письма после
      * первого считались бы повтором и пропадали без строки и уведомления.
      */
-    private static String messageIdOf(String raw) {
+    static String messageIdOf(String raw) {
         String id = cut(raw, 998);
         return id == null || id.replace("<", "").replace(">", "").isBlank() ? null : id;
     }
