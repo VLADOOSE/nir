@@ -1,6 +1,7 @@
 package com.vladoose.nir.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.ClientOfferItemKind;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.service.offer.ItemCalc;
@@ -44,8 +45,15 @@ public class ClientOfferItemDto {
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal vatRate;
     private OfferRegistrationStatus registrationStatus;
     @Size(max = 1000) private String registrationText;
+    /** № РУ (спека 2026-10-13 §4): у CONFIRMED / SUGGESTED сервер сверяет с реестром; у остальных статусов не хранится. */
+    @Size(max = 100) private String regNumber;
+    /** Оценка подсказки (0…1, три знака); у остальных статусов не хранится. */
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal suggestionScore;
+    /** Позиция каталога: пишется только у новой строки (своего рынка, иначе 400), у сохранённой с клиента не меняется. */
+    private Long medEquipmentId;
+    /** Запись реестра для № строки — показать запись и срок; только для чтения. */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    private String regNumber;
+    private RegistryCandidateResponse registry;
     @Size(max = 4000) private String note;
     /** Позиция заявки, из которой строка (ставит сервер при создании КП из заявки); с клиента не меняется. */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)

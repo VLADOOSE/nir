@@ -44,7 +44,8 @@ public class ClientOfferCalculator {
             }
             itemCount++;
             OfferRegistrationStatus reg = item.getRegistrationStatus();
-            if (reg == OfferRegistrationStatus.UNCHECKED || reg == OfferRegistrationStatus.SUGGESTED) unconfirmed++;
+            if (reg == OfferRegistrationStatus.UNCHECKED || reg == OfferRegistrationStatus.SUGGESTED
+                    || reg == OfferRegistrationStatus.NOT_FOUND) unconfirmed++;
             if (item.getPurchasePrice() == null) noPurchase++;
 
             ItemCalc c = calculateItem(offer, item);

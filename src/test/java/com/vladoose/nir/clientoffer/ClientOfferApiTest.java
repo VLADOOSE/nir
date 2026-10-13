@@ -267,11 +267,11 @@ class ClientOfferApiTest {
         long id = o.get("id").asLong();
         ObjectNode body = bodyOf(o);
         ObjectNode line = item("k1", "Пульсоксиметр", 3, 105000, 5);
-        // связи волны 2 PUT не принимает: будь они взяты, несуществующие id упали бы на внешних ключах
+        // поставщика и позицию заявки PUT не принимает, несуществующий ответ поставщика молча снимает: будь они взяты,
+        // несуществующие id упали бы на внешних ключах (позицию каталога PUT с части 3 проверяет — ClientOfferRegistryPutTest)
         line.put("distributorId", 999_999_999L);
         line.put("tenderLotId", 999_999_999L);
         line.put("priceRequestItemId", 999_999_999L);
-        line.put("medEquipmentId", 999_999_999L);
         body.putArray("items").add(line);
         JsonNode r = save(id, body);
         JsonNode first = r.get("items").get(0);
@@ -343,7 +343,7 @@ class ClientOfferApiTest {
         ObjectNode confirmed = item("k1", "А", 1, 100, 5);
         confirmed.put("registrationStatus", "CONFIRMED");
         body.putArray("items").add(confirmed);
-        rejected(id, body, "реестр");
+        rejected(id, body, "Не указан № РУ");   // подтверждение — только с № из реестра (часть 3, ClientOfferRegistryPutTest)
 
         ObjectNode notRequired = item("k1", "Гигрометр", 1, 100, 16);
         notRequired.put("registrationStatus", "NOT_REQUIRED");

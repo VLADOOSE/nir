@@ -5,8 +5,12 @@ import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferItem;
+import com.vladoose.nir.entity.MedRegistry;
+import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.service.offer.ItemCalc;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import org.springframework.stereotype.Component;
@@ -18,9 +22,11 @@ import java.util.stream.Collectors;
 public class ClientOfferMapper {
 
     private final TenderRepository tenders;
+    private final MedRegistryRepository registry;
 
-    public ClientOfferMapper(TenderRepository tenders) {
+    public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry) {
         this.tenders = tenders;
+        this.registry = registry;
     }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
@@ -54,8 +60,21 @@ public class ClientOfferMapper {
         r.setInternalNote(o.getInternalNote());
         r.setVersion(o.getVersion());
         r.setCurrency(o.getMarket().currencyCode());
+        // запись реестра для № подтверждённых и подсказанных строк — одним запросом (метка показывает запись и срок)
+        Set<String> numbers = o.getItems().stream()
+                .filter(it -> it.getRegNumber() != null && (it.getRegistrationStatus() == OfferRegistrationStatus.CONFIRMED
+                        || it.getRegistrationStatus() == OfferRegistrationStatus.SUGGESTED))
+                .map(ClientOfferItem::getRegNumber).collect(Collectors.toSet());
+        Map<String, MedRegistry> records = new HashMap<>();
+        if (!numbers.isEmpty()) for (MedRegistry m : registry.findByRegNumberIn(numbers)) records.put(m.getRegNumber(), m);
         List<ClientOfferItemDto> items = new ArrayList<>();
-        for (int i = 0; i < o.getItems().size(); i++) items.add(toItemDto(o.getItems().get(i), calc.items().get(i)));
+        for (int i = 0; i < o.getItems().size(); i++) {
+            ClientOfferItem it = o.getItems().get(i);
+            ClientOfferItemDto d = toItemDto(it, calc.items().get(i));
+            MedRegistry rec = it.getRegNumber() == null ? null : records.get(it.getRegNumber());
+            d.setRegistry(rec == null ? null : PrivateRequestViewBuilder.candidate(rec));
+            items.add(d);
+        }
         r.setItems(items);
         r.setTotals(calc.totals());
         r.setFileBaseName(fileBaseName);
@@ -88,6 +107,8 @@ public class ClientOfferMapper {
         d.setRegistrationStatus(it.getRegistrationStatus());
         d.setRegistrationText(it.getRegistrationText());
         d.setRegNumber(it.getRegNumber());
+        d.setSuggestionScore(it.getSuggestionScore());
+        d.setMedEquipmentId(it.getMedEquipmentId());
         d.setNote(it.getNote());
         d.setTenderLotId(it.getTenderLotId());
         d.setPriceRequestItemId(it.getPriceRequestItemId());

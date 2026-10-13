@@ -10,12 +10,15 @@ import com.vladoose.nir.exception.ConflictException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.FacilityRepository;
+import com.vladoose.nir.repository.MedEquipmentRepository;
+import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.document.*;
 import com.vladoose.nir.service.offer.ClientOfferCalculator;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.offer.OfferSettingsValidator;
 import com.vladoose.nir.util.DocFormat;
+import com.vladoose.nir.util.RegistrationText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -71,11 +74,14 @@ public class ClientOfferService {
     /** Чтение для файла КП — короткой транзакцией только на чтение, отдельно от рендера (PDFBox — секунды процессора). */
     private final TransactionTemplate readOnly;
     private final PriceRequestItemRepository priceRequestItems;
+    private final MedRegistryRepository registry;
+    private final MedEquipmentRepository equipment;
 
     public ClientOfferService(ClientOfferRepository repository, CompanyProfileService profiles,
                               FacilityRepository facilities, ClientOfferCalculator calculator, KpDocumentBuilder builder,
                               KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer preview, KpDocxRenderer docx,
-                              PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems) {
+                              PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems,
+                              MedRegistryRepository registry, MedEquipmentRepository equipment) {
         this.repository = repository;
         this.profiles = profiles;
         this.facilities = facilities;
@@ -88,6 +94,8 @@ public class ClientOfferService {
         this.readOnly = new TransactionTemplate(transactions);
         this.readOnly.setReadOnly(true);
         this.priceRequestItems = priceRequestItems;
+        this.registry = registry;
+        this.equipment = equipment;
     }
 
     /** Файл КП для скачивания: имя («КП № 443 от 14.09.2026 — ….pdf») и байты. */
@@ -353,6 +361,8 @@ public class ClientOfferService {
         for (ClientOfferItem it : o.getItems()) existing.put(it.getId(), it);
         List<ClientOfferItem> stored = new ArrayList<>(dtos.size());
         List<Link> links = new ArrayList<>(dtos.size());
+        List<Reg> regs = new ArrayList<>(dtos.size());
+        List<Long> catalog = new ArrayList<>(dtos.size());
         int itemNo = 0;
         for (int i = 0; i < dtos.size(); i++) {
             ClientOfferItemDto dto = dtos.get(i);
@@ -364,15 +374,21 @@ public class ClientOfferService {
             }
             if (dto.getKind() == null) throw new BadRequestException("Не указан вид строки (строка " + (i + 1) + ")");
             Link link = Link.NONE;
+            Reg reg = null;
+            Long catalogId = null;
             if (dto.getKind() == ClientOfferItemKind.ITEM) {
                 String row = "№ " + (++itemNo) + quotedName(dto.getName());
                 checkItem(dto, it, profile, row);
                 link = checkLink(o, dto, it, row);
+                reg = checkRegistration(o, dto, it, row);
+                catalogId = checkCatalog(o, dto, it, row);
             }
             stored.add(it);
             links.add(link);
+            regs.add(reg);
+            catalog.add(catalogId);
         }
-        return new Checked(stored, links);
+        return new Checked(stored, links, regs, catalog);
     }
 
     /** Ссылка строки на ответ после проверки (решение плана 5): keep — та, что сохранена; иначе — новые id ответа и поставщика. */
@@ -381,7 +397,7 @@ public class ClientOfferService {
         static final Link KEEP = new Link(true, null, null);
     }
 
-    private record Checked(List<ClientOfferItem> stored, List<Link> links) {}
+    private record Checked(List<ClientOfferItem> stored, List<Link> links, List<Reg> regs, List<Long> catalog) {}
 
     /**
      * Ссылка строки на ответ поставщика (решение плана 5). Та же, что сохранена, — не перепроверяется: КП — снимок, запрос
@@ -401,6 +417,72 @@ public class ClientOfferService {
                 && answer.getTenderLot() != null && lotId.equals(answer.getTenderLot().getId());
         if (!ours) throw new BadRequestException("Ответ поставщика не относится к этой позиции заявки — позиция " + row);
         return new Link(false, id, pr.getDistributor().getId());
+    }
+
+    /** Регистрация строки после проверки (спека 2026-10-13 §4): keep — сохранённая не меняется (снимок). */
+    private record Reg(boolean keep, OfferRegistrationStatus status, String regNumber, String text, BigDecimal score) {
+        static final Reg KEEP = new Reg(true, null, null, null, null);
+    }
+
+    /**
+     * CONFIRMED / SUGGESTED — № из реестра (только KZ), текст подтверждённой собирает сервер; тот же статус с тем же № или
+     * без № (старая вкладка, решение плана 1) — не меняется и не перечитывается. NOT_FOUND — только KZ, без № и текста.
+     */
+    private Reg checkRegistration(ClientOffer o, ClientOfferItemDto dto, ClientOfferItem stored, String row) {
+        OfferRegistrationStatus requested = dto.getRegistrationStatus() == null
+                ? OfferRegistrationStatus.UNCHECKED : dto.getRegistrationStatus();
+        String number = trim(dto.getRegNumber());
+        switch (requested) {
+            case CONFIRMED, SUGGESTED -> {
+                boolean sameStatus = stored != null && stored.getRegistrationStatus() == requested;
+                if (number == null) {
+                    if (sameStatus) return Reg.KEEP;
+                    throw new BadRequestException("Не указан № РУ — позиция " + row);
+                }
+                if (sameStatus && number.equals(stored.getRegNumber())) return Reg.KEEP;
+                if (o.getMarket() != Market.KZ) throw new BadRequestException("Реестр РУ — только для Казахстана — позиция " + row);
+                MedRegistry rec = registry.findByRegNumber(number)
+                        .orElseThrow(() -> new BadRequestException("РУ не найдено в реестре: " + number + " — позиция " + row));
+                if (requested == OfferRegistrationStatus.CONFIRMED) {
+                    BigDecimal score = stored != null && number.equals(stored.getRegNumber()) ? stored.getSuggestionScore() : null;
+                    return new Reg(false, OfferRegistrationStatus.CONFIRMED, rec.getRegNumber(),
+                            RegistrationText.of(rec.getRegNumber(), rec), score);
+                }
+                return new Reg(false, OfferRegistrationStatus.SUGGESTED, rec.getRegNumber(), null, score(dto.getSuggestionScore(), row));
+            }
+            case NOT_FOUND -> {
+                if (o.getMarket() != Market.KZ) throw new BadRequestException("Реестр РУ — только для Казахстана — позиция " + row);
+                return new Reg(false, OfferRegistrationStatus.NOT_FOUND, null, null, null);
+            }
+            case NOT_REQUIRED -> {
+                return new Reg(false, OfferRegistrationStatus.NOT_REQUIRED, null, NOT_REQUIRED_TEXT, null);
+            }
+            default -> {   // UNCHECKED, MANUAL
+                String text = trim(dto.getRegistrationText());
+                return new Reg(false, text == null ? OfferRegistrationStatus.UNCHECKED : OfferRegistrationStatus.MANUAL,
+                        null, text, null);
+            }
+        }
+    }
+
+    private static BigDecimal score(BigDecimal s, String row) {
+        if (s == null) return null;
+        if (s.signum() < 0 || s.compareTo(BigDecimal.ONE) > 0) {
+            throw new BadRequestException("Оценка подсказки — от 0 до 1 — позиция " + row);
+        }
+        return s.setScale(3, RoundingMode.HALF_UP);
+    }
+
+    /** Позиция каталога (решение плана 7): только у новой строки и только своего рынка; у сохранённой — прежняя. */
+    private Long checkCatalog(ClientOffer o, ClientOfferItemDto dto, ClientOfferItem stored, String row) {
+        if (stored != null) return stored.getMedEquipmentId();
+        Long id = dto.getMedEquipmentId();
+        if (id == null) return null;
+        MedEquipment e = equipment.findById(id).orElse(null);   // findById = em.find — фильтр рынка его не режет (§14)
+        if (e == null || e.getMarket() != o.getMarket()) {
+            throw new BadRequestException("Позиция каталога не найдена — позиция " + row);
+        }
+        return e.getId();
     }
 
     /** Позиция (ITEM): количество, цены, наценка, ставки, регистрация; row — «№ 2 «Пульсоксиметр»», как в колонке «№». */
@@ -436,11 +518,6 @@ public class ClientOfferService {
         if (!OfferSettingsValidator.containsRate(profile.getVatRates(), listedVat) && !sameAsStored) {
             throw new BadRequestException("Ставки НДС «" + DocFormat.rate(listedVat) + "» нет в настройках рынка — позиция " + row);
         }
-        OfferRegistrationStatus requested = dto.getRegistrationStatus();
-        if ((requested == OfferRegistrationStatus.CONFIRMED || requested == OfferRegistrationStatus.SUGGESTED)
-                && (stored == null || stored.getRegistrationStatus() != requested)) {
-            throw new BadRequestException("Подтвердить регистрацию можно только из реестра — позиция " + row);
-        }
     }
 
     /**
@@ -473,7 +550,7 @@ public class ClientOfferService {
                 it = ClientOfferItem.builder().offer(o).build();
                 o.getItems().add(it);
             }
-            applyItem(it, dtos.get(i), checked.links().get(i));
+            applyItem(it, dtos.get(i), checked.links().get(i), checked.regs().get(i), checked.catalog().get(i));
             it.setLineNo(i + 1);
             ordered.add(it);
         }
@@ -484,10 +561,10 @@ public class ClientOfferService {
     }
 
     /**
-     * Перенос строки — уже проверенной (checkItems). Ссылка на ответ и поставщик — из проверки (checkLink); позиция заявки и
-     * позиция каталога с клиента не меняются.
+     * Перенос строки — уже проверенной (checkItems). Ссылка на ответ и поставщик — из checkLink, регистрация — из
+     * checkRegistration, позиция каталога — из checkCatalog; позиция заявки с клиента не меняется.
      */
-    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto, Link link) {
+    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto, Link link, Reg reg, Long catalogId) {
         ClientOfferItemKind kind = dto.getKind();
         it.setKind(kind);
         it.setName(dto.getName() == null ? "" : dto.getName().trim());
@@ -512,6 +589,7 @@ public class ClientOfferService {
             it.setSuggestionScore(null);
             it.setPriceRequestItemId(null);
             it.setDistributorId(null);
+            it.setMedEquipmentId(null);
             return;
         }
         it.setModel(trim(dto.getModel()));
@@ -526,34 +604,16 @@ public class ClientOfferService {
         it.setMarkupPct(dto.getMarkupPct());
         it.setPriceOverride(dto.getPriceOverride());
         it.setVatRate(dto.getVatRate());
-        applyRegistration(it, dto);
+        if (!reg.keep()) {
+            it.setRegistrationStatus(reg.status());
+            it.setRegistrationText(reg.text());
+            it.setRegNumber(reg.regNumber());
+            it.setSuggestionScore(reg.score());
+        }
+        it.setMedEquipmentId(catalogId);
         if (!link.keep()) {
             it.setPriceRequestItemId(link.priceRequestItemId());
             it.setDistributorId(link.distributorId());
-        }
-    }
-
-    /** UNCHECKED/MANUAL/NOT_REQUIRED задаёт оператор; CONFIRMED/SUGGESTED — только реестр на сервере (волна 2). */
-    private static void applyRegistration(ClientOfferItem it, ClientOfferItemDto dto) {
-        OfferRegistrationStatus requested = dto.getRegistrationStatus() == null
-                ? OfferRegistrationStatus.UNCHECKED : dto.getRegistrationStatus();
-        switch (requested) {
-            case NOT_REQUIRED -> {
-                it.setRegistrationStatus(OfferRegistrationStatus.NOT_REQUIRED);
-                it.setRegistrationText(NOT_REQUIRED_TEXT);
-                it.setRegNumber(null);
-                it.setSuggestionScore(null);
-            }
-            case CONFIRMED, SUGGESTED -> {
-                // тот же статус, что сохранён у строки (checkItem), — реестровое (текст, № РУ, оценка) не трогаем
-            }
-            case UNCHECKED, MANUAL -> {
-                String text = trim(dto.getRegistrationText());
-                it.setRegistrationStatus(text == null ? OfferRegistrationStatus.UNCHECKED : OfferRegistrationStatus.MANUAL);
-                it.setRegistrationText(text);
-                it.setRegNumber(null);
-                it.setSuggestionScore(null);
-            }
         }
     }
 
