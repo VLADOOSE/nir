@@ -8,6 +8,7 @@ public final class LeadSources {
     public static final String WESTMED = "westmed.kz";
     public static final String MANUAL = "manual";
     public static final String WHATSAPP = "whatsapp";
+    public static final String EMAIL = "email";
 
     private LeadSources() {}
 
@@ -16,9 +17,11 @@ public final class LeadSources {
         return WESTMED.equals(source);
     }
 
-    /** Подпись источника в ленте обращения: «westmed.kz», «WhatsApp»… (у ручного ввода своя подпись). */
+    /** Подпись источника в ленте обращения: «westmed.kz», «WhatsApp», «почта»… (у ручного ввода своя подпись). */
     public static String label(String source) {
-        return WHATSAPP.equals(source) ? "WhatsApp" : source;
+        if (WHATSAPP.equals(source)) return "WhatsApp";
+        if (EMAIL.equals(source)) return "почта";
+        return source;
     }
 
     /** Статус обращения → статус заявки на сайте (NEW / PROCESSED / CLOSED). */

@@ -2,6 +2,7 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.entity.Chat;
 import com.vladoose.nir.entity.Lead;
+import com.vladoose.nir.entity.LeadChannel;
 import com.vladoose.nir.entity.LeadStatus;
 import com.vladoose.nir.repository.LeadRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,9 +12,9 @@ import java.time.OffsetDateTime;
 import java.util.*;
 
 /**
- * «Открытое обращение чата» (спека whatsapp-chats §5.1): того же рынка, по чату ИЛИ по номеру — склейка через
- * каналы (заявка с сайта + WhatsApp = одно обращение); NEW/IN_WORK — всегда, CONVERTED — если активность не
- * старше N дней. Вызывать ДО сдвига chat.lastMessageAt текущим сообщением.
+ * «Открытое обращение чата» (спека whatsapp-chats §5.1): того же рынка, по чату, по номеру ИЛИ (почта) по адресу —
+ * склейка через каналы (заявка с сайта + WhatsApp или письмо = одно обращение); NEW/IN_WORK — всегда, CONVERTED —
+ * если активность не старше N дней. Вызывать ДО сдвига chat.lastMessageAt текущим сообщением.
  */
 @Service
 public class ChatLeadRules {
@@ -36,6 +37,11 @@ public class ChatLeadRules {
         }
         if (chat.getPhoneNorm() != null) {
             leadRepository.findByPhoneNormAndStatusIn(chat.getPhoneNorm(), CANDIDATES).forEach(l -> byId.put(l.getId(), l));
+        }
+        if (chat.getChannel() == LeadChannel.EMAIL && chat.getExternalChatId() != null) {
+            // почтовая переписка склеивается с обращением того же адреса (заявка с сайта) — без учёта регистра
+            leadRepository.findByContactEmailIgnoreCaseAndStatusIn(chat.getExternalChatId(), CANDIDATES)
+                    .forEach(l -> byId.put(l.getId(), l));
         }
         OffsetDateTime cutoff = at.minusDays(convertedDays);
         return byId.values().stream()

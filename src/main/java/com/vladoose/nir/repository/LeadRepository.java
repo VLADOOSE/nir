@@ -36,5 +36,8 @@ public interface LeadRepository extends JpaRepository<Lead, Long> {
 
     List<Lead> findByChatIdIn(Collection<Long> chatIds);
 
+    /** Обращения адреса почты (переписка info@ склеивается с заявкой с сайта того же адреса) — без учёта регистра. */
+    List<Lead> findByContactEmailIgnoreCaseAndStatusIn(String contactEmail, Collection<LeadStatus> statuses);
+
     List<Lead> findByPrivateRequestIdIn(Collection<Long> privateRequestIds);
 }
