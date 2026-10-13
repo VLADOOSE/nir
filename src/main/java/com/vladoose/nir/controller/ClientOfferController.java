@@ -2,15 +2,18 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.ClientOfferStatusRequest;
 import com.vladoose.nir.dto.request.ClientOfferUpdateRequest;
+import com.vladoose.nir.dto.request.RegistrySuggestionsRequest;
 import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
 import com.vladoose.nir.dto.response.NewPricesResponse;
 import com.vladoose.nir.dto.response.PreviewPagesResponse;
+import com.vladoose.nir.dto.response.RegistrySuggestionResponse;
 import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.service.ClientOfferMapper;
+import com.vladoose.nir.service.ClientOfferRegistryService;
 import com.vladoose.nir.service.ClientOfferRequestService;
 import com.vladoose.nir.service.ClientOfferService;
 import jakarta.validation.Valid;
@@ -36,11 +39,14 @@ public class ClientOfferController {
     private final ClientOfferService service;
     private final ClientOfferMapper mapper;
     private final ClientOfferRequestService requestOffers;
+    private final ClientOfferRegistryService registryOffers;
 
-    public ClientOfferController(ClientOfferService service, ClientOfferMapper mapper, ClientOfferRequestService requestOffers) {
+    public ClientOfferController(ClientOfferService service, ClientOfferMapper mapper, ClientOfferRequestService requestOffers,
+                                 ClientOfferRegistryService registryOffers) {
         this.service = service;
         this.mapper = mapper;
         this.requestOffers = requestOffers;
+        this.registryOffers = registryOffers;
     }
 
     @GetMapping
@@ -60,6 +66,13 @@ public class ClientOfferController {
     @PreAuthorize("hasRole('ADMIN')")
     public ClientOfferResponse fromPrivateRequest(@PathVariable Long tenderId) {
         return full(requestOffers.createFromPrivateRequest(tenderId, currentUser()));
+    }
+
+    /** Подсказки РУ для строк КП (спека 2026-10-13 §2.3): только KZ; ничего не пишет. */
+    @PostMapping("/registry-suggestions")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<RegistrySuggestionResponse> registrySuggestions(@Valid @RequestBody RegistrySuggestionsRequest r) {
+        return registryOffers.suggestions(r.rows());
     }
 
     @GetMapping("/{id}")

@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * РУ позиции частной заявки (спека §5.3): подсказка считается сама (только KZ — на РФ реестра нет), подтверждает человек.
@@ -56,11 +57,7 @@ public class PrivateRequestRegistry {
             lot.setRegScore(null);
             return;
         }
-        // лучший кандидат не выше порога или другой модели — смотрим следующих: записи отсортированы по скору
-        RegistryCandidateResponse best = matcher.findCandidates(lot.getEquipName(), lot.getManufact(), CANDIDATES_LIMIT)
-                .stream()
-                .filter(c -> c.getScore() != null && c.getScore() >= SUGGEST_MIN && mentionsModel(lot.getEquipName(), c.getName()))
-                .findFirst().orElse(null);
+        RegistryCandidateResponse best = suggestion(lot.getEquipName(), lot.getManufact()).orElse(null);
         if (best != null) {
             lot.setRegStatus(LineRegStatus.SUGGESTED);
             lot.setRegNumber(best.getRegNumber());
@@ -70,6 +67,18 @@ public class PrivateRequestRegistry {
             lot.setRegNumber(null);
             lot.setRegScore(null);
         }
+    }
+
+    /**
+     * Подсказка РУ по тексту позиции (у строки КП — наименование и модель) и бренду (спека 2026-10-12 §5.3,
+     * 2026-10-13 §2.3): первая из топ-5 с оценкой ≥ SUGGEST_MIN и тем же кодом модели (mentionsModel). Лучший
+     * кандидат ниже порога или другой модели — смотрим следующих: записи отсортированы по скору.
+     */
+    public Optional<RegistryCandidateResponse> suggestion(String text, String brand) {
+        if (text == null || text.isBlank()) return Optional.empty();
+        return matcher.findCandidates(text, brand, CANDIDATES_LIMIT).stream()
+                .filter(c -> c.getScore() != null && c.getScore() >= SUGGEST_MIN && mentionsModel(text, c.getName()))
+                .findFirst();
     }
 
     /** Подтвердить: без номера — текущую подсказку; с номером — выбранную запись (она должна быть в реестре). */
