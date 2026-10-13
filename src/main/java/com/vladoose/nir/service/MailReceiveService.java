@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,8 +31,6 @@ public class MailReceiveService {
 
     private static final Logger log = LoggerFactory.getLogger(MailReceiveService.class);
     static final int MAX_PER_PASS = 100;
-    /** Причина остановки прохода — свой текст для ответа «Проверить почту» (спека §3.4). */
-    private static final String CONNECTION_LOST = "связь с почтой оборвалась";
 
     private final MailboxConnector connector;
     private final MailIngestWriter writer;
@@ -83,7 +80,7 @@ public class MailReceiveService {
             stopped = pass(session, result);
         } catch (Exception e) {
             if (InfrastructureFailure.test(e)) {                   // курсор не прочитался или не встал — это база
-                stopped = dbDown(e);
+                stopped = MailFolderPass.dbDown(e);
                 log.warn("База недоступна — проход приёма почты остановлен, повтор следующим: {}", e.getClass().getSimpleName());
             } else {
                 log.warn("Ошибка приёма почты: {}: {}", e.getClass().getSimpleName(), e.getMessage());
@@ -104,101 +101,21 @@ public class MailReceiveService {
 
     /** null — проход дошёл до конца; иначе — почему остановлен. */
     private String pass(MailboxSession s, PollResultResponse result) throws MessagingException {
-        long uidValidity = s.uidValidity();
-        Optional<MailCursor> cursor = cursorRepository.findById(MailCursorKey.inbox(writer.mailbox()))
-                .filter(c -> c.getUidValidity() == uidValidity);
-        if (cursor.isPresent()) {
-            for (long uid : s.uidsAfter(cursor.get().getLastUid(), MAX_PER_PASS)) {
-                String stopped = processOne(s, uidValidity, uid, result);
-                if (stopped != null) return stopped;
+        return MailFolderPass.run(s, new MailFolderPass.Target<MailIngestWriter.WriteResult>() {
+            @Override public Optional<MailCursor> cursor() {
+                return cursorRepository.findById(MailCursorKey.inbox(writer.mailbox()));
             }
-            return null;
-        }
-        // Первый запуск: только окно since-minutes, затем курсор — на последнее письмо, снятое ДО окна (письмо,
-        // пришедшее во время прохода, получит UID больше и уйдёт следующим проходом, а не перепрыгнется).
-        long max = s.maxUid();
-        for (long uid : s.uidsReceivedSince(clock.instant().minus(Duration.ofMinutes(sinceMinutes)), MAX_PER_PASS)) {
-            if (uid > max) continue;
-            String stopped = processOne(s, uidValidity, uid, result);
-            if (stopped != null) return stopped;
-        }
-        writer.moveCursorTo(uidValidity, max);
-        return null;
-    }
-
-    /**
-     * null — дальше; иначе проход остановить (спека §3.4): связь с ящиком оборвалась, база недоступна или письмо не
-     * записалось даже коротко. Курсор при этом стоит на последнем записанном письме — повтор следующим проходом.
-     */
-    private String processOne(MailboxSession s, long uidValidity, long uid, PollResultResponse result) {
-        ParsedMail m;
-        try {
-            m = s.fetch(uid);
-        } catch (Exception e) {
-            if (!s.isAlive()) {
-                log.warn("Связь с ящиком оборвалась на письме UID {}: {}", uid, e.getClass().getSimpleName());
-                return CONNECTION_LOST;
+            @Override public MailIngestWriter.WriteResult write(ParsedMail m, long uidValidity) {
+                return writer.write(m, uidValidity);
             }
-            return writeBroken(s.envelope(uid, e), e, "не разобрано", uidValidity, result);
-        }
-        if (m == null) return null;                                 // письмо удалили между поиском и чтением
-        MailIngestWriter.WriteResult written;
-        try {
-            written = writer.write(m, uidValidity);
-        } catch (RuntimeException e) {
-            if (InfrastructureFailure.test(e)) {
-                log.warn("База недоступна на письме UID {} — проход остановлен, повтор следующим: {}", uid, e.getClass().getSimpleName());
-                return dbDown(e);
+            @Override public void writeBroken(BrokenMail b, long uidValidity) { writer.writeBroken(b, uidValidity); }
+            @Override public void moveCursorTo(long uidValidity, long uid) { writer.moveCursorTo(uidValidity, uid); }
+            @Override public void written(MailIngestWriter.WriteResult w) { count(result, w); }
+            @Override public void broken() {
+                result.setBroken(result.getBroken() + 1);
+                result.setFetched(result.getFetched() + 1);
             }
-            return writeBroken(new BrokenMail(uid, m.messageId(), m.from(), m.subject(), m.receivedAt(),
-                    e.getClass().getSimpleName()), e, "не записано", uidValidity, result);
-        }
-        count(result, written);                                     // вне try: записанное письмо коротко не пишем
-        return null;
-    }
-
-    /**
-     * Короткая строка вместо письма, которое не разобралось или не записалось (cause). Не записалась и она (не база) —
-     * ещё раз, минимальная: без отправителя, темы и Message-ID — в полях письма и бывает причина (символ, который база
-     * не хранит). Записалась — письмо пройдено, сбой разовый: в лог со стеком. Не записалась — проход стоп, курсор на
-     * месте: то же письмо упадёт и на следующем проходе, раз в минуту, поэтому в лог без стека — классы и UID.
-     */
-    private String writeBroken(BrokenMail b, Exception cause, String what, long uidValidity, PollResultResponse result) {
-        RuntimeException withFields = tryWriteBroken(b, uidValidity);
-        RuntimeException failure = withFields;
-        if (withFields != null && !InfrastructureFailure.test(withFields)) {
-            failure = tryWriteBroken(new BrokenMail(b.uid(), null, null, null,
-                    b.receivedAt() != null ? b.receivedAt() : OffsetDateTime.now(clock), b.errorClass()), uidValidity);
-        }
-        if (failure == null) {
-            if (withFields == null) {
-                log.warn("Письмо UID {} {} — записано коротко", b.uid(), what, cause);
-            } else {
-                log.warn("Письмо UID {} {} — записано коротко, без полей письма (с ними не записалось: {})",
-                        b.uid(), what, withFields.getClass().getSimpleName(), cause);
-            }
-            result.setBroken(result.getBroken() + 1);
-            result.setFetched(result.getFetched() + 1);
-            return null;
-        }
-        log.warn("Письмо UID {} {} ({}), короткая строка не записалась ({}) — проход остановлен, повтор следующим",
-                b.uid(), what, cause.getClass().getSimpleName(), failure.getClass().getSimpleName());
-        return InfrastructureFailure.test(failure) ? dbDown(failure)
-                : "письмо UID " + b.uid() + " не записалось (" + failure.getClass().getSimpleName() + ")";
-    }
-
-    /** null — записано; иначе — чем не записалось. */
-    private RuntimeException tryWriteBroken(BrokenMail b, long uidValidity) {
-        try {
-            writer.writeBroken(b, uidValidity);
-            return null;
-        } catch (RuntimeException e) {
-            return e;
-        }
-    }
-
-    private static String dbDown(Exception e) {
-        return "база данных недоступна (" + e.getClass().getSimpleName() + ")";
+        }, clock.instant().minus(Duration.ofMinutes(sinceMinutes)), MAX_PER_PASS, clock, log, "");
     }
 
     /**
