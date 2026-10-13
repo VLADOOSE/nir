@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -32,10 +33,19 @@ public class InboundController {
         this.importService = importService;
     }
 
-    /** Последние 300 писем рынка (страница покажет, что список обрезан). */
+    /** Последние 300 писем рынка, или одного ящика (страница покажет, что список обрезан). */
     @GetMapping
-    public List<InboundEmailResponse> list() {
-        return repository.findTop300ByOrderByReceivedAtDesc().stream().map(this::toResponse).toList();
+    public List<InboundEmailResponse> list(@RequestParam(required = false) String mailbox) {
+        List<InboundEmail> rows = mailbox == null || mailbox.isBlank()
+                ? repository.findTop300ByOrderByReceivedAtDesc()
+                : repository.findTop300ByMailboxOrderByReceivedAtDesc(mailbox.trim().toLowerCase(Locale.ROOT));
+        return rows.stream().map(this::toResponse).toList();
+    }
+
+    /** Ящики «Входящих» рынка — чипы фильтра (zakup@, info@). */
+    @GetMapping("/mailboxes")
+    public List<String> mailboxes() {
+        return repository.findMailboxes();
     }
 
     @PostMapping("/poll")
@@ -73,6 +83,7 @@ public class InboundController {
     private InboundEmailResponse toResponse(InboundEmail e) {
         InboundEmailResponse r = new InboundEmailResponse();
         r.setId(e.getId());
+        r.setMailbox(e.getMailbox());
         r.setFromAddress(e.getFromAddress());
         r.setSubject(e.getSubject());
         r.setReceivedAt(e.getReceivedAt());

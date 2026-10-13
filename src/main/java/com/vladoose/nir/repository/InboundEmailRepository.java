@@ -15,6 +15,13 @@ public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long
     /** «Входящие» — последние 300 писем рынка, новые сверху: список не растёт без предела. */
     List<InboundEmail> findTop300ByOrderByReceivedAtDesc();
 
+    /** Последние 300 писем ящика (адрес нижним регистром). */
+    List<InboundEmail> findTop300ByMailboxOrderByReceivedAtDesc(String mailbox);
+
+    /** Ящики, из которых есть письма рынка, — фильтр «Входящих». HQL: рыночный фильтр аспекта его режет. */
+    @Query("select distinct e.mailbox from InboundEmail e where e.mailbox is not null order by e.mailbox")
+    List<String> findMailboxes();
+
     boolean existsByMailboxAndMessageId(String mailbox, String messageId);
 
     @Query("select new com.vladoose.nir.service.mail.PendingNotification(e.id, e.notifyText, e.notifySilent, e.notifyQueuedAt) "

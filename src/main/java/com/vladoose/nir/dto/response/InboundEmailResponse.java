@@ -7,6 +7,8 @@ import java.time.OffsetDateTime;
 @Data
 public class InboundEmailResponse {
     private Long id;
+    /** Ящик письма (zakup@ / info@) нижним регистром; у писем до V24 — null. */
+    private String mailbox;
     private String fromAddress;
     private String subject;
     private OffsetDateTime receivedAt;
