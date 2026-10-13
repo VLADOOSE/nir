@@ -49,7 +49,7 @@ public class RegistryController {
     @GetMapping("/search")
     public List<RegistryCandidateResponse> search(@RequestParam String q,
                                                   @RequestParam(defaultValue = "20") int limit) {
-        return matchService.findCandidates(q, q, limit);
+        return matchService.search(q, limit);
     }
 
     /** Описание изделия из карточки НЦЭЛС (live при первом просмотре + кеш). Чтение — без ADMIN. */

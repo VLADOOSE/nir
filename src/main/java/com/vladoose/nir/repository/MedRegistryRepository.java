@@ -41,6 +41,31 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
                                               @Param("limit") int limit);
 
     /**
+     * Поиск по наименованию (спека 2026-10-13 §2.5): каждое слово запроса встречается в наименовании записи
+     * (word_similarity, любой порядок), оценка — средняя похожесть слов; или весь запрос похож на производителя.
+     * Отбор по индексу — по самому длинному слову (:first <% name); слова — через «|» (как searchByTokensV2).
+     * Равная оценка — по № РУ: выдача не зависит от LIMIT.
+     */
+    @Query(nativeQuery = true, value =
+            "SELECT m.reg_number AS regNumber, m.name AS name, m.producer AS producer, m.country AS country, " +
+            "m.reg_date AS regDate, m.expiration_date AS expirationDate, m.unlimited AS unlimited, " +
+            "GREATEST(" +
+            " CASE WHEN (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) WHERE tk.tok <% m.name) " +
+            "           = array_length(string_to_array(:tokens,'|'), 1) " +
+            "      THEN (SELECT avg(word_similarity(tk.tok, m.name)) FROM unnest(string_to_array(:tokens,'|')) tk(tok)) " +
+            "      ELSE 0 END, " +
+            " CASE WHEN :q <% m.producer THEN word_similarity(:q, m.producer) ELSE 0 END) AS score " +
+            "FROM med_registry m " +
+            "WHERE (:first <% m.name " +
+            "       AND (SELECT count(*) FROM unnest(string_to_array(:tokens,'|')) tk(tok) WHERE tk.tok <% m.name) " +
+            "           = array_length(string_to_array(:tokens,'|'), 1)) " +
+            "   OR :q <% m.producer " +
+            "ORDER BY score DESC, m.reg_number " +
+            "LIMIT :limit")
+    List<RegistryCandidateRow> searchByName(@Param("tokens") String tokens, @Param("first") String first,
+                                            @Param("q") String q, @Param("limit") int limit);
+
+    /**
      * Скоринг V2. Отбор кандидатов — ТОЛЬКО по identity-токенам (тот же индексо-дружелюбный
      * приём: IN(join tok &lt;% name) + OFFSET 0 как фенс от расплющивания планировщиком).
      *

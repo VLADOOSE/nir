@@ -63,6 +63,46 @@ public class RegistryMatchService {
                 .toList();
     }
 
+    private static final int SEARCH_MAX_QUERY = 200;
+    private static final int SEARCH_MAX_TOKENS = 5;
+
+    /**
+     * Поиск по реестру для окошка метки РУ и «Из реестра и каталога» (спека 2026-10-13 §2.5): слова наименования в любом
+     * порядке, каждое должно встретиться; либо производитель. Меньше 2 символов — пусто; длиннее 200 — обрезка.
+     */
+    public List<RegistryCandidateResponse> search(String q, int limit) {
+        if (q == null) return List.of();
+        String query = q.trim();
+        if (query.length() > SEARCH_MAX_QUERY) query = query.substring(0, SEARCH_MAX_QUERY).trim();
+        if (query.length() < 2) return List.of();
+        List<String> tokens = searchTokens(query);
+        if (tokens.isEmpty()) return List.of();
+        int lim = Math.max(1, Math.min(limit, 50));
+        return registryRepository.searchByName(String.join("|", tokens), tokens.get(0),
+                        query.toLowerCase(java.util.Locale.ROOT), lim)
+                .stream().map(this::toCandidate).toList();
+    }
+
+    /**
+     * Слова запроса (решение плана 5): разделители — пробелы и знаки, кроме дефиса и точки внутри кода модели
+     * («ДКИ-Н-12»); слова от 3 символов, без повторов, до 5, самое длинное первым — по нему отбор по индексу. Из одних
+     * коротких слов — весь запрос одним словом. «|» — разделитель слов в SQL, в слова не попадает.
+     */
+    static List<String> searchTokens(String q) {
+        String lower = q.toLowerCase(java.util.Locale.ROOT);
+        List<String> out = new java.util.ArrayList<>();
+        for (String part : lower.split("[\\s,;:()«»\"'/|%_]+")) {
+            String t = part.replaceAll("^[-.]+|[-.]+$", "");
+            if (t.length() >= 3 && !out.contains(t)) out.add(t);
+        }
+        if (out.isEmpty()) {
+            String whole = lower.replaceAll("[|%_]", " ").trim().replaceAll("\\s+", " ");
+            return whole.length() >= 2 ? List.of(whole) : List.of();
+        }
+        out.sort(java.util.Comparator.comparingInt(String::length).reversed());
+        return out.size() > SEARCH_MAX_TOKENS ? new java.util.ArrayList<>(out.subList(0, SEARCH_MAX_TOKENS)) : out;
+    }
+
     private RegistryCandidateResponse toCandidate(com.vladoose.nir.dto.response.RegistryCandidateRow row) {
         RegistryCandidateResponse c = new RegistryCandidateResponse();
         c.setRegNumber(row.getRegNumber());
