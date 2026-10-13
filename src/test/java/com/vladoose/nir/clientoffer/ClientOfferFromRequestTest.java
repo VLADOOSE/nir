@@ -141,13 +141,16 @@ class ClientOfferFromRequestTest {
                 + " and country is not null order by reg_number limit 1", String.class);
         Tender t = request(input("ZZ КП Подтверждено", "ZZBRAND", 1, null, null, null),
                 input("ZZ КП Не подлежит", "ZZBRAND", 1, null, null, null),
-                input("ZZ КП Подсказка", "ZZBRAND", 1, null, null, null));
+                input("ZZ КП Подсказка", "ZZBRAND", 1, null, null, null),
+                input("ZZ КП Нет в реестре", "ZZBRAND", 1, null, null, null));
         List<TenderLot> l = sorted(t);
         l.get(0).setRegStatus(LineRegStatus.CONFIRMED);
         l.get(0).setRegNumber(reg);
         l.get(1).setRegStatus(LineRegStatus.NOT_REQUIRED);
         l.get(2).setRegStatus(LineRegStatus.SUGGESTED);
         l.get(2).setRegNumber(reg);
+        l.get(2).setRegScore(new BigDecimal("0.812"));
+        l.get(3).setRegStatus(LineRegStatus.NOT_FOUND);
         em.flush();
         MedRegistry rec = jdbc.queryForObject("select reg_number, producer, country from med_registry where reg_number = ?",
                 (rs, n) -> { MedRegistry m = new MedRegistry(); m.setProducer(rs.getString(2)); m.setCountry(rs.getString(3)); return m; }, reg);
@@ -163,10 +166,14 @@ class ClientOfferFromRequestTest {
         assertThat(items.get(1).getRegistrationStatus()).isEqualTo(OfferRegistrationStatus.NOT_REQUIRED);
         assertThat(items.get(1).getRegistrationText()).isEqualTo("Не подлежит регистрации");
         assertThat(items.get(1).getVatRate()).isNull();
-        assertThat(items.get(2).getRegistrationStatus()).isEqualTo(OfferRegistrationStatus.UNCHECKED);
-        assertThat(items.get(2).getRegNumber()).isNull();
+        assertThat(items.get(2).getRegistrationStatus()).isEqualTo(OfferRegistrationStatus.SUGGESTED);
+        assertThat(items.get(2).getRegNumber()).isEqualTo(reg);
+        assertThat(items.get(2).getSuggestionScore()).isEqualByComparingTo("0.812");
+        assertThat(items.get(2).getRegistrationText()).isNull();
         assertThat(items.get(2).getManufacturer()).isEqualTo("ZZBRAND");
         assertThat(items.get(2).getVatRate()).isEqualByComparingTo("16");
+        assertThat(items.get(3).getRegistrationStatus()).isEqualTo(OfferRegistrationStatus.NOT_FOUND);
+        assertThat(items.get(3).getRegNumber()).isNull();
     }
 
     /** Отклонённый и закрытый запрос — не кандидаты; принятый сильнее более дешёвого ответа, в том числе цены после отказа. */

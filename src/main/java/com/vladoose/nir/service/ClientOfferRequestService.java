@@ -182,7 +182,10 @@ public class ClientOfferRequestService {
         return out;
     }
 
-    /** Строка КП из позиции: регистрация, производитель и ставка — по метке РУ (решение плана 4). */
+    /**
+     * Строка КП из позиции: регистрация, производитель и ставка — по метке РУ (решение плана 4 этапа 3; подсказка и
+     * «нет в реестре» — с части 3 волны 2).
+     */
     static ClientOfferItem item(ClientOffer o, int lineNo, TenderLot lot, CompanyProfile p, MedRegistry rec) {
         Integer qty = lot.getQuantity();
         ClientOfferItem it = ClientOfferItem.builder()
@@ -204,6 +207,15 @@ public class ClientOfferRequestService {
             it.setRegistrationStatus(OfferRegistrationStatus.NOT_REQUIRED);
             it.setRegistrationText(ClientOfferService.NOT_REQUIRED_TEXT);
             it.setVatRate(p.getVatNotRegistrable());
+        } else if (lot.getRegStatus() == LineRegStatus.SUGGESTED && !blank(lot.getRegNumber())) {
+            // подсказку этапа 1 переносим как подсказку: подтвердить её в КП теперь можно (спека 2026-10-13 §2.6)
+            it.setRegistrationStatus(OfferRegistrationStatus.SUGGESTED);
+            it.setRegNumber(lot.getRegNumber().trim());
+            it.setSuggestionScore(lot.getRegScore());
+            it.setVatRate(p.getVatDefault());
+        } else if (lot.getRegStatus() == LineRegStatus.NOT_FOUND) {
+            it.setRegistrationStatus(OfferRegistrationStatus.NOT_FOUND);
+            it.setVatRate(p.getVatDefault());
         } else {
             it.setVatRate(p.getVatDefault());
         }
