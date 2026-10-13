@@ -81,6 +81,24 @@ mail:
     since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}
     # Excel без метки [КП-…] → «Письмо клиники» (ящик info@). Для ящика закупок zakup@ — false: там это прайс поставщика
     client-requests: ${MAIL_IMAP_CLIENT_REQUESTS:true}
+  # Письма клиентов на info@ → «Обращения» (спека docs/superpowers/specs/2026-10-13-info-mail-leads-design.md):
+  # второй ящик, только чтение; «Входящие» и «Отправленные», у каждой папки свой курсор. Telegram об info@ не шлёт.
+  clients:
+    enabled: ${MAIL_CLIENTS_ENABLED:false}
+    host: ${MAIL_CLIENTS_HOST:localhost}
+    port: ${MAIL_CLIENTS_PORT:3143}
+    username: ${MAIL_CLIENTS_USERNAME:info@westmed.kz}
+    password: ${MAIL_CLIENTS_PASSWORD:}
+    protocol: ${MAIL_CLIENTS_PROTOCOL:imap}
+    market: ${MAIL_CLIENTS_MARKET:KZ}
+    poll-ms: ${MAIL_CLIENTS_POLL_MS:60000}
+    initial-delay-ms: ${MAIL_CLIENTS_INITIAL_DELAY_MS:30000}
+    # окно ПЕРВОГО запуска папки (курсора нет / сменился UIDVALIDITY), дней; дальше — курсор по UID
+    since-days: ${MAIL_CLIENTS_SINCE_DAYS:7}
+    # файл письма больше предела не сохраняется — в переписке название с пометкой «откройте в почте» (не больше 100)
+    max-file-mb: ${MAIL_CLIENTS_MAX_FILE_MB:25}
+    # служебные домены: «2gis.ru» — сам домен и поддомены, «*.mail.ru» — только поддомены (сам mail.ru — личные ящики)
+    service-domains: ${MAIL_CLIENTS_SERVICE_DOMAINS:*.mail.ru,2gis.ru,2gis.com,ecc.kz,goszakup.gov.kz}
 
 # Уведомления о письмах ящика в Telegram: бот @West_Med_bot сайта, группа «Заявки», тема «Почта zakup@»
 # (спека docs/superpowers/specs/2026-10-05-zakup-mail-telegram-design.md §5). Токен стоит в ПУТИ адреса Bot API —

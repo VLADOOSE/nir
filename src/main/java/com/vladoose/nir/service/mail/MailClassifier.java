@@ -17,11 +17,8 @@ public final class MailClassifier {
     private MailClassifier() {}
 
     public static Classification classify(ParsedMail m, ClassifierRules r) {
+        if (isSiteNotification(m, r.siteNotificationFrom())) return new Classification(MailClass.SITE_NOTIFICATION, null);
         String from = m.fromAddress();
-        if (!r.siteNotificationFrom().isBlank() && from.equalsIgnoreCase(r.siteNotificationFrom())
-                && m.subject().strip().endsWith("— westmed.kz")) {
-            return new Classification(MailClass.SITE_NOTIFICATION, null);
-        }
         if (!r.ownAddress().isBlank() && from.equalsIgnoreCase(r.ownAddress())) {
             return new Classification(MailClass.OWN, null);
         }
@@ -31,6 +28,12 @@ public final class MailClassifier {
         if (token != null) return new Classification(MailClass.SUPPLIER_RESPONSE, token);
         if (m.excelBytes() != null && r.clientRequests()) return new Classification(MailClass.CLIENT_REQUEST, null);
         return new Classification(MailClass.UNMATCHED, null);
+    }
+
+    /** Уведомление сайта о заявке: от адреса уведомлений, тема кончается «— westmed.kz»; адреса нет — правило выключено. */
+    static boolean isSiteNotification(ParsedMail m, String siteNotificationFrom) {
+        return siteNotificationFrom != null && !siteNotificationFrom.isBlank()
+                && m.fromAddress().equalsIgnoreCase(siteNotificationFrom) && m.subject().strip().endsWith("— westmed.kz");
     }
 
     /** Возврат: отчёт о доставке (multipart/report … delivery-status) или письмо почтового робота. */
