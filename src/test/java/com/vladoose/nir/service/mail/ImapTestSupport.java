@@ -35,16 +35,25 @@ public final class ImapTestSupport {
         return hasFlag(subject, Flags.Flag.RECENT);
     }
 
+    /** «Прочитано» ли письмо с этой темой в папке ящика user (папка открывается только на чтение). */
+    public static boolean seen(String user, String folder, String subject) throws Exception {
+        return hasFlag(user, folder, subject, Flags.Flag.SEEN);
+    }
+
     private static boolean hasFlag(String subject, Flags.Flag flag) throws Exception {
+        return hasFlag(USER, "INBOX", subject, flag);
+    }
+
+    private static boolean hasFlag(String user, String folder, String subject, Flags.Flag flag) throws Exception {
         Store s = Session.getInstance(new Properties()).getStore("imap");
-        s.connect(HOST, PORT, USER, PASS);
+        s.connect(HOST, PORT, user, PASS);
         try {
-            Folder f = s.getFolder("INBOX");
+            Folder f = s.getFolder(folder);
             f.open(Folder.READ_ONLY);
             for (Message m : f.getMessages()) {
                 if (subject.equals(m.getSubject())) return m.isSet(flag);
             }
-            throw new AssertionError("в ящике нет письма «" + subject + "»");
+            throw new AssertionError("в папке " + folder + " ящика " + user + " нет письма «" + subject + "»");
         } finally {
             s.close();
         }

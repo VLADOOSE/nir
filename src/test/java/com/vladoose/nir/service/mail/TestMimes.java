@@ -45,6 +45,26 @@ public final class TestMimes {
         return m;
     }
 
+    /** Письмо с «Кому» и «Копия» (адреса через запятую; cc — может быть null). */
+    public static MimeMessage letter(String from, String to, String cc, String subject, String text) throws Exception {
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(addr(from));
+        m.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+        if (cc != null) m.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
+        m.setSubject(subject, "UTF-8");
+        m.setSentDate(new Date());
+        m.setText(text, "UTF-8");
+        m.saveChanges();
+        return m;
+    }
+
+    /** То же письмо с дополнительным заголовком (рассылка, Precedence…). */
+    public static MimeMessage withHeader(MimeMessage m, String name, String value) throws Exception {
+        m.setHeader(name, value);
+        m.saveChanges();
+        return m;
+    }
+
     public static MimeMessage plain(String from, String subject, String text) throws Exception {
         MimeMessage m = base(from, subject);
         m.setText(text, "UTF-8");
