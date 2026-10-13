@@ -54,7 +54,7 @@ class KpRoundTripTest {
      */
     @BeforeEach
     void freshCursor() {
-        cursorRepository.findById("zakup@westmed.kz").ifPresent(cursorRepository::delete);
+        cursorRepository.findById(MailCursorKey.inbox("zakup@westmed.kz")).ifPresent(cursorRepository::delete);
         em.flush();
     }
 

@@ -30,12 +30,12 @@ public class Chat implements MarketScoped {
     @Column(nullable = false, length = 20)
     private LeadChannel channel;
 
-    /** Номер подключённого аккаунта (wid без «@c.us»). */
-    @Column(nullable = false, length = 40)
+    /** WhatsApp — номер подключённого аккаунта (wid без «@c.us»); почта — адрес ящика (info@westmed.kz). */
+    @Column(nullable = false, length = 320)
     private String account;
 
-    /** chatId Green-API: «7701…@c.us» / «…@g.us» / «…@lid». */
-    @Column(name = "external_chat_id", nullable = false, length = 100)
+    /** WhatsApp — chatId: «7701…@c.us» / «…@g.us» / «…@lid»; почта — адрес собеседника нижним регистром. */
+    @Column(name = "external_chat_id", nullable = false, length = 320)
     private String externalChatId;
 
     @Column(name = "is_group", nullable = false)

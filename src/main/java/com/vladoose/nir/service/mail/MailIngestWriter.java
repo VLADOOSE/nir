@@ -134,14 +134,7 @@ public class MailIngestWriter {
 
     /** В пределах одного UIDVALIDITY курсор назад не ходит; новый UIDVALIDITY — отсчёт заново. */
     private void moveCursor(long uidValidity, long uid) {
-        MailCursor c = cursorRepo.findById(mailbox).orElse(null);
-        if (c == null || c.getUidValidity() != uidValidity) {
-            c = MailCursor.builder().mailbox(mailbox).uidValidity(uidValidity).lastUid(uid).build();
-        } else if (uid > c.getLastUid()) {
-            c.setLastUid(uid);
-        }
-        c.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-        cursorRepo.save(c);
+        cursorRepo.advance(MailCursorKey.inbox(mailbox), uidValidity, uid);
     }
 
     /**

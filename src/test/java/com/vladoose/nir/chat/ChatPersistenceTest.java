@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.*;
@@ -124,6 +125,27 @@ class ChatPersistenceTest {
 
         assertThat(meta).extracting(ChatAttachmentMeta::messageId, ChatAttachmentMeta::fileName, ChatAttachmentMeta::stored)
                 .containsExactlyInAnyOrder(tuple(stored.getId(), "ТЗ.pdf", true), tuple(skipped.getId(), "видео.mp4", false));
+    }
+
+    /** Письмо (V29): тема, адрес собеседника длиннее 100 символов, несколько файлов у одного сообщения. */
+    @Test
+    void letterKeepsSubjectLongAddressAndSeveralFiles() {
+        MarketContext.set(Market.KZ);
+        String address = "zz-" + UUID.randomUUID() + "@" + "x".repeat(70) + ".kz";
+        Chat c = chatRepository.saveAndFlush(Chat.builder().channel(LeadChannel.EMAIL).account("info@westmed.kz")
+                .externalChatId(address).title("Клиент").build());
+        ChatMessage m = messageRepository.saveAndFlush(ChatMessage.builder().chat(c).externalId("<m1@x.kz>")
+                .direction(LeadDirection.IN).type(ChatMessageType.EMAIL).subject("Запрос цены").body("Текст")
+                .sentAt(OffsetDateTime.now()).build());
+        attachmentRepository.saveAndFlush(ChatAttachment.builder().message(m).fileName("смета.xlsx")
+                .sizeBytes(1L).content(new byte[]{1}).build());
+        attachmentRepository.saveAndFlush(ChatAttachment.builder().message(m).fileName("ТЗ.pdf")
+                .sizeBytes(1L).content(new byte[]{2}).build());
+        em.clear();
+
+        assertThat(messageRepository.findById(m.getId()).orElseThrow().getSubject()).isEqualTo("Запрос цены");
+        assertThat(chatRepository.findById(c.getId()).orElseThrow().getExternalChatId()).isEqualTo(address);
+        assertThat(attachmentRepository.findMetaByMessageIds(List.of(m.getId()))).hasSize(2);
     }
 
     @Test

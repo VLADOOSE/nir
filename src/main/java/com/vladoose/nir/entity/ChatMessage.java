@@ -34,6 +34,10 @@ public class ChatMessage {
     @Column(nullable = false, length = 20)
     private ChatMessageType type;
 
+    /** Тема письма (вид EMAIL); у сообщений WhatsApp — null. */
+    @Column(columnDefinition = "TEXT")
+    private String subject;
+
     /** Текст или подпись к файлу. */
     @Column(columnDefinition = "TEXT")
     private String body;

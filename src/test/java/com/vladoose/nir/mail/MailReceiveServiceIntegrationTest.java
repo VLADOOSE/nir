@@ -64,7 +64,7 @@ class MailReceiveServiceIntegrationTest {
      */
     @BeforeEach
     void freshCursor() {
-        cursorRepository.findById("zakup@westmed.kz").ifPresent(cursorRepository::delete);
+        cursorRepository.findById(MailCursorKey.inbox("zakup@westmed.kz")).ifPresent(cursorRepository::delete);
         em.flush();
     }
 
@@ -315,7 +315,7 @@ class MailReceiveServiceIntegrationTest {
         try (MailboxSession s = mailboxConnector.open()) {
             maxUid = s.maxUid();
         }
-        assertThat(cursorRepository.findById("zakup@westmed.kz").orElseThrow().getLastUid()).isEqualTo(maxUid);
+        assertThat(cursorRepository.findById(MailCursorKey.inbox("zakup@westmed.kz")).orElseThrow().getLastUid()).isEqualTo(maxUid);
     }
 
     /**
@@ -399,7 +399,7 @@ class MailReceiveServiceIntegrationTest {
         mailReceiveService.poll();
         long count = inboundEmailRepository.count();
 
-        MailCursor c = cursorRepository.findById("zakup@westmed.kz").orElseThrow();
+        MailCursor c = cursorRepository.findById(MailCursorKey.inbox("zakup@westmed.kz")).orElseThrow();
         long realValidity = c.getUidValidity();
         c.setUidValidity(realValidity + 1000);                  // как будто ящик пересоздан
         cursorRepository.save(c);
@@ -409,7 +409,7 @@ class MailReceiveServiceIntegrationTest {
         mailReceiveService.poll();                               // первый запуск снова, но Message-ID уже записан
 
         assertThat(inboundEmailRepository.count()).isEqualTo(count);
-        assertThat(cursorRepository.findById("zakup@westmed.kz").orElseThrow().getUidValidity()).isEqualTo(realValidity);
+        assertThat(cursorRepository.findById(MailCursorKey.inbox("zakup@westmed.kz")).orElseThrow().getUidValidity()).isEqualTo(realValidity);
     }
 
     @Test

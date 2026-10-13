@@ -69,8 +69,42 @@ class MailSchemaTest {
                 .updatedAt(OffsetDateTime.now()).build());
         em.flush();
         em.clear();
-        MailCursor c = cursorRepo.findById("zz-cursor@test.kz").orElseThrow();
+        MailCursor c = cursorRepo.findById(MailCursorKey.inbox("zz-cursor@test.kz")).orElseThrow();
         assertThat(c.getUidValidity()).isEqualTo(7L);
         assertThat(c.getLastUid()).isEqualTo(100L);
+    }
+
+    /** V29: у ящика курсор на каждую папку; строка без папки (прежняя строка zakup@) — «Входящие». */
+    @Test
+    void mailCursor_twoFoldersOfOneMailbox_legacyRowIsInbox() {
+        cursorRepo.save(MailCursor.builder().mailbox("zz-two@test.kz").folder(MailCursor.SENT).uidValidity(3L).lastUid(9L)
+                .updatedAt(OffsetDateTime.now()).build());
+        em.flush();
+        em.createNativeQuery("insert into mail_cursor (mailbox, uid_validity, last_uid) values ('zz-two@test.kz', 7, 100)")
+                .executeUpdate();
+        em.clear();
+
+        assertThat(cursorRepo.findById(MailCursorKey.inbox("zz-two@test.kz")).orElseThrow().getLastUid()).isEqualTo(100L);
+        assertThat(cursorRepo.findById(new MailCursorKey("zz-two@test.kz", MailCursor.SENT)).orElseThrow().getLastUid())
+                .isEqualTo(9L);
+    }
+
+    /** Курсор папки назад не ходит; новый UIDVALIDITY — отсчёт заново. */
+    @Test
+    void mailCursor_advance_forwardOnly_newValidityRestarts() {
+        MailCursorKey key = new MailCursorKey("zz-adv@test.kz", MailCursor.SENT);
+        cursorRepo.advance(key, 5L, 10L);
+        cursorRepo.advance(key, 5L, 8L);
+        em.flush();
+        em.clear();
+        assertThat(cursorRepo.findById(key).orElseThrow().getLastUid()).isEqualTo(10L);
+
+        cursorRepo.advance(key, 6L, 2L);
+        em.flush();
+        em.clear();
+        MailCursor c = cursorRepo.findById(key).orElseThrow();
+        assertThat(c.getUidValidity()).isEqualTo(6L);
+        assertThat(c.getLastUid()).isEqualTo(2L);
+        assertThat(c.getFolder()).isEqualTo(MailCursor.SENT);
     }
 }

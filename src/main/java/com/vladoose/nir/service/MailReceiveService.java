@@ -2,6 +2,7 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.MailCursor;
+import com.vladoose.nir.entity.MailCursorKey;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.service.mail.*;
@@ -104,7 +105,7 @@ public class MailReceiveService {
     /** null — проход дошёл до конца; иначе — почему остановлен. */
     private String pass(MailboxSession s, PollResultResponse result) throws MessagingException {
         long uidValidity = s.uidValidity();
-        Optional<MailCursor> cursor = cursorRepository.findById(writer.mailbox())
+        Optional<MailCursor> cursor = cursorRepository.findById(MailCursorKey.inbox(writer.mailbox()))
                 .filter(c -> c.getUidValidity() == uidValidity);
         if (cursor.isPresent()) {
             for (long uid : s.uidsAfter(cursor.get().getLastUid(), MAX_PER_PASS)) {

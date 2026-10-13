@@ -4,8 +4,9 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * Файл сообщения. Байты читаются только при скачивании — лента берёт метаданные проекцией
- * (ChatAttachmentRepository.findMetaByMessageIds). Инвариант: content == null ⇔ notStoredReason != null.
+ * Файл сообщения: у WhatsApp — один, у письма — сколько угодно (V29). Байты читаются только при скачивании — лента
+ * берёт метаданные проекцией (ChatAttachmentRepository.findMetaByMessageIds). Инвариант: content == null ⇔
+ * notStoredReason != null.
  */
 @Entity
 @Table(name = "chat_attachment")
@@ -16,8 +17,8 @@ public class ChatAttachment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "message_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "message_id", nullable = false)
     private ChatMessage message;
 
     @Column(name = "file_name")

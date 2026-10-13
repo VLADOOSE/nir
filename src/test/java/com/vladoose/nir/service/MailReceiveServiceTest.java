@@ -5,6 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.vladoose.nir.dto.response.PollResultResponse;
 import com.vladoose.nir.entity.MailCursor;
+import com.vladoose.nir.entity.MailCursorKey;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.service.mail.*;
@@ -77,7 +78,7 @@ class MailReceiveServiceTest {
     }
 
     void cursorAt(long uidValidity, long lastUid) {
-        when(cursors.findById("zakup@westmed.kz")).thenReturn(Optional.of(
+        when(cursors.findById(MailCursorKey.inbox("zakup@westmed.kz"))).thenReturn(Optional.of(
                 MailCursor.builder().mailbox("zakup@westmed.kz").uidValidity(uidValidity).lastUid(lastUid).build()));
     }
 
@@ -91,7 +92,7 @@ class MailReceiveServiceTest {
 
     @Test
     void firstRun_windowThenCursorToMaxTakenBeforeWindow() throws Exception {
-        when(cursors.findById("zakup@westmed.kz")).thenReturn(Optional.empty());
+        when(cursors.findById(MailCursorKey.inbox("zakup@westmed.kz"))).thenReturn(Optional.empty());
         when(session.maxUid()).thenReturn(50L);
         when(session.uidsReceivedSince(NOW.minus(Duration.ofMinutes(60)), MailReceiveService.MAX_PER_PASS)).thenReturn(List.of(48L, 49L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
@@ -109,7 +110,7 @@ class MailReceiveServiceTest {
     /** Письмо пришло во время первого прохода (UID больше снятого max): его не трогаем — уйдёт следующим проходом. */
     @Test
     void firstRun_letterAfterMaxSnapshot_leftForNextPass() throws Exception {
-        when(cursors.findById("zakup@westmed.kz")).thenReturn(Optional.empty());
+        when(cursors.findById(MailCursorKey.inbox("zakup@westmed.kz"))).thenReturn(Optional.empty());
         when(session.maxUid()).thenReturn(50L);
         when(session.uidsReceivedSince(any(), anyInt())).thenReturn(List.of(49L, 51L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
@@ -352,7 +353,7 @@ class MailReceiveServiceTest {
      */
     @Test
     void cursorReadFails_db_ownText_notMailConnectionError() throws Exception {
-        when(cursors.findById(anyString())).thenThrow(
+        when(cursors.findById(any())).thenThrow(
                 new DataAccessResourceFailureException("Connection to 127.0.0.1:5432 refused"));
 
         PollResultResponse r = service(true).poll();
@@ -369,7 +370,7 @@ class MailReceiveServiceTest {
      */
     @Test
     void passInternalError_ownText_noRawText() throws Exception {
-        when(cursors.findById(anyString())).thenThrow(
+        when(cursors.findById(any())).thenThrow(
                 new InvalidDataAccessResourceUsageException("bad SQL grammar [select * from mail_cursor where secret]"));
 
         PollResultResponse r = service(true).poll();

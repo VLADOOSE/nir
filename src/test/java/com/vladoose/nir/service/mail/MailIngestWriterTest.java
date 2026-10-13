@@ -88,7 +88,7 @@ class MailIngestWriterTest {
                 .contains("💡 Цена распознана: 3\u00A0200\u00A0000,00 ₸")
                 .contains("Запрос КП №" + p.getId() + " · тендер ZZW-")
                 .endsWith("/tenders?openId=" + p.getTender().getId() + "&market=KZ");
-        MailCursor c = cursorRepo.findById(box).orElseThrow();
+        MailCursor c = cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow();
         assertThat(c.getUidValidity()).isEqualTo(5);
         assertThat(c.getLastUid()).isEqualTo(10);
     }
@@ -251,7 +251,7 @@ class MailIngestWriterTest {
         MailIngestWriter.WriteResult r = writer().write(mail().uid(2).messageId("<same@x.kz>").build(), 5);
         assertThat(r.duplicate()).isTrue();
         assertThat(rows()).hasSize(1);
-        assertThat(cursorRepo.findById(box).orElseThrow().getLastUid()).isEqualTo(2);
+        assertThat(cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow().getLastUid()).isEqualTo(2);
     }
 
     /**
@@ -276,7 +276,7 @@ class MailIngestWriterTest {
                 .subject("Запрос КП (2 поз.) — westmed.kz").build(), 5);
         assertThat(r.mailClass()).isEqualTo(MailClass.SITE_NOTIFICATION);
         assertThat(rows()).isEmpty();
-        assertThat(cursorRepo.findById(box).orElseThrow().getLastUid()).isEqualTo(3);
+        assertThat(cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow().getLastUid()).isEqualTo(3);
     }
 
     @Test
@@ -302,7 +302,7 @@ class MailIngestWriterTest {
         assertThat(e.getExcerpt()).isEqualTo("Письмо не удалось разобрать (ParseException) — откройте его в почте");
         assertThat(e.isNotifySilent()).isTrue();
         assertThat(e.getNotifyText()).contains("Письмо не удалось разобрать");
-        assertThat(cursorRepo.findById(box).orElseThrow().getLastUid()).isEqualTo(9);
+        assertThat(cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow().getLastUid()).isEqualTo(9);
     }
 
     @Test
@@ -310,9 +310,9 @@ class MailIngestWriterTest {
         MailIngestWriter w = writer();
         w.moveCursorTo(5, 100);
         w.moveCursorTo(5, 40);
-        assertThat(cursorRepo.findById(box).orElseThrow().getLastUid()).isEqualTo(100);
+        assertThat(cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow().getLastUid()).isEqualTo(100);
         w.moveCursorTo(6, 3);
-        MailCursor c = cursorRepo.findById(box).orElseThrow();
+        MailCursor c = cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow();
         assertThat(c.getUidValidity()).isEqualTo(6);
         assertThat(c.getLastUid()).isEqualTo(3);
     }
