@@ -11,6 +11,7 @@ import { NotificationService } from '../../services/notification.service';
 import { MarketService } from '../../services/market.service';
 import { RegistryChipComponent } from '../../shared/registry-chip.component';
 import { RegistryChipActions } from '../../shared/registry';
+import { AddPick, OfferAddItemDialogComponent } from './offer-add-item-dialog.component';
 import type { RegAction, RegistryRecord } from '../../shared/private-request';
 import {
   ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
@@ -20,6 +21,14 @@ import { errorText } from '../../shared/error-text';
 /** Пределы наценки — те же, что проверяет сервер (ClientOfferService): вне них отказало бы всё автосохранение, а не одно поле. */
 const MIN_MARKUP = -100;
 const MAX_MARKUP = 1000;
+
+/** Длинное наименование записи реестра — до max по слову, с «…» (полное — в окошке метки РУ). */
+function cutWords(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > max / 2 ? cut.slice(0, sp) : cut).trimEnd() + '…';
+}
 
 /** Наименование, модель, производитель и статус — по ним «Проверить регистрацию» видит, что строку правили во время запроса. */
 function rowKey(it: OfferItem): string {
@@ -41,7 +50,7 @@ function rowKey(it: OfferItem): string {
 @Component({
   selector: 'app-client-offer-items',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent],
+  imports: [NgFor, NgIf, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent, OfferAddItemDialogComponent],
   template: `
     <div class="toolbar" *ngIf="!readonly">
       <button type="button" class="btn btn-line" (click)="add('ITEM')">+ Позиция</button>
@@ -49,11 +58,13 @@ function rowKey(it: OfferItem): string {
       <button type="button" class="btn btn-line" (click)="add('INCLUDED')">+ Включено в стоимость</button>
       <button type="button" class="btn btn-line" *ngIf="isKz" [disabled]="checking" (click)="checkRegistry()">
         {{ checking ? 'Проверяю…' : 'Проверить регистрацию' }}</button>
+      <button type="button" class="btn btn-line" (click)="addOpen = true">{{ isKz ? 'Из реестра и каталога' : 'Из каталога' }}</button>
       <label class="sel-all" *ngIf="offer.items.length">
         <input type="checkbox" [checked]="allSelected()" [indeterminate]="someSelected()" (change)="selectAll($any($event.target).checked)" />
         Выбрать все
       </label>
     </div>
+    <app-offer-add-item-dialog *ngIf="addOpen && !readonly" [kz]="isKz" (picked)="addPicked($event)" (close)="addOpen = false"></app-offer-add-item-dialog>
 
     <div class="bulk" *ngIf="!readonly && selectedCount() > 0" role="group" aria-label="Действия с выбранными строками">
       <span class="bulk-count">Выбрано: {{ selectedCount() }}</span>
@@ -405,11 +416,45 @@ export class ClientOfferItemsComponent {
   /** Реестр РУ — только Казахстан: на РФ меток и «Проверить регистрацию» нет (спека 2026-10-13 §3). */
   readonly isKz: boolean;
   checking = false;
+  addOpen = false;
   private regActionsByKey = new Map<string, RegistryChipActions>();
 
   constructor(private confirm: ConfirmService, private notify: NotificationService, private host: ElementRef<HTMLElement>,
               private cdr: ChangeDetectorRef, private destroyRef: DestroyRef, private api: ApiService, market: MarketService) {
     this.isKz = market.value === 'KZ';
+  }
+
+  /** Позиция из реестра (сразу «РУ ✓») или каталога (РУ — если привязан) — в конец КП (спека 2026-10-13 §2.4). */
+  addPicked(p: AddPick) {
+    const prof = this.profile;
+    const it = newItem('ITEM', prof?.vatDefault ?? null);
+    const confirm = (rec: RegistryRecord) => {
+      it.registrationStatus = 'CONFIRMED';
+      it.regNumber = rec.regNumber;
+      it.registry = rec;
+      if (!it.manufacturer && rec.producer) it.manufacturer = rec.producer.slice(0, 500);
+      if (rec.country) it.country = rec.country.slice(0, 200);
+      if (this.offer.vatEnabled && prof && 'vatRegistered' in prof) it.vatRate = prof.vatRegistered;
+    };
+    if (p.kind === 'registry') {
+      it.name = cutWords(p.record.name, 500);
+      confirm(p.record);
+    } else {
+      it.name = p.item.name;
+      it.manufacturer = p.item.manufact ?? null;
+      it.medEquipmentId = p.item.id;
+      if (p.item.registry) confirm(p.item.registry);
+    }
+    this.offer.items.push(it);
+    this.addOpen = false;
+    this.emit();
+    this.revealRow(it.key);
+  }
+
+  /** Добавленная из окна позиция — в конце списка, за краем экрана: показать её. Без фокуса — на телефоне он открыл бы клавиатуру. */
+  private revealRow(key: string) {
+    this.cdr.detectChanges();
+    this.host.nativeElement.querySelector(`.row[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'center' });
   }
 
   regSeed(it: OfferItem): string {

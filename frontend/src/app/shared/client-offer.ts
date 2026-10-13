@@ -203,6 +203,9 @@ export function longDateText(iso: string): string {
   return `«${d}» ${MONTHS_GEN[Number(m) - 1]} ${y} г.`;
 }
 
+/** Позиция каталога в поиске «Из реестра и каталога»: РУ — если привязан. */
+export interface EquipmentHit { id: number; name: string; manufact: string | null; registry: RegistryRecord | null; }
+
 /** Строка для подсказок РУ и ответ (спека 2026-10-13 §2.3). */
 export interface SuggestionRow { key: string; name: string; model: string | null; manufacturer: string | null; }
 export interface RegistrySuggestion {
