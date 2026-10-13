@@ -8,6 +8,10 @@ import java.time.OffsetDateTime;
 public class ChatListItemResponse {
     private Long id;
     private String title;
+    /** WHATSAPP / EMAIL. */
+    private String channel;
+    /** Адрес собеседника почтовой переписки; у чатов WhatsApp — null. */
+    private String email;
     private String phone;
     private boolean group;
     private boolean notClient;

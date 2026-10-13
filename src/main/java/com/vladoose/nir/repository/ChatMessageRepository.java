@@ -40,8 +40,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     List<ChatMessage> findLatestByDirection(@Param("chatId") Long chatId, @Param("direction") LeadDirection direction,
                                             Pageable pageable);
 
-    /** Чаты, где текст встречается в сообщениях. Без рыночного фильтра — вызывающий пересекает с чатами своего рынка. */
-    @Query("select distinct m.chat.id from ChatMessage m where lower(m.body) like lower(concat('%', :q, '%'))")
+    /** Чаты, где текст встречается в тексте или теме сообщений. Без рыночного фильтра — вызывающий пересекает с чатами своего рынка. */
+    @Query("""
+           select distinct m.chat.id from ChatMessage m
+           where lower(m.body) like lower(concat('%', :q, '%')) or lower(m.subject) like lower(concat('%', :q, '%'))""")
     List<Long> findChatIdsByBody(@Param("q") String q);
 
     /** Самое позднее сообщение номера — отметка догонки WAHA (спека whatsapp-waha §5.3). Зовётся в потоке приёма с его рынком. */

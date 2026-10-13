@@ -32,7 +32,7 @@ public class ChatService {
     public static final int PAGE_MAX = 100;
     public static final int LEAD_MESSAGES = 200;
     private static final Set<LeadStatus> OPEN = EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK, LeadStatus.CONVERTED);
-    private static final Set<String> FILTERS = Set.of("ALL", "WITH_LEAD", "WITHOUT_LEAD", "GROUPS");
+    private static final Set<String> FILTERS = Set.of("ALL", "WITH_LEAD", "WITHOUT_LEAD", "GROUPS", "EMAIL");
     private static final Set<String> INLINE_IMAGES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
     private static final OffsetDateTime EPOCH = OffsetDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
 
@@ -110,7 +110,11 @@ public class ChatService {
         ChatAttachment a = attachmentRepository.findById(attachmentId)
                 .filter(x -> x.getMessage().getChat().getId().equals(c.getId()))
                 .orElseThrow(() -> new NotFoundException("Файл не найден: id=" + attachmentId));
-        if (a.getContent() == null) throw new NotFoundException("Файл не сохранён в АИС — смотрите его в телефоне");
+        if (a.getContent() == null) {
+            throw new NotFoundException(c.getChannel() == LeadChannel.EMAIL
+                    ? "Файл не сохранён в АИС — откройте его в почте"
+                    : "Файл не сохранён в АИС — смотрите его в телефоне");
+        }
         return a;
     }
 
@@ -136,10 +140,14 @@ public class ChatService {
                 .map(ChatService::episodeEnd).max(Comparator.naturalOrder()).orElse(EPOCH);
         OffsetDateTime start = messageRepository.findEarliestAfter(c.getId(), after, PageRequest.of(0, 1)).stream()
                 .findFirst().map(ChatMessage::getSentAt).orElse(now);
-        String lastIncoming = messageRepository.findLatestByDirection(c.getId(), LeadDirection.IN, PageRequest.of(0, 1))
-                .stream().findFirst().map(ChatMessage::getBody).orElse(null);
-        IncomingLead in = new IncomingLead(LeadSources.WHATSAPP, null, LeadChannel.WHATSAPP, "WhatsApp", start,
-                contactName(c), c.getPhoneNorm(), null, null, lastIncoming, List.of(), LeadStatus.IN_WORK, null, author);
+        ChatMessage lastIn = messageRepository.findLatestByDirection(c.getId(), LeadDirection.IN, PageRequest.of(0, 1))
+                .stream().findFirst().orElse(null);
+        String lastIncoming = lastIn == null ? null : lastIn.getBody();
+        IncomingLead in = c.getChannel() == LeadChannel.EMAIL
+                ? new IncomingLead(LeadSources.EMAIL, null, LeadChannel.EMAIL, emailSubject(lastIn), start,
+                        contactName(c), null, c.getExternalChatId(), null, lastIncoming, List.of(), LeadStatus.IN_WORK, null, author)
+                : new IncomingLead(LeadSources.WHATSAPP, null, LeadChannel.WHATSAPP, "WhatsApp", start,
+                        contactName(c), c.getPhoneNorm(), null, null, lastIncoming, List.of(), LeadStatus.IN_WORK, null, author);
         Lead lead = intake.ingest(in).orElseThrow();   // externalId = null → дублей не бывает
         lead.setChat(c);
         return toResponse(c);
@@ -157,10 +165,10 @@ public class ChatService {
     List<ChatMessageResponse> toResponses(List<ChatMessage> newestFirst) {
         List<ChatMessage> chrono = new ArrayList<>(newestFirst);
         Collections.reverse(chrono);
-        Map<Long, ChatAttachmentMeta> files = chrono.isEmpty() ? Map.of()
+        Map<Long, List<ChatAttachmentMeta>> files = chrono.isEmpty() ? Map.of()
                 : attachmentRepository.findMetaByMessageIds(chrono.stream().map(ChatMessage::getId).toList()).stream()
-                        .collect(Collectors.toMap(ChatAttachmentMeta::messageId, a -> a));
-        return chrono.stream().map(m -> toMessage(m, files.get(m.getId()))).toList();
+                        .collect(Collectors.groupingBy(ChatAttachmentMeta::messageId));
+        return chrono.stream().map(m -> toMessage(m, files.getOrDefault(m.getId(), List.of()))).toList();
     }
 
     Chat chat(Long id) {
@@ -199,6 +207,8 @@ public class ChatService {
         ChatResponse r = new ChatResponse();
         r.setId(c.getId());
         r.setTitle(c.getTitle());
+        r.setChannel(c.getChannel().name());
+        r.setEmail(email(c));
         r.setPhone(c.getPhoneNorm());
         r.setGroup(c.isGroup());
         r.setNotClient(c.isNotClient());
@@ -216,6 +226,8 @@ public class ChatService {
         ChatListItemResponse r = new ChatListItemResponse();
         r.setId(c.getId());
         r.setTitle(c.getTitle());
+        r.setChannel(c.getChannel().name());
+        r.setEmail(email(c));
         r.setPhone(c.getPhoneNorm());
         r.setGroup(c.isGroup());
         r.setNotClient(c.isNotClient());
@@ -225,29 +237,37 @@ public class ChatService {
         return r;
     }
 
-    private static ChatMessageResponse toMessage(ChatMessage m, ChatAttachmentMeta a) {
+    private static ChatMessageResponse toMessage(ChatMessage m, List<ChatAttachmentMeta> files) {
         ChatMessageResponse r = new ChatMessageResponse();
         r.setId(m.getId());
         r.setDirection(m.getDirection().name());
         r.setSenderName(m.getSenderName());
         r.setType(m.getType().name());
+        r.setSubject(m.getSubject());
         r.setBody(m.getBody());
         r.setSentAt(m.getSentAt());
         r.setEdited(m.isEdited());
         r.setDeleted(m.isDeleted());
-        if (a != null) {
-            ChatAttachmentResponse f = new ChatAttachmentResponse();
-            f.setId(a.id());
-            f.setFileName(a.fileName());
-            f.setMimeType(a.mimeType());
-            f.setSizeBytes(a.sizeBytes());
-            f.setStored(a.stored());
-            f.setNotStoredReason(a.notStoredReason() == null ? null : a.notStoredReason().name());
-            f.setExcel(isExcel(a.fileName(), a.mimeType()));
-            f.setImage(a.stored() && isSafeImage(a.mimeType()));
-            r.setAttachment(f);
-        }
+        r.setAttachments(files.stream().map(ChatService::toFile).toList());
         return r;
+    }
+
+    private static ChatAttachmentResponse toFile(ChatAttachmentMeta a) {
+        ChatAttachmentResponse f = new ChatAttachmentResponse();
+        f.setId(a.id());
+        f.setFileName(a.fileName());
+        f.setMimeType(a.mimeType());
+        f.setSizeBytes(a.sizeBytes());
+        f.setStored(a.stored());
+        f.setNotStoredReason(a.notStoredReason() == null ? null : a.notStoredReason().name());
+        f.setExcel(isExcel(a.fileName(), a.mimeType()));
+        f.setImage(a.stored() && isSafeImage(a.mimeType()));
+        return f;
+    }
+
+    /** Адрес собеседника почтовой переписки; у чатов WhatsApp — null. */
+    private static String email(Chat c) {
+        return c.getChannel() == LeadChannel.EMAIL ? c.getExternalChatId() : null;
     }
 
     /** Текущее обращение чата: открытое (NEW/IN_WORK/CONVERTED), иначе последнее. */
@@ -270,17 +290,25 @@ public class ChatService {
             case "WITH_LEAD" -> lead != null;
             case "WITHOUT_LEAD" -> !c.isGroup() && lead == null;
             case "GROUPS" -> c.isGroup();
+            case "EMAIL" -> c.getChannel() == LeadChannel.EMAIL;
             default -> true;
         };
     }
 
     private static boolean matches(Chat c, String needle, String digits) {
         if (c.getTitle() != null && c.getTitle().toLowerCase(Locale.ROOT).contains(needle)) return true;
+        if (c.getChannel() == LeadChannel.EMAIL && c.getExternalChatId().contains(needle)) return true;
         return digits.length() >= 4 && c.getPhoneNorm() != null && c.getPhoneNorm().contains(digits);
     }
 
-    /** Имя контакта для обращения — если название чата не просто номер. */
+    /** Тема обращения из почтовой переписки — тема последнего письма собеседника, иначе «Письмо». */
+    private static String emailSubject(ChatMessage lastIn) {
+        return lastIn != null && lastIn.getSubject() != null && !lastIn.getSubject().isBlank() ? lastIn.getSubject() : "Письмо";
+    }
+
+    /** Имя контакта для обращения — если название чата не просто номер или адрес. */
     private static String contactName(Chat c) {
-        return c.getTitle() != null && !c.getTitle().equals(c.getPhoneNorm()) ? c.getTitle() : null;
+        String t = c.getTitle();
+        return t != null && !t.equals(c.getPhoneNorm()) && !t.equals(c.getExternalChatId()) ? t : null;
     }
 }
