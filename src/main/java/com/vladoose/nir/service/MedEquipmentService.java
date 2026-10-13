@@ -6,10 +6,12 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ApplyItemRepository;
 import com.vladoose.nir.repository.MedEquipmentRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class MedEquipmentService {
@@ -45,6 +47,15 @@ public class MedEquipmentService {
             throw new BadRequestException("Невозможно удалить оборудование: оно используется в позициях заявок.");
         }
         repository.deleteById(id);
+    }
+
+    /** Позиции каталога своего рынка по названию или производителю; меньше 2 символов — пусто; до 20. */
+    @Transactional(readOnly = true)
+    public List<MedEquipment> search(String q, int limit) {
+        String query = q == null ? "" : q.trim();
+        if (query.length() < 2) return List.of();
+        String like = "%" + query.toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return repository.search(like, PageRequest.of(0, Math.max(1, Math.min(limit, 20))));
     }
 
     public List<MedEquipment> findMatchingForLot(TenderLot lot) {

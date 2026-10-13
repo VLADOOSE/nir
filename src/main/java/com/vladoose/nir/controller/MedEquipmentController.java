@@ -4,6 +4,7 @@ import com.vladoose.nir.dto.request.MatchRequest;
 import com.vladoose.nir.dto.request.MedEquipmentRequest;
 import com.vladoose.nir.dto.request.RegistrationActionRequest;
 import com.vladoose.nir.dto.response.EquipmentMatchResponse;
+import com.vladoose.nir.dto.response.EquipmentSearchItemResponse;
 import com.vladoose.nir.dto.response.EquipmentStatsResponse;
 import com.vladoose.nir.dto.response.MedEquipmentResponse;
 import com.vladoose.nir.entity.MedEquipment;
@@ -13,6 +14,7 @@ import com.vladoose.nir.service.EquipmentStatsService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.RegistryMatchService;
 import com.vladoose.nir.service.TenderLotService;
+import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -47,6 +49,15 @@ public class MedEquipmentController {
     @GetMapping
     public List<MedEquipmentResponse> findAll() {
         return mapper.toResponseList(service.findAll());
+    }
+
+    /** Поиск для «Из реестра и каталога» (спека 2026-10-13 §2.4): литеральный путь Spring предпочитает шаблону «/{id}». */
+    @GetMapping("/search")
+    public List<EquipmentSearchItemResponse> search(@RequestParam String q, @RequestParam(defaultValue = "10") int limit) {
+        return service.search(q, limit).stream()
+                .map(e -> new EquipmentSearchItemResponse(e.getId(), e.getName(), e.getManufact(),
+                        e.getRegistration() == null ? null : PrivateRequestViewBuilder.candidate(e.getRegistration())))
+                .toList();
     }
 
     @GetMapping("/{id}")
