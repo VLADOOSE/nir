@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Письма в локальный GreenMail (./gradlew devMail) для живой проверки приёма zakup@:
+"""Письма в локальный GreenMail (./gradlew devMail) для живой проверки приёма zakup@ и info@:
   python3 scripts/dev-mail.py plain            — письмо с вложением (прочее)
   python3 scripts/dev-mail.py reply <prId>     — ответ поставщика с ценой на запрос КП
   python3 scripts/dev-mail.py bounce <prId>    — возврат почтового сервера (DSN, Action: failed) по запросу КП
   python3 scripts/dev-mail.py delayed <prId>   — отложенная доставка (DSN, Action: delayed, 4.4.1) по запросу КП
   python3 scripts/dev-mail.py auto <prId>      — автоответ на запрос КП
+  python3 scripts/dev-mail.py client <адрес>        — письмо клиента на info@: текст, Excel и PDF, картинка подписи
+  python3 scripts/dev-mail.py client-plain <адрес>  — продолжение переписки клиента (с цитатой)
+  python3 scripts/dev-mail.py answer <адрес>        — наш ответ клиенту «из веб-почты»: в «Отправленные» info@ (IMAP APPEND)
+  python3 scripts/dev-mail.py newsletter|service|site|colleague — рассылка / служебное / уведомление сайта / свой домен на info@
 """
+import base64
+import imaplib
+import os
 import smtplib
+import subprocess
 import sys
+import tempfile
 from email.message import EmailMessage, Message
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
@@ -96,12 +105,90 @@ def auto(pr_id):
     send(m)
 
 
+INFO = "info@westmed.kz"
+# 1×1 PNG — картинка подписи (inline + Content-ID); контрольные суммы чанков сверены
+PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+
+def xlsx_bytes():
+    path = os.path.join(tempfile.mkdtemp(), "smeta.xlsx")
+    subprocess.run(["node", os.path.join(os.path.dirname(__file__), "greenapi-stub.mjs"), "--write-xlsx", path], check=True)
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def client(address):
+    m = EmailMessage()
+    m["From"] = f"Айгуль Сапарова <{address}>"
+    m["To"] = INFO
+    m["Subject"] = "Запрос цены на кушетки"
+    m.set_content("Добрый день!\nПросим КП на позиции из сметы во вложении.\n\nС уважением, Айгуль\nГКП «Областная больница»")
+    m.add_alternative('<p>Добрый день!<br>Просим КП на позиции из сметы во вложении.</p>'
+                      '<p>С уважением, Айгуль</p><img src="cid:logo">', subtype="html")
+    # disposition="inline" — как у Outlook, Gmail и Mail.ru: с одним filename Python поставил бы «attachment», и АИС
+    # честно показала бы картинку подписи файлом (правило разбора: Content-ID без attachment — подпись)
+    m.get_payload()[1].add_related(PNG, maintype="image", subtype="png", cid="<logo>", filename="image001.png",
+                                   disposition="inline")
+    m.add_attachment(xlsx_bytes(), maintype="application",
+                     subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="Смета кушетки.xlsx")
+    m.add_attachment(b"%PDF-1.4 stub", maintype="application", subtype="pdf", filename="ТЗ.pdf")
+    send(m)
+
+
+def client_plain(address):
+    m = EmailMessage()
+    m["From"] = f"Айгуль Сапарова <{address}>"
+    m["To"] = INFO
+    m["Subject"] = "Re: Запрос цены на кушетки"
+    m.set_content("Уточните, пожалуйста, срок поставки.\n\n> Добрый день, Айгуль! КП подготовим сегодня.")
+    send(m)
+
+
+def answer(address):
+    """Наш ответ клиенту из веб-почты: Mail.ru кладёт копию в «Отправленные» — здесь IMAP APPEND без даты (сервер ставит
+    «сейчас»; дата в APPEND у GreenMail читается 12-часовым шаблоном и в 12:xx уехала бы на 12 часов назад)."""
+    m = EmailMessage()
+    m["From"] = f"West-Med <{INFO}>"
+    m["To"] = address
+    m["Cc"] = "manager@westmed.kz"
+    m["Subject"] = "Re: Запрос цены на кушетки"
+    m["Message-ID"] = make_msgid(domain="westmed.kz")
+    m["Date"] = formatdate(localtime=True)
+    m.set_content("Добрый день, Айгуль!\nКП подготовим сегодня.\n\nС уважением, West-Med\n\n> Добрый день! Просим КП…")
+    imap = imaplib.IMAP4("127.0.0.1", 3143)
+    imap.login(INFO, "secret")
+    imap.append("Sent", None, None, m.as_bytes())
+    imap.logout()
+    print("в «Отправленные»:", m["Subject"])
+
+
+def info_letter(sender, subject, text, **headers):
+    m = EmailMessage()
+    m["From"] = sender
+    m["To"] = INFO
+    m["Subject"] = subject
+    for k, v in headers.items():
+        m[k.replace("_", "-")] = v
+    m.set_content(text)
+    send(m)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "plain":
         plain()
     elif cmd in ("reply", "bounce", "delayed", "auto") and len(sys.argv) > 2:
         {"reply": reply, "bounce": bounce, "delayed": delayed, "auto": auto}[cmd](sys.argv[2])
+    elif cmd in ("client", "client-plain", "answer") and len(sys.argv) > 2:
+        {"client": client, "client-plain": client_plain, "answer": answer}[cmd](sys.argv[2])
+    elif cmd == "newsletter":
+        info_letter("Медтехника <news@medshop.kz>", "Скидки недели", "Скидки до 30%", List_Unsubscribe="<mailto:unsubscribe@medshop.kz>")
+    elif cmd == "service":
+        info_letter("Mail.ru <security@id.mail.ru>", "Вход в почту с нового устройства", "Выполнен вход в ящик")
+    elif cmd == "site":
+        info_letter(f"westmed.kz <{INFO}>", "Новая заявка с сайта — westmed.kz", "Заявка № 77")
+    elif cmd == "colleague":
+        info_letter("Бухгалтерия <buh@westmed.kz>", "Акт сверки", "Во вложении акт")
     else:
         print(__doc__)
         sys.exit(1)
