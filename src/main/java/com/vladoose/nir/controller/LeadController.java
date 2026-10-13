@@ -100,6 +100,12 @@ public class LeadController {
         return card(service.close(id, req.getReason(), req.getComment(), currentUser()));
     }
 
+    @PostMapping("/{id}/not-client")
+    @PreAuthorize("hasRole('ADMIN')")
+    public LeadCardResponse notClient(@PathVariable Long id) {
+        return card(service.markNotClient(id, currentUser()));
+    }
+
     @PostMapping("/{id}/reopen")
     @PreAuthorize("hasRole('ADMIN')")
     public LeadCardResponse reopen(@PathVariable Long id) {

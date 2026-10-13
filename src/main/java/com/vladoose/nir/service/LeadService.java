@@ -136,11 +136,33 @@ public class LeadService {
     @Transactional
     public Lead close(Long id, LeadCloseReason reason, String comment, String author) {
         if (reason == null) throw new BadRequestException("Укажите причину закрытия");
+        if (reason == LeadCloseReason.NOT_CLIENT) {
+            throw new BadRequestException("«Не клиент» — отдельной кнопкой: она же отмечает переписку");
+        }
         Lead lead = get(id);
         require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK, LeadStatus.CONVERTED), "закрыть");
         lead.setCloseReason(reason);
         transition(lead, LeadStatus.CLOSED, author,
                 closeReasonLabel(reason) + (isBlank(comment) ? "" : " — " + comment.trim()));
+        return lead;
+    }
+
+    /**
+     * «Не клиент» (спека info-mail-leads §2.5): закрыть обращение причиной «Не клиент» и отметить его почтовую переписку —
+     * письма с этого адреса ложатся в переписку, но обращений не заводят. Снять отметку — на «Чатах».
+     */
+    @Transactional
+    public Lead markNotClient(Long id, String author) {
+        Lead lead = get(id);
+        Chat chat = lead.getChat();
+        if (chat == null || chat.getChannel() != LeadChannel.EMAIL) {
+            throw new BadRequestException("«Не клиент» — только у обращения из почты");
+        }
+        require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK, LeadStatus.CONVERTED), "закрыть");
+        chat.setNotClient(true);
+        lead.setCloseReason(LeadCloseReason.NOT_CLIENT);
+        transition(lead, LeadStatus.CLOSED, author, closeReasonLabel(LeadCloseReason.NOT_CLIENT)
+                + " — письма с " + chat.getExternalChatId() + " больше не заводят обращений");
         return lead;
     }
 
@@ -333,6 +355,7 @@ public class LeadService {
             case NOT_OUR_PROFILE -> "не наш профиль";
             case CLIENT_DECLINED -> "клиент отказался";
             case OTHER -> "другое";
+            case NOT_CLIENT -> "не клиент";
         };
     }
 

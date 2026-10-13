@@ -28,8 +28,10 @@ public class LeadCardResponse {
     private String extStatus;
     private String extStatusPending;
     private String extSyncError;
-    /** Чат WhatsApp обращения; null — обращение не из WhatsApp и к чату не привязано. */
+    /** Чат обращения (WhatsApp или почта); null — к чату не привязано. */
     private Long chatId;
+    /** Канал этого чата: WHATSAPP / EMAIL; null — чата нет. */
+    private String chatChannel;
     private List<LeadItemDto> items;
     private List<LeadEventResponse> events;
     private List<LeadRefResponse> samePhone;
