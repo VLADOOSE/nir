@@ -182,17 +182,6 @@ export const CLOSE_OUTCOMES: { v: PrStatus; l: string }[] = [
 
 export const UNIT_SUGGESTIONS = ['шт', 'набор', 'упак', 'компл', 'фл', 'л', 'кг', 'м', 'пара'];
 
-/** Метка РУ позиции (спека §5.3). «РУ не найдено», а не «нет в реестре»: у позиции без бренда подсказки нет, а изделие в реестре есть. */
-export function regLabel(s: RegStatus): string {
-  switch (s) {
-    case 'CONFIRMED': return 'РУ ✓';
-    case 'SUGGESTED': return 'РУ?';
-    case 'NOT_FOUND': return 'РУ не найдено';
-    case 'NOT_REQUIRED': return 'не подлежит';
-    default: return 'РУ —';
-  }
-}
-
 /** «бессрочно» / «до 07.04.2031» / пусто. */
 export function regValidity(r: RegistryRecord | null | undefined): string {
   if (!r) return '';

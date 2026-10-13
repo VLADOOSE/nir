@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { RegistryChipComponent } from '../../shared/registry-chip.component';
+import { RegistryChipActions } from '../../shared/registry';
 import { SiteProductSearchComponent } from '../../shared/site-product-search.component';
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
@@ -60,8 +61,8 @@ interface ParsedRow extends ParsedLine { on: boolean; }
               <span class="f-qty ro">{{ l.quantity ?? '—' }} {{ l.unit || 'шт' }}</span>
             </ng-template>
             <span class="f-reg">
-              <app-registry-chip *ngIf="isKz" [requestId]="view.id" [line]="l" [readonly]="readonly"
-                                 (changed)="onLine($event)"></app-registry-chip>
+              <app-registry-chip *ngIf="isKz" [status]="l.regStatus" [record]="l.registry" [seed]="regSeed(l)"
+                                 [actions]="regActions(l)" [readonly]="readonly" (changed)="onLine($any($event))"></app-registry-chip>
             </span>
             <button type="button" class="btn btn-more" (click)="toggle(l)" [attr.aria-expanded]="openId === l.lotId"
                     [attr.aria-label]="'Подробнее: ' + l.name">⋯</button>
@@ -229,6 +230,26 @@ export class PrLinesComponent {
 
   trackLine(_: number, l: PrLine) {
     return l.lotId;
+  }
+
+  /** Действия метки РУ позиции — запросом к заявке; по позиции один объект (вход метки не меняется на каждой проверке). */
+  private regActionsByLot = new Map<number, RegistryChipActions>();
+
+  regActions(l: PrLine): RegistryChipActions {
+    let a = this.regActionsByLot.get(l.lotId);
+    if (!a) {
+      const lotId = l.lotId;
+      a = {
+        candidates: () => this.api.getPrivateRequestLineCandidates(this.view.id, lotId),
+        act: (action, record) => this.api.setPrivateRequestLineRegistry(this.view.id, lotId, action, record?.regNumber),
+      };
+      this.regActionsByLot.set(lotId, a);
+    }
+    return a;
+  }
+
+  regSeed(l: PrLine): string {
+    return [l.name, l.brand].filter(Boolean).join(' ');
   }
 
   toggle(l: PrLine) {
