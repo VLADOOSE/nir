@@ -118,7 +118,8 @@ export class OfferAddItemDialogComponent implements OnDestroy {
     const q = this.query.trim();
     this.sub?.unsubscribe();
     this.error = '';
-    if (q.length < 2) { this.catalog = []; this.registry = []; this.searched = false; this.cdr.markForCheck(); return; }
+    // запрос в полёте отменён — «Ищу…» снимаем вместе с ним (ревью ветки, M2)
+    if (q.length < 2) { this.catalog = []; this.registry = []; this.searched = false; this.loading = false; this.cdr.markForCheck(); return; }
     this.loading = true;
     let failed = '';
     const fail = (what: string) => catchError(() => { failed = what; return of([]); });

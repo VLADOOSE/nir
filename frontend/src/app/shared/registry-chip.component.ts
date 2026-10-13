@@ -14,7 +14,7 @@ let openChip: RegistryChipComponent | null = null;
 
 /**
  * Метка РУ позиции (спека 2026-10-12 §5.3, 2026-10-13 §2.1–2.2) — одна на строку: «РУ ✓», «РУ истекло …», «РУ?»,
- * «нет в реестре», «не подлежит», «РУ вручную», «не проверено». Клик — окошко с записью реестра и действиями:
+ * «РУ не найдено», «не подлежит», «РУ вручную», «не проверено». Клик — окошко с записью реестра и действиями:
  * подтвердить, найти в реестре, «не подлежит», снять/вернуть. Состояние приходит входами, действия выполняет
  * владелец строки (`actions`): частная заявка — запросом, КП — правкой строки и автосохранением.
  */
@@ -73,9 +73,9 @@ let openChip: RegistryChipComponent | null = null;
     .chip { border: none; border-radius: 10px; padding: 3px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
             background: var(--surface-2); color: var(--text); }
     .chip[data-status="CONFIRMED"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
-    .chip[data-status="SUGGESTED"] { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
-    .chip[data-status="NOT_FOUND"], .chip[data-status="EXPIRED"] {
-      background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
+    .chip[data-status="SUGGESTED"], .chip[data-status="NOT_FOUND"] {
+      background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
+    .chip[data-status="EXPIRED"] { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
     .chip[data-status="NOT_REQUIRED"], .chip[data-status="MANUAL"], .chip[data-status="UNCHECKED"] {
       background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
     .pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 360px; max-width: calc(100vw - 32px);
@@ -168,9 +168,10 @@ export class RegistryChipComponent implements OnDestroy {
   noneText(): string {
     switch (this.status) {
       case 'NOT_REQUIRED': return 'Отмечено: не подлежит регистрации.';
+      // проверка автоматическая: подсказки нет и у зарегистрированного изделия (без производителя, латиница ↔ кириллица)
       case 'NOT_FOUND': return this.readonly
-        ? 'В реестре РК подходящего РУ нет — больнице такое не продать.'   // оператору без прав — без советов, которые ему не выполнить
-        : 'В реестре РК подходящего РУ нет — найдите вручную или отметьте «не подлежит».';
+        ? 'Автоматически в реестре РК не нашлось — РУ нужно найти вручную.'   // оператору без прав — без советов, которые ему не выполнить
+        : 'Автоматически в реестре РК не нашлось — найдите вручную («Найти в реестре») или отметьте «не подлежит».';
       case 'MANUAL': return 'Номер РУ вписан вручную — проверьте по реестру или оставьте.';
       default: return 'Регистрация ещё не проверялась.';
     }

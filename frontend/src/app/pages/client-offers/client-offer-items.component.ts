@@ -4,7 +4,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { LucideDynamicIcon } from '@lucide/angular';
-import { of } from 'rxjs';
+import { of, switchMap } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { NotificationService } from '../../services/notification.service';
@@ -110,7 +110,7 @@ function rowKey(it: OfferItem): string {
           <ng-container *ngIf="it.kind === 'ITEM'">
             <span class="c-num">{{ number(i) }}</span>
             <div class="c-name">
-              <textarea rows="1" class="name" [(ngModel)]="it.name" (ngModelChange)="emit()" [disabled]="readonly" maxlength="4000"
+              <textarea rows="1" class="name" [(ngModel)]="it.name" (ngModelChange)="identityChanged(it)" [disabled]="readonly" maxlength="4000"
                         placeholder="Наименование" [attr.aria-label]="'Наименование, строка ' + (i + 1)"></textarea>
               <app-registry-chip *ngIf="isKz" [status]="it.registrationStatus" [record]="it.registry ?? null"
                                  [seed]="regSeed(it)" [actions]="regActions(it)" [readonly]="readonly" align="start"></app-registry-chip>
@@ -183,8 +183,8 @@ function rowKey(it: OfferItem): string {
         </div>
 
         <div class="details" *ngIf="it.kind === 'ITEM' && it._open">
-          <label>Модель / артикул <input [(ngModel)]="it.model" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" /></label>
-          <label>Производитель <input [(ngModel)]="it.manufacturer" (ngModelChange)="emit()" [disabled]="readonly" maxlength="500" /></label>
+          <label>Модель / артикул <input [(ngModel)]="it.model" (ngModelChange)="identityChanged(it)" [disabled]="readonly" maxlength="255" /></label>
+          <label>Производитель <input [(ngModel)]="it.manufacturer" (ngModelChange)="identityChanged(it)" [disabled]="readonly" maxlength="500" /></label>
           <label>Страна <input [(ngModel)]="it.country" (ngModelChange)="emit()" [disabled]="readonly" maxlength="200" /></label>
           <label>Ед. изм. <input [(ngModel)]="it.unit" (ngModelChange)="emit()" [disabled]="readonly" maxlength="30" [attr.list]="'units-' + it.key" /></label>
           <datalist [id]="'units-' + it.key"><option *ngFor="let u of units" [value]="u"></option></datalist>
@@ -213,10 +213,10 @@ function rowKey(it: OfferItem): string {
                 <option value="UNCHECKED">не проверено</option>
                 <option value="MANUAL">указать номер РУ вручную</option>
                 <option value="NOT_REQUIRED">не подлежит регистрации</option>
-                <!-- подтверждение, подсказку и «нет в реестре» ставит метка РУ: здесь их можно только оставить -->
+                <!-- подтверждение, подсказку и «РУ не найдено» ставит метка РУ: здесь их можно только оставить -->
                 <option *ngIf="it.registrationStatus === 'CONFIRMED'" value="CONFIRMED">подтверждена по реестру</option>
                 <option *ngIf="it.registrationStatus === 'SUGGESTED'" value="SUGGESTED">подсказка реестра</option>
-                <option *ngIf="it.registrationStatus === 'NOT_FOUND'" value="NOT_FOUND">нет в реестре</option>
+                <option *ngIf="it.registrationStatus === 'NOT_FOUND'" value="NOT_FOUND">РУ не найдено</option>
               </select>
               <input *ngIf="it.registrationStatus === 'MANUAL'" [(ngModel)]="it.registrationText" (ngModelChange)="emit()" [disabled]="readonly"
                      maxlength="1000" placeholder="№ РК-МИ (МТ)-0№023037 от 28.10.2021 г." aria-label="Текст регистрации" />
@@ -443,7 +443,8 @@ export class ClientOfferItemsComponent {
       it.name = p.item.name;
       it.manufacturer = p.item.manufact ?? null;
       it.medEquipmentId = p.item.id;
-      if (p.item.registry) confirm(p.item.registry);
+      // реестр РУ — только Казахстан: на РФ подтверждение из реестра сервер не принимает (ревью ветки, M1)
+      if (p.item.registry && this.isKz) confirm(p.item.registry);
     }
     this.offer.items.push(it);
     this.addOpen = false;
@@ -457,8 +458,21 @@ export class ClientOfferItemsComponent {
     this.host.nativeElement.querySelector(`.row[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'center' });
   }
 
+  /** Стартовый текст поиска — наименование и модель; производитель — только в первой попытке (см. regActions). */
   regSeed(it: OfferItem): string {
-    return [it.name, it.model, it.manufacturer].filter(Boolean).join(' ');
+    return [it.name, it.model].filter(Boolean).join(' ');
+  }
+
+  /**
+   * Наименование, модель или производитель изменились — подсказка реестра и «РУ не найдено» относились к прежнему тексту:
+   * строка снова «не проверено», «Проверить регистрацию» её возьмёт (ревью ветки, M5). Подтверждённое не трогаем.
+   */
+  identityChanged(it: OfferItem) {
+    if (it.registrationStatus === 'SUGGESTED' || it.registrationStatus === 'NOT_FOUND') {
+      it.registrationStatus = 'UNCHECKED';
+      it.regNumber = null; it.registry = null; it.suggestionScore = null;
+    }
+    this.emit();
   }
 
   /** Действия метки — правкой строки и автосохранением (спека 2026-10-13 §4); строка ищется по ключу при вызове. */
@@ -467,9 +481,16 @@ export class ClientOfferItemsComponent {
     let a = this.regActionsByKey.get(key);
     if (!a) {
       a = {
+        // сначала с производителем — он поднимает свои записи; производитель латиницей в реестре бывает кириллицей
+        // («Mindray» ↔ «Шэньчжэнь Миндрэй»), и тогда с ним пусто — повтор без него (ревью ветки, I3)
         candidates: () => {
           const cur = this.offer.items.find(x => x.key === key);
-          return this.api.searchRegistry(cur ? this.regSeed(cur) : '', 10);
+          if (!cur) return of([]);
+          const base = this.regSeed(cur);
+          const maker = (cur.manufacturer ?? '').trim();
+          if (!maker) return this.api.searchRegistry(base, 10);
+          return this.api.searchRegistry(base + ' ' + maker, 10)
+            .pipe(switchMap(r => r.length ? of(r) : this.api.searchRegistry(base, 10)));
         },
         act: (action, record) => {
           const cur = this.offer.items.find(x => x.key === key);
@@ -535,7 +556,7 @@ export class ClientOfferItemsComponent {
               notFound++;
             }
           }
-          this.notify.success(`Проверено позиций: ${suggested + notFound} — «РУ?»: ${suggested}, нет в реестре: ${notFound}`);
+          this.notify.success(`Проверено позиций: ${suggested + notFound} — «РУ?»: ${suggested}, РУ не найдено: ${notFound}`);
           if (suggested + notFound) this.emit();
           this.cdr.markForCheck();
         },

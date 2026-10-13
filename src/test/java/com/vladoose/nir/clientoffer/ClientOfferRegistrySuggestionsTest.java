@@ -90,6 +90,21 @@ class ClientOfferRegistrySuggestionsTest {
         assertThat(r.get("x").get("regNumber").isNull()).isTrue();
     }
 
+    /**
+     * Ревью ветки (I2): наименование длиннее ~70 символов — поиск кандидатов режет текст до 80, и модель в конце из него
+     * пропадала (0,733 < 0,75 → «не найдено» при верной записи первой). Модель — в начало текста подсказки.
+     */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void longNameWithModelField_modelKeptInSearch() throws Exception {
+        Map<String, JsonNode> r = suggest("KZ", row("l",
+                "Электрокардиограф ZZKPSUG с автоматической интерпретацией и встроенным термопринтером для кабинета",
+                "R900", "ZZKPSUGVENDOR"));
+
+        assertThat(r.get("l").get("status").asText()).isEqualTo("SUGGESTED");
+        assertThat(r.get("l").get("regNumber").asText()).isEqualTo("ZZ-KPS-1");
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void rfIs400() throws Exception {

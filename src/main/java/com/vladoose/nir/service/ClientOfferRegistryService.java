@@ -32,7 +32,9 @@ public class ClientOfferRegistryService {
         List<RegistrySuggestionResponse> out = new ArrayList<>();
         for (RegistrySuggestionsRequest.Row r : rows) {
             if (r == null || r.name() == null || r.name().isBlank()) continue;
-            String text = r.model() == null || r.model().isBlank() ? r.name().trim() : r.name().trim() + " " + r.model().trim();
+            // модель — первой: поиск кандидатов режет текст до 80 символов, и у длинного наименования модель в конце
+            // из него пропадала (ревью ветки, I2); код модели проверяется по всему тексту — порядок ему не важен
+            String text = r.model() == null || r.model().isBlank() ? r.name().trim() : r.model().trim() + " " + r.name().trim();
             out.add(registry.suggestion(text, r.manufacturer())
                     .map(c -> RegistrySuggestionResponse.suggested(r.key(), c))
                     .orElseGet(() -> RegistrySuggestionResponse.notFound(r.key())));

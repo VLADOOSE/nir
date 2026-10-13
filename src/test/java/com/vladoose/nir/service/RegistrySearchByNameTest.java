@@ -95,6 +95,10 @@ class RegistrySearchByNameTest {
         assertThat(RegistryMatchService.searchTokens("Дефибриллятор ДКИ-Н-12 с принадлежностями"))
                 .containsExactly("принадлежностями", "дефибриллятор", "дки-н-12");
         assertThat(RegistryMatchService.searchTokens("ab cd")).containsExactly("ab cd");
-        assertThat(RegistryMatchService.searchTokens("a|b%c")).doesNotContain("|");
+        // из одних коротких слов — весь запрос одним словом, а «|» (разделитель слов в SQL) и знаки LIKE — пробелами
+        assertThat(RegistryMatchService.searchTokens("a|b%c")).containsExactly("a b c");
+        // не больше 5 слов, самое длинное первым (по нему отбор по индексу)
+        assertThat(RegistryMatchService.searchTokens("альфа бетта гамма дельта эпсилон дзета"))
+                .hasSize(5).first().isEqualTo("эпсилон");
     }
 }

@@ -158,6 +158,26 @@ class ClientOfferRegistryPutTest {
                 .andExpect(jsonPath("$.message").value(containsString("только для Казахстана")));
     }
 
+    /** Ревью ветки (M6): подтверждение из реестра на РФ — 400, даже если № в реестре есть (реестр общий, рынка у него нет). */
+    @Test
+    void rfConfirmedIs400() throws Exception {
+        MarketContext.set(Market.RF);
+        CompanyProfile rfProfile = profiles.findByMarket(Market.RF).orElseThrow();
+        rfProfile.setVatRates(new ArrayList<>(Arrays.asList(null, new BigDecimal("10"), new BigDecimal("22"))));
+        ClientOffer rf = offers.create("test");
+        em.flush();
+        ObjectNode body = om.readTree(mvc.perform(get("/api/client-offers/" + rf.getId()).header("X-Market", "RF"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8)).deepCopy();
+        ObjectNode row = newRow("CONFIRMED", "ZZ-KPR-1");
+        row.putNull("vatRate");
+        ((ArrayNode) body.get("items")).add(row);
+
+        mvc.perform(put("/api/client-offers/" + rf.getId()).header("X-Market", "RF")
+                        .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("только для Казахстана")));
+    }
+
     @Test
     void suggestedAndNotFoundAreSaved() throws Exception {
         ObjectNode sug = newRow("SUGGESTED", "ZZ-KPR-1");
