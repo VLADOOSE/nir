@@ -24,7 +24,7 @@ import { WhatsappStatus } from '../../shared/whatsapp-status';
     <div class="page-head">
       <div>
         <h2>Обращения</h2>
-        <p class="subtitle">Заявки с сайтов, звонки и WhatsApp — всё, что клиенты просят найти</p>
+        <p class="subtitle">Заявки с сайтов, звонки, WhatsApp и письма на info@ — всё, что клиенты просят найти</p>
       </div>
       <div class="head-actions" *ngIf="auth.isAdmin()">
         <button type="button" class="btn btn-line" *ngIf="sync?.enabled" [disabled]="syncing" (click)="runSync()">

@@ -152,8 +152,12 @@ export class PrivateRequestPageComponent {
     return OFFER_STATUS_LABELS[s as OfferStatus] ?? s;
   }
 
+  /** Источник обращения: код → подпись («westmed.kz» — как есть). */
   leadSource(source: string): string {
-    return source === 'manual' ? 'внесено вручную' : source;
+    if (source === 'manual') return 'внесено вручную';
+    if (source === 'whatsapp') return 'WhatsApp';
+    if (source === 'email') return 'почта';
+    return source;
   }
 
   when(iso: string): string {
