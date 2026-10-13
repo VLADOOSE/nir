@@ -48,6 +48,7 @@ import { WhatsappStatus } from '../../shared/whatsapp-status';
           <option value="SITE">Сайт</option>
           <option value="PHONE">Звонок</option>
           <option value="WHATSAPP">WhatsApp</option>
+          <option value="EMAIL">Почта</option>
           <option value="OTHER">Другое</option>
         </select>
         <input type="search" [(ngModel)]="q" (input)="onSearch()"

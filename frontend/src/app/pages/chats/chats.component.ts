@@ -26,15 +26,15 @@ const PAGE = 50;
     <div class="page-head">
       <div>
         <h2>Чаты</h2>
-        <p class="subtitle">Вся переписка рабочего номера WhatsApp. Отвечаете с телефона — ответ появится здесь.</p>
+        <p class="subtitle">Переписка рабочего номера WhatsApp и почты info@. Отвечаете с телефона или из почты — ответ появится здесь.</p>
       </div>
     </div>
-    <app-whatsapp-status-line [status]="waStatus" [showMarketHint]="true"></app-whatsapp-status-line>
+    <app-whatsapp-status-line *ngIf="!emailView()" [status]="waStatus" [showMarketHint]="true"></app-whatsapp-status-line>
 
     <div class="layout" [class.has-open]="openId !== null">
       <section class="list-pane" aria-label="Чаты">
         <div class="list-tools">
-          <input type="search" [(ngModel)]="q" (input)="onSearch()" placeholder="Имя, номер, текст…" aria-label="Поиск по чатам" />
+          <input type="search" [(ngModel)]="q" (input)="onSearch()" placeholder="Имя, номер, адрес, текст…" aria-label="Поиск по чатам" />
           <div class="chips" role="group" aria-label="Фильтр чатов">
             <button type="button" class="chip" *ngFor="let f of filters" [class.on]="filter === f.key" (click)="setFilter(f.key)">{{ f.label }}</button>
           </div>
@@ -48,7 +48,8 @@ const PAGE = 50;
               <time class="cr-time" [attr.title]="full(c.lastMessageAt)">{{ ago(c.lastMessageAt) }}</time>
             </span>
             <span class="cr-preview">{{ c.lastMessagePreview || '—' }}</span>
-            <span class="cr-tags" *ngIf="c.group || c.notClient || c.lead">
+            <span class="cr-tags" *ngIf="c.group || c.notClient || c.lead || c.channel === 'EMAIL'">
+              <span class="tag" *ngIf="c.channel === 'EMAIL'">Почта</span>
               <span class="tag" *ngIf="c.group">группа</span>
               <span class="tag" *ngIf="c.notClient">не клиент</span>
               <span class="st" *ngIf="c.lead" [attr.data-status]="c.lead.status">{{ statusLabel(c.lead.status) }}</span>
@@ -63,6 +64,7 @@ const PAGE = 50;
           <div class="th-title" *ngIf="chat">
             <strong>{{ title(chat) }}</strong>
             <span class="th-phone" *ngIf="chat.phone && chat.title">{{ phone(chat) }}</span>
+            <a class="th-phone th-mail" *ngIf="chat.email && chat.title !== chat.email" [href]="'mailto:' + chat.email">{{ chat.email }}</a>
           </div>
           <div class="th-actions" *ngIf="chat">
             <a class="btn btn-line btn-sm" *ngIf="waLink(chat)" [href]="waLink(chat)" target="_blank" rel="noopener">Написать в WhatsApp</a>
@@ -134,6 +136,7 @@ const PAGE = 50;
     app-lead-items-import { flex: 0 1 auto; min-height: 0; max-height: 65%; margin: 0 12px; }
     .more { display: flex; justify-content: center; margin-bottom: 8px; }
     .thread-empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+    .th-mail { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     @media (max-width: 900px) {
       .layout { display: block; height: auto; min-height: 0; }
       .layout.has-open .list-pane { display: none; }
@@ -183,6 +186,7 @@ export class ChatsComponent implements OnDestroy {
     { key: 'WITH_LEAD', label: 'С обращением' },
     { key: 'WITHOUT_LEAD', label: 'Без обращения' },
     { key: 'GROUPS', label: 'Группы' },
+    { key: 'EMAIL', label: 'Почта' },
   ];
   private readonly refreshTimer: any;
   private searchTimer: any = null;
@@ -344,7 +348,10 @@ export class ChatsComponent implements OnDestroy {
     return d.length >= 10 ? 'https://wa.me/' + d : null;
   }
 
-  title(c: any): string { return c?.title || (c?.phone ? formatPhone(c.phone) : 'Без имени'); }
+  /** Почтовая переписка или фильтр «Почта» — строка состояния WhatsApp и подсказка про рынок не к месту. */
+  emailView(): boolean { return this.filter === 'EMAIL' || this.chat?.channel === 'EMAIL'; }
+
+  title(c: any): string { return c?.title || (c?.phone ? formatPhone(c.phone) : (c?.email || 'Без имени')); }
   phone(c: any): string { return c?.phone ? formatPhone(c.phone) : ''; }
   statusLabel(s: string) { return LEAD_STATUS_LABELS[s] || s; }
   ago(iso: string) { return relativeTime(iso); }

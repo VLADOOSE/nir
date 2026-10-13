@@ -17,20 +17,26 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     <div class="head">
       <div>
         <h1>Входящие письма</h1>
-        <p class="sub">Почта АИС: ответы поставщиков на запросы КП, возвраты и автоответы, письма клиник с таблицами, прочее.</p>
+        <p class="sub">Почта АИС: ответы поставщиков на запросы КП (zakup@), служебные письма и рассылки info@, возвраты и автоответы. Письма клиентов info@ — в «Обращениях» и «Чатах».</p>
       </div>
       <button class="btn-primary" [disabled]="polling" (click)="poll()">⟳ Проверить почту</button>
     </div>
 
+    <div class="boxes" role="group" aria-label="Ящик" *ngIf="mailboxes.length > 1">
+      <button type="button" class="chip" [class.on]="!mailbox" (click)="setMailbox('')">Все</button>
+      <button type="button" class="chip" *ngFor="let b of mailboxes" [class.on]="mailbox === b" (click)="setMailbox(b)">{{ boxLabel(b) }}</button>
+    </div>
+
     <table class="grid responsive-cards card-grid inbound-list" *ngIf="rows.length">
       <thead>
-        <tr><th>Отправитель</th><th>Тема</th><th>Получено</th><th>Тип</th><th>Статус</th><th></th></tr>
+        <tr><th>Отправитель</th><th>Тема</th><th>Получено</th><th>Ящик</th><th>Тип</th><th>Статус</th><th></th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let r of rows">
           <td data-label="Отправитель">{{ r.fromAddress }}</td>
           <td data-label="Тема">{{ r.subject }}</td>
           <td class="when" data-label="Получено">{{ formatReceived(r.receivedAt) }}</td>
+          <td class="box" data-label="Ящик">{{ boxLabel(r.mailbox) }}</td>
           <td data-label="Тип">
             <span class="badge" [class.b-sup]="r.type==='SUPPLIER_RESPONSE'"
                   [class.b-cli]="r.type==='CLIENT_REQUEST'" [class.b-unm]="r.type==='UNMATCHED'"
@@ -41,6 +47,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
             <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='DELAYED' || r.type==='AUTO_REPLY')
                          && r.matchedPriceRequestId"
                   class="muted kp-ref"> · КП #{{ r.matchedPriceRequestId }}</span>
+            <span class="muted box-ref" *ngIf="r.mailbox"> · {{ boxLabel(r.mailbox) }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
           <td>
@@ -132,6 +139,12 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     .kp-ref { white-space: nowrap; }
     .when { white-space: nowrap; color: var(--text); font-size: 12px; }
     .list-cap { color: var(--text-muted); font-size: 12px; margin: 8px 0 0; }
+    .boxes { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+    .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+    .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+    .box { white-space: nowrap; color: var(--text-muted); font-size: 12px; }
+    /* ящик в ячейке «Тип» — только на телефоне, где колонки «Ящик» нет */
+    .box-ref { display: none; }
     .import-panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; background: var(--surface); }
     .import-head { display: flex; justify-content: space-between; align-items: center; }
     .import-head .x { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
@@ -222,6 +235,8 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
          одной строкой не влезла бы рядом с бейджем «Ответ поставщика» */
       .inbound-list .kp-ref { white-space: normal; }
       .inbound-list td[data-label="Статус"] { display: none; }
+      .inbound-list td[data-label="Ящик"] { display: none; }
+      .inbound-list .box-ref { display: inline; white-space: nowrap; }
       .inbound-list td:not([data-label]) { grid-area: act; justify-content: flex-end; }
     }
   `],
@@ -230,6 +245,10 @@ export class InboundComponent {
   /** Предел списка на сервере (GET /api/inbound — последние 300 писем). */
   readonly LIST_LIMIT = 300;
   rows: any[] = [];
+  mailboxes: string[] = [];
+  mailbox = '';
+  /** Номер последнего запроса списка: ответ по прежнему ящику не перетирает свежий. */
+  private loadSeq = 0;
   facilities: any[] = [];
   loading = false;
   polling = false;
@@ -249,16 +268,23 @@ export class InboundComponent {
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private router: Router) {
     this.api.getFacilities().subscribe({ next: d => { this.facilities = d; this.cdr.detectChanges(); } });
+    this.api.getInboundMailboxes().subscribe({ next: d => { this.mailboxes = d || []; this.cdr.detectChanges(); }, error: () => {} });
     this.load();
   }
 
   load() {
     this.loading = true;
-    this.api.getInbound().subscribe({
-      next: d => { this.rows = d || []; this.loading = false; this.cdr.detectChanges(); },
-      error: () => { this.loading = false; this.cdr.detectChanges(); },
+    const seq = ++this.loadSeq;
+    this.api.getInbound(this.mailbox || undefined).subscribe({
+      next: d => { if (seq !== this.loadSeq) return; this.rows = d || []; this.loading = false; this.cdr.detectChanges(); },
+      error: () => { if (seq !== this.loadSeq) return; this.loading = false; this.cdr.detectChanges(); },
     });
   }
+
+  setMailbox(b: string) { this.mailbox = b; this.load(); }
+
+  /** «zakup@westmed.kz» → «zakup@». */
+  boxLabel(b: string | null): string { return b ? b.split('@')[0] + '@' : '—'; }
 
   poll() {
     this.polling = true;

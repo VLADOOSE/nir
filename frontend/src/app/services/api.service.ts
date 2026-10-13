@@ -413,8 +413,14 @@ export class ApiService {
   }
 
   // === Входящие письма ===
-  getInbound(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/inbound`);
+  /** mailbox — только письма этого ящика; пусто — оба. */
+  getInbound(mailbox?: string): Observable<any[]> {
+    const p: any = {};
+    if (mailbox) p.mailbox = mailbox;
+    return this.http.get<any[]>(`${this.base}/inbound`, { params: p });
+  }
+  getInboundMailboxes(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.base}/inbound/mailboxes`);
   }
   pollInbound(): Observable<any> {
     return this.http.post<any>(`${this.base}/inbound/poll`, {});
@@ -454,6 +460,10 @@ export class ApiService {
   }
   reopenLead(id: number): Observable<any> {
     return this.http.post<any>(`${this.base}/leads/${id}/reopen`, {});
+  }
+  /** «Не клиент» (обращение из почты): закрыть и больше не заводить обращения из писем этого адреса. */
+  markLeadNotClient(id: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/leads/${id}/not-client`, {});
   }
   addLeadEvent(id: number, body: { type: 'NOTE' | 'CALL'; direction?: 'IN' | 'OUT'; body: string }): Observable<any> {
     return this.http.post<any>(`${this.base}/leads/${id}/events`, body);

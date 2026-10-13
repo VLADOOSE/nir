@@ -54,6 +54,9 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('note')">+ Заметка</button>
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('call')">+ Звонок</button>
                 <button type="button" class="btn btn-line" *ngIf="lead.status !== 'CLOSED'" [disabled]="busy" (click)="togglePanel('close')">Закрыть…</button>
+                <button type="button" class="btn btn-line" *ngIf="lead.chatChannel === 'EMAIL' && lead.status !== 'CLOSED'"
+                        [disabled]="busy" (click)="notClient()"
+                        title="Закрыть обращение и больше не заводить обращения из писем этого адреса">Не клиент</button>
               </ng-container>
             </div>
 
@@ -152,7 +155,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
             <section class="section">
               <div class="section-head">
                 <h3 class="section-title">{{ lead.chatId ? 'Лента и переписка' : 'Лента' }}</h3>
-                <a class="btn btn-line btn-sm" *ngIf="lead.chatId" [routerLink]="['/chats']" [queryParams]="{ chatId: lead.chatId }">Открыть весь чат</a>
+                <a class="btn btn-line btn-sm" *ngIf="lead.chatId" [routerLink]="['/chats']" [queryParams]="{ chatId: lead.chatId }">{{ lead.chatChannel === 'EMAIL' ? 'Открыть всю переписку' : 'Открыть весь чат' }}</a>
               </div>
               <ol class="timeline">
                 <ng-container *ngFor="let t of timeline; trackBy: trackTimeline">
@@ -323,6 +326,7 @@ export class LeadCardComponent implements OnChanges {
 
   take() { this.apply(this.api.takeLead(this.lead.id), 'Взято в работу'); }
   reopen() { this.apply(this.api.reopenLead(this.lead.id), 'Обращение снова в работе'); }
+  notClient() { this.apply(this.api.markLeadNotClient(this.lead.id), 'Закрыто: не клиент — письма с этого адреса больше не заводят обращений'); }
   doClose() { this.apply(this.api.closeLead(this.lead.id, this.closeReason, this.closeComment), 'Обращение закрыто'); }
   saveNote() { this.apply(this.api.addLeadEvent(this.lead.id, { type: 'NOTE', body: this.noteText.trim() }), 'Заметка добавлена'); }
   saveCall() {
