@@ -81,7 +81,7 @@ public class ClientMailReceiveService {
         String where = settings.username() + " «" + folder.label() + "»: ";
         try (MailboxSession s = mailbox.open(folder)) {
             return MailFolderPass.run(s, target(folder, tally), clock.instant().minus(Duration.ofDays(settings.sinceDays())),
-                    MAX_PER_PASS, clock, log, where);
+                    MAX_PER_PASS, clock, log, where, false);
         } catch (FolderNotFoundException e) {
             if (folder != MailFolder.SENT) return "папка «" + folder.label() + "» не найдена";
             if (!sentMissingWarned) {

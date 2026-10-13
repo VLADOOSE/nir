@@ -31,6 +31,39 @@ class EmailLetterTest {
         assertThat(EmailLetter.of(m, MailFolder.INBOX, 7).body()).isEqualTo("> Добрый день! Повторяю запрос на кушетки");
     }
 
+    /** Пересылка (Gmail): своя приписка и маркер, дальше — суть запроса. Её не режем: в ленте её больше нигде нет. */
+    @Test
+    void forwardedLetter_gmailMarker_keptWhole() {
+        ParsedMail m = mail().from("c@clinic.kz").subject("Fwd: Кушетки")
+                .text("Прошу КП на эти позиции\n\n---------- Forwarded message ---------\nFrom: Главврач <boss@clinic.kz>\n"
+                        + "Date: Mon, 12 Oct 2026 at 10:00\nSubject: Кушетки\nTo: c@clinic.kz\n\nНужны кушетки 5 шт.").build();
+
+        String body = EmailLetter.of(m, MailFolder.INBOX, 7).body();
+
+        assertThat(body).contains("Прошу КП на эти позиции").contains("Нужны кушетки 5 шт.");
+    }
+
+    /** Outlook пересылает без маркера — «От: … Отправлено: …», как в ответе; пересылку выдаёт тема «ПЕРЕСЛ:» / «FW:». */
+    @Test
+    void forwardedLetter_outlookSubject_keptWhole() {
+        for (String subject : java.util.List.of("ПЕРЕСЛ: Кушетки", "FW: Кушетки", "Пересл.: Кушетки")) {
+            ParsedMail m = mail().from("c@clinic.kz").subject(subject)
+                    .text("Прошу КП\n\nОт: Главврач <boss@clinic.kz>\nОтправлено: 12 октября 2026 г. 10:00\n"
+                            + "Кому: c@clinic.kz\nТема: Кушетки\n\nНужны кушетки 5 шт.").build();
+
+            assertThat(EmailLetter.of(m, MailFolder.INBOX, 7).body()).as(subject).contains("Нужны кушетки 5 шт.");
+        }
+    }
+
+    /** Ответ на пересылку («Re: Fwd:») — обычный ответ: цитата нашего письма отрезается. */
+    @Test
+    void replyToForward_isCut() {
+        ParsedMail m = mail().from("c@clinic.kz").subject("Re: Fwd: Кушетки")
+                .text("Спасибо, ждём счёт\n\nOn Mon, 12 Oct 2026, info@westmed.kz wrote:\n> КП во вложении").build();
+
+        assertThat(EmailLetter.of(m, MailFolder.INBOX, 7).body()).isEqualTo("Спасибо, ждём счёт");
+    }
+
     @Test
     void key_longMessageIdHashed_missingUsesFolderAndUid() {
         String longId = "<" + "x".repeat(120) + "@clinic.kz>";

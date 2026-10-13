@@ -115,7 +115,7 @@ public class MailReceiveService {
                 result.setBroken(result.getBroken() + 1);
                 result.setFetched(result.getFetched() + 1);
             }
-        }, clock.instant().minus(Duration.ofMinutes(sinceMinutes)), MAX_PER_PASS, clock, log, "");
+        }, clock.instant().minus(Duration.ofMinutes(sinceMinutes)), MAX_PER_PASS, clock, log, "", true);
     }
 
     /**

@@ -166,12 +166,19 @@ public class LeadService {
         return lead;
     }
 
+    /**
+     * «Вернуть в работу». Закрыто кнопкой «Не клиент» — снимается и отметка переписки: иначе после ошибочного нажатия
+     * следующие письма клиента молча не заводили бы обращений (вторая половина отмены — на «Чатах» — забывается).
+     */
     @Transactional
     public Lead reopen(Long id, String author) {
         Lead lead = get(id);
         require(lead, EnumSet.of(LeadStatus.CLOSED), "вернуть в работу");
+        boolean notClient = lead.getCloseReason() == LeadCloseReason.NOT_CLIENT && lead.getChat() != null;
         lead.setCloseReason(null);
-        transition(lead, lead.getPrivateRequest() != null ? LeadStatus.CONVERTED : LeadStatus.IN_WORK, author, null);
+        if (notClient) lead.getChat().setNotClient(false);
+        transition(lead, lead.getPrivateRequest() != null ? LeadStatus.CONVERTED : LeadStatus.IN_WORK, author,
+                notClient ? "отметка «не клиент» снята — письма с этого адреса снова заводят обращения" : null);
         return lead;
     }
 

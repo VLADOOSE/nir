@@ -382,6 +382,48 @@ class MailParserTest {
         });
     }
 
+    /**
+     * Фото, вставленное в текст письма (iPhone, Gmail «в текст», вставка в Outlook), — тоже inline + Content-ID, но это
+     * не подпись: файлом, иначе от клиента не остаётся и следа. Подпись — мелкая картинка, её по-прежнему пропускаем.
+     * У zakup@ (без предела файлов) список вложений — как был.
+     */
+    @Test
+    void files_photoInsertedIntoText_isFile_smallSignatureIsNot() throws Exception {
+        byte[] photo = new byte[40 * 1024];
+        java.util.Arrays.fill(photo, (byte) 7);
+        MimeMultipart related = new MimeMultipart("related");
+        MimeBodyPart h = new MimeBodyPart();
+        h.setContent("<p>Фото шильдика</p><img src=\"cid:p1\"><img src=\"cid:p2\"><img src=\"cid:logo1\">",
+                "text/html; charset=UTF-8");
+        related.addBodyPart(h);
+        related.addBodyPart(inlineImage(photo, "image/jpeg", "<p1>", "IMG_0042.jpg"));
+        related.addBodyPart(inlineImage(photo, "image/jpeg", "<p2>", null));
+        related.addBodyPart(inlineImage(new byte[1024], "image/png", "<logo1>", "image001.png"));
+        MimeMessage m = new MimeMessage((Session) null);
+        m.setFrom(new InternetAddress("c@clinic.kz"));
+        m.setSubject("Поломка", "UTF-8");
+        m.setContent(related);
+        m.saveChanges();
+
+        ParsedMail info = MailParser.parse(roundTrip(m), 1, 1_000_000);
+        ParsedMail zakup = MailParser.parse(roundTrip(m), 1);
+
+        assertThat(info.files()).extracting(MailFile::name, MailFile::size)
+                .containsExactly(tuple("IMG_0042.jpg", 40L * 1024), tuple("фото.jpg", 40L * 1024));
+        assertThat(info.files().get(0).content()).isEqualTo(photo);
+        assertThat(zakup.attachmentNames()).isEmpty();
+        assertThat(zakup.files()).isEmpty();
+    }
+
+    private static MimeBodyPart inlineImage(byte[] bytes, String mime, String cid, String name) throws Exception {
+        MimeBodyPart img = new MimeBodyPart();
+        img.setDataHandler(new DataHandler(new ByteArrayDataSource(bytes, mime)));
+        img.setContentID(cid);
+        img.setDisposition(MimeBodyPart.INLINE);
+        if (name != null) img.setFileName(name);
+        return img;
+    }
+
     /** Картинка подписи (inline + Content-ID) — не файл письма. */
     @Test
     void files_inlineSignatureImageSkipped() throws Exception {

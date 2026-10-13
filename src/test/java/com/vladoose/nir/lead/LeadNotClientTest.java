@@ -76,6 +76,40 @@ class LeadNotClientTest {
         assertThat(leadRepository.findByChatIdIn(List.of(first.chatId()))).hasSize(1);
     }
 
+    /**
+     * «Не клиент» по ошибке: «Вернуть в работу» снимает и отметку переписки — иначе следующие письма клиента молча не
+     * заводили бы обращений, а о второй половине отмены (на «Чатах») никто бы не вспомнил.
+     */
+    @Test
+    @WithMockUser(username = "manager1", roles = "ADMIN")
+    void reopenAfterNotClient_unmarksChat_nextLetterStartsLeadAgain() {
+        String from = address();
+        EmailChatWriter.Outcome first = letterFrom(from, "Запрос");
+        controller.notClient(first.createdLeadId());
+
+        LeadCardResponse card = controller.reopen(first.createdLeadId());
+
+        assertThat(card.getStatus()).isEqualTo("IN_WORK");
+        assertThat(card.getCloseReason()).isNull();
+        assertThat(chatRepository.findById(first.chatId()).orElseThrow().isNotClient()).isFalse();
+        assertThat(card.getEvents()).last().satisfies(e -> assertThat(e.getBody()).contains("«не клиент» снята"));
+        leadService.close(first.createdLeadId(), LeadCloseReason.ANSWERED, null, "admin");
+        assertThat(letterFrom(from, "Новый запрос").createdLeadId()).isNotNull();
+    }
+
+    /** Закрыто по другой причине, а переписку отметили «не клиент» на «Чатах» — «Вернуть в работу» отметку не трогает. */
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void reopenAfterOtherReason_keepsManualNotClientMark() {
+        EmailChatWriter.Outcome o = letterFrom(address(), "Запрос");
+        leadService.close(o.createdLeadId(), LeadCloseReason.SPAM, null, "admin");
+        chatRepository.findById(o.chatId()).orElseThrow().setNotClient(true);
+
+        controller.reopen(o.createdLeadId());
+
+        assertThat(chatRepository.findById(o.chatId()).orElseThrow().isNotClient()).isTrue();
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void leadWithoutEmailChat_400_nothingChanges() {

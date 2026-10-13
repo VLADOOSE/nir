@@ -47,15 +47,16 @@ public final class MailFolderPass {
 
     /**
      * null — проход дошёл до конца; иначе — почему остановлен. where — приставка строк лога: у zakup@ пусто, у info@ —
-     * ящик и папка (UID у каждой папки свой).
+     * ящик и папка (UID у каждой папки свой). stackTraces — разовый сбой письма в лог со стеком (zakup@); у ящика
+     * клиентов — false: только классы исключений, в их тексте бывают имена файлов и адреса клиентов (персональные данные).
      */
     public static <R> String run(MailboxSession s, Target<R> t, Instant windowStart, int maxPerPass, Clock clock,
-                                 Logger log, String where) throws MessagingException {
+                                 Logger log, String where, boolean stackTraces) throws MessagingException {
         long uidValidity = s.uidValidity();
         Optional<MailCursor> cursor = t.cursor().filter(c -> c.getUidValidity() == uidValidity);
         if (cursor.isPresent()) {
             for (long uid : s.uidsAfter(cursor.get().getLastUid(), maxPerPass)) {
-                String stopped = processOne(s, t, uidValidity, uid, clock, log, where);
+                String stopped = processOne(s, t, uidValidity, uid, clock, log, where, stackTraces);
                 if (stopped != null) return stopped;
             }
             return null;
@@ -63,7 +64,7 @@ public final class MailFolderPass {
         long max = s.maxUid();
         for (long uid : s.uidsReceivedSince(windowStart, maxPerPass)) {
             if (uid > max) continue;
-            String stopped = processOne(s, t, uidValidity, uid, clock, log, where);
+            String stopped = processOne(s, t, uidValidity, uid, clock, log, where, stackTraces);
             if (stopped != null) return stopped;
         }
         t.moveCursorTo(uidValidity, max);
@@ -71,7 +72,7 @@ public final class MailFolderPass {
     }
 
     private static <R> String processOne(MailboxSession s, Target<R> t, long uidValidity, long uid, Clock clock,
-                                         Logger log, String where) {
+                                         Logger log, String where, boolean stackTraces) {
         ParsedMail m;
         try {
             m = s.fetch(uid);
@@ -80,7 +81,7 @@ public final class MailFolderPass {
                 log.warn("{}Связь с ящиком оборвалась на письме UID {}: {}", where, uid, e.getClass().getSimpleName());
                 return CONNECTION_LOST;
             }
-            return writeBroken(t, s.envelope(uid, e), e, "не разобрано", uidValidity, clock, log, where);
+            return writeBroken(t, s.envelope(uid, e), e, "не разобрано", uidValidity, clock, log, where, stackTraces);
         }
         if (m == null) return null;                                 // письмо удалили между поиском и чтением
         R written;
@@ -93,7 +94,7 @@ public final class MailFolderPass {
                 return dbDown(e);
             }
             return writeBroken(t, new BrokenMail(uid, m.messageId(), m.from(), m.subject(), m.receivedAt(),
-                    e.getClass().getSimpleName()), e, "не записано", uidValidity, clock, log, where);
+                    e.getClass().getSimpleName()), e, "не записано", uidValidity, clock, log, where, stackTraces);
         }
         t.written(written);                                         // вне try: записанное письмо коротко не пишем
         return null;
@@ -106,7 +107,7 @@ public final class MailFolderPass {
      * месте: то же письмо упадёт и на следующем проходе, раз в минуту, поэтому в лог без стека — классы и UID.
      */
     private static <R> String writeBroken(Target<R> t, BrokenMail b, Exception cause, String what, long uidValidity,
-                                          Clock clock, Logger log, String where) {
+                                          Clock clock, Logger log, String where, boolean stackTraces) {
         RuntimeException withFields = tryWriteBroken(t, b, uidValidity);
         RuntimeException failure = withFields;
         if (withFields != null && !InfrastructureFailure.test(withFields)) {
@@ -114,11 +115,13 @@ public final class MailFolderPass {
                     b.receivedAt() != null ? b.receivedAt() : OffsetDateTime.now(clock), b.errorClass()), uidValidity);
         }
         if (failure == null) {
+            // со стеком — объект исключения последним аргументом; без стека — только его класс
+            Object detail = stackTraces ? cause : cause.getClass().getSimpleName();
             if (withFields == null) {
-                log.warn("{}Письмо UID {} {} — записано коротко", where, b.uid(), what, cause);
+                log.warn("{}Письмо UID {} {} — записано коротко" + (stackTraces ? "" : " ({})"), where, b.uid(), what, detail);
             } else {
-                log.warn("{}Письмо UID {} {} — записано коротко, без полей письма (с ними не записалось: {})",
-                        where, b.uid(), what, withFields.getClass().getSimpleName(), cause);
+                log.warn("{}Письмо UID {} {} — записано коротко, без полей письма (с ними не записалось: {})"
+                        + (stackTraces ? "" : " ({})"), where, b.uid(), what, withFields.getClass().getSimpleName(), detail);
             }
             t.broken();
             return null;

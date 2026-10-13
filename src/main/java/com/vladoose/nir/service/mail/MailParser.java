@@ -19,6 +19,13 @@ import java.util.*;
  */
 public final class MailParser {
 
+    /**
+     * Картинка в тексте письма (inline + Content-ID) не больше этого — подпись или значок: в файлы письма не попадает.
+     * Крупнее — фото, вставленное в текст (iPhone, Gmail «в текст», вставка в Outlook): файл, иначе от клиента не
+     * осталось бы и следа. Ошибиться в сторону файла дешевле: крупный логотип подписи просто виден файлом.
+     */
+    static final int SIGNATURE_IMAGE_MAX = 32 * 1024;
+
     static final int MAX_TEXT = 200_000;      // дальше текст не копим — защита памяти
     static final int MAX_DEPTH = 10;
     static final int MAX_DSN = 20_000;
@@ -198,7 +205,17 @@ public final class MailParser {
             append(w.text, text(part));
         } else if (part.isMimeType("text/html")) {
             append(w.html, text(part));
+        } else if (w.maxFileBytes > 0 && part.isMimeType("image/*")) {
+            // картинка в тексте письма: мелкая — подпись (пропускаем), крупная — фото, вставленное в текст: файл
+            MailFile f = file(part, fileName != null ? fileName : "фото." + imageExtension(part), mimeOf(part), w.maxFileBytes);
+            if (f.size() == null || f.size() > SIGNATURE_IMAGE_MAX) w.files.add(f);
         }
+    }
+
+    /** «image/jpeg» → «jpg», иначе подтип как есть («png», «gif»…). */
+    private static String imageExtension(Part part) throws MessagingException {
+        String sub = mimeOf(part).substring(mimeOf(part).indexOf('/') + 1);
+        return sub.equals("jpeg") ? "jpg" : sub.isBlank() ? "jpg" : sub;
     }
 
     /**
@@ -239,7 +256,7 @@ public final class MailParser {
         return base.isEmpty() ? "application/octet-stream" : base;
     }
 
-    /** Картинка подписи, встроенная в HTML (inline + Content-ID), — не вложение. */
+    /** Картинка, встроенная в HTML (inline + Content-ID), — не вложение (у ящика с файлами крупная — файл: SIGNATURE_IMAGE_MAX). */
     private static boolean embeddedImage(Part part) throws MessagingException {
         return part.isMimeType("image/*") && part instanceof MimePart mp && mp.getContentID() != null
                 && !Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition());
