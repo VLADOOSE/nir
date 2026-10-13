@@ -3,6 +3,8 @@ package com.vladoose.nir.service.mail;
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.ServerSetupTest;
+import jakarta.mail.Flags;
+import jakarta.mail.FolderNotFoundException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +15,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 
 import static com.vladoose.nir.service.mail.ImapTestSupport.*;
@@ -31,6 +34,39 @@ class ImapMailboxConnectorTest {
 
     ImapMailboxConnector connector() {
         return new ImapMailboxConnector(HOST, PORT, USER, PASS, "imap", 5_000, 5_000);
+    }
+
+    @Test
+    void openSent_byName_readsItsLetters() throws Exception {
+        greenMail.getManagers().getImapHostManager().createMailbox(user, "Sent")
+                .appendMessage(TestMimes.plain(USER, "Наш ответ клиенту", "Добрый день"), new Flags(), new Date());
+
+        try (MailboxSession s = connector().open(MailFolder.SENT)) {
+            List<Long> uids = s.uidsAfter(0, 10);
+            assertThat(uids).hasSize(1);
+            assertThat(s.fetch(uids.get(0)).subject()).isEqualTo("Наш ответ клиенту");
+        }
+    }
+
+    @Test
+    void openSent_missing_folderNotFound() {
+        assertThatThrownBy(() -> connector().open(MailFolder.SENT))
+                .isInstanceOf(FolderNotFoundException.class).hasMessageContaining("Отправленные");
+    }
+
+    /** Предел файла: файлы читаются через IMAP, больший предела — без байтов. */
+    @Test
+    void fileLimit_filesReadThroughImap() throws Exception {
+        user.deliver(TestMimes.withAttachments("c@clinic.kz", "Файлы", "Во вложении",
+                "ТЗ.pdf", new byte[]{1, 2, 3}, "видео.mp4", new byte[64]));
+        ImapMailboxConnector withFiles = new ImapMailboxConnector(HOST, PORT, USER, PASS, "imap", 5_000, 5_000, 10);
+
+        try (MailboxSession s = withFiles.open(MailFolder.INBOX)) {
+            ParsedMail p = s.fetch(s.maxUid());
+            assertThat(p.files()).extracting(MailFile::name).containsExactly("ТЗ.pdf", "видео.mp4");
+            assertThat(p.files().get(0).content()).isEqualTo(new byte[]{1, 2, 3});
+            assertThat(p.files().get(1).stored()).isFalse();
+        }
     }
 
     @Test

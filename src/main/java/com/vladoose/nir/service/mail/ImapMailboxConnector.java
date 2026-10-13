@@ -3,6 +3,7 @@ package com.vladoose.nir.service.mail;
 import jakarta.mail.*;
 import jakarta.mail.search.ComparisonTerm;
 import jakarta.mail.search.ReceivedDateTerm;
+import org.eclipse.angus.mail.imap.IMAPFolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ public class ImapMailboxConnector implements MailboxConnector {
     private final String protocol;
     private final int connectTimeoutMs;
     private final int readTimeoutMs;
+    private final int maxFileBytes;
 
     @Autowired
     public ImapMailboxConnector(@Value("${mail.imap.host:localhost}") String host,
@@ -49,6 +51,12 @@ public class ImapMailboxConnector implements MailboxConnector {
 
     ImapMailboxConnector(String host, int port, String username, String password, String protocol,
                          int connectTimeoutMs, int readTimeoutMs) {
+        this(host, port, username, password, protocol, connectTimeoutMs, readTimeoutMs, 0);
+    }
+
+    /** maxFileBytes > 0 — письма разбираются вместе с файлами вложений (ящик info@), см. MailParser.parse. */
+    ImapMailboxConnector(String host, int port, String username, String password, String protocol,
+                         int connectTimeoutMs, int readTimeoutMs, int maxFileBytes) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -56,10 +64,16 @@ public class ImapMailboxConnector implements MailboxConnector {
         this.protocol = protocol;
         this.connectTimeoutMs = connectTimeoutMs;
         this.readTimeoutMs = readTimeoutMs;
+        this.maxFileBytes = maxFileBytes;
     }
 
     @Override
     public MailboxSession open() throws MessagingException {
+        return open(MailFolder.INBOX);
+    }
+
+    /** Ящик с папкой: «Входящие» или «Отправленные» ({@link #sentFolder}); папки нет — FolderNotFoundException. */
+    public MailboxSession open(MailFolder which) throws MessagingException {
         Properties props = new Properties();
         String p = "mail." + protocol + ".";
         props.put(p + "connectiontimeout", String.valueOf(connectTimeoutMs));
@@ -69,13 +83,25 @@ public class ImapMailboxConnector implements MailboxConnector {
         Store store = Session.getInstance(props).getStore(protocol);
         store.connect(host, port, username, password);
         try {
-            Folder inbox = store.getFolder("INBOX");
-            inbox.open(Folder.READ_ONLY);                // EXAMINE: флаги не меняются
-            return new ImapSession(store, inbox);
+            Folder folder = which == MailFolder.SENT ? sentFolder(store) : store.getFolder("INBOX");
+            folder.open(Folder.READ_ONLY);              // EXAMINE: флаги не меняются
+            return new ImapSession(store, folder, maxFileBytes);
         } catch (MessagingException | RuntimeException e) {
             closeQuietly(store);
             throw e;
         }
+    }
+
+    /** «Отправленные»: по признаку \Sent, иначе по имени ({@link SentFolders#pick}). */
+    static Folder sentFolder(Store store) throws MessagingException {
+        List<SentFolders.Candidate> candidates = new ArrayList<>();
+        for (Folder f : store.getDefaultFolder().list("*")) {
+            String[] attrs = f instanceof IMAPFolder imap ? imap.getAttributes() : null;
+            candidates.add(new SentFolders.Candidate(f.getFullName(), f.getName(), attrs == null ? List.of() : List.of(attrs)));
+        }
+        String full = SentFolders.pick(candidates)
+                .orElseThrow(() -> new FolderNotFoundException((Folder) null, "папка «Отправленные» не найдена"));
+        return store.getFolder(full);
     }
 
     private static void closeQuietly(Store store) {
@@ -90,11 +116,13 @@ public class ImapMailboxConnector implements MailboxConnector {
         private final Store store;
         private final Folder folder;
         private final UIDFolder uids;
+        private final int maxFileBytes;
 
-        ImapSession(Store store, Folder folder) {
+        ImapSession(Store store, Folder folder, int maxFileBytes) {
             this.store = store;
             this.folder = folder;
             this.uids = (UIDFolder) folder;
+            this.maxFileBytes = maxFileBytes;
         }
 
         @Override
@@ -141,7 +169,7 @@ public class ImapMailboxConnector implements MailboxConnector {
         @Override
         public ParsedMail fetch(long uid) throws Exception {
             Message m = uids.getMessageByUID(uid);
-            return m == null ? null : MailParser.parse(m, uid);
+            return m == null ? null : MailParser.parse(m, uid, maxFileBytes);
         }
 
         @Override
