@@ -61,19 +61,24 @@ public class ChatIngestWriter {
             Optional<ChatMessage> original = messageRepository.findByChatIdAndExternalId(chat.getId(), m.editOf());
             if (original.isPresent()) {
                 ChatMessage edited = original.get();
-                // правка без текста (форма, скажем, правки подписи к файлу не проверена) прежний текст не стирает
-                if (m.body() != null) edited.setBody(m.body());
+                // правка без текста (форма, скажем, правки подписи к файлу не проверена) прежний текст не стирает;
+                // исход звонка меняет только хвост строки: признак видео есть лишь в call.received — у исхода WAHA шлёт
+                // isVideo=false (живая WAHA, 2026-10-14), и «📹 Входящий видеозвонок» становился «📞 … — отклонён»
+                String body = m.body() == null ? null
+                        : m.type() == ChatMessageType.CALL ? callLine(edited.getBody(), m.body()) : m.body();
+                if (body != null) edited.setBody(body);
                 // исход звонка («— принят») дописывается к строке звонка — это не правка текста человеком
                 if (m.type() != ChatMessageType.CALL) edited.setEdited(true);
                 // превью — текст ПОСЛЕДНЕГО сообщения (спека §6.6): правка последнего его меняет, правка старого — нет
-                if (m.body() != null && !m.body().isBlank() && isLatest(chat, edited)) {
-                    chat.setLastMessagePreview(trunc(m.body().strip(), PREVIEW_MAX));
+                if (body != null && !body.isBlank() && isLatest(chat, edited)) {
+                    chat.setLastMessagePreview(trunc(body.strip(), PREVIEW_MAX));
                 }
                 return new Outcome(false, chat.getId(), edited.getId(), null);
             }
             // исходного нет (пришло до подключения) — сохраняем правку как новое сообщение с пометкой
         }
         if (messageRepository.existsByChatIdAndExternalId(chat.getId(), m.idMessage())) {
+            if (m.type() == ChatMessageType.CALL && !m.isEdit()) restoreCallStart(chat, m);
             return new Outcome(true, chat.getId(), null, null);
         }
         ChatMessage msg = messageRepository.save(ChatMessage.builder()
@@ -101,6 +106,31 @@ public class ChatIngestWriter {
     private boolean isLatest(Chat chat, ChatMessage msg) {
         List<ChatMessage> latest = messageRepository.findLatest(chat.getId(), PageRequest.of(0, 1));
         return !latest.isEmpty() && latest.get(0).getId().equals(msg.getId());
+    }
+
+    /**
+     * call.received пришёл после исхода (после простоя WAHA досылает события звонка в любом порядке): строку завёл исход
+     * без признака видео — начало строки берём из звонка («📹 Входящий видеозвонок»), хвост («— отклонён») оставляем.
+     */
+    private void restoreCallStart(Chat chat, ParsedNotification.Message received) {
+        messageRepository.findByChatIdAndExternalId(chat.getId(), received.idMessage())
+                .filter(line -> line.getType() == ChatMessageType.CALL && received.body() != null)
+                .ifPresent(line -> {
+                    line.setBody(callLine(received.body(), line.getBody()));
+                    if (isLatest(chat, line)) chat.setLastMessagePreview(trunc(line.getBody().strip(), PREVIEW_MAX));
+                });
+    }
+
+    /** Разделитель исхода в строке звонка: «📞 Входящий звонок — принят». */
+    static final String CALL_OUTCOME_SEPARATOR = " — ";
+
+    /** Строка звонка: начало — из start («📹 Входящий видеозвонок»), исход — из outcomeOf («— отклонён»), если он там есть. */
+    static String callLine(String start, String outcomeOf) {
+        String s = start == null ? "" : start;
+        int cut = s.indexOf(CALL_OUTCOME_SEPARATOR);
+        String head = cut < 0 ? s : s.substring(0, cut);
+        int at = outcomeOf == null ? -1 : outcomeOf.indexOf(CALL_OUTCOME_SEPARATOR);
+        return head + (at < 0 ? "" : outcomeOf.substring(at));
     }
 
     /** «Удалено отправителем»: пометка, текст сохраняется. Неизвестное сообщение — пропускаем. */

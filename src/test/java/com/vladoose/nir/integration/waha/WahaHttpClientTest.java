@@ -236,6 +236,19 @@ class WahaHttpClientTest {
         assertThat(c.lidPhone("westmed", "999@lid")).isNull();
     }
 
+    /** GOWS отдаёт группу своей формой: название — Name (Topic — описание), поля subject нет (живая WAHA 2026.9.1). */
+    @Test
+    void groupNameFromGowsForm() {
+        routes.put("GET /api/westmed/groups/120363000000000002%40g.us", Resp.json(200,
+                "{\"JID\":\"120363000000000002@g.us\",\"Name\":\"Отдел закупок\",\"Topic\":\"описание\",\"Participants\":[]}"));
+        routes.put("GET /api/westmed/groups/120363000000000003%40g.us", Resp.json(200,
+                "{\"JID\":\"120363000000000003@g.us\",\"Name\":\"\",\"Topic\":\"\"}"));
+        WahaHttpClient c = client();
+
+        assertThat(c.groupSubject("westmed", "120363000000000002@g.us")).isEqualTo("Отдел закупок");
+        assertThat(c.groupSubject("westmed", "120363000000000003@g.us")).as("группа без названия").isNull();
+    }
+
     @Test
     void rejectedKeyIsAuthErrorWithoutKeyOrAddress() {
         routes.put("GET /api/sessions/westmed", Resp.json(401, "{\"message\":\"Unauthorized\"}"));

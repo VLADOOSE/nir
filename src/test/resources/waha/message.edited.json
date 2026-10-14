@@ -1,0 +1,148 @@
+{
+  "id": "evt_01m4xfr31sn3dgwt2d1488wc9g",
+  "me": {
+    "id": "77000000010@c.us",
+    "jid": "77000000010:1@s.whatsapp.net",
+    "lid": "77000000011@lid",
+    "pushName": "Клиент 2",
+    "messageCapping": {
+      "cycleEnd": 1793469599,
+      "mvStatus": "NOT_ELIGIBLE",
+      "oteStatus": "NOT_ELIGIBLE",
+      "usedQuota": 0,
+      "cycleStart": 1790791200,
+      "totalQuota": -1,
+      "cappingStatus": "NONE"
+    },
+    "reachoutTimelock": null
+  },
+  "event": "message.edited",
+  "engine": "GOWS",
+  "payload": {
+    "id": "false_77000000012@lid_3A60AB51BD67312339AD",
+    "to": null,
+    "ack": 2,
+    "body": "тест 10101",
+    "from": "77000000012@lid",
+    "_data": {
+      "Info": {
+        "ID": "3A60AB51BD67312339AD",
+        "Chat": "77000000012@lid",
+        "Edit": "1",
+        "Type": "text",
+        "Sender": "77000000012@lid",
+        "IsGroup": false,
+        "Category": "",
+        "IsFromMe": false,
+        "PushName": "Клиент 2",
+        "ServerID": 0,
+        "MediaType": "",
+        "Multicast": false,
+        "SenderAlt": "77000000013@s.whatsapp.net",
+        "Timestamp": "2026-10-14T15:15:59Z",
+        "MsgBotInfo": {
+          "EditType": "",
+          "EditTargetID": "",
+          "ClientThreadID": "",
+          "EditSenderTimestampMS": "0001-01-01T00:00:00Z"
+        },
+        "MsgMetaInfo": {
+          "TargetID": "",
+          "TargetChat": "",
+          "TargetSender": "",
+          "ThreadMessageID": "",
+          "DeprecatedLIDSession": null,
+          "ThreadMessageSenderJID": ""
+        },
+        "RecipientAlt": "",
+        "VerifiedName": null,
+        "AddressingMode": "",
+        "DeviceSentMeta": null,
+        "BroadcastListOwner": "",
+        "IsNewsletterStatus": false,
+        "BroadcastRecipients": null
+      },
+      "IsEdit": false,
+      "Status": 3,
+      "Message": {
+        "protocolMessage": {
+          "key": {
+            "ID": "3A1F1039DB12DACECB09",
+            "fromMe": true,
+            "remoteJID": "77000000011@lid"
+          },
+          "type": 14,
+          "editedMessage": {
+            "protocolMessage": {
+              "key": {
+                "ID": "3A1F1039DB12DACECB09",
+                "fromMe": true,
+                "remoteJID": "77000000011@lid"
+              },
+              "type": 14,
+              "timestampMS": 1791990958246,
+              "editedMessage": {
+                "conversation": "тест 10101"
+              }
+            },
+            "messageContextInfo": {}
+          }
+        }
+      },
+      "IsViewOnce": false,
+      "RawMessage": {
+        "messageContextInfo": {
+          "deviceListMetadata": {
+            "senderTimestamp": 1788772430,
+            "recipientTimestamp": 1791990736
+          },
+          "deviceListMetadataVersion": 2
+        },
+        "secretEncryptedMessage": {
+          "secretEncType": 2,
+          "targetMessageKey": {
+            "ID": "3A1F1039DB12DACECB09",
+            "fromMe": true,
+            "remoteJID": "77000000011@lid"
+          }
+        }
+      },
+      "RetryCount": 0,
+      "IsBotInvoke": false,
+      "IsEphemeral": false,
+      "IsViewOnceV2": false,
+      "SourceWebMsg": null,
+      "NewsletterMeta": null,
+      "IsLottieSticker": false,
+      "UnavailableRequestID": "",
+      "IsDocumentWithCaption": false,
+      "IsViewOnceV2Extension": false
+    },
+    "media": null,
+    "fromMe": false,
+    "source": "app",
+    "vCards": null,
+    "ackName": "DEVICE",
+    "replyTo": null,
+    "hasMedia": false,
+    "location": null,
+    "timestamp": 1791990959,
+    "participant": null,
+    "editedMessageId": "3A1F1039DB12DACECB09"
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791990959161,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

@@ -138,7 +138,11 @@ public final class WahaEventParser {
     private static ParsedNotification call(JsonNode env, JsonNode p, String knownAccount, String outcome) {
         String callId = text(p, "id");
         if (callId == null) return new ParsedNotification.Skip("звонок без id");
-        String chatId = chat(p.path("from").asText(""));
+        // Собеседник — создатель звонка. У call.received он и в from, а исход («принят» / «отклонён») шлёт НАШЕ устройство:
+        // from там — свой номер (me.lid), и звонок ложился в чат своего номера с обращением на него (живая WAHA, 2026-10-14)
+        String from = chat(p.path("from").asText(""));
+        String creator = chat(p.path("_data").path("CallCreator").asText(""));
+        String chatId = isOwn(env, from) && !creator.isEmpty() ? creator : from;
         if (p.path("isGroup").asBoolean(false)) {
             String group = findGroup(p.path("_data"), 0);
             if (group != null) chatId = group;
@@ -280,6 +284,17 @@ public final class WahaEventParser {
         if (alt == null || !(alt.endsWith("@s.whatsapp.net") || alt.endsWith("@c.us"))) return null;
         String digits = userOf(alt);
         return digits.matches("\\d{6,15}") ? "+" + digits : null;
+    }
+
+    /** jid — свой номер: сравнение по пользователю (до «:» и «@») со всеми видами себя из конверта — id, jid, lid. */
+    private static boolean isOwn(JsonNode env, String jid) {
+        String user = userOf(jid);
+        if (user.isEmpty()) return false;
+        JsonNode me = env.path("me");
+        for (String f : new String[] {"id", "jid", "lid"}) {
+            if (user.equals(userOf(me.path(f).asText("")))) return true;
+        }
+        return false;
     }
 
     private static String account(JsonNode env, String knownAccount) {

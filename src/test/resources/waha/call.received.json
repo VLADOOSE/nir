@@ -1,0 +1,224 @@
+{
+  "id": "evt_01m4xhw5qgvnsvr834emgpzxnt",
+  "me": {
+    "id": "77000000010@c.us",
+    "jid": "77000000010:1@s.whatsapp.net",
+    "lid": "77000000011@lid",
+    "pushName": "Клиент 2",
+    "messageCapping": {
+      "cycleEnd": 1793469599,
+      "mvStatus": "NOT_ELIGIBLE",
+      "oteStatus": "NOT_ELIGIBLE",
+      "usedQuota": 0,
+      "cycleStart": 1790791200,
+      "totalQuota": -1,
+      "cappingStatus": "NONE"
+    },
+    "reachoutTimelock": null
+  },
+  "event": "call.received",
+  "engine": "GOWS",
+  "payload": {
+    "id": "00E376849D79B046C65FFF87EC60137F",
+    "from": "77000000014@lid",
+    "_data": {
+      "Data": {
+        "Tag": "offer",
+        "Attrs": {
+          "call-id": "00E376849D79B046C65FFF87EC60137F",
+          "joinable": "1",
+          "caller_pn": "77000000015@s.whatsapp.net",
+          "call-creator": "77000000014@lid",
+          "caller_country_code": "KZ"
+        },
+        "Content": [
+          {
+            "Tag": "audio",
+            "Attrs": {
+              "enc": "opus",
+              "rate": "16000"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "audio",
+            "Attrs": {
+              "enc": "opus",
+              "rate": "8000"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "capability",
+            "Attrs": {
+              "ver": "1"
+            }
+          },
+          {
+            "Tag": "enc",
+            "Attrs": {
+              "v": "2",
+              "type": "pkmsg"
+            }
+          },
+          {
+            "Tag": "encopt",
+            "Attrs": {
+              "keygen": "2"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "metadata",
+            "Attrs": {
+              "peer_abtest_bucket": "",
+              "peer_abtest_bucket_id_list": "144920"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "net",
+            "Attrs": {
+              "medium": "3"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "rte",
+            "Attrs": null
+          },
+          {
+            "Tag": "uploadfieldstat",
+            "Attrs": null,
+            "Content": null
+          },
+          {
+            "Tag": "video",
+            "Attrs": {
+              "dec": "H264,H265,AV1",
+              "enc": "h.264",
+              "screen_width": "1290",
+              "screen_height": "2796",
+              "device_orientation": "0"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "voip_settings",
+            "Attrs": {
+              "uncompressed": "1"
+            }
+          },
+          {
+            "Tag": "relay",
+            "Attrs": {
+              "uuid": "iC1HP7mYiwJGMXqd",
+              "peer_dl": "3812921",
+              "peer_pid": "1",
+              "self_pid": "2",
+              "attribute_padding": "1"
+            },
+            "Content": [
+              {
+                "Tag": "participant",
+                "Attrs": {
+                  "jid": "77000000014@lid",
+                  "pid": "1"
+                },
+                "Content": null
+              },
+              {
+                "Tag": "token",
+                "Attrs": {
+                  "id": "0"
+                }
+              },
+              {
+                "Tag": "token",
+                "Attrs": {
+                  "id": "1"
+                }
+              },
+              {
+                "Tag": "auth_token",
+                "Attrs": {
+                  "id": "0"
+                }
+              },
+              {
+                "Tag": "key",
+                "Attrs": null
+              },
+              {
+                "Tag": "te2",
+                "Attrs": {
+                  "c2r_rtt": "107",
+                  "relay_id": "0",
+                  "relay_name": "hel3c01",
+                  "domain_name": "edgeray-hel3-1.wt.whatsapp.com"
+                }
+              },
+              {
+                "Tag": "te2",
+                "Attrs": {
+                  "c2r_rtt": "107",
+                  "relay_id": "0",
+                  "relay_name": "hel3c01",
+                  "domain_name": "edgeray-hel3-1.wt.whatsapp.com"
+                }
+              },
+              {
+                "Tag": "te2",
+                "Attrs": {
+                  "c2r_rtt": "109",
+                  "relay_id": "1",
+                  "relay_name": "arn2c01",
+                  "domain_name": "edgeray-arn2-1.wt.whatsapp.com"
+                }
+              },
+              {
+                "Tag": "te2",
+                "Attrs": {
+                  "c2r_rtt": "109",
+                  "relay_id": "1",
+                  "relay_name": "arn2c01",
+                  "domain_name": "edgeray-arn2-1.wt.whatsapp.com"
+                }
+              },
+              {
+                "Tag": "hbh_key",
+                "Attrs": null
+              }
+            ]
+          }
+        ]
+      },
+      "From": "77000000014@lid",
+      "CallID": "00E376849D79B046C65FFF87EC60137F",
+      "GroupJID": "",
+      "Timestamp": "2026-10-14T15:53:09Z",
+      "CallCreator": "77000000014@lid",
+      "RemoteVersion": "2.26.39.75",
+      "CallCreatorAlt": "77000000015@s.whatsapp.net",
+      "RemotePlatform": "iphone"
+    },
+    "isGroup": false,
+    "isVideo": true,
+    "timestamp": 1791993189
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791993190128,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

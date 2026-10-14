@@ -82,6 +82,14 @@ class ChatIngestWriterTest {
                 outcome == null ? null : externalId, false);
     }
 
+    /** call.received видеозвонка: признак видео есть только в нём — у исхода WAHA шлёт isVideo=false (живая WAHA). */
+    private ParsedNotification.Message videoCall(String chat, String callId) {
+        ParsedNotification.Message voice = call(chat, callId, null);
+        return new ParsedNotification.Message(voice.account(), voice.chatId(), voice.kind(), voice.phone(), null, null,
+                LeadDirection.IN, voice.idMessage(), voice.sentAt(), ChatMessageType.CALL, "📹 Входящий видеозвонок", null,
+                null, false);
+    }
+
     private List<ChatMessage> messagesOf(Long chatId) { return messageRepository.findLatest(chatId, PageRequest.of(0, 20)); }
 
     @Test
@@ -415,5 +423,36 @@ class ChatIngestWriterTest {
         assertThat(messagesOf(outcome.chatId())).singleElement()
                 .extracting(ChatMessage::getBody).isEqualTo("📞 Входящий звонок — отклонён");
         assertThat(leadsOf(outcome)).singleElement().extracting(Lead::getSubject).isEqualTo("Звонок в WhatsApp");
+    }
+
+    /**
+     * Отказ от видеозвонка: в событии исхода WAHA признака видео нет (isVideo=false, Data без медиа — живая WAHA
+     * 2026-10-14), парсер собирает «📞 Входящий звонок — отклонён». Исход меняет только хвост — строка остаётся «📹».
+     */
+    @Test
+    void videoCallOutcomeKeepsVideoLine() {
+        String chat = personal();
+        ChatIngestWriter.Outcome first = write(videoCall(chat, "C7"));
+        write(call(chat, "C7", " — отклонён"));
+
+        assertThat(messagesOf(first.chatId())).singleElement()
+                .extracting(ChatMessage::getBody).isEqualTo("📹 Входящий видеозвонок — отклонён");
+        assertThat(chatRepository.findById(first.chatId()).orElseThrow().getLastMessagePreview())
+                .isEqualTo("📹 Входящий видеозвонок — отклонён");
+    }
+
+    /** Исход пришёл раньше звонка (после простоя): поздний call.received — дубль, но признак видео он строке возвращает. */
+    @Test
+    void lateVideoCallOfferRestoresVideoMarkOnLineMadeByOutcome() {
+        String chat = personal();
+        ChatIngestWriter.Outcome outcome = write(call(chat, "C8", " — отклонён"));
+        ChatIngestWriter.Outcome received = write(videoCall(chat, "C8"));
+
+        assertThat(received.duplicate()).isTrue();
+        assertThat(messagesOf(outcome.chatId())).singleElement()
+                .extracting(ChatMessage::getBody).isEqualTo("📹 Входящий видеозвонок — отклонён");
+        assertThat(chatRepository.findById(outcome.chatId()).orElseThrow().getLastMessagePreview())
+                .isEqualTo("📹 Входящий видеозвонок — отклонён");
+        assertThat(leadsOf(outcome)).hasSize(1);
     }
 }

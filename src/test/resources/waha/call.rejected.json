@@ -1,0 +1,60 @@
+{
+  "id": "evt_01m4xhwb5axj53ac2nragg89sz",
+  "me": {
+    "id": "77000000010@c.us",
+    "jid": "77000000010:1@s.whatsapp.net",
+    "lid": "77000000011@lid",
+    "pushName": "Клиент 2",
+    "messageCapping": {
+      "cycleEnd": 1793469599,
+      "mvStatus": "NOT_ELIGIBLE",
+      "oteStatus": "NOT_ELIGIBLE",
+      "usedQuota": 0,
+      "cycleStart": 1790791200,
+      "totalQuota": -1,
+      "cappingStatus": "NONE"
+    },
+    "reachoutTimelock": null
+  },
+  "event": "call.rejected",
+  "engine": "GOWS",
+  "payload": {
+    "id": "00E376849D79B046C65FFF87EC60137F",
+    "from": "77000000011@lid",
+    "_data": {
+      "Data": {
+        "Tag": "reject",
+        "Attrs": {
+          "count": "0",
+          "call-id": "00E376849D79B046C65FFF87EC60137F",
+          "call-creator": "77000000014@lid"
+        },
+        "Content": null
+      },
+      "From": "77000000011@lid",
+      "CallID": "00E376849D79B046C65FFF87EC60137F",
+      "GroupJID": "",
+      "Timestamp": "2026-10-14T15:53:14Z",
+      "CallCreator": "77000000014@lid",
+      "CallCreatorAlt": ""
+    },
+    "isGroup": false,
+    "isVideo": false,
+    "timestamp": 1791993194
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791993195690,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

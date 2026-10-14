@@ -1,0 +1,143 @@
+{
+  "id": "evt_01m4xfv4cy2fzwd4hxqdjjk84y",
+  "me": {
+    "id": "77000000010@c.us",
+    "jid": "77000000010:1@s.whatsapp.net",
+    "lid": "77000000011@lid",
+    "pushName": "Клиент 2",
+    "messageCapping": {
+      "cycleEnd": 1793469599,
+      "mvStatus": "NOT_ELIGIBLE",
+      "oteStatus": "NOT_ELIGIBLE",
+      "usedQuota": 0,
+      "cycleStart": 1790791200,
+      "totalQuota": -1,
+      "cappingStatus": "NONE"
+    },
+    "reachoutTimelock": null
+  },
+  "event": "message.any",
+  "engine": "GOWS",
+  "payload": {
+    "id": "false_77000000012@lid_3ADC4F6A09EAA726F7B5",
+    "to": null,
+    "ack": 2,
+    "from": "77000000012@lid",
+    "_data": {
+      "Info": {
+        "ID": "3ADC4F6A09EAA726F7B5",
+        "Chat": "77000000012@lid",
+        "Edit": "",
+        "Type": "media",
+        "Sender": "77000000012@lid",
+        "IsGroup": false,
+        "Category": "",
+        "IsFromMe": false,
+        "PushName": "Клиент 2",
+        "ServerID": 0,
+        "MediaType": "document",
+        "Multicast": false,
+        "SenderAlt": "77000000013@s.whatsapp.net",
+        "Timestamp": "2026-10-14T15:17:38Z",
+        "MsgBotInfo": {
+          "EditType": "",
+          "EditTargetID": "",
+          "ClientThreadID": "",
+          "EditSenderTimestampMS": "0001-01-01T00:00:00Z"
+        },
+        "MsgMetaInfo": {
+          "TargetID": "",
+          "TargetChat": "",
+          "TargetSender": "",
+          "ThreadMessageID": "",
+          "DeprecatedLIDSession": null,
+          "ThreadMessageSenderJID": ""
+        },
+        "RecipientAlt": "",
+        "VerifiedName": null,
+        "AddressingMode": "",
+        "DeviceSentMeta": null,
+        "BroadcastListOwner": "",
+        "IsNewsletterStatus": false,
+        "BroadcastRecipients": null
+      },
+      "IsEdit": false,
+      "Status": 3,
+      "Message": {
+        "documentMessage": {
+          "title": "документ",
+          "fileName": "документ.pdf",
+          "mimetype": "application/pdf",
+          "pageCount": 1,
+          "fileLength": 189003,
+          "contactVcard": false,
+          "mediaKeyTimestamp": 1791963594
+        },
+        "messageContextInfo": {
+          "deviceListMetadata": {
+            "senderTimestamp": 1788772430,
+            "recipientTimestamp": 1791990736
+          },
+          "deviceListMetadataVersion": 2
+        }
+      },
+      "IsViewOnce": false,
+      "RawMessage": {
+        "documentMessage": {
+          "title": "документ",
+          "fileName": "документ.pdf",
+          "mimetype": "application/pdf",
+          "pageCount": 1,
+          "fileLength": 189003,
+          "contactVcard": false,
+          "mediaKeyTimestamp": 1791963594
+        },
+        "messageContextInfo": {
+          "deviceListMetadata": {
+            "senderTimestamp": 1788772430,
+            "recipientTimestamp": 1791990736
+          },
+          "deviceListMetadataVersion": 2
+        }
+      },
+      "RetryCount": 0,
+      "IsBotInvoke": false,
+      "IsEphemeral": false,
+      "IsViewOnceV2": false,
+      "SourceWebMsg": null,
+      "NewsletterMeta": null,
+      "IsLottieSticker": false,
+      "UnavailableRequestID": "",
+      "IsDocumentWithCaption": false,
+      "IsViewOnceV2Extension": false
+    },
+    "media": {
+      "filename": "документ.pdf",
+      "mimetype": "application/pdf"
+    },
+    "fromMe": false,
+    "source": "app",
+    "vCards": null,
+    "ackName": "DEVICE",
+    "replyTo": null,
+    "hasMedia": true,
+    "location": null,
+    "timestamp": 1791991058,
+    "participant": null
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791991058846,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

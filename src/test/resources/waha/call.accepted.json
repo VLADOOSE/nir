@@ -1,0 +1,103 @@
+{
+  "id": "evt_01m4xhvvj2yyjrghv5fe6g3nhr",
+  "me": {
+    "id": "77000000010@c.us",
+    "jid": "77000000010:1@s.whatsapp.net",
+    "lid": "77000000011@lid",
+    "pushName": "Клиент 2",
+    "messageCapping": {
+      "cycleEnd": 1793469599,
+      "mvStatus": "NOT_ELIGIBLE",
+      "oteStatus": "NOT_ELIGIBLE",
+      "usedQuota": 0,
+      "cycleStart": 1790791200,
+      "totalQuota": -1,
+      "cappingStatus": "NONE"
+    },
+    "reachoutTimelock": null
+  },
+  "event": "call.accepted",
+  "engine": "GOWS",
+  "payload": {
+    "id": "00F823E6CD6E6F5C153B81C687064959",
+    "from": "77000000011@lid",
+    "_data": {
+      "Data": {
+        "Tag": "accept",
+        "Attrs": {
+          "call-id": "00F823E6CD6E6F5C153B81C687064959",
+          "call-creator": "77000000014@lid"
+        },
+        "Content": [
+          {
+            "Tag": "audio",
+            "Attrs": {
+              "enc": "opus",
+              "rate": "16000"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "te",
+            "Attrs": {
+              "priority": "96"
+            }
+          },
+          {
+            "Tag": "te",
+            "Attrs": {
+              "priority": "32"
+            }
+          },
+          {
+            "Tag": "net",
+            "Attrs": {
+              "medium": "1"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "encopt",
+            "Attrs": {
+              "keygen": "2"
+            },
+            "Content": null
+          },
+          {
+            "Tag": "metadata",
+            "Attrs": {
+              "peer_abtest_bucket_id_list": "142085,144135,144920,145312"
+            },
+            "Content": null
+          }
+        ]
+      },
+      "From": "77000000011@lid",
+      "CallID": "00F823E6CD6E6F5C153B81C687064959",
+      "GroupJID": "",
+      "Timestamp": "2026-10-14T15:52:59Z",
+      "CallCreator": "77000000014@lid",
+      "RemoteVersion": "2.26.37.76",
+      "CallCreatorAlt": "",
+      "RemotePlatform": "iphone"
+    },
+    "isGroup": false,
+    "isVideo": false,
+    "timestamp": 1791993179
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791993179714,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "me": {
+    "id": "77000000010@c.us"
+  },
+  "event": "message.any",
+  "origin": "catch-up",
+  "payload": {
+    "id": "false_77000000016@g.us_3A48A282310EC37D4797_77000000012@lid",
+    "to": "77000000012@lid",
+    "ack": 2,
+    "body": "догонка 2",
+    "from": "77000000016@g.us",
+    "_data": {
+      "Info": {
+        "ID": "3A48A282310EC37D4797",
+        "Chat": "77000000016@g.us",
+        "Edit": "",
+        "Type": "media",
+        "Sender": "77000000012@lid",
+        "IsGroup": true,
+        "Category": "",
+        "IsFromMe": false,
+        "PushName": "Клиент 2",
+        "ServerID": 0,
+        "MediaType": "image",
+        "Multicast": false,
+        "SenderAlt": "77000000013@s.whatsapp.net",
+        "Timestamp": "2026-10-14T16:02:23Z",
+        "MsgBotInfo": {
+          "EditType": "",
+          "EditTargetID": "",
+          "ClientThreadID": "",
+          "EditSenderTimestampMS": "0001-01-01T00:00:00Z"
+        },
+        "MsgMetaInfo": {
+          "TargetID": "",
+          "TargetChat": "",
+          "TargetSender": "",
+          "ThreadMessageID": "",
+          "DeprecatedLIDSession": null,
+          "ThreadMessageSenderJID": ""
+        },
+        "RecipientAlt": "",
+        "VerifiedName": null,
+        "AddressingMode": "lid",
+        "DeviceSentMeta": null,
+        "BroadcastListOwner": "",
+        "IsNewsletterStatus": false,
+        "BroadcastRecipients": null
+      },
+      "IsEdit": false,
+      "IsReal": true,
+      "Status": 3,
+      "Message": {
+        "imageMessage": {
+          "width": 1200,
+          "height": 1600,
+          "caption": "догонка 2",
+          "mimetype": "image/jpeg",
+          "fileLength": 185655,
+          "contextInfo": {
+            "statusSourceType": 0
+          },
+          "imageSourceType": 0,
+          "mediaKeyTimestamp": 1791993742
+        },
+        "messageContextInfo": {}
+      },
+      "IsViewOnce": false,
+      "RawMessage": {
+        "imageMessage": {
+          "width": 1200,
+          "height": 1600,
+          "caption": "догонка 2",
+          "mimetype": "image/jpeg",
+          "fileLength": 185655,
+          "contextInfo": {
+            "statusSourceType": 0
+          },
+          "imageSourceType": 0,
+          "mediaKeyTimestamp": 1791993742
+        },
+        "messageContextInfo": {}
+      },
+      "RetryCount": 0,
+      "IsBotInvoke": false,
+      "IsEphemeral": false,
+      "IsViewOnceV2": false,
+      "SourceWebMsg": null,
+      "NewsletterMeta": null,
+      "IsLottieSticker": false,
+      "UnavailableRequestID": "",
+      "IsDocumentWithCaption": false,
+      "IsViewOnceV2Extension": false
+    },
+    "media": {
+      "mimetype": "image/jpeg"
+    },
+    "fromMe": false,
+    "source": "app",
+    "vCards": null,
+    "ackName": "DEVICE",
+    "replyTo": null,
+    "hasMedia": true,
+    "location": null,
+    "timestamp": 1791993743,
+    "participant": "77000000012@lid"
+  },
+  "session": "westmed",
+  "timestamp": 1791993866017
+}

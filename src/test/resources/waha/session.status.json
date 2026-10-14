@@ -1,0 +1,40 @@
+{
+  "id": "evt_01m4xf53wg5b7d4h0dn6a7x6rr",
+  "me": null,
+  "event": "session.status",
+  "engine": "GOWS",
+  "payload": {
+    "data": null,
+    "name": "Клиент 1",
+    "status": "SCAN_QR_CODE",
+    "statuses": [
+      {
+        "status": "STARTING",
+        "timestamp": 1791990275960
+      },
+      {
+        "status": "SCAN_QR_CODE",
+        "timestamp": 1791990277425
+      },
+      {
+        "status": "SCAN_QR_CODE",
+        "timestamp": 1791990337424
+      }
+    ]
+  },
+  "session": "westmed",
+  "metadata": {
+    "market": "KZ"
+  },
+  "timestamp": 1791990337424,
+  "environment": {
+    "tier": "CORE",
+    "engine": "GOWS",
+    "worker": {
+      "id": null
+    },
+    "browser": null,
+    "version": "2026.9.1",
+    "platform": "linux/x64"
+  }
+}

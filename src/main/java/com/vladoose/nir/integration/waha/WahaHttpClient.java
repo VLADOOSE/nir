@@ -186,7 +186,11 @@ public class WahaHttpClient implements WahaClient {
     public String groupSubject(String session, String groupId) {
         String what = "запросе группы";
         HttpResponse<String> r = call("GET", "/api/" + seg(session) + "/groups/" + seg(groupId), null, callDeadline, what, 404);
-        return r.statusCode() == 404 ? null : text(json(r.body(), what), "subject");
+        if (r.statusCode() == 404) return null;
+        JsonNode group = json(r.body(), what);
+        // WEBJS / NOWEB отдают subject, GOWS — свою форму: Name — название, Topic — описание (живая WAHA 2026.9.1)
+        String subject = text(group, "subject");
+        return subject != null ? subject : text(group, "Name");
     }
 
     @Override
