@@ -115,8 +115,12 @@ export interface SendResult {
   distributorId: number;
   distributorName: string;
   emailSent: boolean;
-  reason: string | null;
+  /** NO_EMAIL / SEND_FAILED — письмо не ушло; MANUAL — «передам сам»: письма не было, документ пересылают руками. */
+  reason: 'NO_EMAIL' | 'SEND_FAILED' | 'MANUAL' | null;
 }
+
+/** Формат документа запроса: PDF — переслать (WhatsApp), Word — править. */
+export type DocFormat = 'pdf' | 'docx';
 
 export type CellState = 'PRICE' | 'DECLINED' | 'BOUNCED' | 'NOT_SENT' | 'WAITING' | 'NONE';
 export interface PriceCell {
@@ -129,6 +133,8 @@ export interface PriceCell {
   best: boolean;
   /** Письмо ушло на адрес, вписанный в окне запроса, а не на почту карточки: «Переслать» отправит туда же. */
   emailOverride: boolean;
+  /** «Передам сам»: письма не было — запрос передан вручную (PDF), «Переслать» не к чему. */
+  manual: boolean;
 }
 export interface PriceLine {
   lotId: number;
@@ -139,7 +145,14 @@ export interface PriceLine {
   bestPrice: number | null;
   bestDistributorName: string | null;
 }
-export interface PriceSupplier { distributorId: number; name: string; firstSentAt: string | null; clientDisclosed: boolean; }
+export interface PriceSupplier {
+  distributorId: number;
+  name: string;
+  firstSentAt: string | null;
+  clientDisclosed: boolean;
+  /** Первый запрос этому поставщику — «передам сам»: в шапке «передан ДД.ММ», а не «письмо». */
+  manual: boolean;
+}
 export interface Prices { suppliers: PriceSupplier[]; lines: PriceLine[]; }
 
 /**
@@ -226,9 +239,11 @@ export interface RfqPreviewBody {
 export interface RfqSendSupplier {
   distributorId: number | null;
   newSupplier: { name: string; rememberBrands: boolean } | null;
-  /** Почта из окна: пустая — запрос без письма. */
-  email: string;
+  /** Почта из окна: пустая — запрос без письма; у «передам сам» — null (не нужна). */
+  email: string | null;
   discloseClient: boolean;
+  /** «Передам сам»: письма нет, запрос записывается, его PDF пересылают руками. */
+  manual: boolean;
   lotIds: number[];
 }
 

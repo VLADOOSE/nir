@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.service.mail.SentCopy;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
@@ -20,6 +21,7 @@ public class EmailService {
     public record Attachment(String fileName, byte[] bytes, String contentType) {}
 
     private final JavaMailSender mailSender;
+    private final SentCopy sentCopy;
 
     @Value("${spring.mail.username}")
     private String fromAddress;
@@ -27,8 +29,9 @@ public class EmailService {
     @Value("${mail.kp.reply-to:}")
     private String replyTo;
 
-    public EmailService(JavaMailSender mailSender) {
+    public EmailService(JavaMailSender mailSender, SentCopy sentCopy) {
         this.mailSender = mailSender;
+        this.sentCopy = sentCopy;
     }
 
     public boolean isConfigured() {
@@ -62,6 +65,7 @@ public class EmailService {
                 }
             }
             mailSender.send(mime);
+            sentCopy.store(mime);   // копия в «Отправленные» ящика отправки — после отправки, своим потоком, не бросает
         } catch (jakarta.mail.MessagingException e) {
             // текст исключения JavaMail может нести адрес — наружу только класс (спека §10)
             throw new RuntimeException("Не удалось собрать письмо: " + e.getClass().getSimpleName(), e);

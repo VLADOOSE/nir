@@ -57,11 +57,16 @@ public class PrivateRequestRfqService {
         return sendService.preview(draft(requestId, req, req.isWithDocument()));
     }
 
-    /** Документ на бланке до отправки: «№ —», номер появится при отправке. */
-    public RfqDocumentService.RfqFile document(Long requestId, RfqPreviewRequest req) {
+    /** Документ на бланке до отправки — Word или PDF: «№ —», номер появится при отправке. */
+    public RfqDocumentService.RfqFile document(Long requestId, RfqPreviewRequest req, RfqDocumentService.Format format) {
         PriceRequest draft = draft(requestId, req, true);
         if (draft.isWithStamp()) sendService.requireStamp(draft.getMarket() != null ? draft.getMarket() : MarketContext.get());
-        return documents.render(draft);
+        return documents.render(draft, format);
+    }
+
+    /** Word до отправки. */
+    public RfqDocumentService.RfqFile document(Long requestId, RfqPreviewRequest req) {
+        return document(requestId, req, RfqDocumentService.Format.DOCX);
     }
 
     private PriceRequest draft(Long requestId, RfqPreviewRequest req, boolean withDocument) {
@@ -84,7 +89,9 @@ public class PrivateRequestRfqService {
         Tender t = privateRequestService.findById(requestId);
         if (req.getSuppliers() == null || req.getSuppliers().isEmpty()) throw new BadRequestException("Не выбраны поставщики");
         checkReplyBy(req.getReplyBy());
-        if (req.isWithDocument() && req.isWithStamp()) sendService.requireStamp(market(t));
+        // печать ставится в документ: во вложение письма — по «Приложить запрос», у «передам сам» документ есть всегда
+        boolean anyManual = req.getSuppliers().stream().anyMatch(RfqSendRequest.Supplier::isManual);
+        if (req.isWithStamp() && (req.isWithDocument() || anyManual)) sendService.requireStamp(market(t));
 
         // 1. весь запрос проверяется до первой записи и первого письма
         Map<String, Plan> plans = new LinkedHashMap<>();
@@ -97,13 +104,16 @@ public class PrivateRequestRfqService {
             List<TenderLot> lots = lots(t, s.getLotIds());
             checkDisclose(t, s.isDiscloseClient());
             List<String> typed = null;
-            if (s.getEmail() != null) {
+            if (s.getEmail() != null && !s.isManual()) {   // «передам сам» — почта окна не нужна и в карточку не пишется
                 typed = EmailAddresses.parse(s.getEmail());
                 EmailAddresses.normalize(s.getEmail());   // длина поля — тоже до записи
             }
             Plan known = plans.get(target.key());
+            if (known != null && known.manual() != s.isManual()) {
+                throw new BadRequestException("Поставщик «" + target.name() + "» указан дважды — и письмом, и «передам сам»");
+            }
             if (known == null) {
-                plans.put(target.key(), new Plan(target, new ArrayList<>(lots), typed, s.isDiscloseClient()));
+                plans.put(target.key(), new Plan(target, new ArrayList<>(lots), typed, s.isDiscloseClient(), s.isManual()));
             } else {
                 for (TenderLot l : lots) if (!known.lots().contains(l)) known.lots().add(l);
             }
@@ -118,7 +128,7 @@ public class PrivateRequestRfqService {
         List<SendResult> results = new ArrayList<>();
         for (Sending s : sendings) {
             SendOptions o = new SendOptions(req.getReplyBy(), req.isWithDocument(), req.isWithStamp(),
-                    s.plan().disclose(), s.emailTo());
+                    s.plan().disclose(), s.emailTo(), s.plan().manual());
             results.addAll(sendService.send(t.getId(), List.of(s.distributor().getId()), items(s.plan().lots()), null, null, o));
         }
         return results;
@@ -131,7 +141,7 @@ public class PrivateRequestRfqService {
         }
     }
 
-    private record Plan(Target target, List<TenderLot> lots, List<String> typed, boolean disclose) {}
+    private record Plan(Target target, List<TenderLot> lots, List<String> typed, boolean disclose, boolean manual) {}
 
     private record Sending(Distributor distributor, Plan plan, List<String> emailTo) {}
 

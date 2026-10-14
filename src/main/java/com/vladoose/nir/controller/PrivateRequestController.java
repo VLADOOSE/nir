@@ -184,13 +184,18 @@ public class PrivateRequestController {
         return rfqService.send(id, req);
     }
 
-    /** Word запроса для одного поставщика до отправки («№ —»); только скачивание, без угадывания типа и кеша. */
+    /** Документ запроса для одного поставщика до отправки («№ —»): Word или PDF (format=pdf); только скачивание. */
     @PostMapping("/{id}/rfq/document")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<byte[]> rfqDocument(@PathVariable Long id, @Valid @RequestBody RfqPreviewRequest req) {
-        RfqDocumentService.RfqFile f = rfqService.document(id, req);
+    public ResponseEntity<byte[]> rfqDocument(@PathVariable Long id, @RequestParam(required = false) String format,
+                                              @Valid @RequestBody RfqPreviewRequest req) {
+        return download(rfqService.document(id, req, RfqDocumentService.Format.parse(format)));
+    }
+
+    /** Файл документа запроса: attachment с именем в RFC 5987, без угадывания типа и без кеша. */
+    static ResponseEntity<byte[]> download(RfqDocumentService.RfqFile f) {
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(RfqDocumentService.DOCX))
+                .contentType(MediaType.parseMediaType(f.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(f.fileName(), StandardCharsets.UTF_8).build().toString())
                 .header("X-Content-Type-Options", "nosniff")

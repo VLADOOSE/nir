@@ -3,6 +3,7 @@ package com.vladoose.nir.privaterequest;
 import com.icegreen.greenmail.configuration.GreenMailConfiguration;
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.util.ServerSetupTest;
+import com.vladoose.nir.clientoffer.KpTestSupportAccess;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.dto.request.PrivateRequestField;
@@ -14,8 +15,10 @@ import com.vladoose.nir.repository.CompanyProfileRepository;
 import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
+import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PriceRequestSendService.SendResult;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.RfqDocumentService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestRfqService;
 import com.vladoose.nir.support.SmtpIntegrationTest;
 import jakarta.mail.Multipart;
@@ -47,6 +50,7 @@ class PrivateRequestRfqStage2Test {
 
     @Autowired PrivateRequestService service;
     @Autowired PrivateRequestRfqService rfq;
+    @Autowired PriceRequestSendService sendService;
     @Autowired DistributorRepository distributorRepository;
     @Autowired PriceRequestRepository priceRequestRepository;
     @Autowired CompanyProfileRepository profileRepository;
@@ -283,6 +287,130 @@ class PrivateRequestRfqStage2Test {
 
         assertThatThrownBy(() -> rfq.send(t.getId(), r)).isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Печать не загружена");
+        assertThat(priceRequestRepository.count()).isEqualTo(before);
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+    }
+
+    /** PDF до отправки — то же, что Word: «№ –», поставщик из окна, позиции; ничего не сохраняется. */
+    @Test
+    void pdfBeforeSendingHasDashNumber() {
+        Tender t = request(null);
+        RfqPreviewRequest p = new RfqPreviewRequest();
+        p.setNewSupplierName("ZZ Ещё не заведён PDF");
+        p.setLotIds(lotIds(t));
+
+        var file = rfq.document(t.getId(), p, RfqDocumentService.Format.PDF);
+
+        assertThat(file.contentType()).isEqualTo("application/pdf");
+        assertThat(file.fileName()).startsWith("Запрос КП № \u2013 от ").endsWith(".pdf");
+        assertThat(KpTestSupportAccess.pdfText(file.bytes())).contains("Исх. № \u2013").contains("ZZ Ещё не заведён PDF")
+                .contains("ZZ Облучатель окна");
+        assertThat(priceRequestRepository.findAll()).noneMatch(pr -> pr.getTender().getId().equals(t.getId()));
+    }
+
+    private static RfqSendRequest.Supplier manual(RfqSendRequest.Supplier s) {
+        s.setManual(true);
+        return s;
+    }
+
+    private void stampLoaded() {
+        // предусловие — в откатываемой транзакции теста: строку реквизитов правит оператор (CLAUDE.md §14)
+        CompanyProfile p = profileRepository.findByMarket(Market.KZ).orElseThrow();
+        p.setStampPng(KpTestSupportAccess.circlePng());
+        profileRepository.saveAndFlush(p);
+    }
+
+    /**
+     * «Передам сам»: письма нет, запрос записан — «передан вручную» (его PDF пересылают в WhatsApp), с номером и печатью
+     * по отметке, даже без «Приложить запрос на бланке»: документ здесь и есть то, что уходит поставщику. Почта из окна
+     * не используется и в карточку не пишется.
+     */
+    @Test
+    void manualSupplier_noLetter_requestRecordedAsManualWithStamp() {
+        stampLoaded();
+        Tender t = request(null);
+        Distributor d = dist("ZZ Передам сам", null);
+        RfqSendRequest r = send(false, manual(existing(d, t, "typed@rfq2.kz", false)));
+        r.setWithStamp(true);
+
+        List<SendResult> results = rfq.send(t.getId(), r);
+
+        assertThat(results).singleElement().satisfies(x -> {
+            assertThat(x.emailSent()).isFalse();
+            assertThat(x.reason()).isEqualTo("MANUAL");
+        });
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+        PriceRequest pr = priceRequestRepository.findById(results.get(0).priceRequestId()).orElseThrow();
+        assertThat(pr.getLetterStatus()).isEqualTo(LetterStatus.MANUAL);
+        assertThat(pr.getStatus()).isEqualTo("SENT");
+        assertThat(pr.getSentAt()).isNotNull();
+        assertThat(pr.getSentTo()).isNull();
+        assertThat(pr.isWithDocument()).isTrue();
+        assertThat(pr.isWithStamp()).isTrue();
+        assertThat(pr.isEmailOverride()).isFalse();
+        assertThat(distributorRepository.findById(d.getId()).orElseThrow().getEmail()).isNull();
+    }
+
+    @Test
+    void manualAndEmailedInOneSending_onlyEmailedGetsLetter() throws Exception {
+        Tender t = request(null);
+        Distributor byHand = dist("ZZ Вручную", "hand@rfq2.kz");
+        Distributor byMail = dist("ZZ Письмом", "mail@rfq2.kz");
+
+        List<SendResult> results = rfq.send(t.getId(), send(false, manual(existing(byHand, t, null, false)),
+                existing(byMail, t, null, false)));
+
+        assertThat(results).extracting(SendResult::reason).containsExactly("MANUAL", null);
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+        assertThat(mailTo("mail@rfq2.kz")).isNotNull();
+    }
+
+    /**
+     * «Печать» у запроса «передам сам» без загруженной печати — 400 до первой записи, как у письма с документом: ни
+     * запроса, ни нового поставщика в справочнике (его заводят до отправки — проверка обязана стоять раньше).
+     */
+    @Test
+    void manualWithStampWithoutLoadedStampIs400() {
+        CompanyProfile p = profileRepository.findByMarket(Market.KZ).orElseThrow();
+        p.setStampPng(null);
+        profileRepository.saveAndFlush(p);
+        Tender t = request(null);
+        String name = "ZZ Вручную новый " + System.nanoTime();
+        RfqSendRequest r = send(false, manual(fresh(name, t, null, false)));
+        r.setWithStamp(true);
+        long before = priceRequestRepository.count();
+
+        assertThatThrownBy(() -> rfq.send(t.getId(), r)).isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Печать не загружена");
+        assertThat(priceRequestRepository.count()).isEqualTo(before);
+        assertThat(distributorRepository.findAll()).noneMatch(d -> d.getName().equals(name));
+    }
+
+    /**
+     * «↻ Переслать» у запроса «передам сам» — 400: письма не было, а пересылка ушла бы на почту карточки (или стала бы
+     * «письмо не ушло» без почты) и стёрла отметку «передан вручную». Письмом — новым запросом цен.
+     */
+    @Test
+    void resendOfManualRequestIs400_requestUntouched() {
+        Tender t = request(null);
+        Distributor d = dist("ZZ Вручную пересылка", "hand-resend@rfq2.kz");
+        Long prId = rfq.send(t.getId(), send(false, manual(existing(d, t, null, false)))).get(0).priceRequestId();
+
+        assertThatThrownBy(() -> sendService.resend(prId)).isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("передан вручную");
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+        assertThat(priceRequestRepository.findById(prId).orElseThrow().getLetterStatus()).isEqualTo(LetterStatus.MANUAL);
+    }
+
+    /** Один поставщик дважды в запросе — и «передам сам», и письмом: 400 до записи (иначе молча победила бы первая запись). */
+    @Test
+    void sameSupplierManualAndByLetter_is400BeforeAnyWrite() {
+        Tender t = request(null);
+        Distributor d = dist("ZZ Двойной", "double@rfq2.kz");
+        long before = priceRequestRepository.count();
+
+        assertThatThrownBy(() -> rfq.send(t.getId(), send(false, manual(existing(d, t, null, false)), existing(d, t, null, false))))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining(d.getName());
         assertThat(priceRequestRepository.count()).isEqualTo(before);
         assertThat(greenMail.getReceivedMessages()).isEmpty();
     }

@@ -216,4 +216,41 @@ class PrivateRequestPricesTest {
         assertThat(r.suppliers()).filteredOn(s -> s.distributorId().equals(silent.getId()))
                 .singleElement().satisfies(s -> assertThat(s.clientDisclosed()).isFalse());
     }
+
+    /** Запрос «передам сам»: ждём ответа (не «письмо не ушло»), в ячейке и в шапке — признак «вручную». */
+    @Test
+    void manualRequestIsWaitingAndMarkedManual() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены вручную", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor byHand = dist("ZZ Цены Вручную");
+        Distributor byMail = dist("ZZ Цены Письмом");
+        ask(t, byHand, lot, "SENT", LetterStatus.MANUAL, null);
+        ask(t, byMail, lot, "SENT", LetterStatus.SENT, null);
+        em.flush();
+
+        PrivateRequestPricesResponse r = prices.build(t.getId());
+
+        assertThat(cell(r, 0, byHand).state()).isEqualTo("WAITING");
+        assertThat(cell(r, 0, byHand).manual()).isTrue();
+        assertThat(cell(r, 0, byMail).manual()).isFalse();
+        assertThat(r.suppliers()).extracting(PrivateRequestPricesResponse.Supplier::manual).containsExactly(true, false);
+    }
+
+    /** Шапка — по ПЕРВОМУ запросу поставщику, как и дата под именем: «передан 14.10», даже если потом писали письмом. */
+    @Test
+    void headerFollowsFirstRequestOfSupplier() {
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены шапка", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor d = dist("ZZ Цены Сначала вручную");
+        ask(t, d, lot, "SENT", LetterStatus.MANUAL, null);
+        ask(t, d, lot, "SENT", LetterStatus.SENT, null);
+        em.flush();
+
+        PrivateRequestPricesResponse r = prices.build(t.getId());
+
+        assertThat(r.suppliers()).singleElement().extracting(PrivateRequestPricesResponse.Supplier::manual).isEqualTo(true);
+        assertThat(cell(r, 0, d).manual()).isFalse();   // ячейка — по последнему запросу: он ушёл письмом
+    }
 }

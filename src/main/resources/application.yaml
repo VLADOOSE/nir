@@ -67,6 +67,10 @@ mail:
   kp:
     # ящик, куда поставщики шлют ответы (Reply-To). Пусто → = spring.mail.username.
     reply-to: ${MAIL_KP_REPLY_TO:}
+  # копия письма АИС — в «Отправленные» ящика отправки (IMAP APPEND): Mail.ru сам кладёт туда только письма своей
+  # веб-почты. Работает, когда ящик приёма (mail.imap.*) — тот же, что ящик отправки, и задан его пароль (прод: zakup@)
+  sent-copy:
+    enabled: ${MAIL_SENT_COPY_ENABLED:true}
   imap:
     enabled: ${MAIL_IMAP_ENABLED:false}
     host: ${MAIL_IMAP_HOST:localhost}

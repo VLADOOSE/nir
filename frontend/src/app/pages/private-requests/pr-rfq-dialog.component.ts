@@ -5,8 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { CompanyProfileService } from '../../services/company-profile.service';
 import {
-  PrLine, RfqPreviewBody, SendResult, Sourcing, dateText, dispositionFileName, plural, sameEmails,
+  DocFormat, PrLine, RfqPreviewBody, SendResult, Sourcing, dateText, dispositionFileName, plural, sameEmails,
 } from '../../shared/private-request';
+import { canShareFiles, openShareSheet, responseFile } from '../../shared/share';
 import { readWithDocument, storeWithDocument, todayIso } from '../../shared/rfq-options';
 import { saveBlob } from '../../shared/client-offer';
 import { errorText } from '../../shared/error-text';
@@ -39,8 +40,13 @@ interface DlgSupplier {
   isNew: boolean;
   rememberBrands: boolean;
   disclose: boolean;
+  /** «Передам сам»: письма нет, запрос записывается, его PDF пересылают руками (WhatsApp). */
+  manual: boolean;
   lines: DlgLine[];
 }
+
+/** Записанный запрос «передам сам» — его PDF готовится сразу: «Поделиться» браузер пускает только прямо из нажатия. */
+interface DoneFile { result: SendResult; file: File | null; loading: boolean; error: string; wordBusy: boolean; }
 
 interface DirEntry { id: number; name: string; email: string | null; trusted: boolean; manufacturer: boolean; }
 
@@ -48,7 +54,8 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
  * «Запросить цены» (спека 2026-10-12 §6.2): поставщики с причинами подбора и отметками по умолчанию (у бренда с
  * производителем — производитель), почта каждого — полем (пустая карточка — сохранится, другая — только для письма),
  * «Указать клиента» (по умолчанию — у доверенных), новый поставщик, «Ответить до», запрос на бланке (Word) с подписью и
- * печатью, предпросмотр письма и документа — ровно того, что уйдёт.
+ * печатью, предпросмотр письма и документа (PDF или Word) — ровно того, что уйдёт. «Передам сам» — письма нет: запрос
+ * записывается, и окно показывает его PDF — скачать или «Поделиться» (WhatsApp) — с номером записанного запроса.
  */
 @Component({
   selector: 'app-pr-rfq-dialog',
@@ -57,7 +64,30 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
   template: `
     <div class="overlay" (click)="dismiss()">
       <div class="modal" role="dialog" aria-label="Запросить цены" (click)="$event.stopPropagation()">
-        <h3>Запросить цены<ng-container *ngIf="suppliers.length"> — {{ suppliers.length }} {{ supplierWord(suppliers.length) }}</ng-container></h3>
+        <h3 *ngIf="!done">Запросить цены<ng-container *ngIf="suppliers.length"> — {{ suppliers.length }} {{ supplierWord(suppliers.length) }}</ng-container></h3>
+        <h3 *ngIf="done">{{ done.files.length === 1 ? 'Запрос записан' : 'Запросы записаны' }} — передайте сами</h3>
+
+        <div class="done" *ngIf="done">
+          <p class="done-lead">{{ doneLead() }}</p>
+          <div class="done-row" *ngFor="let f of done.files">
+            <div class="done-name">{{ f.result.distributorName }} · Исх. № {{ f.result.priceRequestId }}</div>
+            <div class="done-actions">
+              <span class="hint" *ngIf="f.loading">Готовлю PDF…</span>
+              <ng-container *ngIf="f.file">
+                <button type="button" class="btn btn-primary" *ngIf="canShare" (click)="share(f)">Поделиться</button>
+                <button type="button" class="btn btn-line" (click)="savePdf(f)">Скачать PDF</button>
+              </ng-container>
+              <button type="button" class="link" [disabled]="f.wordBusy" (click)="saveWord(f)">Word</button>
+            </div>
+            <p class="done-err" *ngIf="f.error">{{ f.error }} <button type="button" class="link" *ngIf="!f.file"
+               (click)="loadPdf(f)">Повторить</button></p>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-cancel" (click)="finish()">Готово</button>
+          </div>
+        </div>
+
+        <ng-container *ngIf="!done">
         <div class="empty" *ngIf="loading">Подбираю поставщиков…</div>
 
         <div class="sup" *ngFor="let s of suppliers; trackBy: trackSupplier" [class.on]="isOn(s)">
@@ -70,14 +100,21 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
               <span class="flag" *ngIf="s.trusted">доверенный</span>
               <span class="flag" *ngIf="s.isNew">новый</span>
             </label>
-            <label class="disclose" [class.off]="!clientName"
-                   [attr.title]="clientName ? 'Строка о конечном заказчике в письме и документе' : 'Клиент в заявке не указан'">
-              <input type="checkbox" [(ngModel)]="s.disclose" [disabled]="!clientName" /> Указать клиента
-            </label>
+            <div class="sup-opts">
+              <label class="disclose" [class.off]="!clientName"
+                     [attr.title]="clientName ? 'Строка о конечном заказчике в письме и документе' : 'Клиент в заявке не указан'">
+                <input type="checkbox" [(ngModel)]="s.disclose" [disabled]="!clientName" /> Указать клиента
+              </label>
+              <label class="disclose" title="Письма не будет: запрос запишется, его PDF перешлёте сами — например, в WhatsApp">
+                <input type="checkbox" [(ngModel)]="s.manual" /> Передам сам
+              </label>
+            </div>
           </div>
-          <input class="mail" type="text" inputmode="email" autocomplete="off" [(ngModel)]="s.email"
-                 placeholder="впишите почту — несколько через запятую" [attr.aria-label]="'Почта ' + s.name" />
-          <p class="mail-hint" *ngIf="mailHint(s) as hint">{{ hint }}</p>
+          <ng-container *ngIf="!s.manual">
+            <input class="mail" type="text" inputmode="email" autocomplete="off" [(ngModel)]="s.email"
+                   placeholder="впишите почту — несколько через запятую" [attr.aria-label]="'Почта ' + s.name" />
+            <p class="mail-hint" *ngIf="mailHint(s) as hint">{{ hint }}</p>
+          </ng-container>
           <ul class="sup-lines">
             <li *ngFor="let l of s.lines">
               <label class="check">
@@ -87,13 +124,17 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
               </label>
             </li>
           </ul>
-          <p class="warn" *ngIf="isOn(s) && !s.email.trim()">Письмо не уйдёт — запрос сохранится, цену внесёте вручную (например, по телефону).</p>
+          <p class="warn" *ngIf="isOn(s) && !s.manual && !s.email.trim()">Письмо не уйдёт — запрос сохранится, цену внесёте вручную (например, по телефону).</p>
+          <p class="note" *ngIf="isOn(s) && s.manual">Письма не будет — после записи скачайте PDF или поделитесь им (например, в WhatsApp); цену внесёте, когда поставщик ответит.</p>
           <label class="remember" *ngIf="s.isNew && brandsText(s) as brands">
             <input type="checkbox" [(ngModel)]="s.rememberBrands" /> Запомнить: возит {{ brands }}
           </label>
           <div class="sup-actions">
-            <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="showPreview(s)">Посмотреть письмо</button>
-            <button type="button" class="link" *ngIf="withDocument" [disabled]="!isOn(s) || busy" (click)="downloadDocument(s)">Скачать документ</button>
+            <button type="button" class="link" *ngIf="!s.manual" [disabled]="!isOn(s) || busy" (click)="showPreview(s)">Посмотреть письмо</button>
+            <ng-container *ngIf="withDocument || s.manual">
+              <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="downloadDocument(s, 'pdf')">Скачать PDF</button>
+              <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="downloadDocument(s, 'docx')">Скачать Word</button>
+            </ng-container>
           </div>
         </div>
 
@@ -122,9 +163,9 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
           <label class="reply">Ответить до <input type="date" [(ngModel)]="replyBy" [min]="today" /></label>
           <label class="opt"><input type="checkbox" [ngModel]="withDocument" (ngModelChange)="setWithDocument($event)" />
             Приложить запрос на бланке (Word)</label>
-          <label class="opt" [class.off]="!hasStamp || !withDocument"
-                 [attr.title]="hasStamp ? null : 'Печать не загружена — «Система → Реквизиты и печать»'">
-            <input type="checkbox" [(ngModel)]="withStamp" [disabled]="!hasStamp || !withDocument" /> Печать
+          <label class="opt" [class.off]="!hasStamp || !docWanted()" [attr.title]="stampTitle()">
+            <input type="checkbox" [ngModel]="withStamp && docWanted()" (ngModelChange)="withStamp = $event"
+                   [disabled]="!hasStamp || !docWanted()" /> Печать
           </label>
         </div>
 
@@ -140,6 +181,7 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
           <button type="button" class="btn btn-primary" [disabled]="sending || !planCount()" (click)="send()">{{ sendLabel() }}</button>
           <button type="button" class="btn btn-cancel" [disabled]="sending" (click)="dismiss()">Отмена</button>
         </div>
+        </ng-container>
       </div>
     </div>
   `,
@@ -156,6 +198,7 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
     .sup-name { font-weight: 600; }
     .flag { font-size: 11px; border-radius: 999px; padding: 1px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent);
             color: var(--accent); }
+    .sup-opts { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; }
     .disclose { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
     .disclose.off, .opt.off { color: var(--text-muted); cursor: default; }
     .mail { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
@@ -172,6 +215,15 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
     .why, .was { font-size: 12px; color: var(--text-muted); }
     .was { color: var(--warn-text); }
     .warn { margin: 0; font-size: 12px; color: var(--warn-text); }
+    .note { margin: 0; font-size: 12px; color: var(--text-muted); }
+    .done { display: flex; flex-direction: column; gap: 10px; }
+    .done-lead { margin: 0; font-size: 13px; color: var(--text-muted); }
+    .done-row { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .done-name { font-weight: 600; }
+    .done-actions { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+    .done-actions .hint { margin: 0; }
+    .done-actions .link { align-self: center; }
+    .done-err { margin: 0; font-size: 12px; color: var(--danger-text); }
     .remember { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .sup-actions { display: flex; gap: 16px; flex-wrap: wrap; }
     .link { align-self: flex-start; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
@@ -199,7 +251,7 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
       .sup-lines { padding-left: 0; }
       .check, .disclose, .opt, .remember { min-height: 40px; }
       .mail, .add-box input, .reply input { font-size: 16px; min-height: 40px; }
-      .form-actions .btn, .add .btn, .link { min-height: 40px; }
+      .form-actions .btn, .add .btn, .link, .done-actions .btn { min-height: 40px; }
     }
   `],
 })
@@ -227,6 +279,11 @@ export class PrRfqDialogComponent implements OnInit {
   hasStamp = false;
   preview: { subject: string; body: string } | null = null;
   previewFor = '';
+  /** Записано с «передам сам» — окно показывает их PDF; итог отправки уходит странице по «Готово». */
+  done: { results: SendResult[]; files: DoneFile[] } | null = null;
+  /** Итог уже отдан странице: «Готово» и Esc в одном кадре не дают два тоста. */
+  private finished = false;
+  readonly canShare = canShareFiles();
   private directory: DirEntry[] = [];
   @ViewChild('actions') private actions?: ElementRef<HTMLElement>;
   private destroyed = false;
@@ -247,7 +304,7 @@ export class PrRfqDialogComponent implements OnInit {
         this.suppliers = s.suppliers.map(x => ({
           key: 'd:' + x.distributorId, distributorId: x.distributorId, name: x.name,
           cardEmail: x.email || '', email: x.email || '', manufacturer: x.manufacturer, trusted: x.trusted,
-          isNew: false, rememberBrands: false, disclose: x.trusted && !!this.clientName,
+          isNew: false, rememberBrands: false, disclose: x.trusted && !!this.clientName, manual: false,
           lines: x.lines.map(l => ({ lotId: l.lotId, name: l.name, brand: this.brandOf(l.lotId), quantity: l.quantity,
                                      unit: l.unit, reason: l.reason, label: l.label, requestedAt: l.requestedAt,
                                      on: l.preselected })),
@@ -264,6 +321,7 @@ export class PrRfqDialogComponent implements OnInit {
   @HostListener('document:keydown.escape')
   dismiss() {
     if (this.sending) return;
+    if (this.done) { this.finish(); return; }   // запросы уже записаны — странице нужен итог, а не «отмена»
     this.close.emit();
   }
 
@@ -346,14 +404,14 @@ export class PrRfqDialogComponent implements OnInit {
     const email = d.email && d.email.trim() ? d.email.trim() : '';
     this.push({ key: 'd:' + d.id, distributorId: d.id, name: d.name, cardEmail: email, email, manufacturer: d.manufacturer,
                 trusted: d.trusted, isNew: false, rememberBrands: false, disclose: d.trusted && !!this.clientName,
-                lines: this.allLines() });
+                manual: false, lines: this.allLines() });
   }
 
   /** Новый поставщик заводится в «Дистрибьюторах» при отправке (спека §6.2). */
   addNew() {
     const name = this.addQuery.trim();
     this.push({ key: 'new:' + name.toLowerCase(), distributorId: null, name, cardEmail: '', email: '', manufacturer: false,
-                trusted: false, isNew: true, rememberBrands: true, disclose: false, lines: this.allLines() });
+                trusted: false, isNew: true, rememberBrands: true, disclose: false, manual: false, lines: this.allLines() });
   }
 
   private push(s: DlgSupplier) {
@@ -374,8 +432,18 @@ export class PrRfqDialogComponent implements OnInit {
 
   setWithDocument(on: boolean) {
     this.withDocument = on;
-    if (!on) this.withStamp = false;
+    if (!on && !this.docWanted()) this.withStamp = false;
     storeWithDocument(on);
+  }
+
+  /** Документ будет хоть у кого-то: во вложении письма («Приложить запрос») или у «передам сам» — печати есть куда встать. */
+  docWanted(): boolean {
+    return this.withDocument || this.suppliers.some(s => s.manual && this.isOn(s));
+  }
+
+  stampTitle(): string | null {
+    if (!this.hasStamp) return 'Печать не загружена — «Система → Реквизиты и печать»';
+    return this.docWanted() ? null : 'Печать ставится в документ: отметьте «Приложить запрос на бланке» или «Передам сам»';
   }
 
   private previewBody(s: DlgSupplier): RfqPreviewBody {
@@ -384,8 +452,8 @@ export class PrRfqDialogComponent implements OnInit {
       lotIds: s.lines.filter(l => l.on).map(l => l.lotId),
       replyBy: this.replyBy || null,
       discloseClient: s.disclose && !!this.clientName,
-      withDocument: this.withDocument,
-      withStamp: this.withDocument && this.withStamp,
+      withDocument: this.withDocument || s.manual,
+      withStamp: (this.withDocument || s.manual) && this.withStamp,
     };
   }
 
@@ -399,15 +467,15 @@ export class PrRfqDialogComponent implements OnInit {
     });
   }
 
-  /** Документ ровно для этого поставщика; «№ —» — номер появится при отправке. */
-  downloadDocument(s: DlgSupplier) {
+  /** Документ ровно для этого поставщика — PDF или Word; «№ —» — номер появится при записи запроса. */
+  downloadDocument(s: DlgSupplier, format: DocFormat) {
     const body = this.previewBody(s);
     if (!body.lotIds.length) return;
     this.busy = true;
-    this.api.downloadRfqDocument(this.requestId, body).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.api.downloadRfqDocument(this.requestId, body, format).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: r => {
         this.busy = false;
-        if (r.body) saveBlob(r.body, dispositionFileName(r.headers.get('Content-Disposition'), 'Запрос КП.docx'));
+        if (r.body) saveBlob(r.body, dispositionFileName(r.headers.get('Content-Disposition'), 'Запрос КП.' + format));
         this.cdr.markForCheck();
       },
       error: e => this.blobError(e),
@@ -453,11 +521,18 @@ export class PrRfqDialogComponent implements OnInit {
   sendLabel(): string {
     if (this.sending) return 'Отправляю…';
     const plan = this.plan();
-    const mails = plan.filter(p => p.s.email.trim()).length;
-    const noMail = plan.length - mails;
     if (!plan.length) return 'Отметьте поставщиков';
-    if (!mails) return `Сохранить ${noMail} ${plural(noMail, 'запрос', 'запроса', 'запросов')} без письма`;
-    return `Отправить ${mails} ${plural(mails, 'письмо', 'письма', 'писем')}` + (noMail ? ` · без письма: ${noMail}` : '');
+    const manual = plan.filter(p => p.s.manual).length;
+    const mails = plan.filter(p => !p.s.manual && p.s.email.trim()).length;
+    const noMail = plan.length - manual - mails;
+    if (!mails) {
+      const n = plan.length;
+      return manual === n
+        ? `Записать ${n} ${plural(n, 'запрос', 'запроса', 'запросов')} — передам сам`
+        : `Сохранить ${n} ${plural(n, 'запрос', 'запроса', 'запросов')} без письма`;
+    }
+    return `Отправить ${mails} ${plural(mails, 'письмо', 'письма', 'писем')}`
+      + (manual ? ` · передам сам: ${manual}` : '') + (noMail ? ` · без письма: ${noMail}` : '');
   }
 
   send() {
@@ -468,17 +543,76 @@ export class PrRfqDialogComponent implements OnInit {
     this.api.sendRfq(this.requestId, {
       replyBy: this.replyBy || null,
       withDocument: this.withDocument,
-      withStamp: this.withDocument && this.withStamp,
+      withStamp: this.docWanted() && this.withStamp,
       suppliers: plan.map(p => ({
         distributorId: p.s.distributorId,
         newSupplier: p.s.isNew ? { name: p.s.name, rememberBrands: p.s.rememberBrands } : null,
-        email: p.s.email.trim(),
+        email: p.s.manual ? null : p.s.email.trim(),
         discloseClient: p.s.disclose && !!this.clientName,
+        manual: p.s.manual,
         lotIds: p.lotIds,
       })),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: results => { this.sending = false; this.sent.emit(results); },
+      next: results => {
+        this.sending = false;
+        const manual = results.filter(r => r.reason === 'MANUAL');
+        if (!manual.length) { this.sent.emit(results); return; }
+        this.done = { results, files: manual.map(r => ({ result: r, file: null, loading: true, error: '', wordBusy: false })) };
+        this.done.files.forEach(f => this.loadPdf(f));
+        this.cdr.markForCheck();
+      },
       error: e => { this.sending = false; this.fail(errorText(e)); },
     });
+  }
+
+  doneLead(): string {
+    const d = this.done;
+    if (!d) return '';
+    const mails = d.results.filter(r => r.emailSent).length;
+    // письма, которые не ушли (нет почты, сбой) — видно сразу, а не только в тосте после «Готово»
+    const failed = d.results.filter(r => r.reason === 'NO_EMAIL' || r.reason === 'SEND_FAILED').map(r => r.distributorName);
+    return (mails ? `Писем отправлено: ${mails}. ` : '')
+      + (failed.length ? `Письмо не ушло: ${failed.join(', ')}. ` : '')
+      + 'Перешлите PDF поставщику сами — например, в WhatsApp. Цену впишите в таблицу цен, когда поставщик ответит.';
+  }
+
+  /** PDF записанного запроса — с его номером; готовится сразу, чтобы «Поделиться» ушло прямо из нажатия. */
+  loadPdf(f: DoneFile) {
+    f.loading = true;
+    f.error = '';
+    this.api.downloadPriceRequestDocument(f.result.priceRequestId, 'pdf').pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => { f.loading = false; f.file = responseFile(r, 'Запрос КП.pdf'); this.cdr.markForCheck(); },
+      error: () => { f.loading = false; f.error = 'PDF не собрался.'; this.cdr.markForCheck(); },
+    });
+  }
+
+  share(f: DoneFile) {
+    if (!f.file) return;
+    openShareSheet(f.file, text => { f.error = text; this.cdr.markForCheck(); });
+  }
+
+  savePdf(f: DoneFile) {
+    if (f.file) saveBlob(f.file, f.file.name);
+  }
+
+  saveWord(f: DoneFile) {
+    if (f.wordBusy) return;
+    f.wordBusy = true;
+    this.api.downloadPriceRequestDocument(f.result.priceRequestId, 'docx').pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        f.wordBusy = false;
+        const file = responseFile(r, 'Запрос КП.docx');
+        if (file) saveBlob(file, file.name);
+        this.cdr.markForCheck();
+      },
+      error: () => { f.wordBusy = false; f.error = 'Word не собрался — попробуйте ещё раз.'; this.cdr.markForCheck(); },
+    });
+  }
+
+  /** «Готово» (и закрытие окна после записи) — итог отправки странице: тост, таблица цен, этап; один раз. */
+  finish() {
+    if (!this.done || this.finished) return;
+    this.finished = true;
+    this.sent.emit(this.done.results);
   }
 }

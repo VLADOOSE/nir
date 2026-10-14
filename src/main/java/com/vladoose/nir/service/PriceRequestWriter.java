@@ -53,6 +53,7 @@ public class PriceRequestWriter {
                 .withDocument(o.withDocument())
                 .withStamp(o.withStamp())
                 .emailOverride(o.emailTo() != null && !o.emailTo().isEmpty())
+                .letterStatus(o.manual() ? LetterStatus.MANUAL : null)   // «передам сам» — исход известен сразу
                 .build();
         pr = priceRequestService.save(pr); // штампует market
         for (Line line : lines) {

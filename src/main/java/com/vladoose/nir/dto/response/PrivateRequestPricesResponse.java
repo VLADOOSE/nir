@@ -8,7 +8,8 @@ import java.util.List;
 public record PrivateRequestPricesResponse(List<Supplier> suppliers, List<Line> lines) {
 
     /** clientDisclosed — хоть в одном запросе этому поставщику указан клиент (👤 в шапке колонки). */
-    public record Supplier(Long distributorId, String name, OffsetDateTime firstSentAt, boolean clientDisclosed) {}
+    public record Supplier(Long distributorId, String name, OffsetDateTime firstSentAt, boolean clientDisclosed,
+                           boolean manual) {}
 
     public record Line(Long lotId, String name, Integer quantity, String unit, List<Cell> cells,
                        BigDecimal bestPrice, String bestDistributorName) {}
@@ -18,5 +19,5 @@ public record PrivateRequestPricesResponse(List<Supplier> suppliers, List<Line> 
      * emailOverride — письмо ушло на адрес, вписанный в окне запроса: у «не доставлено» подсказка — запросить заново.
      */
     public record Cell(Long distributorId, String state, BigDecimal price, String note, Long priceRequestId,
-                       Long itemId, boolean best, boolean emailOverride) {}
+                       Long itemId, boolean best, boolean emailOverride, boolean manual) {}
 }

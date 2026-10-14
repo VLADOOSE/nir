@@ -31,6 +31,8 @@ public class PriceRequestSendService {
 
     public static final String REASON_NO_EMAIL = "NO_EMAIL";
     public static final String REASON_SEND_FAILED = "SEND_FAILED";
+    /** «Передам сам»: письма не было и не будет — запрос записан, документ пересылают руками. */
+    public static final String REASON_MANUAL = "MANUAL";
 
     public record SendItem(Long tenderLotId, Long medEquipmentId, Integer requestedQuantity) {}
     public record SendResult(Long priceRequestId, Long distributorId, String distributorName,
@@ -40,15 +42,23 @@ public class PriceRequestSendService {
      * Настройки письма запроса цен (спека 2026-10-12 §6): «Ответить до»; запрос на бланке (Word) и подпись с печатью в
      * нём (без документа печати нет); клиент указан поставщику; адрес. emailTo: null — почта из карточки поставщика;
      * пустой список — письма нет (поле почты в окне очищено); иначе — вписанные адреса (у запроса email_override).
+     * manual — «передам сам»: письма нет вовсе, запрос записывается «передан вручную», а его документ (PDF / Word)
+     * пересылают руками — документ здесь и есть то, что уходит поставщику, поэтому он и печать по отметке есть всегда.
      */
     public record SendOptions(LocalDate replyBy, boolean withDocument, boolean withStamp, boolean discloseClient,
-                              List<String> emailTo) {
+                              List<String> emailTo, boolean manual) {
 
         public static final SendOptions NONE = new SendOptions(null, false, false, false, null);
 
         public SendOptions {
+            withDocument = withDocument || manual;
             withStamp = withDocument && withStamp;
-            emailTo = emailTo == null ? null : List.copyOf(emailTo);
+            emailTo = manual || emailTo == null ? null : List.copyOf(emailTo);
+        }
+
+        public SendOptions(LocalDate replyBy, boolean withDocument, boolean withStamp, boolean discloseClient,
+                           List<String> emailTo) {
+            this(replyBy, withDocument, withStamp, discloseClient, emailTo, false);
         }
 
         public static SendOptions replyBy(LocalDate replyBy) {
@@ -112,6 +122,10 @@ public class PriceRequestSendService {
             Distributor dist = distributorService.findById(distId);
             requireCurrentMarket(dist.getMarket(), "Поставщик не найден: " + distId);
             PriceRequest pr = writer.persist(tender, dist, lines, o); // коммит записи
+            if (o.manual()) {   // «передам сам»: письма нет, запрос уже записан «передан вручную»
+                results.add(new SendResult(pr.getId(), dist.getId(), dist.getName(), false, REASON_MANUAL));
+                continue;
+            }
             results.add(dispatch(pr, dist, subjectOverride, bodyOverride, o.emailTo())); // письмо ПОСЛЕ коммита
         }
         return results;
@@ -125,8 +139,23 @@ public class PriceRequestSendService {
         PriceRequest pr = priceRequestRepository.findById(priceRequestId)
                 .orElseThrow(() -> new NotFoundException("КП не найден: " + priceRequestId));
         requireCurrentMarket(pr.getMarket(), "КП не найден: " + priceRequestId);
+        // «передам сам»: письма не было — пересылка ушла бы на почту карточки и стёрла бы отметку «передан вручную»
+        if (pr.getLetterStatus() == LetterStatus.MANUAL) {
+            throw new BadRequestException("Запрос передан вручную — письмом его не пересылают: запросите цены заново");
+        }
         List<String> to = pr.isEmailOverride() ? EmailAddresses.parse(pr.getSentTo()) : null;
         return dispatch(pr, pr.getDistributor(), null, null, to);
+    }
+
+    /**
+     * Документ записанного запроса — Word или PDF, с его номером и настройками (печать, клиент, «Ответить до»): тот же,
+     * что ушёл бы во вложении письма; у запроса «передам сам» его пересылают руками (WhatsApp). Чужой рынок — 404.
+     */
+    public RfqDocumentService.RfqFile document(Long priceRequestId, RfqDocumentService.Format format) {
+        PriceRequest pr = priceRequestRepository.findById(priceRequestId)
+                .orElseThrow(() -> new NotFoundException("КП не найден: " + priceRequestId));
+        requireCurrentMarket(pr.getMarket(), "КП не найден: " + priceRequestId);
+        return documents.render(pr, format);
     }
 
     /** «Печать» без загруженной печати — 400 до первой записи (спека §6.2: галочка недоступна, пока печати нет). */

@@ -3,7 +3,7 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { EquipmentHit, NewPriceLine, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
 import type {
-  LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
+  DocFormat, LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
 } from '../shared/private-request';
 
@@ -391,9 +391,15 @@ export class ApiService {
   sendRfq(id: number, body: RfqSendBody): Observable<SendResult[]> {
     return this.http.post<SendResult[]>(`${this.base}/private-requests/${id}/rfq/send`, body);
   }
-  /** Word запроса до отправки («№ —»); имя файла — в Content-Disposition; только blob через HttpClient (§14). */
-  downloadRfqDocument(id: number, body: RfqPreviewBody): Observable<HttpResponse<Blob>> {
-    return this.http.post(`${this.base}/private-requests/${id}/rfq/document`, body, { responseType: 'blob', observe: 'response' });
+  /** Документ запроса до отправки («№ —»): Word или PDF; имя файла — в Content-Disposition; только blob (§14). */
+  downloadRfqDocument(id: number, body: RfqPreviewBody, format: DocFormat = 'docx'): Observable<HttpResponse<Blob>> {
+    return this.http.post(`${this.base}/private-requests/${id}/rfq/document?format=${format}`, body,
+      { responseType: 'blob', observe: 'response' });
+  }
+  /** Документ записанного запроса, с его номером: PDF (переслать в WhatsApp) или Word. */
+  downloadPriceRequestDocument(priceRequestId: number, format: DocFormat): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.base}/price-requests/${priceRequestId}/document?format=${format}`,
+      { responseType: 'blob', observe: 'response' });
   }
   getPrivateRequestPrices(id: number): Observable<Prices> {
     return this.http.get<Prices>(`${this.base}/private-requests/${id}/prices`);

@@ -4,6 +4,8 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.dto.request.PrivateRequestField;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.clientoffer.KpTestSupportAccess;
+import com.vladoose.nir.repository.CompanyProfileRepository;
 import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.repository.EmailTemplateRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,6 +40,7 @@ class RfqDocumentServiceTest {
     @Autowired TenderRepository tenderRepository;
     @Autowired TenderLotRepository lotRepository;
     @Autowired EmailTemplateRepository templateRepository;
+    @Autowired CompanyProfileRepository profileRepository;
 
     // шаблон письма рынка правит оператор на «Шаблоне письма КП» (nirdb постоянная): тесты ждут зашитый — без него
     // своя строка о заказчике или тело без {{дедлайн}} уронили бы гейт без регресса (CLAUDE.md §14); откат — транзакцией теста
@@ -157,5 +161,36 @@ class RfqDocumentServiceTest {
         String name = documents.render(draft(t, t.getLots().get(0), dist(), false)).fileName();
 
         assertThat(name).matches("Запрос КП № \u2013 от \\d{2}\\.\\d{2}\\.\\d{4} \u2013 [^\"«»]+\\.docx");
+    }
+
+    /**
+     * PDF запроса — тот же документ, что Word (его пересылают в WhatsApp): номер и дата сохранённого запроса, поставщик,
+     * позиции, «С уважением,»; печать — по отметке запроса.
+     */
+    @Test
+    void savedRequestAsPdf_numberDateSupplierPositions_stampByFlag() {
+        // предусловие — в откатываемой транзакции теста: строку реквизитов правит оператор (CLAUDE.md §14)
+        CompanyProfile profile = profileRepository.findByMarket(Market.KZ).orElseThrow();
+        profile.setStampPng(KpTestSupportAccess.circlePng());
+        profileRepository.saveAndFlush(profile);
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Аппарат PDF", "ZZPDFBRAND", 2, null, null, null)), LinesMode.APPEND);
+        Distributor d = dist();
+        PriceRequest pr = draft(t, t.getLots().get(0), d, false);
+        pr.setId(987654L);
+        pr.setCreatedAt(OffsetDateTime.parse("2026-10-14T07:30:00Z"));   // 12:30 по Уральску — 14.10.2026
+        pr.setWithStamp(true);
+
+        RfqDocumentService.RfqFile f = documents.render(pr, RfqDocumentService.Format.PDF);
+
+        assertThat(new String(f.bytes(), 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        assertThat(f.contentType()).isEqualTo("application/pdf");
+        assertThat(f.fileName()).startsWith("Запрос КП № 987654 от 14.10.2026").endsWith(".pdf");
+        assertThat(KpTestSupportAccess.pdfText(f.bytes())).contains("Исх. № 987654 от 14.10.2026")
+                .contains(d.getName()).contains("ZZ Аппарат PDF (ZZPDFBRAND)").contains("С уважением,");
+
+        pr.setWithStamp(false);
+        assertThat(KpTestSupportAccess.pdfImageCount(documents.render(pr, RfqDocumentService.Format.PDF).bytes()))
+                .isEqualTo(KpTestSupportAccess.pdfImageCount(f.bytes()) - 1);
     }
 }

@@ -28,6 +28,7 @@ public class RfqSendRequest {
         private String email;
         /** «Указать клиента» — строка о конечном заказчике в письме и документе. */
         private boolean discloseClient;
+        private boolean manual;
         @NotEmpty(message = "Не выбраны позиции")
         private List<Long> lotIds;
     }

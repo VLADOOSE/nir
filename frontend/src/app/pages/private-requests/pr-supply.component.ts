@@ -9,14 +9,20 @@ import { errorText } from '../../shared/error-text';
 import { PrRfqDialogComponent } from './pr-rfq-dialog.component';
 import { PrPricesComponent } from './pr-prices.component';
 
-/** Итог отправки (спека §6.2): «Отправлено 2 из 3; «Жетысу-Мед» — без письма (нет почты)». */
+/**
+ * Итог отправки (спека §6.2): «Отправлено 2 из 3; «Жетысу-Мед» — без письма (нет почты)». «Передам сам» — не письмо и
+ * не сбой: в счёт писем не входит, отдельной частью «передадите сами: «…»».
+ */
 export function rfqToast(results: SendResult[]): string {
-  const sent = results.filter(r => r.emailSent).length;
-  const parts = [`Отправлено ${sent} из ${results.length}`];
-  for (const r of results) {
+  const letters = results.filter(r => r.reason !== 'MANUAL');
+  // название поставщика обычно уже в кавычках («ООО Концерн «Аксион»») — свои не добавляем
+  const byHand = results.filter(r => r.reason === 'MANUAL').map(r => r.distributorName);
+  const parts = letters.length ? [`Отправлено ${letters.filter(r => r.emailSent).length} из ${letters.length}`] : [];
+  for (const r of letters) {
     if (r.emailSent) continue;
     parts.push(`«${r.distributorName}» — ` + (r.reason === 'NO_EMAIL' ? 'без письма (нет почты)' : 'письмо не ушло (ошибка почты)'));
   }
+  if (byHand.length) parts.push((letters.length ? 'передадите сами: ' : 'Записано, передадите сами: ') + byHand.join(', '));
   return parts.join('; ');
 }
 

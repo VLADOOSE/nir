@@ -13,6 +13,8 @@ import java.lang.annotation.*;
  * (тест, которому она нужна, поднимает её сам; остальным отправка честно не удаётся — это пишется в их откатываемую строку).
  * После такого сбоя бин MailTelegramNotifier держит паузу (нарастающую, до 30 мин) на весь контекст — тест, которому
  * нужна настоящая отправка, берёт свой экземпляр отправителя (см. telegramEndToEnd_sendsToThread_marksSent).
+ * Копия писем в «Отправленные» (SentCopy) здесь выключена: ящик приёма = ящик отправки, и письмо любого теста этого
+ * контекста легло бы асинхронной копией в GreenMail соседнего теста.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -37,6 +39,7 @@ import java.lang.annotation.*;
         "mail.clients.market=KZ",
         "mail.clients.initial-delay-ms=86400000",
         "spring.mail.username=zakup@westmed.kz",
+        "mail.sent-copy.enabled=false",
         "notify.telegram.enabled=true",
         "notify.telegram.api-url=http://127.0.0.1:7798",
         "notify.telegram.bot-token=123456:TEST-TOKEN-SECRET",

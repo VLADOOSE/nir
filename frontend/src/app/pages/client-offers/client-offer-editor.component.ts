@@ -19,6 +19,7 @@ import {
 } from '../../shared/client-offer';
 import { unregistered } from '../../shared/registry';
 import { marketToday } from '../../shared/deadline';
+import { canShareFiles, openShareSheet } from '../../shared/share';
 import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
 
@@ -786,15 +787,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Отмена в окне «Поделиться» — AbortError, это не ошибка; любая другая — тост с причиной (.then, не await). */
+  /** Файл — в окно «Поделиться» прямо из нажатия; отмена — не ошибка, иначе тост (shared/share). */
   sendShare() {
     const file = this.shareFile;
     if (!file) return;
-    (navigator as any).share({ files: [file], title: file.name }).then(() => {}, (e: any) => {
-      if (e?.name === 'AbortError') return;
-      this.notify.error('Не удалось поделиться: ' + (e?.message || 'браузер отказал') + ' — скачайте PDF');
-      this.render();
-    });
+    openShareSheet(file, text => { this.notify.error(text); this.render(); });
   }
 
   setStatus(status: OfferStatus) {
@@ -925,15 +922,6 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
 
   private render() {
     if (!this.destroyed) this.cdr.detectChanges();
-  }
-}
-
-function canShareFiles(): boolean {
-  try {
-    const nav = navigator as any;
-    return !!nav.share && !!nav.canShare && nav.canShare({ files: [new File(['x'], 'x.pdf', { type: 'application/pdf' })] });
-  } catch {
-    return false;
   }
 }
 

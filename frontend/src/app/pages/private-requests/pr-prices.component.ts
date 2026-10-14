@@ -6,8 +6,9 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
-import { PriceCell, PriceLine, Prices, dateText } from '../../shared/private-request';
-import { money, numText, parseNum } from '../../shared/client-offer';
+import { DocFormat, PriceCell, PriceLine, Prices, dateText } from '../../shared/private-request';
+import { money, numText, parseNum, saveBlob } from '../../shared/client-offer';
+import { canShareFiles, openShareSheet, responseFile } from '../../shared/share';
 import { errorText } from '../../shared/error-text';
 
 /** «18 400» — целая цена без копеек, «17 950,50» — с копейками (а не «17 950,5»). */
@@ -22,8 +23,9 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
 
 /**
  * Таблица цен (спека 2026-10-12 §7): позиции × поставщики, кому писали. Ячейка — цена (★ лучшая по позиции), «отказ»,
- * «не доставлено», «письмо не ушло», «ждём ответа» или «—». Клик — цена и примечание вручную и «↻ Переслать».
- * На телефоне — карточка на позицию: лучшая цена и поставщики с состояниями.
+ * «не доставлено», «письмо не ушло», «ждём ответа» или «—». Клик — цена и примечание вручную, «↻ Переслать» и документ
+ * запроса (PDF / Word / «Поделиться» — у «передам сам» его и пересылают). На телефоне — карточка на позицию: лучшая цена
+ * и поставщики с состояниями.
  */
 @Component({
   selector: 'app-pr-prices',
@@ -37,7 +39,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
             <tr>
               <th class="pos">Позиция</th>
               <th *ngFor="let s of prices.suppliers">
-                {{ s.name }}<span class="who" *ngIf="s.clientDisclosed" title="Клиент указан в запросе">👤</span><div class="sent" *ngIf="s.firstSentAt">письмо {{ shortDate(s.firstSentAt) }}</div>
+                {{ s.name }}<span class="who" *ngIf="s.clientDisclosed" title="Клиент указан в запросе">👤</span><div class="sent" *ngIf="s.firstSentAt">{{ s.manual ? 'передан' : 'письмо' }} {{ shortDate(s.firstSentAt) }}</div>
               </th>
             </tr>
           </thead>
@@ -77,10 +79,17 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
         <p class="hint">{{ stateHint(ed.cell) }}</p>
         <label>Цена за единицу <input inputmode="decimal" [(ngModel)]="ed.price" [disabled]="readonly" placeholder="0" /></label>
         <label>Примечание <input [(ngModel)]="ed.note" maxlength="2000" [disabled]="readonly" placeholder="срок, модель, условия" /></label>
+        <div class="doc" *ngIf="ed.cell.priceRequestId">
+          <span class="doc-l">Запрос № {{ ed.cell.priceRequestId }}:</span>
+          <button type="button" class="link" [disabled]="docBusy" (click)="downloadDoc('pdf')">PDF</button>
+          <button type="button" class="link" [disabled]="docBusy" (click)="downloadDoc('docx')">Word</button>
+          <button type="button" class="link" *ngIf="canShare && !shareReady" [disabled]="sharePreparing" (click)="prepareShare()">{{ sharePreparing ? 'Готовлю PDF…' : 'Поделиться' }}</button>
+          <button type="button" class="btn btn-primary" *ngIf="shareReady" (click)="sendShare()">Отправить PDF</button>
+        </div>
         <div class="error-banner" *ngIf="editError">{{ editError }}</div>
         <div class="form-actions">
           <button type="button" class="btn btn-primary" *ngIf="!readonly" [disabled]="busy" (click)="saveCell()">Сохранить</button>
-          <button type="button" class="btn btn-line" *ngIf="!readonly && ed.cell.priceRequestId" [disabled]="busy" (click)="resend()">↻ Переслать письмо</button>
+          <button type="button" class="btn btn-line" *ngIf="!readonly && ed.cell.priceRequestId && !ed.cell.manual" [disabled]="busy" (click)="resend()">↻ Переслать письмо</button>
           <button type="button" class="btn btn-cancel" (click)="editing = null">Закрыть</button>
         </div>
       </div>
@@ -116,6 +125,10 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
     .modal input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
                    color: var(--text); font: inherit; font-size: 14px; }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0; }
+    .doc { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; font-size: 13px; }
+    .doc-l { color: var(--text-muted); }
+    .link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
+    .link:disabled { color: var(--text-muted); cursor: default; }
     @media (max-width: 900px) {
       .desk { display: none; }
       .mob { display: flex; flex-direction: column; gap: 8px; }
@@ -130,7 +143,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
       .overlay { padding: 0; align-items: flex-end; }
       .modal { max-width: none; border-radius: 12px 12px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
       .modal input { font-size: 16px; min-height: 40px; }
-      .form-actions .btn { min-height: 40px; }
+      .form-actions .btn, .doc .link, .doc .btn { min-height: 40px; }
     }
   `],
 })
@@ -145,7 +158,17 @@ export class PrPricesComponent implements OnChanges {
   editing: Editing | null = null;
   editError = '';
   busy = false;
+  readonly canShare = canShareFiles();
+  /** «Поделиться» в два нажатия: первое готовит PDF, второе отдаёт его окну отправки прямо из нажатия. */
+  sharePreparing = false;
+  /** Идёт скачивание документа: второе нажатие не скачивает дважды. */
+  docBusy = false;
+  private shareFileReady: File | null = null;
   private sub?: Subscription;
+
+  get shareReady(): boolean {
+    return !!this.shareFileReady;
+  }
 
   constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef,
               private destroyRef: DestroyRef) {}
@@ -198,7 +221,9 @@ export class PrPricesComponent implements OnChanges {
         ? 'Письмо ушло на адрес, вписанный в окне запроса, и вернулось — запросите цены у поставщика заново с верным адресом.'
         : 'Письмо вернулось — исправьте адрес в карточке поставщика и перешлите.';
       case 'NOT_SENT': return 'Письмо не ушло: у поставщика нет почты или почта его не приняла. Цену можно вписать после звонка.';
-      case 'WAITING': return 'Ответа ещё нет. Цена из письма с одной позицией встанет сама.';
+      case 'WAITING': return c.manual
+        ? 'Запрос передан вручную (PDF) — впишите цену, когда поставщик ответит.'
+        : 'Ответа ещё нет. Цена из письма с одной позицией встанет сама.';
       default: return '';
     }
   }
@@ -211,6 +236,59 @@ export class PrPricesComponent implements OnChanges {
     // «Срок…» и «Контекст…» из письма остаются в примечании
     const note = (cell.note || '').replace(AUTO_MARK, '');
     this.editing = { line, cell, supplier, price: cell.price == null ? '' : numText(cell.price), note };
+    this.shareFileReady = null;
+    this.sharePreparing = false;
+  }
+
+  /**
+   * Документ запроса ячейки — с его номером и настройками (печать, клиент): тот же, что уходит письмом или руками.
+   * Ответ, пришедший, когда окно уже о другой ячейке (или закрыто), ничего в нём не меняет.
+   */
+  downloadDoc(format: DocFormat) {
+    const ed = this.editing;
+    const id = ed?.cell.priceRequestId;
+    if (!ed || id == null || this.docBusy) return;
+    this.docBusy = true;
+    this.api.downloadPriceRequestDocument(id, format).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        this.docBusy = false;
+        const file = responseFile(r, 'Запрос КП.' + format);
+        if (file) saveBlob(file, file.name);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.docBusy = false;
+        if (this.editing === ed) this.editError = (format === 'pdf' ? 'PDF' : 'Word') + ' не собрался — попробуйте ещё раз';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  prepareShare() {
+    const ed = this.editing;
+    const id = ed?.cell.priceRequestId;
+    if (!ed || id == null) return;
+    this.sharePreparing = true;
+    this.api.downloadPriceRequestDocument(id, 'pdf').pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        if (this.editing !== ed) return;   // окно уже о другой ячейке: её «Поделиться» живёт своим запросом
+        this.sharePreparing = false;
+        this.shareFileReady = responseFile(r, 'Запрос КП.pdf');
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (this.editing !== ed) return;
+        this.sharePreparing = false;
+        this.editError = 'PDF не собрался — попробуйте ещё раз';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  sendShare() {
+    const file = this.shareFileReady;
+    if (!file) return;
+    openShareSheet(file, text => { this.editError = text; this.cdr.markForCheck(); });
   }
 
   saveCell() {

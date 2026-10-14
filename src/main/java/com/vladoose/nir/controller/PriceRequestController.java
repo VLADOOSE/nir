@@ -16,9 +16,11 @@ import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PriceRequestSendService.SendOptions;
 import com.vladoose.nir.service.PriceRequestService;
+import com.vladoose.nir.service.RfqDocumentService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -92,6 +94,12 @@ public class PriceRequestController {
     @PreAuthorize("hasRole('ADMIN')")
     public PriceRequestSendService.SendResult resend(@PathVariable Long id) {
         return sendService.resend(id);
+    }
+
+    /** Документ запроса — PDF (переслать в WhatsApp) или Word, с номером запроса; читать может любой вошедший. */
+    @GetMapping("/{id}/document")
+    public ResponseEntity<byte[]> document(@PathVariable Long id, @RequestParam(required = false) String format) {
+        return PrivateRequestController.download(sendService.document(id, RfqDocumentService.Format.parse(format)));
     }
 
     @GetMapping
