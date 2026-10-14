@@ -90,6 +90,17 @@ services:
     # (ais-backend — адрес вебхука) по-прежнему решает встроенный DNS. Провайдер починит маршрут — строку убрать;
     # проверка с сервера: nc -z -w 3 "$(dig +short web.whatsapp.com A | tail -1)" 443 && echo ok.
     dns: [1.1.1.1, 1.0.0.1]
+    # Серверы файлов WhatsApp: их имя выдаёт сам WhatsApp (сессии — стокгольмский media-arn2-1), DNS тут не поможет —
+    # media-arn2-1 → 31.13.72.52, media-hel3-1 → 157.240.205.60 у всех DNS, и с сервера до них соединения нет
+    # (2026-10-14: 1 из 20; фото и PDF приходили за 4 и 7 минут, очередь стояла). Узлы во Франкфурте отдают тот же
+    # файл: ссылки media-arn2-1 на фото и PDF через 57.144.223.32 и 57.144.249.32 — 200, размер совпал. Два адреса —
+    # запас (GOWS на Go перебирает адреса из /etc/hosts по очереди). Сломалось — в чате «файл не скачался», в логе WAHA
+    # «Failed to download media … media-…cdn.whatsapp.net»: проверить адреса (DEPLOY.md §7).
+    extra_hosts:
+      - "media-arn2-1.cdn.whatsapp.net:57.144.223.32"
+      - "media-arn2-1.cdn.whatsapp.net:57.144.249.32"
+      - "media-hel3-1.cdn.whatsapp.net:57.144.223.32"
+      - "media-hel3-1.cdn.whatsapp.net:57.144.249.32"
     networks: [ais-net]
 
 networks:
