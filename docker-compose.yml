@@ -83,6 +83,13 @@ services:
     volumes:
       - ais-waha-sessions:/app/.sessions   # ⚠️ = доступ к рабочему WhatsApp: не выкладывать, в бэкапы — только осознанно
       - ais-waha-media:/app/.media
+    # DNS провайдера (и Google) отдаёт адреса WhatsApp 31.13.72.48/.52, а до них с сервера нет соединения
+    # (2026-10-14: 0 из 6 попыток; соседний 31.13.72.8 Facebook — 6 из 6). Cloudflare отдаёт адреса 57.144.x /
+    # 157.240.x — 6 из 6, из контейнера WAHA web.whatsapp.com / g.whatsapp.net / mmg.whatsapp.net отвечают за
+    # 0,1–0,2 с. DNS, а не extra_hosts: хостов у WhatsApp много (сервера файлов — тоже). Имена сети docker
+    # (ais-backend — адрес вебхука) по-прежнему решает встроенный DNS. Провайдер починит маршрут — строку убрать;
+    # проверка с сервера: nc -z -w 3 "$(dig +short web.whatsapp.com A | tail -1)" 443 && echo ok.
+    dns: [1.1.1.1, 1.0.0.1]
     networks: [ais-net]
 
 networks:
