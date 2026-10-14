@@ -49,4 +49,20 @@ class ApparatusSearchTest {
         assertThat(rows).anyMatch(r -> r.getProducer() != null
                 && r.getProducer().toLowerCase().contains("самсунг"));
     }
+
+    @Test
+    void findsOldFormatApparatusRegistrations() {
+        // инжекторы ulrich XD 200x зарегистрированы старым номером «РК-МТ-7№…» (без «(МТ)»), а трубка
+        // пациента XD 2045 (320 см) живёт в их комплектности — раньше поиск таких записей не видел вовсе
+        List<ApparatusRow> rows = repo.findApparatusByTerm("tennessee", 3);
+        assertThat(rows).extracting(ApparatusRow::getRegNumber).contains("РК-МТ-7№005451");
+    }
+
+    @Test
+    void cyrillicProducerFindsOldAndNewFormatTogether() {
+        // производитель всех пяти РУ ulrich записан кириллицей «ульрих ГмбХ энд Ко. КГ»
+        List<ApparatusRow> rows = repo.findApparatusByTerm("Ульрих", 10);
+        assertThat(rows).extracting(ApparatusRow::getRegNumber)
+                .contains("РК МИ (МТ)-0№024583", "РК-МТ-7№005451", "РК-МТ-7№005452", "РК-МТ-7№005453");
+    }
 }

@@ -29,4 +29,10 @@ class BrandTransliteratorTest {
         assertThat(BrandTransliterator.expand(null)).isEmpty();
         assertThat(BrandTransliterator.expand("  ")).isEmpty();
     }
+
+    @Test
+    void expandsUlrichToCyrillicProducer() {
+        // в реестре РК производитель ulrich — только кириллицей «ульрих ГмбХ энд Ко. КГ»
+        assertThat(BrandTransliterator.expand("ulrich")).containsExactly("ulrich", "Ульрих");
+    }
 }

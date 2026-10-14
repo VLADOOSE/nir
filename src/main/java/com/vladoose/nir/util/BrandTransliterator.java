@@ -36,6 +36,7 @@ public final class BrandTransliterator {
         LAT_TO_CYR.put("storz", "Шторц");
         LAT_TO_CYR.put("draeger", "Дрегер");
         LAT_TO_CYR.put("drager", "Дрегер");
+        LAT_TO_CYR.put("ulrich", "Ульрих");   // инжекторы ulrich XD 200x: латиницы нет ни в name, ни в producer
     }
 
     private BrandTransliterator() {}
