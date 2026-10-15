@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- АИС: раз в сутки забрать копию базы с сервера на этот Mac (mac-pull.sh) — DEPLOY.md §4. __HOME__ заменяется при установке. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>kz.westmed.ais-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__HOME__/Library/Scripts/ais-backup-pull.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>12</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Backups/AIS/pull.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Backups/AIS/pull.log</string>
+</dict>
+</plist>

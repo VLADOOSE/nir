@@ -1,0 +1,4 @@
+# АИС: копия базы nirdb раз в сутки — 21:30 UTC (02:30 по Алматы, сервер живёт в UTC). DEPLOY.md §4.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+30 21 * * * root /usr/local/sbin/ais-db-backup.sh >> /var/log/ais-db-backup.log 2>&1
