@@ -2,6 +2,7 @@
 """Письма в локальный GreenMail (./gradlew devMail) для живой проверки приёма zakup@ и info@:
   python3 scripts/dev-mail.py plain            — письмо с вложением (прочее)
   python3 scripts/dev-mail.py reply <prId>     — ответ поставщика с ценой на запрос КП
+  python3 scripts/dev-mail.py reply <prId> <файл> — ответ поставщика с КП во вложении (xlsx, xls, docx, doc, pdf, jpg, png)
   python3 scripts/dev-mail.py bounce <prId>    — возврат почтового сервера (DSN, Action: failed) по запросу КП
   python3 scripts/dev-mail.py delayed <prId>   — отложенная доставка (DSN, Action: delayed, 4.4.1) по запросу КП
   python3 scripts/dev-mail.py auto <prId>      — автоответ на запрос КП
@@ -46,12 +47,25 @@ def plain():
     send(m)
 
 
-def reply(pr_id):
+def reply(pr_id, path=None):
     m = EmailMessage()
     m["From"] = "Отдел продаж <sales@medtech.kz>"
     m["To"] = TO
     m["Subject"] = f"Re: [КП-{pr_id}] Запрос коммерческого предложения"
-    m.set_content("Добрый день!\nЦена 3 450 000 тг, срок поставки 30 дней.\n\n> Здравствуйте! Просим КП")
+    if path:
+        m.set_content("Добрый день!\nКП во вложении.\n\n> Здравствуйте! Просим КП")
+        name = os.path.basename(path)
+        ext = name.lower().rsplit(".", 1)[-1]
+        types = {"xlsx": ("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                 "xls": ("application", "vnd.ms-excel"),
+                 "docx": ("application", "vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                 "doc": ("application", "msword"), "pdf": ("application", "pdf"),
+                 "jpg": ("image", "jpeg"), "jpeg": ("image", "jpeg"), "png": ("image", "png")}
+        maintype, subtype = types.get(ext, ("application", "octet-stream"))
+        with open(path, "rb") as f:
+            m.add_attachment(f.read(), maintype=maintype, subtype=subtype, filename=name)
+    else:
+        m.set_content("Добрый день!\nЦена 3 450 000 тг, срок поставки 30 дней.\n\n> Здравствуйте! Просим КП")
     send(m)
 
 
@@ -177,8 +191,10 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "plain":
         plain()
-    elif cmd in ("reply", "bounce", "delayed", "auto") and len(sys.argv) > 2:
-        {"reply": reply, "bounce": bounce, "delayed": delayed, "auto": auto}[cmd](sys.argv[2])
+    elif cmd == "reply" and len(sys.argv) > 2:
+        reply(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
+    elif cmd in ("bounce", "delayed", "auto") and len(sys.argv) > 2:
+        {"bounce": bounce, "delayed": delayed, "auto": auto}[cmd](sys.argv[2])
     elif cmd in ("client", "client-plain", "answer") and len(sys.argv) > 2:
         {"client": client, "client-plain": client_plain, "answer": answer}[cmd](sys.argv[2])
     elif cmd == "newsletter":

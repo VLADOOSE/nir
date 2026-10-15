@@ -39,7 +39,7 @@ import { ReplyDocumentComponent } from './reply-document.component';
 
       <div class="body">
         <section class="pane-prices" [class.off]="tab !== 'prices'">
-          <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.empty]="p.price == null">
+          <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
               <span class="p-name">{{ p.ordinal }}. {{ p.name }}<ng-container *ngIf="p.brand"> ({{ p.brand }})</ng-container><ng-container *ngIf="p.model"> · {{ p.model }}</ng-container></span>
               <span class="p-qty">{{ p.quantity ?? '—' }} {{ p.unit || 'шт' }}</span>
@@ -124,7 +124,9 @@ import { ReplyDocumentComponent } from './reply-document.component';
       .p-ctl input, .pick { font-size: 16px; min-height: 40px; }
       .p-ctl input { width: 100%; }
       .p-ctl label { flex: 1 1 140px; }
-      .pick { max-width: none; flex: 1 1 100%; }
+      /* ширина select по умолчанию — по самому длинному варианту («стр. 5 · Столик процедурный…»): без width и
+         min-width: 0 он вылезал за край карточки на телефоне (живая проверка) */
+      .pick { max-width: none; flex: 1 1 100%; width: 100%; min-width: 0; }
       .bar .btn, .p-sugg .btn { min-height: 40px; }
     }
   `],

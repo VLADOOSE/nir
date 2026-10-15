@@ -45,9 +45,11 @@ import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/suppl
             <thead><tr><th>Стр.</th>
               <th *ngFor="let c of t.columns">
                 <div class="h">{{ c.header || '—' }}</div>
-                <select *ngIf="admin; else roleText" [value]="c.role" (change)="setRole(c, $event)" [disabled]="busy"
+                <!-- выбранное — через [selected] у варианта: [value] у select ставится раньше, чем *ngFor нарисует
+                     варианты, и все колонки показывали бы первый вариант («Наименование») — найдено живой проверкой -->
+                <select *ngIf="admin; else roleText" (change)="setRole(c, $event)" [disabled]="busy"
                         [attr.aria-label]="'Роль колонки ' + (c.header || c.index + 1)">
-                  <option *ngFor="let o of roles" [value]="o.v">{{ o.l }}</option>
+                  <option *ngFor="let o of roles" [value]="o.v" [selected]="o.v === c.role">{{ o.l }}</option>
                 </select>
                 <ng-template #roleText><div class="role">{{ roleLabel(c.role) }}</div></ng-template>
               </th></tr></thead>
@@ -95,7 +97,7 @@ import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/suppl
     th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
     th { background: var(--surface-2); position: sticky; top: 0; }
     th .h { font-weight: 600; margin-bottom: 4px; }
-    th select { width: 100%; font-size: 12px; padding: 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
+    th select { width: 100%; min-width: 7.5em; font-size: 12px; padding: 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
     .role { font-size: 11px; color: var(--text-muted); }
     tr.linked td { background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
     .rn { white-space: nowrap; color: var(--text-muted); }
