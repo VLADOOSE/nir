@@ -148,22 +148,30 @@ public class LeadService {
     }
 
     /**
-     * «Не клиент» (спека info-mail-leads §2.5): закрыть обращение причиной «Не клиент» и отметить его почтовую переписку —
-     * письма с этого адреса ложатся в переписку, но обращений не заводят. Снять отметку — на «Чатах».
+     * «Не клиент» (спека info-mail-leads §2.5; с 2026-10-15 — и у обращений из WhatsApp): закрыть обращение причиной
+     * «Не клиент» и отметить его переписку — письма с адреса или сообщения и звонки с номера ложатся в переписку, но
+     * обращений не заводят. Снять отметку — на «Чатах» или «Вернуть в работу».
      */
     @Transactional
     public Lead markNotClient(Long id, String author) {
         Lead lead = get(id);
         Chat chat = lead.getChat();
-        if (chat == null || chat.getChannel() != LeadChannel.EMAIL) {
-            throw new BadRequestException("«Не клиент» — только у обращения из почты");
+        if (chat == null || (chat.getChannel() != LeadChannel.EMAIL && chat.getChannel() != LeadChannel.WHATSAPP)) {
+            throw new BadRequestException("«Не клиент» — только у обращения с перепиской (почта, WhatsApp)");
         }
         require(lead, EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK, LeadStatus.CONVERTED), "закрыть");
         chat.setNotClient(true);
         lead.setCloseReason(LeadCloseReason.NOT_CLIENT);
         transition(lead, LeadStatus.CLOSED, author, closeReasonLabel(LeadCloseReason.NOT_CLIENT)
-                + " — письма с " + chat.getExternalChatId() + " больше не заводят обращений");
+                + " — " + notClientScope(chat) + " больше не заводят обращений");
         return lead;
+    }
+
+    /** Кого касается отметка, словами канала: «письма с адреса», «сообщения и звонки с +7…» (нет номера — с чата). */
+    private static String notClientScope(Chat chat) {
+        if (chat.getChannel() == LeadChannel.EMAIL) return "письма с " + chat.getExternalChatId();
+        if (!isBlank(chat.getPhoneNorm())) return "сообщения и звонки с " + chat.getPhoneNorm();
+        return "сообщения и звонки из чата «" + (isBlank(chat.getTitle()) ? chat.getExternalChatId() : chat.getTitle()) + "»";
     }
 
     /**
@@ -178,7 +186,8 @@ public class LeadService {
         lead.setCloseReason(null);
         if (notClient) lead.getChat().setNotClient(false);
         transition(lead, lead.getPrivateRequest() != null ? LeadStatus.CONVERTED : LeadStatus.IN_WORK, author,
-                notClient ? "отметка «не клиент» снята — письма с этого адреса снова заводят обращения" : null);
+                notClient ? "отметка «не клиент» снята — " + (lead.getChat().getChannel() == LeadChannel.EMAIL
+                        ? "письма с этого адреса" : "сообщения с этого номера") + " снова заводят обращения" : null);
         return lead;
     }
 

@@ -54,9 +54,8 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('note')">+ Заметка</button>
                 <button type="button" class="btn btn-line" [disabled]="busy" (click)="togglePanel('call')">+ Звонок</button>
                 <button type="button" class="btn btn-line" *ngIf="lead.status !== 'CLOSED'" [disabled]="busy" (click)="togglePanel('close')">Закрыть…</button>
-                <button type="button" class="btn btn-line" *ngIf="lead.chatChannel === 'EMAIL' && lead.status !== 'CLOSED'"
-                        [disabled]="busy" (click)="notClient()"
-                        title="Закрыть обращение и больше не заводить обращения из писем этого адреса">Не клиент</button>
+                <button type="button" class="btn btn-line" *ngIf="canMarkNotClient()" [disabled]="busy" (click)="notClient()"
+                        [title]="'Закрыть обращение и больше не заводить обращения из ' + notClientScope()">Не клиент</button>
               </ng-container>
             </div>
 
@@ -326,7 +325,15 @@ export class LeadCardComponent implements OnChanges {
 
   take() { this.apply(this.api.takeLead(this.lead.id), 'Взято в работу'); }
   reopen() { this.apply(this.api.reopenLead(this.lead.id), 'Обращение снова в работе'); }
-  notClient() { this.apply(this.api.markLeadNotClient(this.lead.id), 'Закрыто: не клиент — письма с этого адреса больше не заводят обращений'); }
+  /** «Не клиент» — у обращения с перепиской: почта или WhatsApp (с 2026-10-15; раньше только почта). */
+  canMarkNotClient() {
+    return (this.lead.chatChannel === 'EMAIL' || this.lead.chatChannel === 'WHATSAPP') && this.lead.status !== 'CLOSED';
+  }
+  notClientScope() { return this.lead.chatChannel === 'EMAIL' ? 'писем этого адреса' : 'сообщений и звонков этого номера'; }
+  notClient() {
+    const what = this.lead.chatChannel === 'EMAIL' ? 'письма с этого адреса' : 'сообщения и звонки с этого номера';
+    this.apply(this.api.markLeadNotClient(this.lead.id), `Закрыто: не клиент — ${what} больше не заводят обращений`);
+  }
   doClose() { this.apply(this.api.closeLead(this.lead.id, this.closeReason, this.closeComment), 'Обращение закрыто'); }
   saveNote() { this.apply(this.api.addLeadEvent(this.lead.id, { type: 'NOTE', body: this.noteText.trim() }), 'Заметка добавлена'); }
   saveCall() {
