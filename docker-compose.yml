@@ -96,7 +96,15 @@ services:
     # файл: ссылки media-arn2-1 на фото и PDF через 57.144.223.32 и 57.144.249.32 — 200, размер совпал. Два адреса —
     # запас (GOWS на Go перебирает адреса из /etc/hosts по очереди). Сломалось — в чате «файл не скачался», в логе WAHA
     # «Failed to download media … media-…cdn.whatsapp.net»: проверить адреса (DEPLOY.md §7).
+    # web.whatsapp.com (подключение сессии): DNS Cloudflare тоже порой отдаёт недоступные 31.13.72.52 / 157.240.205.60 —
+    # 2026-10-14 два переподключения из пяти ждали по минуте («dial tcp …:443: i/o timeout»). Устойчивы только 57.144.x:
+    # 2026-10-15 — 5 из 5, /ws/chat отвечает за 0,4 с с верным сертификатом; 157.240.0.60 (Франкфурт) — уже 2 из 5.
+    # mmg.whatsapp.net — запасной сервер файлов, на те же адреса.
     extra_hosts:
+      - "web.whatsapp.com:57.144.223.32"
+      - "web.whatsapp.com:57.144.113.32"
+      - "mmg.whatsapp.net:57.144.223.32"
+      - "mmg.whatsapp.net:57.144.249.32"
       - "media-arn2-1.cdn.whatsapp.net:57.144.223.32"
       - "media-arn2-1.cdn.whatsapp.net:57.144.249.32"
       - "media-hel3-1.cdn.whatsapp.net:57.144.223.32"
