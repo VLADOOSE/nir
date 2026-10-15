@@ -8,11 +8,17 @@ import java.time.LocalDate;
 
 /** Строка ответа поставщика с ценой — кандидат в закупку строки КП (спека 2026-10-12 §8). */
 public record PurchaseOffer(long priceRequestItemId, long priceRequestId, long lotId, long distributorId,
-                            String supplierName, BigDecimal price, String status, LocalDate respondedOn) {
+                            String supplierName, BigDecimal price, String status, LocalDate respondedOn, boolean auto) {
+
+    /** Без признака 💡 — цена сверена (тесты правила закупки). */
+    public PurchaseOffer(long priceRequestItemId, long priceRequestId, long lotId, long distributorId,
+                         String supplierName, BigDecimal price, String status, LocalDate respondedOn) {
+        this(priceRequestItemId, priceRequestId, lotId, distributorId, supplierName, price, status, respondedOn, false);
+    }
 
     public static PurchaseOffer of(PriceRequestItem i) {
         PriceRequest pr = i.getPriceRequest();
         return new PurchaseOffer(i.getId(), pr.getId(), i.getTenderLot().getId(), pr.getDistributor().getId(),
-                pr.getDistributor().getName(), i.getResponsePrice(), pr.getStatus(), pr.getResponseDate());
+                pr.getDistributor().getName(), i.getResponsePrice(), pr.getStatus(), pr.getResponseDate(), i.isResponseAuto());
     }
 }

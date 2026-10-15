@@ -87,7 +87,7 @@ public class ClientOfferRequestService {
         BigDecimal min = current.get(0).price();
         return current.stream().map(c -> new SupplierOfferResponse(c.priceRequestItemId(), c.supplierName(), c.price(),
                 c.respondedOn(), "ACCEPTED".equals(c.status()), c.price().compareTo(min) == 0,
-                Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()))).toList();
+                Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()), c.priceRequestId(), c.auto())).toList();
     }
 
     /** Что подставить строке: цена и ответ, из которого она. */

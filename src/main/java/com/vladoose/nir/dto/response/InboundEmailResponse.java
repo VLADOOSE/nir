@@ -3,6 +3,7 @@ package com.vladoose.nir.dto.response;
 import lombok.Data;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Data
 public class InboundEmailResponse {
@@ -18,4 +19,6 @@ public class InboundEmailResponse {
     private boolean hasAttachment;
     private String excerpt;
     private String status;
+    /** Файлы ответа поставщика из этого письма (supplier_reply_file) — во «Входящих» рядом с «Сверить». */
+    private List<String> files = List.of();
 }

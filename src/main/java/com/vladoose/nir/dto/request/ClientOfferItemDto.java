@@ -66,6 +66,12 @@ public class ClientOfferItemDto {
     /** Поставщик ответа — выводит сервер из priceRequestItemId; с клиента не принимается. */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long distributorId;
+    /** 💡 — закупка взята из ответа поставщика, цена которого ещё не сверена (ставит сервер). */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Boolean purchaseUnverified;
+    /** Запрос цен ответа, из которого закупка: ссылка «Ответ поставщика ›». */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long replyRequestId;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private ItemCalc calc;
 }

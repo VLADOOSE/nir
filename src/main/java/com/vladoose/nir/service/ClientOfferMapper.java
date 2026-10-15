@@ -7,8 +7,10 @@ import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferItem;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
+import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.repository.MedRegistryRepository;
+import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.service.offer.ItemCalc;
@@ -23,10 +25,12 @@ public class ClientOfferMapper {
 
     private final TenderRepository tenders;
     private final MedRegistryRepository registry;
+    private final PriceRequestItemRepository priceItems;
 
-    public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry) {
+    public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry, PriceRequestItemRepository priceItems) {
         this.tenders = tenders;
         this.registry = registry;
+        this.priceItems = priceItems;
     }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
@@ -67,12 +71,20 @@ public class ClientOfferMapper {
                 .map(ClientOfferItem::getRegNumber).collect(Collectors.toSet());
         Map<String, MedRegistry> records = new HashMap<>();
         if (!numbers.isEmpty()) for (MedRegistry m : registry.findByRegNumberIn(numbers)) records.put(m.getRegNumber(), m);
+        // ответы поставщиков, из которых закупка: 💡 и ссылка на экран сверки — одним запросом
+        Set<Long> links = o.getItems().stream().map(ClientOfferItem::getPriceRequestItemId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, PriceRequestItem> answers = new HashMap<>();
+        if (!links.isEmpty()) for (PriceRequestItem pi : priceItems.findAllById(links)) answers.put(pi.getId(), pi);
         List<ClientOfferItemDto> items = new ArrayList<>();
         for (int i = 0; i < o.getItems().size(); i++) {
             ClientOfferItem it = o.getItems().get(i);
             ClientOfferItemDto d = toItemDto(it, calc.items().get(i));
             MedRegistry rec = it.getRegNumber() == null ? null : records.get(it.getRegNumber());
             d.setRegistry(rec == null ? null : PrivateRequestViewBuilder.candidate(rec));
+            PriceRequestItem pi = it.getPriceRequestItemId() == null ? null : answers.get(it.getPriceRequestItemId());
+            d.setPurchaseUnverified(pi != null && pi.isResponseAuto());
+            d.setReplyRequestId(pi == null ? null : pi.getPriceRequest().getId());
             items.add(d);
         }
         r.setItems(items);
