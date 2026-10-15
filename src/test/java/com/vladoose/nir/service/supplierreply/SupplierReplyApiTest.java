@@ -151,4 +151,23 @@ class SupplierReplyApiTest {
         mvc.perform(delete("/api/price-requests/" + pr.getId() + "/files/" + fileId).header("X-Market", "KZ").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isBadRequest());
     }
+
+    /** Цены файла в рублях на запрос KZ: у подсказки и строк таблицы — валюта файла, экран не выдаёт их за тенге. */
+    @Test
+    void foreignCurrencyIsShownOnSuggestionsAndRows() throws Exception {
+        MarketContext.set(Market.KZ);
+        ReplyTable table = new ReplyTable("Лист1", 4, 3, "RUB", List.of(
+                new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, "Цена, руб.", LineField.PRICE)),
+                List.of(new ReplyTable.Row(5, List.of("Кушетка медицинская смотровая КМС-01", "2", "4 700"))));
+        replies.ingest(priceRequests.findById(pr.getId()).orElseThrow(), List.of(parsed("КП.xlsx", table)), null);
+        MarketContext.clear();
+
+        mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.head.currency").value("KZT"))
+                .andExpect(jsonPath("$.positions[0].price").value(nullValue()))
+                .andExpect(jsonPath("$.positions[0].suggestion.currency").value("RUB"))
+                .andExpect(jsonPath("$.table.rows[0].currency").value("RUB"));
+    }
 }

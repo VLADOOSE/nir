@@ -176,4 +176,12 @@ class ReplyTableReaderTest {
             return out.toByteArray();
         }
     }
+
+    /** «Цена, у.е.» — валюта таблицы «у.е.», а не «не названа» (иначе цены встали бы как цены рынка). */
+    @Test
+    void conventionalUnitsCurrency() throws Exception {
+        ReplyTable t = ReplyTableReader.read(xlsx(List.of(List.of("Наименование", "Цена, у.е."), List.of("Монитор пациента", "1200"))),
+                ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo("UE");
+    }
 }

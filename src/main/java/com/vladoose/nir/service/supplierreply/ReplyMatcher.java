@@ -31,7 +31,8 @@ public final class ReplyMatcher {
     static final double CODE_WEIGHT = 3.0;
     /** Не больше 0,5 < AUTO_MIN: пара с разными числами уверенной не бывает. */
     static final double CONFLICT_FACTOR = 0.5;
-    private static final Pattern DIGITS = Pattern.compile("\\d+");
+    /** Число с дробной частью — одно число: «2,5 мл» — это 2.5, а не «2» и «5» (ревью ветки). */
+    private static final Pattern DIGITS = Pattern.compile("\\d+(?:[.,]\\d+)?");
 
     public enum Kind { AUTO, SUGGEST }
 
@@ -83,12 +84,15 @@ public final class ReplyMatcher {
         return conflicting(positionText, rowText) ? v * CONFLICT_FACTOR : v;
     }
 
-    /** Числа текста — номера, размеры, цифры кодов («№ 5», «60 мм», «MSL24» → 24); ведущие нули не в счёт. */
+    /**
+     * Числа текста — номера, размеры, цифры кодов («№ 5», «60 мм», «MSL24» → 24, «2,5 мл» → 2.5); сравниваются как
+     * числа: ведущие нули и нули дробной части не в счёт («04» = 4, «5,0» = 5).
+     */
     static Set<String> numbers(String text) {
         Set<String> out = new HashSet<>();
         if (text == null) return out;
         Matcher m = DIGITS.matcher(text);
-        while (m.find()) out.add(m.group().replaceFirst("^0+(?=\\d)", ""));
+        while (m.find()) out.add(new BigDecimal(m.group().replace(',', '.')).stripTrailingZeros().toPlainString());
         return out;
     }
 

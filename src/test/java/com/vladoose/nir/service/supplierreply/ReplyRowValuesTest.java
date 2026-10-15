@@ -64,4 +64,13 @@ class ReplyRowValuesTest {
         assertThat(v.get(0).price()).isNull();
         assertThat(v.get(1).participates()).isFalse();
     }
+
+    /** «Цена без скидки» — обычная цена: при паре колонок берётся «Цена со скидкой» (ревью ветки). */
+    @Test
+    void priceWithoutDiscountIsNotDiscountPrice() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Цена без скидки", "Цена со скидкой"),
+                List.of(LineField.NAME, LineField.PRICE, LineField.PRICE), "RUB",
+                List.of(List.of("Скальпель", "7200", "4700")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("4700");
+    }
 }

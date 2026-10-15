@@ -54,5 +54,9 @@ class MoneyTextTest {
         assertThat(MoneyText.currency("Цена")).isNull();
         assertThat(MoneyText.label("RUB")).isEqualTo("руб.");
         assertThat(MoneyText.label("KZT")).isEqualTo("тг");
+        // «у.е.» — условные единицы, не валюта рынка: такие цены не подставляются (ревью ветки)
+        assertThat(MoneyText.currency("у.е.")).isEqualTo("UE");
+        assertThat(MoneyText.currency("Цена, у. е.")).isEqualTo("UE");
+        assertThat(MoneyText.label("UE")).isEqualTo("у.е.");
     }
 }

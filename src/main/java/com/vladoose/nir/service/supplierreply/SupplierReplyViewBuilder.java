@@ -117,7 +117,7 @@ public class SupplierReplyViewBuilder {
             for (ReplyTable.Row r : table.rows()) {
                 ReplyRowValues v = byRow.get(r.fileRow());
                 rows.add(new TRow(r.fileRow(), r.cells(), rowOrdinal.get(r.fileRow()), v != null && v.price() != null,
-                        v == null ? "" : v.displayText(), v == null ? null : v.price()));
+                        v == null ? "" : v.displayText(), v == null ? null : v.price(), v == null ? null : v.currency()));
             }
             tbl = new Table(table.source(), table.headerRow(), table.currency(), cols, rows);
         }
@@ -165,7 +165,7 @@ public class SupplierReplyViewBuilder {
 
     private static RowRef ref(ReplyRowValues r, double score) {
         return new RowRef(r.fileRow(), r.displayText(), r.quantity() == null ? null : r.quantity().value(),
-                r.unit(), r.price(), r.priceComputed(), r.note(), score);
+                r.unit(), r.price(), r.priceComputed(), r.note(), score, r.currency());
     }
 
     /** Расхождения строки файла с позицией (спека §4.1). */

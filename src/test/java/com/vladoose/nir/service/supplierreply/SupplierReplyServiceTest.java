@@ -185,4 +185,51 @@ class SupplierReplyServiceTest {
         MarketContext.set(Market.RF);
         assertThatThrownBy(() -> service.verify(pr.getId())).isInstanceOf(NotFoundException.class);
     }
+
+    /** Строка в чужой валюте в таблице рынка не подставляется — валюта у строки (колонка «Валюта»), ревью ветки. */
+    @Test
+    void foreignCurrencyRowInMarketTableNotApplied() {
+        ReplyTable t = new ReplyTable("Лист1", 4, 4, "KZT", List.of(
+                new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, "Цена", LineField.PRICE), new ReplyTable.Column(3, "Валюта", LineField.CURRENCY)),
+                List.of(new ReplyTable.Row(5, List.of("Скальпели офтальмологические: Скальпель MSL24", "1", "4 700", "тенге")),
+                        new ReplyTable.Row(6, List.of("Скальпели офтальмологические: Скальпель MST15", "1", "4 200", "тенге")),
+                        new ReplyTable.Row(7, List.of("Материал шовный стерильный нейлон 2056", "1", "25", "EUR"))));
+
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", t)), null);
+
+        assertThat(o.applied()).isEqualTo(2);
+        assertThat(item(2).getResponsePrice()).isNull();
+    }
+
+    /** У закрытого (принятого) запроса правка ролей колонок цены не трогает — спека §3.4 (ревью ветки). */
+    @Test
+    void setColumnsOnClosedRequestKeepsPrices() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", kzTable())), null);
+        pr.setStatus("ACCEPTED");
+        em.flush();
+
+        service.setColumns(pr.getId(), o.fileIds().get(0), List.of(new ReplyColumnRole(2, LineField.IGNORE)));
+
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("4700");
+        assertThat(item(0).isResponseAuto()).isTrue();
+    }
+
+    /** Словарь учится только на колонке, которую поправил оператор, — не на догадках по остальным (ревью ветки). */
+    @Test
+    void setColumnsLearnsOnlyChangedColumns() {
+        String untouched = "zz наименование своё " + System.nanoTime();
+        String changed = "zz цена своя " + System.nanoTime();
+        ReplyTable t = new ReplyTable("Лист1", 4, 3, "KZT", List.of(
+                new ReplyTable.Column(0, untouched, LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, changed, LineField.IGNORE)), kzTable().rows());
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", t)), null);
+
+        service.setColumns(pr.getId(), o.fileIds().get(0), List.of(new ReplyColumnRole(0, LineField.NAME),
+                new ReplyColumnRole(1, LineField.QUANTITY), new ReplyColumnRole(2, LineField.PRICE)));
+
+        assertThat(synonyms.findByHeaderNorm(changed)).get().extracting(HeaderSynonym::getField).isEqualTo(LineField.PRICE);
+        assertThat(synonyms.findByHeaderNorm(untouched)).isEmpty();
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("4700");
+    }
 }

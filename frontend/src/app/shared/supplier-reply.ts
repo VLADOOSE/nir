@@ -15,6 +15,8 @@ export interface ReplyHead {
 export interface ReplyRowRef {
   fileRow: number; text: string; quantity: number | null; unit: string | null; price: number | null; priceComputed: boolean;
   note: string | null; score: number;
+  /** валюта строки файла (код KZT / RUB / USD / EUR / CNY / UE); чужая для рынка — цена не подставляется */
+  currency: string | null;
 }
 export interface ReplyPosition {
   itemId: number; ordinal: number; name: string; brand: string | null; model: string | null; quantity: number | null;
@@ -27,7 +29,15 @@ export interface ReplySource {
   at: string | null; from: string | null; subject: string | null; text: string | null;
 }
 export interface ReplyColumn { index: number; header: string; role: ReplyRole; }
-export interface ReplyTableRow { fileRow: number; cells: string[]; ordinal: number | null; priced: boolean; text: string; price: number | null; }
+export interface ReplyTableRow {
+  fileRow: number; cells: string[]; ordinal: number | null; priced: boolean; text: string; price: number | null; currency: string | null;
+}
+
+/** Подпись валюты файла рядом с числом (как MoneyText.label на сервере). */
+export function currencyLabel(code: string | null): string {
+  const labels: Record<string, string> = { KZT: 'тг', RUB: 'руб.', USD: '$', EUR: '€', CNY: 'юань', UE: 'у.е.' };
+  return code ? labels[code] || code : '';
+}
 export interface ReplyTableView { source: string; headerRow: number; currency: string | null; columns: ReplyColumn[]; rows: ReplyTableRow[]; }
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
 export interface SupplierReply {

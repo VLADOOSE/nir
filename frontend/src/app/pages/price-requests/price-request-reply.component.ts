@@ -10,7 +10,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { numText, parseNum } from '../../shared/client-offer';
 import { dateText } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
-import { backLink } from '../../shared/supplier-reply';
+import { backLink, currencyLabel } from '../../shared/supplier-reply';
 import type { ReplyPosition, ReplyTableRow, SupplierReply } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
 
@@ -44,23 +44,25 @@ import { ReplyDocumentComponent } from './reply-document.component';
               <span class="p-name">{{ p.ordinal }}. {{ p.name }}<ng-container *ngIf="p.brand"> ({{ p.brand }})</ng-container><ng-container *ngIf="p.model"> · {{ p.model }}</ng-container></span>
               <span class="p-qty">{{ p.quantity ?? '—' }} {{ p.unit || 'шт' }}</span>
             </div>
-            <div class="p-row" *ngIf="p.row as r">← стр. {{ r.fileRow }}: «{{ r.text }}»<ng-container *ngIf="r.quantity != null"> · {{ r.quantity }} {{ r.unit || '' }}</ng-container><ng-container *ngIf="r.price != null"> · {{ r.price | money:2 }}</ng-container></div>
+            <div class="p-row" *ngIf="p.row as r">← стр. {{ r.fileRow }}: «{{ r.text }}»<ng-container *ngIf="r.quantity != null"> · {{ r.quantity }} {{ r.unit || '' }}</ng-container><ng-container *ngIf="r.price != null"> · <ng-container *ngIf="!foreign(r.currency); else rowForeign">{{ r.price | money:2 }}</ng-container><ng-template #rowForeign>{{ foreignPrice(r.price, r.currency) }}</ng-template></ng-container></div>
             <div class="p-row muted" *ngIf="!p.row && !p.suggestion && p.price == null && v.table">нет в файле</div>
             <div class="p-sugg" *ngIf="p.suggestion as s">
               <span>строка {{ s.fileRow }}? «{{ s.text }}» ·
-                <ng-container *ngIf="s.price != null; else noPrice">{{ s.price | money:2 }}</ng-container>
+                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}: впишите цену вручную</ng-template></ng-container>
                 <ng-template #noPrice>в файле без цены<ng-container *ngIf="s.note"> — {{ s.note }}</ng-container></ng-template></span>
-              <button type="button" class="btn btn-line" *ngIf="admin && s.price != null" [disabled]="busy" (click)="applySuggestion(p)">Подставить</button>
+              <button type="button" class="btn btn-line" *ngIf="admin && s.price != null && !foreign(s.currency)" (click)="applySuggestion(p)">Подставить</button>
             </div>
             <div class="p-flags" *ngIf="p.flags.length"><span class="flag" *ngFor="let f of p.flags">⚠ {{ f }}</span></div>
             <div class="p-ctl">
               <label>Цена за ед.
-                <input inputmode="decimal" [value]="num(p.price)" (change)="savePrice(p, $event)" [disabled]="!admin || busy" placeholder="—" />
+                <input inputmode="decimal" [value]="num(p.price)" (change)="savePrice(p, $event)" [disabled]="!admin" placeholder="—" />
               </label>
               <span class="mark" *ngIf="p.auto" title="Цена распознана из ответа и ещё не сверена">💡</span>
-              <select *ngIf="admin && v.table" class="pick" (change)="pickRow(p, $event)" [disabled]="busy" aria-label="Другая строка файла">
+              <!-- поля и действия позиции не блокируются на время сохранения: каждое — запись одной позиции, а заблокированный
+                   элемент на пути Tab ронял фокус (ввод цен по PDF подряд — живая проверка после ревью) -->
+              <select *ngIf="admin && v.table" class="pick" (change)="pickRow(p, $event)" aria-label="Другая строка файла">
                 <option value="">Другая строка ▾</option>
-                <option *ngFor="let r of priced()" [value]="r.fileRow">стр. {{ r.fileRow }} · {{ cut(r.text) }}<ng-container *ngIf="r.price != null"> · {{ num(r.price) }}</ng-container></option>
+                <option *ngFor="let r of priced()" [value]="r.fileRow" [disabled]="foreign(r.currency)">стр. {{ r.fileRow }} · {{ cut(r.text) }}<ng-container *ngIf="r.price != null"> · {{ num(r.price) }}<ng-container *ngIf="foreign(r.currency)"> {{ label(r.currency) }}</ng-container></ng-container></option>
                 <option value="none">— нет в файле —</option>
               </select>
             </div>
@@ -166,11 +168,18 @@ export class PriceRequestReplyComponent implements OnInit {
   num(v: number | null) { return numText(v); }
   date(iso: string) { return dateText(iso); }
   status(s: string) {
-    const names: Record<string, string> = { CREATED: 'создан', SENT: 'отправлен', RESPONDED: 'ответил', DECLINED: 'отказ',
+    // SENT — «ждём ответа», как в таблице цен: дальше в строке и так «отправлен ДД.ММ.ГГГГ»
+    const names: Record<string, string> = { CREATED: 'создан', SENT: 'ждём ответа', RESPONDED: 'ответил', DECLINED: 'отказ',
       ACCEPTED: 'принят', REJECTED: 'отклонён', CLOSED: 'закрыт' };
     return names[s] || s;
   }
   cut(s: string) { return s.length > 60 ? s.slice(0, 59) + '…' : s; }
+  /** Валюта строки файла не рынка запроса: цена не подставляется и не выдаётся за цену рынка (ревью ветки). */
+  foreign(code: string | null): boolean { return !!code && !!this.view?.head.currency && code !== this.view.head.currency; }
+  label(code: string | null) { return currencyLabel(code); }
+  foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
+  /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
+  marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
   priced(): ReplyTableRow[] { return (this.view?.table?.rows || []).filter(r => r.priced); }
 
   savePrice(p: ReplyPosition, ev: Event) {
@@ -188,11 +197,11 @@ export class PriceRequestReplyComponent implements OnInit {
     if (!val || !this.view) return;
     if (val === 'none') { this.put([{ itemId: p.itemId, responsePrice: null, responseNote: null, clearFile: true }]); return; }
     const row = this.view.table?.rows.find(r => r.fileRow === Number(val));
-    if (row) this.putRow(p, row.fileRow, row.price);
+    if (row && !this.foreign(row.currency)) this.putRow(p, row.fileRow, row.price);
   }
 
   applySuggestion(p: ReplyPosition) {
-    if (p.suggestion) this.putRow(p, p.suggestion.fileRow, p.suggestion.price);
+    if (p.suggestion && !this.foreign(p.suggestion.currency)) this.putRow(p, p.suggestion.fileRow, p.suggestion.price);
   }
 
   private putRow(p: ReplyPosition, fileRow: number, price: number | null) {

@@ -21,6 +21,8 @@ public final class MoneyText {
     private static final Pattern QTY = Pattern.compile("^\\s*(\\d+(?:[.,]\\d+)?)\\s*(\\p{L}[\\p{L}.]*)?");
     private static final Pattern TG = Pattern.compile("(^|[^\\p{L}])тг([^\\p{L}]|$)");
     private static final Pattern RUB = Pattern.compile("(^|[^\\p{L}])руб");
+    /** «у.е.», «у. е.» — условные единицы: валюта не названа, но это точно не валюта рынка — цены не подставляются. */
+    private static final Pattern UE = Pattern.compile("(^|[^\\p{L}])у\\.\\s?е\\.");
 
     private MoneyText() {}
 
@@ -74,6 +76,7 @@ public final class MoneyText {
         if (t.contains("$") || t.contains("usd") || t.contains("долл")) return "USD";
         if (t.contains("€") || t.contains("eur") || t.contains("евро")) return "EUR";
         if (t.contains("¥") || t.contains("cny") || t.contains("юан")) return "CNY";
+        if (UE.matcher(t).find()) return "UE";
         return null;
     }
 
@@ -86,6 +89,7 @@ public final class MoneyText {
             case "USD" -> "$";
             case "EUR" -> "€";
             case "CNY" -> "юанях";
+            case "UE" -> "у.е.";
             default -> code;
         };
     }

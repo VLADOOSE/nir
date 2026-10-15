@@ -100,4 +100,28 @@ class ReplyMatcherTest {
         List<Match> ms = ReplyMatcher.match(positions("Кушетка смотровая", "Ширма двухсекционная"), rows("Кушетка смотровая КМС-01"));
         assertThat(of(ms, 101)).isNull();
     }
+
+    /**
+     * «2,5 мл» — не «5 мл»: десятичный размер — одно число, а не «2» и «5». Иначе позиция «Шприц 5 мл» брала цену
+     * строки «Шприц 2,5 мл» уверенно (ревью ветки; шприцы и иглы — основной ассортимент).
+     */
+    @Test
+    void decimalSizeIsNotTheSameNumber() {
+        List<Match> ms = ReplyMatcher.match(positions("Шприц 5 мл", "Шприц 10 мл"),
+                rows("Шприц 2,5 мл", "Шприц 10 мл", "Игла 0,8×40"));
+        assertThat(ms).noneMatch(m -> m.itemId() == 100 && m.kind() == Kind.AUTO);
+        assertThat(of(ms, 101)).extracting(Match::fileRow, Match::kind).containsExactly(21, Kind.AUTO);
+        assertThat(ReplyMatcher.numbers("Шприц 5,0 мл")).containsExactly("5");
+        assertThat(ReplyMatcher.numbers("Игла 0,8×40")).containsExactlyInAnyOrder("0.8", "40");
+    }
+
+    /**
+     * Две одинаковые позиции и ОДНА строка файла: строку с тем же правом берёт и вторая позиция — подставлять нельзя
+     * (отрыв у строки). Набор «две позиции — две строки» этого не держит: там подсказку даёт отрыв у позиции.
+     */
+    @Test
+    void twinPositionsOneRow_suggestionOnly() {
+        List<Match> ms = ReplyMatcher.match(positions("Набор реагентов", "Набор реагентов"), rows("Набор реагентов"));
+        assertThat(ms).singleElement().extracting(Match::kind).isEqualTo(Kind.SUGGEST);
+    }
 }

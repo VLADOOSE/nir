@@ -32,6 +32,7 @@ public final class HeaderRoles {
     static LineField heuristic(String h) {
         if (has(h, "цена", "стоимость за ед", "стоимость ед", "стоимость за 1")) return LineField.PRICE;
         if (h.contains("сумма ндс")) return LineField.VAT;
+        if (h.contains("сумма скидк")) return LineField.IGNORE;   // размер скидки — не сумма строки («Сумма со скидкой» — сумма)
         if (has(h, "сумма", "стоимость")) return LineField.SUM;
         if (h.contains("ндс")) return LineField.VAT;
         if (h.contains("наимен")) return LineField.NAME;

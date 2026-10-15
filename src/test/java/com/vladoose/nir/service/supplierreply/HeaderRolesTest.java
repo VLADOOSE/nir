@@ -21,7 +21,8 @@ class HeaderRolesTest {
             "Цена|PRICE", "Цена со скидкой|PRICE", "Цена, руб. за ед.|PRICE", "Цена (в т.ч. НДС)|PRICE", "Стоимость за ед.|PRICE",
             "Сумма, руб.|SUM", "Сумма с НДС|SUM", "Общая сумма, тг|SUM", "Стоимость|SUM",
             "Ед.|UNIT", "Ед. изм.|UNIT", "Валюта|CURRENCY", "Примечание|NOTE", "Срок поставки|NOTE",
-            "Производитель|MANUFACT", "Страна производства|IGNORE", "Регистрация в РК|IGNORE", "Характеристики|IGNORE"
+            "Производитель|MANUFACT", "Страна производства|IGNORE", "Регистрация в РК|IGNORE", "Характеристики|IGNORE",
+            "Сумма скидки|IGNORE", "Сумма со скидкой|SUM", "Цена без скидки|PRICE"
     })
     void heuristics(String header, LineField role) {
         assertThat(HeaderRoles.role(header, Map.of())).as(header).isEqualTo(role);

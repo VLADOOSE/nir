@@ -82,9 +82,13 @@ public record ReplyRowValues(int fileRow, String name, String article, String br
         return out;
     }
 
-    /** Приоритет колонки цены / суммы по заголовку: «со скидкой», «итог», «с учётом» — 3; «с НДС» — 2; прочее — 1; «без НДС» — 0. */
+    /**
+     * Приоритет колонки цены / суммы по заголовку: «со скидкой», «итог», «с учётом» — 3; «с НДС» — 2; прочее — 1;
+     * «без НДС» — 0. «Без скидки» — обычная цена (1): иначе она, стоя левее, перебивала бы «Цену со скидкой».
+     */
     static int priority(String header) {
         String h = header == null ? "" : header.toLowerCase(Locale.ROOT);
+        if (h.contains("без скидк")) return 1;
         if (h.contains("скидк") || h.contains("итог") || h.contains("с учет") || h.contains("с учёт")) return 3;
         if (h.contains("без ндс")) return 0;
         if (h.contains("ндс")) return 2;

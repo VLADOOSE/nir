@@ -141,7 +141,11 @@ public class SupplierReplyService {
         return a;
     }
 
-    /** Роли колонок от оператора: таблица файла правится, словарь учится, цены из файла пересчитываются. */
+    /**
+     * Роли колонок от оператора: таблица файла правится, цены из файла пересчитываются. Словарь учится только на
+     * колонках, роль которых оператор сменил: экран присылает роли всех колонок, и догадки по нетронутым стали бы
+     * «выученными» — в том числе для смет клиник (словарь общий). У закрытого запроса цены не трогаются (спека §3.4).
+     */
     @Transactional
     public void setColumns(Long prId, Long fileId, List<ReplyColumnRole> roles) {
         PriceRequest pr = guard(prId);
@@ -155,6 +159,7 @@ public class SupplierReplyService {
                 throw new BadRequestException("Неверная колонка: " + r.index());
             }
             map.put(r.index(), r.role());
+            if (r.role() == t.columns().get(r.index()).role()) continue;
             ColumnMapping m = new ColumnMapping();
             m.setHeader(t.columns().get(r.index()).header());
             m.setField(r.role());
@@ -162,8 +167,9 @@ public class SupplierReplyService {
         }
         f.setParsed(t.withRoles(map));
         importService.learn(learn);
+        if (CLOSED.contains(pr.getStatus())) return;
         revertAuto(pr.getId(), f.getId(), false);
-        if (!CLOSED.contains(pr.getStatus()) && apply(pr, f).applied() > 0) markResponded(pr, null);
+        if (apply(pr, f).applied() > 0) markResponded(pr, null);
     }
 
     /** Удалить загруженный вручную файл; несверенные цены из него снимаются. Файл из письма — часть ответа, не удаляется. */
@@ -210,6 +216,8 @@ public class SupplierReplyService {
             if (m.kind() != ReplyMatcher.Kind.AUTO) continue;
             ReplyRowValues r = byRow.get(m.fileRow());
             if (r == null || r.price() == null) continue;
+            // валюта строки (колонка «Валюта», «€» в ячейке) — не рынка: не подставлять, даже если таблица в валюте рынка
+            if (r.currency() != null && market != null && !r.currency().equals(market)) continue;
             PriceRequestItem it = byId.get(m.itemId());
             if (it.getResponsePrice() != null && !it.isResponseAuto()) {
                 manual++;

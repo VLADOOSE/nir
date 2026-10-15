@@ -39,8 +39,8 @@ public final class MailParser {
     }
 
     /**
-     * maxFileBytes > 0 — собрать и сами файлы вложений (ящик info@: письмо — сообщение переписки с файлами); файл больше
-     * предела — без байтов. 0 — только имена (ящик zakup@: байты ему нужны лишь у Excel, их разбор читает и так).
+     * maxFileBytes > 0 — собрать и сами файлы вложений: ящик info@ (письмо — сообщение переписки с файлами) и с 2026-10-15
+     * ящик zakup@ (файлы ответов поставщиков, MAIL_IMAP_MAX_FILE_MB); файл больше предела — без байтов. 0 — только имена.
      */
     public static ParsedMail parse(Message msg, long uid, int maxFileBytes) throws MessagingException, IOException {
         String from = from(msg);
