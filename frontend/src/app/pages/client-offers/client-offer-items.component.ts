@@ -2,6 +2,7 @@ import { ChangeDetectorRef, Component, DestroyRef, ElementRef, EventEmitter, Hos
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { of, switchMap } from 'rxjs';
@@ -50,7 +51,7 @@ function rowKey(it: OfferItem): string {
 @Component({
   selector: 'app-client-offer-items',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent, OfferAddItemDialogComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent, OfferAddItemDialogComponent],
   template: `
     <div class="toolbar" *ngIf="!readonly">
       <button type="button" class="btn btn-line" (click)="add('ITEM')">+ Позиция</button>
@@ -129,8 +130,12 @@ function rowKey(it: OfferItem): string {
                        [attr.aria-label]="'Количество, строка ' + (i + 1)" /></label>
               <!-- подсказка — на подписи, не на всей ячейке: title строки («Нет цены закупки…») над полем остаётся -->
               <label class="c-buy"><span class="cap" [title]="BUY_HINT">Закупка</span>
-                <input inputmode="decimal" [value]="numText(it.purchasePrice)" (change)="setPurchase(it, $event)" [disabled]="readonly"
-                       placeholder="—" [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1)" /></label>
+                <!-- 💡 внутри поля справа: в широкой раскладке подпись скрыта, а значок после поля перенёс бы ряд -->
+                <span class="buy-wrap"><input inputmode="decimal" [value]="numText(it.purchasePrice)" (change)="setPurchase(it, $event)" [disabled]="readonly"
+                       placeholder="—" [class.with-unv]="it.purchaseUnverified"
+                       [attr.title]="it.purchaseUnverified ? UNV_HINT : null"
+                       [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1) + (it.purchaseUnverified ? ', не сверена' : '')" />
+                  <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span></span></label>
               <label class="c-mk"><span class="cap">Наценка, %</span>
                 <input inputmode="decimal" [value]="markupText(it)" [placeholder]="it.priceOverride != null ? '—' : numText(offer.defaultMarkupPct)"
                        [disabled]="readonly || it.priceOverride != null" (change)="setMarkup(it, $event)"
@@ -192,6 +197,7 @@ function rowKey(it: OfferItem): string {
             <label>Поставщик <input [(ngModel)]="it.supplierName" (ngModelChange)="emit()" [disabled]="readonly" maxlength="255" placeholder="только для вас" /></label>
             <button type="button" class="btn btn-line pick" *ngIf="canPick(it)" [attr.aria-expanded]="offersFor === it.key"
                     (click)="toggleOffers(it); $event.stopPropagation()">Поставщик ▾</button>
+            <a class="reply-link" *ngIf="it.replyRequestId" [routerLink]="['/price-requests', it.replyRequestId]">Ответ поставщика ›</a>
             <div class="offers" *ngIf="offersFor === it.key" (click)="$event.stopPropagation()">
               <div class="muted" *ngIf="offersLoading">Загружаю ответы…</div>
               <div class="err" *ngIf="offersError">{{ offersError }}</div>
@@ -200,7 +206,7 @@ function rowKey(it: OfferItem): string {
                       (click)="pickOffer(it, s)">
                 <span class="ok" aria-hidden="true">{{ s.priceRequestItemId === it.priceRequestItemId ? '✓' : '' }}</span>
                 <span class="nm">{{ s.supplierName }}</span>
-                <span class="pr">{{ money(s.price) }}</span>
+                <span class="pr">{{ money(s.price) }}<span *ngIf="s.auto" title="не сверено"> 💡</span></span>
                 <span class="wh" *ngIf="s.respondedOn">ответил {{ dayMonth(s.respondedOn) }}</span>
                 <span class="tag" *ngIf="s.cheapest">дешевле всех</span>
                 <span class="tag" *ngIf="s.accepted">принято</span>
@@ -307,6 +313,10 @@ function rowKey(it: OfferItem): string {
     .details .wide { grid-column: 1 / -1; }
     .supplier { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; position: relative; }
     .supplier label { flex: 1 1 220px; }
+    .reply-link { align-self: center; font-size: 13px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+    .buy-wrap { position: relative; display: block; }
+    .buy-wrap input.with-unv { padding-right: 24px; }
+    .unv { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none; }
     .offers { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border);
               border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
     .offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 40px; padding: 6px 8px; border: 0;
@@ -404,6 +414,7 @@ export class ClientOfferItemsComponent {
    * 2026-10-05 (спека §5.1); пометки «НДС в цене закупки» у строки больше нет, расчёт её не читает.
    */
   readonly BUY_HINT = 'Цена закупки за единицу — как в счёте поставщика';
+  readonly UNV_HINT = 'Цена закупки распознана из ответа поставщика и ещё не сверена — сверьте на экране «Ответ поставщика»';
   readonly units = UNIT_SUGGESTIONS;
   money = money;
   numText = numText;
@@ -597,6 +608,8 @@ export class ClientOfferItemsComponent {
     it.purchasePrice = s.price;
     it.supplierName = s.supplierName;
     it.priceRequestItemId = s.priceRequestItemId;
+    it.purchaseUnverified = !!s.auto;
+    it.replyRequestId = s.priceRequestId ?? null;
     this.offersFor = null;
     this.emit();
   }
@@ -680,6 +693,7 @@ export class ClientOfferItemsComponent {
     const copy: OfferItem = { ...src, id: null, key: uid(), lineNo: undefined, calc: src.calc ? { ...src.calc } : null, _sel: false };
     // Регистрация копируется как есть: «РУ ✓» и «РУ?» с № сервер перепроверит у новой строки (решение плана 3)
     copy.priceRequestItemId = null; copy.tenderLotId = null; copy.distributorId = null;   // у новой строки позиции нет: ссылка дала бы 400 на каждое автосохранение
+    copy.purchaseUnverified = false; copy.replyRequestId = null;
     // Ставку, которой больше нет в настройках рынка, сервер оставляет только уже сохранённой строке: копия — новая
     // строка, с такой ставкой каждое автосохранение получало бы 400. Пока профиль не пришёл, ставки не известны — не трогаем.
     if (copy.kind === 'ITEM' && this.profile && !this.hasRate(copy.vatRate)) copy.vatRate = this.profile.vatDefault ?? null;
@@ -774,7 +788,11 @@ export class ClientOfferItemsComponent {
       this.notify.error(v === undefined ? 'Цена закупки — числом' : 'Цена закупки не может быть отрицательной');
       return;
     }
-    if (v !== it.purchasePrice) it.priceRequestItemId = null;   // ручная правка снимает ссылку на ответ (решение плана 6)
+    if (v !== it.purchasePrice) {   // ручная правка снимает ссылку на ответ (решение плана 6) — и 💡 вместе с ней
+      it.priceRequestItemId = null;
+      it.purchaseUnverified = false;
+      it.replyRequestId = null;
+    }
     it.purchasePrice = v;
     input.value = numText(v);
     this.emit();

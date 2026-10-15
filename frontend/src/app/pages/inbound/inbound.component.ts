@@ -1,7 +1,7 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ImportGridComponent } from '../../shared/import-grid.component';
@@ -11,7 +11,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
 @Component({
   selector: 'app-inbound',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, ImportGridComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, ImportGridComponent],
   template: `
   <div class="page">
     <div class="head">
@@ -47,12 +47,16 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
             <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='DELAYED' || r.type==='AUTO_REPLY')
                          && r.matchedPriceRequestId"
                   class="muted kp-ref"> · КП #{{ r.matchedPriceRequestId }}</span>
+            <span class="muted files" *ngIf="r.files?.length"> · 📎 {{ r.files.join(', ') }}</span>
             <span class="muted box-ref" *ngIf="r.mailbox"> · {{ boxLabel(r.mailbox) }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
           <td>
             <button *ngIf="r.type==='CLIENT_REQUEST' && r.hasAttachment && r.status!=='PROCESSED'"
                     class="btn-line-solid" (click)="openImport(r)">Импортировать</button>
+            <!-- сверка ответа — действие строки: на телефоне справа в строке типа, как «Импортировать» -->
+            <a *ngIf="r.type==='SUPPLIER_RESPONSE' && r.matchedPriceRequestId" class="btn-line-solid reply-link"
+               [routerLink]="['/price-requests', r.matchedPriceRequestId]">Сверить ›</a>
           </td>
         </tr>
       </tbody>
@@ -162,6 +166,8 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
        private-requests.component.ts приведён к 4px по этой же причине; не
        возвращать 6px. */
     .btn-line-solid { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); }
+    a.reply-link { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }
+    .files { overflow-wrap: anywhere; }
     .client-row { display: flex; gap: 8px; align-items: center; }
     .client-sel:disabled { background: var(--surface-2); color: var(--text-muted); }
     .new-client { margin: 8px 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
@@ -237,6 +243,9 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
       .inbound-list td[data-label="Статус"] { display: none; }
       .inbound-list td[data-label="Ящик"] { display: none; }
       .inbound-list .box-ref { display: inline; white-space: nowrap; }
+      /* имена файлов на карточке не помещаются (строка типа не переносится) — они на экране «Ответ поставщика» */
+      .inbound-list .files { display: none; }
+      .inbound-list a.reply-link { min-height: 40px; }
       .inbound-list td:not([data-label]) { grid-area: act; justify-content: flex-end; }
     }
   `],

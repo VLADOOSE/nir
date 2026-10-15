@@ -53,6 +53,10 @@ export interface OfferItem {
   /** позиция заявки и поставщик ответа — ставит сервер, только для чтения */
   tenderLotId?: number | null;
   distributorId?: number | null;
+  /** 💡 — закупка из ответа поставщика, цена которого ещё не сверена (ставит сервер) */
+  purchaseUnverified?: boolean;
+  /** запрос цен ответа — ссылка «Ответ поставщика ›» */
+  replyRequestId?: number | null;
   markupPct: number | null;
   priceOverride: number | null;
   vatRate: number | null;
@@ -100,6 +104,8 @@ export interface ColumnInfo { key: string; label: string; labelNoVat?: string; v
 export interface SupplierOffer {
   priceRequestItemId: number; supplierName: string; price: number; respondedOn: string | null;
   accepted: boolean; cheapest: boolean; selected: boolean;
+  /** запрос ответа — ссылка на экран сверки; auto — 💡 цена ещё не сверена */
+  priceRequestId?: number | null; auto?: boolean;
 }
 
 /** Строка плашки «Пришли новые цены». */

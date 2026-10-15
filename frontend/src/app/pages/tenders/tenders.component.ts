@@ -1,7 +1,7 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
@@ -24,7 +24,7 @@ import { TenderLotsComponent } from './tender-lots.component';
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -285,7 +285,7 @@ import { TenderLotsComponent } from './tender-lots.component';
                   <td data-label="Лот">{{ it.tenderLot?.lotNumber }} — {{ it.tenderLot?.equipName }}</td>
                   <td data-label="Модель">{{ it.medEquipment?.name || '— по лоту' }}</td>
                   <td data-label="Кол-во">{{ it.requestedQuantity ?? '—' }}</td>
-                  <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" [readonly]="!auth.isAdmin()" /></td>
+                  <td class="pr-price-in" [attr.data-label]="'Цена ответа (' + market.symbol() + ')'"><input type="number" min="0" step="0.01" [(ngModel)]="it._editPrice" [ngModelOptions]="{standalone: true}" [readonly]="!auth.isAdmin()" /><span *ngIf="it.responseAuto" title="Цена распознана из ответа поставщика — сверьте">💡</span></td>
                   <td class="pmc-calc" [attr.data-label]="'Предл. цена при ' + (pr._markup ?? 25) + '%'">{{ markedPrice(it, pr) | money }}
                     <small *ngIf="markedClamped(it, pr)" title="Ограничено максимумом лота">⚠ потолок</small>
                   </td>
@@ -297,6 +297,8 @@ import { TenderLotsComponent } from './tender-lots.component';
             </div>
             <!-- запись ответов, пересылка, принятие, закрытие и удаление КП — только администратор (на сервере — ADMIN) -->
             <div class="pr-actions">
+              <!-- экран ответа нужен и до ответа письмом: КП пришло в WhatsApp — «Загрузить файл» (спека §4.1 «Без ответа») -->
+              <button type="button" class="btn btn-line" [routerLink]="['/price-requests', pr.id]">Ответ поставщика ›</button>
               <button *ngIf="auth.isAdmin()" class="btn btn-save" (click)="saveResponses(pr)">Сохранить ответы</button>
               <button *ngIf="auth.isAdmin() && (pr.status === 'SENT' || pr.status === 'CREATED')" class="btn btn-line" (click)="resendPr(pr)">↻ Переслать</button>
               <button *ngIf="auth.isAdmin() && pr.status === 'RESPONDED'" class="btn btn-accept-pr cta-pulse" (click)="acceptPr(pr)">Принять КП</button>

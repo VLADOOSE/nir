@@ -122,7 +122,7 @@ export interface SendResult {
 /** Формат документа запроса: PDF — переслать (WhatsApp), Word — править. */
 export type DocFormat = 'pdf' | 'docx';
 
-export type CellState = 'PRICE' | 'DECLINED' | 'BOUNCED' | 'NOT_SENT' | 'WAITING' | 'NONE';
+export type CellState = 'PRICE' | 'DECLINED' | 'BOUNCED' | 'NOT_SENT' | 'NO_PRICE' | 'WAITING' | 'NONE';
 export interface PriceCell {
   distributorId: number;
   state: CellState;
@@ -135,6 +135,8 @@ export interface PriceCell {
   emailOverride: boolean;
   /** «Передам сам»: письма не было — запрос передан вручную (PDF), «Переслать» не к чему. */
   manual: boolean;
+  /** 💡 — цена из разбора ответа, ещё не сверена. */
+  auto: boolean;
 }
 export interface PriceLine {
   lotId: number;
@@ -152,6 +154,8 @@ export interface PriceSupplier {
   clientDisclosed: boolean;
   /** Первый запрос этому поставщику — «передам сам»: в шапке «передан ДД.ММ», а не «письмо». */
   manual: boolean;
+  /** Последний запрос с ответом — ссылка «Ответ ›». */
+  replyRequestId: number | null;
 }
 export interface Prices { suppliers: PriceSupplier[]; lines: PriceLine[]; }
 

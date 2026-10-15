@@ -190,6 +190,7 @@ const MAX_MARKUP = 1000;
         <span class="warns">
           <span *ngIf="!o.totals.itemCount">позиций нет</span>
           <span *ngIf="o.totals.noPurchaseCount">без закупки: {{ o.totals.noPurchaseCount }}</span>
+          <span *ngIf="unverifiedCount()">цены не сверены: {{ unverifiedCount() }}</span>
           <span class="reg-danger" *ngIf="isKz() && unregisteredCount()">не зарегистрировано: {{ unregisteredCount() }}</span>
           <span *ngIf="!isKz() && regWarnings()">без регистрации: {{ regWarnings() }}</span>
         </span>
@@ -572,6 +573,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
       if (s) {
         it.id = s.id; it.lineNo = s.lineNo; it.calc = s.calc; it.tenderLotId = s.tenderLotId; it.distributorId = s.distributorId;
         it.medEquipmentId = s.medEquipmentId ?? null;
+        // 💡 закупки — по ссылке, сохранённой сервером: экран мог сменить ссылку за время запроса
+        if ((it.priceRequestItemId ?? null) === (s.priceRequestItemId ?? null)) {
+          it.purchaseUnverified = !!s.purchaseUnverified;
+          it.replyRequestId = s.replyRequestId ?? null;
+        }
         // регистрация, собранная сервером (текст подтверждённой, запись реестра), — только если экран её не сменил за время запроса
         if (it.registrationStatus === s.registrationStatus && (it.regNumber ?? null) === (s.regNumber ?? null)) {
           it.registry = s.registry ?? null;
@@ -670,6 +676,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         it.supplierName = s.supplierName;
         it.priceRequestItemId = s.priceRequestItemId;
         it.distributorId = s.distributorId;
+        it.purchaseUnverified = !!s.purchaseUnverified;
+        it.replyRequestId = s.replyRequestId ?? null;
       }
     }
   }
@@ -893,6 +901,11 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
 
   isKz(): boolean {
     return this.market.value === 'KZ';
+  }
+
+  /** Строки, чья закупка из ответа поставщика с 💡 (спека 2026-10-15 §4.3). */
+  unverifiedCount(): number {
+    return (this.offer?.items || []).filter(it => it.kind === 'ITEM' && it.purchaseUnverified).length;
   }
 
   /** Сводка «не зарегистрировано: N» (спека 2026-10-13 §2.1): по строкам на экране, без сохранения; печать колонки не важна. */

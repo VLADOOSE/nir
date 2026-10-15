@@ -1,6 +1,7 @@
 import { ChangeDetectorRef, Component, DestroyRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
@@ -16,9 +17,6 @@ function priceText(v: number | null): string {
   return v == null ? '' : Number.isInteger(v) ? numText(v) : money(v);
 }
 
-/** Пометка приёма почты в начале примечания (MailIngestWriter): «💡 Цена распознана автоматически, проверьте.» */
-const AUTO_MARK = /^💡[^.]*\.?\s*/u;
-
 interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: string; note: string; }
 
 /**
@@ -30,7 +28,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
 @Component({
   selector: 'app-pr-prices',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, MarketMoneyPipe],
+  imports: [NgIf, NgFor, FormsModule, RouterLink, MarketMoneyPipe],
   template: `
     <div class="prices" *ngIf="prices && prices.suppliers.length">
       <div class="table-scroll desk">
@@ -39,7 +37,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
             <tr>
               <th class="pos">Позиция</th>
               <th *ngFor="let s of prices.suppliers">
-                {{ s.name }}<span class="who" *ngIf="s.clientDisclosed" title="Клиент указан в запросе">👤</span><div class="sent" *ngIf="s.firstSentAt">{{ s.manual ? 'передан' : 'письмо' }} {{ shortDate(s.firstSentAt) }}</div>
+                {{ s.name }}<span class="who" *ngIf="s.clientDisclosed" title="Клиент указан в запросе">👤</span><a class="reply" *ngIf="s.replyRequestId" [routerLink]="['/price-requests', s.replyRequestId]">Ответ ›</a><div class="sent" *ngIf="s.firstSentAt">{{ s.manual ? 'передан' : 'письмо' }} {{ shortDate(s.firstSentAt) }}</div>
               </th>
             </tr>
           </thead>
@@ -77,6 +75,7 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
         <h3>{{ ed.supplier }}</h3>
         <p class="sub">{{ ed.line.name }} × {{ ed.line.quantity ?? '—' }} {{ ed.line.unit || 'шт' }}</p>
         <p class="hint">{{ stateHint(ed.cell) }}</p>
+        <a class="link" *ngIf="ed.cell.priceRequestId" [routerLink]="['/price-requests', ed.cell.priceRequestId]" (click)="editing = null">Открыть ответ поставщика ›</a>
         <label>Цена за единицу <input inputmode="decimal" [(ngModel)]="ed.price" [disabled]="readonly" placeholder="0" /></label>
         <label>Примечание <input [(ngModel)]="ed.note" maxlength="2000" [disabled]="readonly" placeholder="срок, модель, условия" /></label>
         <div class="doc" *ngIf="ed.cell.priceRequestId">
@@ -103,12 +102,14 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
     .pt td.pos, .pt th.pos { min-width: 220px; }
     .sent { font-weight: 400; color: var(--text-muted); font-size: 11px; }
     .who { margin-left: 4px; }
+    .reply { display: block; font-weight: 400; font-size: 11px; color: var(--accent); text-decoration: none; }
     .q { color: var(--text-muted); white-space: nowrap; }
     .cell { width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px 8px;
             cursor: pointer; color: var(--text); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .cell:hover:not(:disabled) { border-color: var(--border); }
     .cell:disabled { cursor: default; color: var(--text-muted); }
     .cell[data-state="WAITING"] { color: var(--text-muted); }
+    .cell[data-state="NO_PRICE"] { color: var(--text-muted); font-style: italic; }
     .cell[data-state="DECLINED"], .cell[data-state="BOUNCED"], .cell-row[data-state="DECLINED"], .cell-row[data-state="BOUNCED"] { color: var(--danger-text); }
     .cell[data-state="NOT_SENT"], .cell-row[data-state="NOT_SENT"] { color: var(--warn-text); }
     td.best { background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
@@ -196,8 +197,9 @@ export class PrPricesComponent implements OnChanges {
 
   cellText(c: PriceCell): string {
     switch (c.state) {
-      // «💡» — цена распознана из письма и ещё не проверена (примечание строки ставит приём почты)
-      case 'PRICE': return priceText(c.price) + (c.best ? ' ★' : '') + (this.autoPriced(c) ? ' 💡' : '');
+      // «💡» — цена распознана из ответа и ещё не сверена (признак строки ответа, V30)
+      case 'PRICE': return priceText(c.price) + (c.best ? ' ★' : '') + (c.auto ? ' 💡' : '');
+      case 'NO_PRICE': return 'нет цены';
       case 'DECLINED': return 'отказ';
       case 'BOUNCED': return 'не доставлено';
       case 'NOT_SENT': return 'письмо не ушло';
@@ -206,15 +208,12 @@ export class PrPricesComponent implements OnChanges {
     }
   }
 
-  private autoPriced(c: PriceCell): boolean {
-    return !!c.note && c.note.startsWith('💡');
-  }
-
   stateHint(c: PriceCell): string {
     switch (c.state) {
-      case 'PRICE': return this.autoPriced(c)
-        ? 'Цена распознана из письма — сверьте с письмом и сохраните.'
+      case 'PRICE': return c.auto
+        ? 'Цена распознана из ответа поставщика — сверьте на экране «Ответ поставщика» или сохраните.'
         : 'Цену можно поправить — например, после звонка.';
+      case 'NO_PRICE': return 'Поставщик ответил, а цены по этой позиции нет — откройте ответ поставщика.';
       case 'DECLINED': return 'Поставщик отказался. Если передумал — впишите цену.';
       // вписанный в окне адрес «Переслать» повторит (спека §6.5) — исправить его можно, только запросив цены заново
       case 'BOUNCED': return c.emailOverride
@@ -232,9 +231,8 @@ export class PrPricesComponent implements OnChanges {
     if (cell.state === 'NONE' || !this.prices) return;
     const supplier = this.prices.suppliers.find(s => s.distributorId === cell.distributorId)?.name || '';
     this.editError = '';
-    // пометку «💡 Цена распознана автоматически, проверьте.» в поле не переносим — «Сохранить» и есть проверка;
-    // «Срок…» и «Контекст…» из письма остаются в примечании
-    const note = (cell.note || '').replace(AUTO_MARK, '');
+    // 💡 — признак строки ответа, а не текст примечания (V30): «Сохранить» снимает его; «Срок…» и «Контекст…» остаются
+    const note = cell.note || '';
     this.editing = { line, cell, supplier, price: cell.price == null ? '' : numText(cell.price), note };
     this.shareFileReady = null;
     this.sharePreparing = false;
