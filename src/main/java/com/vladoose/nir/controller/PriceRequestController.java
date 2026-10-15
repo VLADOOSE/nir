@@ -7,10 +7,12 @@ import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.dto.response.PriceRequestResponse;
 import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
+import com.vladoose.nir.entity.SupplierReplyFile;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.mapper.PriceRequestMapper;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
+import com.vladoose.nir.repository.SupplierReplyFileRepository;
 import com.vladoose.nir.service.DistributorService;
 import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.PriceRequestSendService;
@@ -41,6 +43,7 @@ public class PriceRequestController {
     private final PriceRequestItemRepository itemRepository;
     private final PriceRequestMapper mapper;
     private final PriceRequestSendService sendService;
+    private final SupplierReplyFileRepository fileRepository;
 
     public PriceRequestController(PriceRequestService service,
                                   TenderService tenderService,
@@ -49,7 +52,8 @@ public class PriceRequestController {
                                   DistributorService distributorService,
                                   PriceRequestItemRepository itemRepository,
                                   PriceRequestMapper mapper,
-                                  PriceRequestSendService sendService) {
+                                  PriceRequestSendService sendService,
+                                  SupplierReplyFileRepository fileRepository) {
         this.service = service;
         this.tenderService = tenderService;
         this.tenderLotService = tenderLotService;
@@ -58,6 +62,7 @@ public class PriceRequestController {
         this.itemRepository = itemRepository;
         this.mapper = mapper;
         this.sendService = sendService;
+        this.fileRepository = fileRepository;
     }
 
     /** Единый канал: создать КП на каждого поставщика и отправить письмо с токеном [КП-id]. */
@@ -191,6 +196,18 @@ public class PriceRequestController {
             }
             item.setResponsePrice(u.responsePrice());
             item.setResponseNote(u.responseNote());
+            item.setResponseAuto(false);                    // ручное сохранение = сверено (спека §3.4)
+            if (Boolean.TRUE.equals(u.clearFile())) {
+                item.setResponseFileId(null);
+                item.setResponseFileRow(null);
+            } else if (u.fileId() != null && u.fileRow() != null) {
+                if (u.fileRow() < 1) throw new BadRequestException("Номер строки файла — с 1 (позиция " + u.itemId() + ")");
+                SupplierReplyFile f = fileRepository.findById(u.fileId())
+                        .filter(x -> id.equals(x.getPriceRequestId()))
+                        .orElseThrow(() -> new BadRequestException("Файл " + u.fileId() + " не из этого запроса цен"));
+                item.setResponseFileId(f.getId());
+                item.setResponseFileRow(u.fileRow());
+            }
             itemRepository.save(item);
             if (u.responsePrice() != null) anyPriceSet = true;
         }
@@ -229,5 +246,14 @@ public class PriceRequestController {
         service.deleteById(id);
     }
 
-    public record ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote) {}
+    /**
+     * Ответ по строке: цена, примечание и, по желанию, строка файла ответа (fileId + fileRow — выбрать, clearFile —
+     * снять). Тело вкладки, открытой до V30, полей файла не несёт — связь остаётся как была.
+     */
+    public record ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote,
+                                  Long fileId, Integer fileRow, Boolean clearFile) {
+        public ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote) {
+            this(itemId, responsePrice, responseNote, null, null, null);
+        }
+    }
 }

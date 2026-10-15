@@ -12,4 +12,8 @@ public class PriceRequestItemResponse {
     private Integer requestedQuantity;
     private BigDecimal responsePrice;
     private String responseNote;
+    /** 💡 — цена из разбора и ещё не сверена. */
+    private boolean responseAuto;
+    private Long responseFileId;
+    private Integer responseFileRow;
 }

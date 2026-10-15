@@ -76,6 +76,8 @@ class MailIngestWriterTest {
         PriceRequest back = prRepo.findById(p.getId()).orElseThrow();
         assertThat(back.getStatus()).isEqualTo("RESPONDED");
         assertThat(back.getItems().get(0).getResponsePrice()).isEqualByComparingTo("3200000");
+        assertThat(back.getItems().get(0).isResponseAuto()).isTrue();
+        assertThat(back.getItems().get(0).getResponseNote()).startsWith("Цена распознана из письма").doesNotContain("💡");
         InboundEmail e = rows().get(0);
         assertThat(e.getType()).isEqualTo(InboundType.SUPPLIER_RESPONSE);
         assertThat(e.getMatchedPriceRequestId()).isEqualTo(p.getId());

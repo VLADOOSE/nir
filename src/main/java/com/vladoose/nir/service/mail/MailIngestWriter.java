@@ -159,7 +159,8 @@ public class MailIngestWriter {
                 Optional<SupplierReplyPriceParser.ParsedPrice> pp = SupplierReplyPriceParser.parse(parseInput, pr.getMarket());
                 if (pp.isPresent()) {
                     item.setResponsePrice(pp.get().price());
-                    item.setResponseNote("💡 Цена распознана автоматически, проверьте."
+                    item.setResponseAuto(true);                 // 💡 — признак строки ответа (V30), не текст примечания
+                    item.setResponseNote("Цена распознана из письма."
                             + (pp.get().term() != null ? " Срок: " + pp.get().term() + "." : "")
                             + (pp.get().matchedSnippet() != null ? " Контекст: «" + pp.get().matchedSnippet() + "»." : ""));
                     outcome = KpOutcome.PRICE_PARSED;

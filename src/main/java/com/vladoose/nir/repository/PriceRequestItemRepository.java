@@ -1,7 +1,10 @@
 package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.PriceRequestItem;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -43,4 +46,14 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
     @Query("SELECT DISTINCT i.priceRequest.tender.id, i.tenderLot.id FROM PriceRequestItem i "
          + "WHERE i.priceRequest.tender.id IN :ids AND i.responsePrice IS NOT NULL")
     List<Object[]> findPricedLots(@Param("ids") Collection<Long> ids);
+
+    /** Строки ответа запроса — под блокировкой: ручная цена, сохранённая в ту же секунду, не затрётся подстановкой. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM PriceRequestItem i WHERE i.priceRequest.id = :prId ORDER BY i.id")
+    List<PriceRequestItem> lockByPriceRequestId(@Param("prId") Long prId);
+
+    /** «Всё верно» — снять 💡 со всех цен запроса. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE PriceRequestItem i SET i.responseAuto = false WHERE i.priceRequest.id = :prId AND i.responseAuto = true")
+    int clearAuto(@Param("prId") Long prId);
 }

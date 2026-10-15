@@ -39,4 +39,16 @@ public class PriceRequestItem {
 
     @Column(name = "response_note", columnDefinition = "TEXT")
     private String responseNote;
+
+    /** 💡 — цена поставлена разбором (текст письма или файл ответа) и ещё не сверена; ручное сохранение снимает (V30). */
+    @Column(name = "response_auto", nullable = false)
+    private boolean responseAuto;
+
+    /** Файл ответа, из которого цена; пусто — не из файла. */
+    @Column(name = "response_file_id")
+    private Long responseFileId;
+
+    /** Строка файла (с 1), из которой цена. */
+    @Column(name = "response_file_row")
+    private Integer responseFileRow;
 }

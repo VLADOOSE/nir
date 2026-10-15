@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class PrivateRequestImportService {
@@ -82,10 +83,13 @@ public class PrivateRequestImportService {
         }
     }
 
+    /** Роли, которые умеет разметка смет клиник; роли КП поставщика (цена, сумма…) здесь — «Игнорировать». */
+    private static final Set<LineField> CLIENT_ROLES = Set.of(LineField.NAME, LineField.MANUFACT, LineField.QUANTITY);
+
     private Map<String, LineField> learnedMap() {
         Map<String, LineField> map = new HashMap<>();
         for (HeaderSynonym s : synonymRepository.findAll()) {
-            map.put(s.getHeaderNorm(), s.getField());
+            if (CLIENT_ROLES.contains(s.getField())) map.put(s.getHeaderNorm(), s.getField());
         }
         return map;
     }
