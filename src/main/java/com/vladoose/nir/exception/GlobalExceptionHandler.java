@@ -10,6 +10,7 @@ import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -160,6 +161,24 @@ public class GlobalExceptionHandler {
                 .errors(null)
                 .build();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    /** Предел загрузки — spring.servlet.multipart.max-file-size (и client_max_body_size фронта), МБ. */
+    static final long UPLOAD_LIMIT_MB = 15;
+
+    /**
+     * Файл больше предела загрузки («Загрузить файл» КП поставщика, импорт Excel): 400 с понятным текстом, а не 500.
+     * Размер из исключения бывает −1 (разбор Tomcat) — тогда текст по пределу настройки.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> handleTooLarge(MaxUploadSizeExceededException ex) {
+        long mb = ex.getMaxUploadSize() > 0 ? Math.max(1, ex.getMaxUploadSize() / (1024 * 1024)) : UPLOAD_LIMIT_MB;
+        ApiError error = ApiError.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .message("Файл больше " + mb + " МБ — уменьшите его и загрузите снова")
+                .errors(null)
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
     @ExceptionHandler(Exception.class)

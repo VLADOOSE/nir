@@ -37,4 +37,12 @@ public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long
     @Query(value = "SELECT matched_price_request_id, max(received_at) FROM inbound_email WHERE type = 'BOUNCE' "
             + "AND matched_price_request_id IN (:ids) GROUP BY matched_price_request_id", nativeQuery = true)
     List<Object[]> findLastBounces(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Письма-ответы на запрос цен — для экрана «Ответ поставщика». Нативно: строка «Входящих» — рынка ЯЩИКА, а ответ на
+     * запрос Регион-Мед приходит в ящик West-Med (R17, CLAUDE.md §8) — фильтр рынка скрыл бы его; сам запрос уже прошёл гард.
+     */
+    @Query(value = "SELECT id, received_at, from_address, subject, excerpt FROM inbound_email "
+            + "WHERE matched_price_request_id = :prId AND type = 'SUPPLIER_RESPONSE' ORDER BY received_at, id", nativeQuery = true)
+    List<Object[]> findSupplierReplies(@Param("prId") Long prId);
 }
