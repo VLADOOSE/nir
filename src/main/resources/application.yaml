@@ -85,6 +85,8 @@ mail:
     since-minutes: ${MAIL_IMAP_SINCE_MINUTES:60}
     # Excel без метки [КП-…] → «Письмо клиники» (ящик info@). Для ящика закупок zakup@ — false: там это прайс поставщика
     client-requests: ${MAIL_IMAP_CLIENT_REQUESTS:true}
+    # файлы ответов поставщиков (спека 2026-10-15 §3.1): больше — только имя; пусто или не число — 15, не больше 25
+    max-file-mb: ${MAIL_IMAP_MAX_FILE_MB:15}
   # Письма клиентов на info@ → «Обращения» (спека docs/superpowers/specs/2026-10-13-info-mail-leads-design.md):
   # второй ящик, только чтение; «Входящие» и «Отправленные», у каждой папки свой курсор. Telegram об info@ не шлёт.
   clients:

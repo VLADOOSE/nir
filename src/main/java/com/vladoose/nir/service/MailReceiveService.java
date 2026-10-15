@@ -6,6 +6,7 @@ import com.vladoose.nir.entity.MailCursorKey;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.service.mail.*;
+import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import com.vladoose.nir.util.InfrastructureFailure;
 import jakarta.mail.MessagingException;
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ public class MailReceiveService {
     private final MailIngestWriter writer;
     private final MailCursorRepository cursorRepository;
     private final MailTelegramNotifier notifier;
+    private final SupplierReplyFiles replyFiles;
     private final boolean enabled;
     private final Market mailboxMarket;
     private final long sinceMinutes;
@@ -43,19 +45,21 @@ public class MailReceiveService {
 
     @Autowired
     public MailReceiveService(MailboxConnector connector, MailIngestWriter writer, MailCursorRepository cursorRepository,
-                              MailTelegramNotifier notifier,
+                              MailTelegramNotifier notifier, SupplierReplyFiles replyFiles,
                               @Value("${mail.imap.enabled:false}") boolean enabled,
                               @Value("${mail.imap.market:KZ}") String market,
                               @Value("${mail.imap.since-minutes:60}") long sinceMinutes) {
-        this(connector, writer, cursorRepository, notifier, enabled, Market.fromHeader(market), sinceMinutes, Clock.systemUTC());
+        this(connector, writer, cursorRepository, notifier, replyFiles, enabled, Market.fromHeader(market), sinceMinutes, Clock.systemUTC());
     }
 
     MailReceiveService(MailboxConnector connector, MailIngestWriter writer, MailCursorRepository cursorRepository,
-                       MailTelegramNotifier notifier, boolean enabled, Market mailboxMarket, long sinceMinutes, Clock clock) {
+                       MailTelegramNotifier notifier, SupplierReplyFiles replyFiles, boolean enabled, Market mailboxMarket,
+                       long sinceMinutes, Clock clock) {
         this.connector = connector;
         this.writer = writer;
         this.cursorRepository = cursorRepository;
         this.notifier = notifier;
+        this.replyFiles = replyFiles;
         this.enabled = enabled;
         this.mailboxMarket = mailboxMarket;
         this.sinceMinutes = sinceMinutes;
@@ -106,7 +110,8 @@ public class MailReceiveService {
                 return cursorRepository.findById(MailCursorKey.inbox(writer.mailbox()));
             }
             @Override public MailIngestWriter.WriteResult write(ParsedMail m, long uidValidity) {
-                return writer.write(m, uidValidity);
+                // файлы ответа поставщика разбираются здесь — вне транзакции записи письма (решение плана 5)
+                return writer.write(m, replyFiles.prepareFor(m), uidValidity);
             }
             @Override public void writeBroken(BrokenMail b, long uidValidity) { writer.writeBroken(b, uidValidity); }
             @Override public void moveCursorTo(long uidValidity, long uid) { writer.moveCursorTo(uidValidity, uid); }

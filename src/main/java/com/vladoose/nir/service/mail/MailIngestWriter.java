@@ -6,6 +6,9 @@ import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
+import com.vladoose.nir.service.supplierreply.MoneyText;
+import com.vladoose.nir.service.supplierreply.PreparedFile;
+import com.vladoose.nir.service.supplierreply.SupplierReplyService;
 import com.vladoose.nir.util.SupplierReplyDeclineDetector;
 import com.vladoose.nir.util.SupplierReplyPriceParser;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +42,7 @@ public class MailIngestWriter {
     private final String mailbox;
     private final ClassifierRules rules;
     private final String publicUrl;
+    private final SupplierReplyService replies;
 
     public MailIngestWriter(InboundEmailRepository inboundRepo, PriceRequestRepository priceRequestRepo,
                             MailCursorRepository cursorRepo, TelegramSettings telegram,
@@ -46,7 +50,8 @@ public class MailIngestWriter {
                             @Value("${spring.mail.username:}") String sendFrom,
                             @Value("${leads.westmed.notification-from:info@westmed.kz}") String siteNotificationFrom,
                             @Value("${mail.imap.client-requests:true}") boolean clientRequests,
-                            @Value("${ais.public-url:}") String publicUrl) {
+                            @Value("${ais.public-url:}") String publicUrl,
+                            SupplierReplyService replies) {
         this.inboundRepo = inboundRepo;
         this.priceRequestRepo = priceRequestRepo;
         this.cursorRepo = cursorRepo;
@@ -54,6 +59,7 @@ public class MailIngestWriter {
         this.mailbox = lower(mailbox);
         this.rules = new ClassifierRules(lower(sendFrom), lower(siteNotificationFrom), clientRequests);
         this.publicUrl = publicUrl == null ? "" : publicUrl.trim();
+        this.replies = replies;
     }
 
     /** Адрес ящика нижним регистром — ключ курсора. */
@@ -61,6 +67,15 @@ public class MailIngestWriter {
 
     @Transactional
     public WriteResult write(ParsedMail m, long uidValidity) {
+        return write(m, List.of(), uidValidity);
+    }
+
+    /**
+     * files — файлы ответа поставщика, разобранные вне транзакции (SupplierReplyFiles.prepareFor). Цены из файла
+     * подставлены уверенно — текст письма на цену не разбирается (решение плана 4); иначе — прежний разбор текста.
+     */
+    @Transactional
+    public WriteResult write(ParsedMail m, List<PreparedFile> files, long uidValidity) {
         String messageId = messageIdOf(m.messageId());
         if (messageId != null && inboundRepo.existsByMailboxAndMessageId(mailbox, messageId)) {
             moveCursor(uidValidity, m.uid());                 // уже записано (сброс курсора, повторная доставка)
@@ -76,8 +91,21 @@ public class MailIngestWriter {
         // находится по id в любом рынке, как в прежнем приёме; NOT_FOUND — только когда запроса с таким id нет вовсе.
         PriceRequest pr = c.kpId() == null ? null : priceRequestRepo.findById(c.kpId()).orElse(null);
         KpOutcome outcome = null;
+        SupplierReplyService.ReplyOutcome fileOutcome = null;
         if (c.mailClass() == MailClass.SUPPLIER_RESPONSE) {
-            outcome = pr == null ? KpOutcome.NOT_FOUND : applySupplierResponse(pr, m.rawBody(), m.body());
+            if (pr == null) {
+                outcome = KpOutcome.NOT_FOUND;
+            } else {
+                if (!files.isEmpty()) fileOutcome = replies.ingest(pr, files, null);
+                if (fileOutcome != null && fileOutcome.applied() > 0) {
+                    // цены из файла — текст письма не разбирается (решение плана 4)
+                    outcome = KpOutcome.FILE_PRICES;
+                    SupplierReplyService.markResponded(pr, cut(m.body(), 4000));
+                    priceRequestRepo.save(pr);
+                } else {
+                    outcome = applySupplierResponse(pr, m.rawBody(), m.body());
+                }
+            }
         }
         // Все виды явно, без default: новый вид письма не уйдёт молча в «Прочее» — его не пропустит компилятор
         InboundType type = switch (c.mailClass()) {
@@ -101,11 +129,38 @@ public class MailIngestWriter {
                 .build();
         if (c.mailClass() != MailClass.OWN && telegram.isConfigured()) {
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-            queue(e, MailNotificationComposer.compose(m, c, pr == null ? null : snapshot(pr), outcome, context(now, pr)), now);
+            queue(e, MailNotificationComposer.compose(m, c, pr == null ? null : snapshot(pr), outcome,
+                    fileLine(fileOutcome), context(now, pr)), now);
         }
         inboundRepo.save(e);                                   // @PrePersist стампит market ящика из MarketContext
+        if (fileOutcome != null && !fileOutcome.fileIds().isEmpty()) replies.linkInbound(fileOutcome.fileIds(), e.getId());
         moveCursor(uidValidity, m.uid());
         return new WriteResult(c.mailClass(), outcome, e.getId(), false);
+    }
+
+    /**
+     * Строка уведомления о файлах ответа (спека §3.5); файлов нет — null. Имена файлов присылает поставщик —
+     * MailNotificationComposer сводит строку в одну (переводы строк не станут системной строкой, R15).
+     */
+    static String fileLine(SupplierReplyService.ReplyOutcome o) {
+        if (o == null || o.fileIds().isEmpty()) return null;
+        String name = o.parsedName() != null ? o.parsedName() : o.fileName();
+        if (o.closed()) return "Файл «" + name + "» сохранён — запрос закрыт, цены не меняли";
+        if (o.applied() > 0) {
+            return "💡 Цены из файла «" + name + "»: подставлено " + o.applied() + " из " + o.positions() + " — сверьте"
+                    + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
+        }
+        if (o.foreignCurrency() != null) {
+            return "Цены в файле «" + name + "» — в " + MoneyText.label(o.foreignCurrency()) + ", не подставлены";
+        }
+        if (o.parsedName() != null) {
+            return o.manualKept() > 0
+                    ? "Цены из файла «" + name + "» не подставлены: ручные цены не тронуты — " + o.manualKept()
+                    : "Цены из файла «" + name + "» не сопоставились уверенно — сверьте вручную";
+        }
+        if (o.unreadable() != null) return "Файл «" + o.unreadable() + "» не разобран — введите цены вручную";
+        if (o.viewOnly()) return o.image() ? "📄 КП картинкой — внесите цены по документу" : "📄 КП в PDF — внесите цены по документу";
+        return "📎 Файл «" + name + "» — в ответе поставщика в АИС";
     }
 
     /** Письмо, которое не разобралось или не записалось: короткая строка, курсор дальше (спека §3.4). */

@@ -38,9 +38,15 @@ public final class MailNotificationComposer {
     private MailNotificationComposer() {}
 
     public static MailNotification compose(ParsedMail m, Classification c, KpSnapshot kp, KpOutcome outcome, ComposeContext ctx) {
+        return compose(m, c, kp, outcome, null, ctx);
+    }
+
+    /** fileLine — строка о файлах ответа поставщика (MailIngestWriter.fileLine), идёт после строки исхода; null — нет. */
+    public static MailNotification compose(ParsedMail m, Classification c, KpSnapshot kp, KpOutcome outcome, String fileLine,
+                                           ComposeContext ctx) {
         // Все виды явно, без default: текст для нового вида письма не выберется молча — его не пропустит компилятор
         return switch (c.mailClass()) {
-            case SUPPLIER_RESPONSE -> supplierResponse(m, c, kp, outcome, ctx);
+            case SUPPLIER_RESPONSE -> supplierResponse(m, c, kp, outcome, fileLine, ctx);
             case BOUNCE, DELAYED -> bounce(m, kp, ctx);
             case AUTO_REPLY -> autoReply(m, kp, ctx);
             // своё письмо и уведомление сайта MailIngestWriter сюда не передаёт — уведомлений у них нет
@@ -59,7 +65,7 @@ public final class MailNotificationComposer {
     }
 
     private static MailNotification supplierResponse(ParsedMail m, Classification c, KpSnapshot kp, KpOutcome outcome,
-                                                     ComposeContext ctx) {
+                                                     String fileLine, ComposeContext ctx) {
         StringBuilder head = new StringBuilder();
         head.append("📩 Ответ поставщика · ")
                 .append(kp != null ? line(kp.supplierName(), 200) : blankTo(line(m.from(), 200), "отправитель не указан"))
@@ -70,9 +76,12 @@ public final class MailNotificationComposer {
         }
         String line = outcomeLine(outcome, kp, c.kpId(), ctx.market());
         if (!line.isEmpty()) head.append(line).append('\n');
+        // имена файлов присылает поставщик — строка сводится в одну (R15: перевод строки не станет системной строкой)
+        if (fileLine != null && !fileLine.isBlank()) head.append(line(fileLine, 300)).append('\n');
         sender(head, m);
         receivedLate(head, m.receivedAt(), ctx);
-        String link = kp != null ? kpLink(kp, ctx) : link(ctx, "/inbound");
+        // ответ поставщика открывает экран сверки «Ответ поставщика» (решение плана 6); возвраты — по-прежнему тендер
+        String link = kp != null ? link(ctx, "/price-requests/" + kp.id()) : link(ctx, "/inbound");
         return new MailNotification(finish(head, MailText.replyText(m), EXCERPT, link), false);
     }
 
@@ -148,6 +157,7 @@ public final class MailNotificationComposer {
             case MULTI_LOT -> "Лотов несколько — цены вручную";
             case UNCHANGED -> "Повторное письмо — статус «" + STATUS.getOrDefault(kp.status(), kp.status()) + "» не меняли";
             case NOT_FOUND -> "Запрос КП №" + kpId + " в АИС не найден";
+            case FILE_PRICES -> "";                             // строку даёт fileLine — о файле и числе подставленных
         };
     }
 

@@ -45,8 +45,20 @@ public class ImapMailboxConnector implements MailboxConnector {
                                 @Value("${mail.imap.port:3143}") int port,
                                 @Value("${mail.imap.username:}") String username,
                                 @Value("${mail.imap.password:}") String password,
-                                @Value("${mail.imap.protocol:imap}") String protocol) {
-        this(host, port, username, password, protocol, CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
+                                @Value("${mail.imap.protocol:imap}") String protocol,
+                                @Value("${mail.imap.max-file-mb:15}") String maxFileMb) {
+        this(host, port, username, password, protocol, CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS, fileLimit(maxFileMb));
+    }
+
+    /** Предел файла письма zakup@ (спека 2026-10-15 §3.1): пусто или не число — 15 МБ, не больше 25 (CLAUDE.md §14: пустая переменная). */
+    static int fileLimit(String mb) {
+        int v;
+        try {
+            v = Integer.parseInt(mb == null ? "" : mb.trim());
+        } catch (NumberFormatException e) {
+            v = 15;
+        }
+        return Math.max(1, Math.min(v, 25)) * 1024 * 1024;
     }
 
     ImapMailboxConnector(String host, int port, String username, String password, String protocol,

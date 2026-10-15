@@ -281,4 +281,12 @@ class ImapMailboxConnectorTest {
             assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(5));
         }
     }
+
+    @Test
+    void fileLimit_blankOrGarbageIs15_cappedAt25() {
+        assertThat(ImapMailboxConnector.fileLimit("")).isEqualTo(15 * 1024 * 1024);
+        assertThat(ImapMailboxConnector.fileLimit("abc")).isEqualTo(15 * 1024 * 1024);
+        assertThat(ImapMailboxConnector.fileLimit("100")).isEqualTo(25 * 1024 * 1024);
+        assertThat(ImapMailboxConnector.fileLimit("5")).isEqualTo(5 * 1024 * 1024);
+    }
 }

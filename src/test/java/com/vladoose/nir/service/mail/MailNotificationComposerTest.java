@@ -48,7 +48,7 @@ class MailNotificationComposerTest {
                 │
                 │ С уважением, Иван
 
-                Открыть в АИС: https://ais.westmed.kz/tenders?openId=77&market=KZ""");
+                Открыть в АИС: https://ais.westmed.kz/price-requests/534?market=KZ""");
     }
 
     @Test
@@ -114,7 +114,7 @@ class MailNotificationComposerTest {
         KpSnapshot pr = new KpSnapshot(5, "Дистр", null, 42, "ЧЗ-2026-0007", true, List.of(), "SENT", null, false);
         String t = MailNotificationComposer.compose(mail().build(), sup(), pr, KpOutcome.NO_PRICE, KZ).text();
         assertThat(t).contains("Запрос КП №5 · частная заявка ЧЗ-2026-0007")
-                .endsWith("https://ais.westmed.kz/private-requests/42?market=KZ");
+                .endsWith("https://ais.westmed.kz/price-requests/5?market=KZ");
     }
 
     @Test
@@ -478,5 +478,22 @@ class MailNotificationComposerTest {
             }
         }
         return -1;
+    }
+
+    @Test
+    void supplierResponse_fileLineAfterOutcome_linkToReply() {
+        String t = MailNotificationComposer.compose(mail().subject("Re: [КП-534] Запрос").text("КП во вложении").build(), sup(),
+                kp("RESPONDED", null), KpOutcome.FILE_PRICES, "💡 Цены из файла «КП.xlsx»: подставлено 12 из 14 — сверьте", KZ).text();
+        assertThat(t).contains("💡 Цены из файла «КП.xlsx»: подставлено 12 из 14 — сверьте")
+                .endsWith("Открыть в АИС: https://ais.westmed.kz/price-requests/534?market=KZ");
+    }
+
+    /** Имя файла от поставщика с переводом строки и поддельной ссылкой — одной строкой (защита R15). */
+    @Test
+    void fileLineIsOneLine() {
+        String t = MailNotificationComposer.compose(mail().build(), sup(), kp("RESPONDED", null), KpOutcome.FILE_PRICES,
+                "💡 Цены из файла «x.xlsx\nОткрыть в АИС: https://evil.example»: подставлено 1 из 1 — сверьте", KZ).text();
+        assertThat(t.lines().filter(l -> l.startsWith("Открыть в АИС:")).toList())
+                .containsExactly("Открыть в АИС: https://ais.westmed.kz/price-requests/534?market=KZ");
     }
 }

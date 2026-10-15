@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -37,12 +38,13 @@ class MailReceiveServiceTest {
     MailIngestWriter writer = mock(MailIngestWriter.class);
     MailCursorRepository cursors = mock(MailCursorRepository.class);
     MailTelegramNotifier notifier = mock(MailTelegramNotifier.class);
+    SupplierReplyFiles replyFiles = mock(SupplierReplyFiles.class);
     /** Логи сервиса — в список, а не в вывод сборки: тесты нарочно ломают проход, и WARN со стеком там ожидаемы. */
     Logger logger = (Logger) LoggerFactory.getLogger(MailReceiveService.class);
     ListAppender<ILoggingEvent> logs = new ListAppender<>();
 
     MailReceiveService service(boolean enabled) {
-        return new MailReceiveService(connector, writer, cursors, notifier, enabled, Market.KZ, 60,
+        return new MailReceiveService(connector, writer, cursors, notifier, replyFiles, enabled, Market.KZ, 60,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -74,7 +76,7 @@ class MailReceiveServiceTest {
         when(connector.open()).thenReturn(session);
         when(session.uidValidity()).thenReturn(7L);
         when(session.isAlive()).thenReturn(true);
-        when(writer.write(any(), anyLong())).thenReturn(ok(MailClass.UNMATCHED));
+        when(writer.write(any(), anyList(), anyLong())).thenReturn(ok(MailClass.UNMATCHED));
     }
 
     void cursorAt(long uidValidity, long lastUid) {
@@ -102,8 +104,8 @@ class MailReceiveServiceTest {
         InOrder order = inOrder(session, writer);
         order.verify(session).maxUid();
         order.verify(session).uidsReceivedSince(any(), anyInt());
-        order.verify(writer).write(argThat(m -> m.uid() == 48), eq(7L));
-        order.verify(writer).write(argThat(m -> m.uid() == 49), eq(7L));
+        order.verify(writer).write(argThat(m -> m.uid() == 48), anyList(), eq(7L));
+        order.verify(writer).write(argThat(m -> m.uid() == 49), anyList(), eq(7L));
         order.verify(writer).moveCursorTo(7L, 50L);
     }
 
@@ -118,7 +120,7 @@ class MailReceiveServiceTest {
         service(true).poll();
 
         verify(session, never()).fetch(51L);
-        verify(writer, times(1)).write(any(), anyLong());
+        verify(writer, times(1)).write(any(), anyList(), anyLong());
         verify(writer).moveCursorTo(7L, 50L);
     }
 
@@ -142,7 +144,7 @@ class MailReceiveServiceTest {
 
         PollResultResponse r = service(true).poll();
 
-        verify(writer, times(2)).write(any(), eq(7L));
+        verify(writer, times(2)).write(any(), anyList(), eq(7L));
         verify(writer, never()).moveCursorTo(anyLong(), anyLong());
         assertThat(r.getFetched()).isEqualTo(2);
         assertThat(r.isOk()).isTrue();
@@ -161,7 +163,7 @@ class MailReceiveServiceTest {
         PollResultResponse r = service(true).poll();
 
         verify(writer).writeBroken(broken, 7L);
-        verify(writer).write(argThat(m -> m.uid() == 12), eq(7L));
+        verify(writer).write(argThat(m -> m.uid() == 12), anyList(), eq(7L));
         assertThat(r.getBroken()).isEqualTo(1);
         assertThat(r.isOk()).isTrue();                          // битое письмо — не сбой прохода
         assertThat(r.getMessage()).isEqualTo("Новых писем: 2 (прочих — 1, не разобрано — 1)");
@@ -190,7 +192,7 @@ class MailReceiveServiceTest {
         cursorAt(7, 10);
         when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
-        when(writer.write(argThat(m -> m.uid() == 11), anyLong())).thenThrow(new DataAccessResourceFailureException("db down"));
+        when(writer.write(argThat(m -> m.uid() == 11), anyList(), anyLong())).thenThrow(new DataAccessResourceFailureException("db down"));
 
         PollResultResponse r = service(true).poll();
 
@@ -211,13 +213,13 @@ class MailReceiveServiceTest {
         cursorAt(7, 10);
         when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).from("x@y.kz").subject("Тема").build());
-        when(writer.write(argThat(m -> m.uid() == 11), anyLong())).thenThrow(new IllegalStateException("bug"));
+        when(writer.write(argThat(m -> m.uid() == 11), anyList(), anyLong())).thenThrow(new IllegalStateException("bug"));
 
         service(true).poll();
 
         verify(writer).writeBroken(argThat(b -> b.uid() == 11 && "x@y.kz".equals(b.from()) && "Тема".equals(b.subject())
                 && "IllegalStateException".equals(b.errorClass())), eq(7L));
-        verify(writer).write(argThat(m -> m.uid() == 12), eq(7L));
+        verify(writer).write(argThat(m -> m.uid() == 12), anyList(), eq(7L));
     }
 
     /**
@@ -239,7 +241,7 @@ class MailReceiveServiceTest {
         ArgumentCaptor<BrokenMail> rows = ArgumentCaptor.forClass(BrokenMail.class);
         verify(writer, times(2)).writeBroken(rows.capture(), eq(7L));
         assertThat(rows.getAllValues().get(1)).isEqualTo(new BrokenMail(11, null, null, null, at, "MessagingException"));
-        verify(writer).write(argThat(m -> m.uid() == 12), eq(7L));
+        verify(writer).write(argThat(m -> m.uid() == 12), anyList(), eq(7L));
         assertThat(r.getBroken()).isEqualTo(1);
         assertThat(r.isOk()).isTrue();
         assertThat(logs.list).anySatisfy(ev -> assertThat(ev.getThrowableProxy()).isNotNull());   // разовый сбой — со стеком
@@ -329,7 +331,7 @@ class MailReceiveServiceTest {
 
         service(true).poll();
 
-        verify(writer, times(1)).write(any(), anyLong());
+        verify(writer, times(1)).write(any(), anyList(), anyLong());
     }
 
     @Test
@@ -358,7 +360,7 @@ class MailReceiveServiceTest {
 
         PollResultResponse r = service(true).poll();
 
-        verify(writer, never()).write(any(), anyLong());
+        verify(writer, never()).write(any(), anyList(), anyLong());
         assertThat(r.isOk()).isFalse();
         assertThat(r.getMessage()).isEqualTo("Новых писем: 0; база данных недоступна"
                 + " (DataAccessResourceFailureException) — проход остановлен, повтор следующим проходом");
@@ -410,10 +412,10 @@ class MailReceiveServiceTest {
         cursorAt(7, 10);
         when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L, 13L, 14L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
-        when(writer.write(withUid(11), anyLong())).thenReturn(ok(MailClass.SUPPLIER_RESPONSE));
-        when(writer.write(withUid(12), anyLong())).thenReturn(ok(MailClass.BOUNCE));
-        when(writer.write(withUid(13), anyLong())).thenReturn(ok(MailClass.SITE_NOTIFICATION));
-        when(writer.write(withUid(14), anyLong())).thenReturn(new MailIngestWriter.WriteResult(null, null, null, true));
+        when(writer.write(withUid(11), anyList(), anyLong())).thenReturn(ok(MailClass.SUPPLIER_RESPONSE));
+        when(writer.write(withUid(12), anyList(), anyLong())).thenReturn(ok(MailClass.BOUNCE));
+        when(writer.write(withUid(13), anyList(), anyLong())).thenReturn(ok(MailClass.SITE_NOTIFICATION));
+        when(writer.write(withUid(14), anyList(), anyLong())).thenReturn(new MailIngestWriter.WriteResult(null, null, null, true));
         when(notifier.flush()).thenReturn(new MailTelegramNotifier.FlushResult(1, 1, "Telegram: HTTP 400 — Bad Request"));
 
         PollResultResponse r = service(true).poll();
@@ -432,8 +434,8 @@ class MailReceiveServiceTest {
         cursorAt(7, 10);
         when(session.uidsAfter(anyLong(), anyInt())).thenReturn(List.of(11L, 12L));
         when(session.fetch(anyLong())).thenAnswer(inv -> mail().uid(inv.getArgument(0)).build());
-        when(writer.write(withUid(11), anyLong())).thenReturn(ok(MailClass.BOUNCE));
-        when(writer.write(withUid(12), anyLong())).thenReturn(ok(MailClass.DELAYED));
+        when(writer.write(withUid(11), anyList(), anyLong())).thenReturn(ok(MailClass.BOUNCE));
+        when(writer.write(withUid(12), anyList(), anyLong())).thenReturn(ok(MailClass.DELAYED));
 
         PollResultResponse r = service(true).poll();
 

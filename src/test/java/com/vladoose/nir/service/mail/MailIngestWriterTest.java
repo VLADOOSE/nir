@@ -4,6 +4,9 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.*;
+import com.vladoose.nir.service.supplierreply.PreparedFile;
+import com.vladoose.nir.service.supplierreply.ReplyFileInfo;
+import com.vladoose.nir.service.supplierreply.SupplierReplyService;
 import com.vladoose.nir.util.KpToken;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -17,6 +20,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static com.vladoose.nir.service.mail.TestMails.mail;
+import static com.vladoose.nir.service.supplierreply.ReplyFixtures.parsed;
+import static com.vladoose.nir.service.supplierreply.ReplyFixtures.table;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
@@ -29,6 +34,8 @@ class MailIngestWriterTest {
     @Autowired TenderRepository tenderRepo;
     @Autowired DistributorRepository distributorRepo;
     @Autowired EntityManager em;
+    @Autowired SupplierReplyService replies;
+    @Autowired SupplierReplyFileRepository replyFiles;
 
     static final TelegramSettings TG_ON = new TelegramSettings(true, "http://127.0.0.1:1", "123:SECRET", "-1001", "77");
     static final TelegramSettings TG_OFF = new TelegramSettings(false, "", "", "", "");
@@ -37,7 +44,7 @@ class MailIngestWriterTest {
 
     MailIngestWriter writer(TelegramSettings tg, boolean clientRequests) {
         return new MailIngestWriter(inboundRepo, prRepo, cursorRepo, tg, box, "zakup@westmed.kz", "info@westmed.kz",
-                clientRequests, "https://ais.example");
+                clientRequests, "https://ais.example", replies);
     }
 
     MailIngestWriter writer() { return writer(TG_ON, false); }
@@ -89,7 +96,7 @@ class MailIngestWriterTest {
         assertThat(e.getNotifyText()).startsWith("📩 Ответ поставщика · ZZW Дистр")
                 .contains("💡 Цена распознана: 3\u00A0200\u00A0000,00 ₸")
                 .contains("Запрос КП №" + p.getId() + " · тендер ZZW-")
-                .endsWith("/tenders?openId=" + p.getTender().getId() + "&market=KZ");
+                .endsWith("/price-requests/" + p.getId() + "?market=KZ");
         MailCursor c = cursorRepo.findById(MailCursorKey.inbox(box)).orElseThrow();
         assertThat(c.getUidValidity()).isEqualTo(5);
         assertThat(c.getLastUid()).isEqualTo(10);
@@ -320,11 +327,11 @@ class MailIngestWriterTest {
     }
 
     @Test
-    void privateRequest_linkToPrivateRequests() {
+    void privateRequest_labelAndLinkToReply() {
         PriceRequest p = pr("SENT", 0, Source.PRIVATE_REQUEST);
         writer().write(mail().subject("Re: " + KpToken.subjectToken(p.getId())).text("Получили, ответим завтра").build(), 5);
         assertThat(rows().get(0).getNotifyText()).contains("частная заявка ZZW-")
-                .endsWith("/private-requests/" + p.getTender().getId() + "?market=KZ");
+                .endsWith("/price-requests/" + p.getId() + "?market=KZ");
     }
 
     @Test
@@ -404,7 +411,77 @@ class MailIngestWriterTest {
         assertThat(e.getMatchedPriceRequestId()).isEqualTo(p.getId());
         assertThat(e.getNotifyText()).contains("💡 Цена распознана: 120\u00A0000,00 ₽")
                 .contains("Получено: 05.10 13:00")
-                .endsWith("/tenders?openId=" + p.getTender().getId() + "&market=RF")
+                .endsWith("/price-requests/" + p.getId() + "?market=RF")
                 .doesNotContain("₸").doesNotContain("market=KZ");
+    }
+
+    /** Запрос КП с лотами по названиям, по одной штуке. */
+    PriceRequest prNamed(String status, Source source, String... names) {
+        Tender t = Tender.builder().tenderNumber("ZZW-" + System.nanoTime()).status("NEW").source(source).build();
+        for (String n : names) t.getLots().add(TenderLot.builder().tender(t).equipName(n).quantity(1).build());
+        t = tenderRepo.save(t);
+        Distributor d = distributorRepo.save(Distributor.builder().name("ZZW Дистр " + System.nanoTime()).email("sales@zzw.kz").build());
+        PriceRequest pr = PriceRequest.builder().tender(t).distributor(d).status(status).build();
+        for (TenderLot l : t.getLots()) {
+            pr.getItems().add(PriceRequestItem.builder().priceRequest(pr).tenderLot(l).requestedQuantity(1).build());
+        }
+        return prRepo.save(pr);
+    }
+
+    @Test
+    void supplierResponse_fileWithPrices_applies_linksInbound_fileLineAndLink() {
+        PriceRequest p = prNamed("SENT", Source.PRIVATE_REQUEST, "Кушетка смотровая", "Столик процедурный");
+        PreparedFile f = parsed("kp.xlsx", table("KZT", "Кушетка смотровая КС-1", "100 000", "Столик процедурный СП-2", "200 000"));
+
+        MailIngestWriter.WriteResult r = writer().write(mail().uid(30).subject("Re: " + KpToken.subjectToken(p.getId()))
+                .text("Добрый день, КП во вложении").attachments("kp.xlsx").build(), List.of(f), 5);
+
+        assertThat(r.outcome()).isEqualTo(KpOutcome.FILE_PRICES);
+        PriceRequest back = prRepo.findById(p.getId()).orElseThrow();
+        assertThat(back.getStatus()).isEqualTo("RESPONDED");
+        assertThat(back.getItems()).allMatch(PriceRequestItem::isResponseAuto);
+        assertThat(replyFiles.findInfo(p.getId())).singleElement().extracting(ReplyFileInfo::inboundEmailId).isEqualTo(r.inboundId());
+        assertThat(rows().get(0).getNotifyText())
+                .contains("💡 Цены из файла «kp.xlsx»: подставлено 2 из 2 — сверьте")
+                .contains("https://ais.example/price-requests/" + p.getId() + "?market=KZ");
+    }
+
+    @Test
+    void respondedRequest_secondLetterWithFile_applies() {
+        PriceRequest p = prNamed("RESPONDED", Source.PRIVATE_REQUEST, "Кушетка смотровая");
+        writer().write(mail().uid(31).subject("Re: " + KpToken.subjectToken(p.getId())).text("Исправленное КП").build(),
+                List.of(parsed("kp2.xlsx", table("KZT", "Кушетка смотровая КС-1", "90 000"))), 5);
+        assertThat(prRepo.findById(p.getId()).orElseThrow().getItems().get(0).getResponsePrice()).isEqualByComparingTo("90000");
+    }
+
+    @Test
+    void closedRequest_fileStored_pricesUntouched_lineSaysSo() {
+        PriceRequest p = prNamed("CLOSED", Source.PRIVATE_REQUEST, "Кушетка смотровая");
+        writer().write(mail().uid(34).subject("Re: " + KpToken.subjectToken(p.getId())).text("КП").build(),
+                List.of(parsed("kp.xlsx", table("KZT", "Кушетка смотровая КС-1", "90 000"))), 5);
+        assertThat(prRepo.findById(p.getId()).orElseThrow().getItems().get(0).getResponsePrice()).isNull();
+        assertThat(replyFiles.findInfo(p.getId())).hasSize(1);
+        assertThat(rows().get(0).getNotifyText()).contains("Файл «kp.xlsx» сохранён — запрос закрыт, цены не меняли");
+    }
+
+    @Test
+    void brokenFileKeepsTextParsing() {
+        PriceRequest p = pr("SENT", 1, Source.PUBLIC_TENDER);
+        PreparedFile broken = new PreparedFile("kp.xlsx", "x", 3L, new byte[]{1, 2, 3}, "sha-broken-" + System.nanoTime(),
+                ReplyFileKind.EXCEL, ReplyParseStatus.FAILED, "Файл не открылся: защищён паролем или повреждён", null, null);
+
+        MailIngestWriter.WriteResult r = writer().write(mail().uid(32).subject("Re: " + KpToken.subjectToken(p.getId()))
+                .text("Цена 3 200 000 ₸, срок 3 недели").build(), List.of(broken), 5);
+
+        assertThat(r.outcome()).isEqualTo(KpOutcome.PRICE_PARSED);
+        assertThat(rows().get(0).getNotifyText()).contains("Файл «kp.xlsx» не разобран — введите цены вручную");
+    }
+
+    @Test
+    void foreignCurrencyFileLine() {
+        PriceRequest p = prNamed("SENT", Source.PRIVATE_REQUEST, "Кушетка смотровая", "Столик процедурный");
+        writer().write(mail().uid(33).subject("Re: " + KpToken.subjectToken(p.getId())).text("КП").build(),
+                List.of(parsed("kp.xlsx", table("RUB", "Кушетка смотровая КС-1", "100", "Столик процедурный СП-2", "200"))), 5);
+        assertThat(rows().get(0).getNotifyText()).contains("Цены в файле «kp.xlsx» — в руб., не подставлены");
     }
 }

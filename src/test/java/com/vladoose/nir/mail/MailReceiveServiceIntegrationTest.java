@@ -18,11 +18,14 @@ import com.vladoose.nir.service.mail.MailTelegramNotifier;
 import com.vladoose.nir.service.mail.MailboxConnector;
 import com.vladoose.nir.service.mail.MailboxSession;
 import com.vladoose.nir.service.mail.TestMimes;
+import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import com.vladoose.nir.util.KpToken;
 import jakarta.mail.Message;
 import jakarta.mail.Session;
 import jakarta.mail.internet.*;
 import jakarta.persistence.EntityManager;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +35,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -57,6 +61,7 @@ class MailReceiveServiceIntegrationTest {
     @Autowired TelegramClient telegramClient;
     @Autowired TelegramSettings telegramSettings;
     @Autowired EntityManager em;
+    @Autowired SupplierReplyFiles supplierReplyFiles;
 
     /**
      * Курсор ящика удаляется в транзакции теста: живая проверка на этой базе могла оставить закоммиченную строку
@@ -486,7 +491,7 @@ class MailReceiveServiceIntegrationTest {
             GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
             user.deliver(TestMimes.plain("Иван <ivan@x.kz>", "ZZTG Прайс октябрь", "Высылаем прайс"));
             MailReceiveService service = new MailReceiveService(mailboxConnector, mailIngestWriter, cursorRepository,
-                    new MailTelegramNotifier(mailNotifyStore, telegramClient, telegramSettings), true, "KZ", 60);
+                    new MailTelegramNotifier(mailNotifyStore, telegramClient, telegramSettings), supplierReplyFiles, true, "KZ", 60);
 
             MarketContext.set(Market.KZ);
             PollResultResponse res = service.poll();
@@ -503,5 +508,78 @@ class MailReceiveServiceIntegrationTest {
                     .filter(e -> "ZZTG Прайс октябрь".equals(e.getSubject())).findFirst().orElseThrow();
             assertThat(row.getNotifyStatus()).isEqualTo(NotifyStatus.SENT);
         }
+    }
+
+    @Autowired SupplierReplyFileRepository supplierReplyFileRepository;
+
+    @Test
+    void poll_supplierReplyWithExcel_storesFileAndAppliesPrices() throws Exception {
+        MarketContext.set(Market.KZ);
+        Tender tender = Tender.builder().tenderNumber("ZZXLS-T1").status("NEW").source(Source.PRIVATE_REQUEST).build();
+        tender.getLots().add(TenderLot.builder().tender(tender).equipName("Скальпель офтальмологический MSL24").quantity(2).build());
+        tender.getLots().add(TenderLot.builder().tender(tender).equipName("Материал шовный нейлон 2056").quantity(1).build());
+        tender = tenderRepository.save(tender);
+        Distributor dist = distributorRepository.save(Distributor.builder().name("ZZXLS Дистр").email("x@x.kz").build());
+        PriceRequest pr = PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build();
+        for (TenderLot l : tender.getLots()) pr.getItems().add(PriceRequestItem.builder().priceRequest(pr).tenderLot(l).requestedQuantity(1).build());
+        Long prId = priceRequestRepository.save(pr).getId();
+
+        byte[] xlsx;
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet s = wb.createSheet("КП");
+            String[][] rows = {{"ТОО «Поставщик»"}, {}, {"№", "Наименование", "Кол-во", "Цена, тг"},
+                    {"1", "Скальпели офтальмологические: Скальпель MSL24", "2", "4 700"},
+                    {"2", "Материал шовный стерильный нейлон 2056", "1", "11 750"}};
+            for (int r = 0; r < rows.length; r++) {
+                Row row = s.createRow(r);
+                for (int c = 0; c < rows[r].length; c++) row.createCell(c).setCellValue(rows[r][c]);
+            }
+            wb.write(out);
+            xlsx = out.toByteArray();
+        }
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(message("supplier@x.kz", "Re: Запрос КП " + KpToken.subjectToken(prId), "Добрый день, КП во вложении", xlsx, "КП.xlsx"));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        PriceRequest back = priceRequestRepository.findById(prId).orElseThrow();
+        assertThat(back.getStatus()).isEqualTo("RESPONDED");
+        assertThat(back.getItems()).extracting(PriceRequestItem::getResponsePrice)
+                .usingElementComparator(BigDecimal::compareTo).containsExactlyInAnyOrder(new BigDecimal("4700"), new BigDecimal("11750"));
+        assertThat(back.getItems()).allMatch(PriceRequestItem::isResponseAuto);
+        assertThat(supplierReplyFileRepository.findInfo(prId)).singleElement()
+                .satisfies(f -> assertThat(f.inboundEmailId()).isNotNull());
+    }
+
+    /** PDF не разбирается: файл хранится для просмотра, письмо разбирается как раньше (текст без цены — «Ответ получен»). */
+    @Test
+    void poll_supplierReplyWithPdf_storedForViewing() throws Exception {
+        MarketContext.set(Market.KZ);
+        Tender tender = Tender.builder().tenderNumber("ZZPDF-T1").status("NEW").source(Source.PRIVATE_REQUEST).build();
+        tender.getLots().add(TenderLot.builder().tender(tender).equipName("Электрокардиограф").quantity(1).build());
+        tender = tenderRepository.save(tender);
+        Distributor dist = distributorRepository.save(Distributor.builder().name("ZZPDF Дистр").email("y@y.kz").build());
+        PriceRequest pr = PriceRequest.builder().tender(tender).distributor(dist).status("SENT").build();
+        pr.getItems().add(PriceRequestItem.builder().priceRequest(pr).tenderLot(tender.getLots().get(0)).requestedQuantity(1).build());
+        Long prId = priceRequestRepository.save(pr).getId();
+        byte[] pdf;
+        try (PDDocument d = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            d.addPage(new PDPage());
+            d.addPage(new PDPage());
+            d.save(out);
+            pdf = out.toByteArray();
+        }
+        GreenMailUser user = greenMail.setUser("zakup@westmed.kz", "zakup@westmed.kz", "secret");
+        user.deliver(message("supplier@y.kz", "Re: " + KpToken.subjectToken(prId), "Добрый день, КП во вложении", pdf, "КП.pdf"));
+
+        MarketContext.set(Market.KZ);
+        mailReceiveService.poll();
+
+        assertThat(priceRequestRepository.findById(prId).orElseThrow().getStatus()).isEqualTo("RESPONDED");
+        assertThat(supplierReplyFileRepository.findInfo(prId)).singleElement().satisfies(f -> {
+            assertThat(f.kind()).isEqualTo(ReplyFileKind.PDF);
+            assertThat(f.pageCount()).isEqualTo(2);
+        });
     }
 }

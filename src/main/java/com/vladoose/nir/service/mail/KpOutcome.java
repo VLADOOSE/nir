@@ -14,5 +14,7 @@ public enum KpOutcome {
     /** Статус запроса не CREATED/SENT — не меняли. */
     UNCHANGED,
     /** Метка есть, запроса с таким id в АИС нет: ищется в любом рынке — КП обоих рынков уходят с одного ящика. */
-    NOT_FOUND
+    NOT_FOUND,
+    /** Цены подставлены из файла ответа (Excel / Word); строку для людей даёт fileLine (MailIngestWriter). */
+    FILE_PRICES
 }
