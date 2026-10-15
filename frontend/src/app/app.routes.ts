@@ -52,6 +52,8 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/client-offers/client-offers.component').then(m => m.ClientOffersComponent) },
       { path: 'client-offers/:id',
         loadComponent: () => import('./pages/client-offers/client-offer-editor.component').then(m => m.ClientOfferEditorComponent) },
+      { path: 'price-requests/:id',
+        loadComponent: () => import('./pages/price-requests/price-request-reply.component').then(m => m.PriceRequestReplyComponent) },
       { path: 'inbound', component: InboundComponent },
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'company-profile', canActivate: [adminGuard],

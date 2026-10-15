@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { EquipmentHit, NewPriceLine, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
+import type { SupplierReply } from '../shared/supplier-reply';
 import type {
   DocFormat, LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
@@ -280,6 +281,35 @@ export class ApiService {
   }
 
   // === Price Request responses ===
+
+  /** Экран «Ответ поставщика» (спека 2026-10-15 §4.1); fileId — показать таблицу этого файла. */
+  getSupplierReply(id: number, fileId?: number | null): Observable<SupplierReply> {
+    const params: Record<string, string> = fileId != null ? { fileId: String(fileId) } : {};
+    return this.http.get<SupplierReply>(`${this.base}/price-requests/${id}/reply`, { params });
+  }
+  uploadSupplierReplyFile(id: number, file: File): Observable<SupplierReply> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/files`, fd);
+  }
+  applySupplierReplyFile(id: number, fileId: number): Observable<SupplierReply> {
+    return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}/apply`, {});
+  }
+  setSupplierReplyColumns(id: number, fileId: number, roles: { index: number; role: string }[]): Observable<SupplierReply> {
+    return this.http.put<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}/columns`, roles);
+  }
+  deleteSupplierReplyFile(id: number, fileId: number): Observable<SupplierReply> {
+    return this.http.delete<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}`);
+  }
+  verifySupplierReply(id: number): Observable<SupplierReply> {
+    return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/verify`, {});
+  }
+  downloadSupplierReplyFile(id: number, fileId: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.base}/price-requests/${id}/files/${fileId}`, { responseType: 'blob', observe: 'response' });
+  }
+  supplierReplyPage(id: number, fileId: number, page: number): Observable<Blob> {
+    return this.http.get(`${this.base}/price-requests/${id}/files/${fileId}/pages/${page}`, { responseType: 'blob' });
+  }
 
   updatePriceRequestResponses(id: number, updates: any[]): Observable<any> {
     return this.http.put<any>(`${this.base}/price-requests/${id}/responses`, updates);
