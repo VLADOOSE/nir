@@ -2,7 +2,11 @@ package com.vladoose.nir.service.supplierreply;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,7 +28,35 @@ public final class MoneyText {
     /** «у.е.», «у. е.» — условные единицы: валюта не названа, но это точно не валюта рынка — цены не подставляются. */
     private static final Pattern UE = Pattern.compile("(^|[^\\p{L}])у\\.\\s?е\\.");
 
+    /**
+     * Валюта не ясна: в таблице её нет, а в тексте документа вне таблицы названы разные валюты (2026-10-16). Не валюта
+     * рынка — цены сами не подставляются; курс не применить — неизвестно, из какой валюты пересчитывать.
+     */
+    public static final String MIXED = "MIXED";
+
+    /**
+     * Валюта в свободном тексте (абзацы Word, ячейки вне таблицы, строка «Итого»): только явное слово или знак. Строже
+     * {@link #currency}: в описаниях изделий и реквизитах — «противорубцовый», «Рубцовск», «евростандарт», «Neurosoft»,
+     * «rubber».
+     */
+    private static final List<Map.Entry<String, Pattern>> TEXT = List.of(
+            Map.entry("KZT", Pattern.compile("₸|(?<![\\p{L}\\p{N}])kzt(?![\\p{L}\\p{N}])|(?<!\\p{L})тенге|(?<!\\p{L})тг(?!\\p{L})")),
+            Map.entry("RUB", Pattern.compile("₽|(?<![\\p{L}\\p{N}])rub(?![\\p{L}\\p{N}])|(?<!\\p{L})руб(?:\\.|(?!\\p{L})|л\\p{L}*)")),
+            Map.entry("USD", Pattern.compile("\\$|(?<![\\p{L}\\p{N}])usd(?![\\p{L}\\p{N}])|(?<!\\p{L})долл(?:\\.|(?!\\p{L})|ар\\p{L}*)")),
+            Map.entry("EUR", Pattern.compile("€|(?<![\\p{L}\\p{N}])eur(?![\\p{L}\\p{N}])|(?<!\\p{L})евро(?!\\p{L})")),
+            Map.entry("CNY", Pattern.compile("¥|(?<![\\p{L}\\p{N}])cny(?![\\p{L}\\p{N}])|(?<!\\p{L})юан\\p{L}*")),
+            Map.entry("UE", Pattern.compile("(?<!\\p{L})у\\.\\s?е\\.")));
+
     private MoneyText() {}
+
+    /** Валюты, названные в тексте (коды); не названо — пусто. */
+    public static Set<String> textCurrencies(String s) {
+        if (s == null || s.isBlank()) return Set.of();
+        String t = spaces(s).toLowerCase(Locale.ROOT);
+        Set<String> out = new TreeSet<>();
+        for (Map.Entry<String, Pattern> e : TEXT) if (e.getValue().matcher(t).find()) out.add(e.getKey());
+        return out;
+    }
 
     /** Сумма или цена; без цифр, отрицательная или больше MAX — null. */
     public static BigDecimal amount(String s) {
@@ -90,6 +122,7 @@ public final class MoneyText {
             case "EUR" -> "€";
             case "CNY" -> "юанях";
             case "UE" -> "у.е.";
+            case MIXED -> "(валюта?)";
             default -> code;
         };
     }

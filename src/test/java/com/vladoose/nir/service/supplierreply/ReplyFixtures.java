@@ -24,7 +24,7 @@ public final class ReplyFixtures {
         return new ReplyTable("Лист1", 4, 3, currency, List.of(
                 new ReplyTable.Column(0, "Наименование", LineField.NAME),
                 new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
-                new ReplyTable.Column(2, currency == null ? "Цена" : "Цена, " + ("RUB".equals(currency) ? "руб." : "тг"), LineField.PRICE)),
+                new ReplyTable.Column(2, "RUB".equals(currency) ? "Цена, руб." : "KZT".equals(currency) ? "Цена, тг" : "Цена", LineField.PRICE)),
                 rows);
     }
 

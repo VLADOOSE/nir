@@ -4,6 +4,8 @@ import com.vladoose.nir.entity.LineField;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.ReplyTable;
 import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.usermodel.Paragraph;
+import org.apache.poi.hwpf.usermodel.Range;
 import org.apache.poi.hwpf.usermodel.Table;
 import org.apache.poi.hwpf.usermodel.TableIterator;
 import org.apache.poi.hwpf.usermodel.TableRow;
@@ -16,6 +18,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
@@ -29,6 +32,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -36,7 +41,9 @@ import java.util.regex.Pattern;
  * наибольшим числом узнанных заголовков (не меньше двух, среди них наименование и цена или сумма) в первых 40 строках
  * листа или первых 20 строках таблицы Word (форма КП для больниц РК: сверху в той же таблице — 8 строк условий); бланк и обращение над ней отбрасываются; шапка в две строки склеивается;
  * конец таблицы — «Итого» / «Всего» / «Итог»; таблица Word, разорванная по страницам (следующая таблица той же ширины
- * без своей шапки), склеивается. Сбой чтения — исключение: его ловит SupplierReplyFiles.
+ * без своей шапки), склеивается. Валюта — из шапки и ячеек таблицы, а нет там — из текста вне её (шапка и всё над ней,
+ * строка «Итого» и всё под ней, абзацы Word): ровно одна валюта — она, разные — «не ясна» (MoneyText.MIXED). Сбой
+ * чтения — исключение: его ловит SupplierReplyFiles.
  */
 public final class ReplyTableReader {
 
@@ -48,8 +55,11 @@ public final class ReplyTableReader {
 
     private ReplyTableReader() {}
 
-    /** Строки таблицы как текст; firstRow — номер первой строки в файле (с 1); word — таблица Word (шапка в первых 20 строках). */
-    record Grid(String source, List<List<String>> rows, int firstRow, boolean word) {}
+    /**
+     * Строки таблицы как текст; firstRow — номер первой строки в файле (с 1); word — таблица Word (шапка в первых 20
+     * строках); text — текст документа вне таблиц (абзацы Word; у листа Excel — пусто: всё на листе и так в rows).
+     */
+    record Grid(String source, List<List<String>> rows, int firstRow, boolean word, List<String> text) {}
 
     public static Optional<ReplyTable> read(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
         List<Grid> grids = switch (kind) {
@@ -100,7 +110,7 @@ public final class ReplyTableReader {
                         for (int c = m.getFirstColumn(); c <= Math.min(m.getLastColumn(), MAX_COLS - 1); c++) set(rows, r, c, v);
                     }
                 }
-                out.add(new Grid(sheet.getSheetName(), rows, 1, false));
+                out.add(new Grid(sheet.getSheetName(), rows, 1, false, List.of()));
             }
         }
         return out;
@@ -128,6 +138,11 @@ public final class ReplyTableReader {
     static List<Grid> docx(byte[] content) throws IOException {
         List<Grid> out = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
+            List<String> text = new ArrayList<>();
+            for (XWPFParagraph p : doc.getParagraphs()) {
+                String v = clean(p.getText());
+                if (!v.isEmpty()) text.add(v);
+            }
             int n = 0;
             for (XWPFTable t : doc.getTables()) {
                 n++;
@@ -142,7 +157,7 @@ public final class ReplyTableReader {
                     rows.add(cells);
                     if (rows.size() > WORD_HEADER_SCAN + MAX_ROWS) break;
                 }
-                out.add(new Grid("таблица " + n, rows, 1, true));
+                out.add(new Grid("таблица " + n, rows, 1, true, text));
             }
         }
         return out;
@@ -157,7 +172,15 @@ public final class ReplyTableReader {
     static List<Grid> doc(byte[] content) throws IOException {
         List<Grid> out = new ArrayList<>();
         try (HWPFDocument doc = new HWPFDocument(new ByteArrayInputStream(content))) {
-            TableIterator it = new TableIterator(doc.getRange());
+            Range range = doc.getRange();
+            List<String> text = new ArrayList<>();
+            for (int i = 0; i < range.numParagraphs(); i++) {
+                Paragraph p = range.getParagraph(i);
+                if (p.isInTable()) continue;
+                String v = clean(Range.stripFields(p.text()));
+                if (!v.isEmpty()) text.add(v);
+            }
+            TableIterator it = new TableIterator(range);
             int n = 0;
             while (it.hasNext()) {
                 Table t = it.next();
@@ -169,7 +192,7 @@ public final class ReplyTableReader {
                     for (int c = 0; c < row.numCells() && c < MAX_COLS; c++) cells.add(clean(row.getCell(c).text()));
                     rows.add(cells);
                 }
-                out.add(new Grid("таблица " + n, rows, 1, true));
+                out.add(new Grid("таблица " + n, rows, 1, true, text));
             }
         }
         return out;
@@ -182,7 +205,7 @@ public final class ReplyTableReader {
     private static Grid glue(Grid a, Grid b) {
         List<List<String>> rows = new ArrayList<>(a.rows());
         rows.addAll(b.rows());
-        return new Grid(a.source(), rows, a.firstRow(), a.word());
+        return new Grid(a.source(), rows, a.firstRow(), a.word(), a.text());
     }
 
     // ---- Таблица из сетки -----------------------------------------------------------------------------------------
@@ -226,11 +249,15 @@ public final class ReplyTableReader {
         width = Math.min(width, MAX_COLS);
 
         List<ReplyTable.Row> out = new ArrayList<>();
-        for (int r = data; r < rows.size() && out.size() < MAX_ROWS; r++) {
+        int end = rows.size();   // первая строка после данных: «Итого» или предел строк
+        for (int r = data; r < rows.size(); r++) {
             List<String> cells = pad(rows.get(r), width);
             String first = cells.stream().filter(s -> !s.isBlank()).findFirst().orElse("");
             if (first.isEmpty()) continue;
-            if (TOTAL.matcher(first).find()) break;
+            if (TOTAL.matcher(first).find() || out.size() >= MAX_ROWS) {
+                end = r;
+                break;
+            }
             out.add(new ReplyTable.Row(g.firstRow() + r, cells));
         }
         List<ReplyTable.Column> columns = new ArrayList<>(width);
@@ -240,7 +267,9 @@ public final class ReplyTableReader {
             if (h.isBlank() && role == LineField.IGNORE && textColumn(out, c)) role = LineField.NOTE;   // решение плана 11
             columns.add(new ReplyTable.Column(c, h, role));
         }
-        return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency(columns, out), columns, out));
+        String currency = currency(columns, out);
+        if (currency == null) currency = textCurrency(rows, data, end, g.text());
+        return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out));
     }
 
     private static List<LineField> roles(List<String> row, Map<String, LineField> learned) {
@@ -333,6 +362,21 @@ public final class ReplyTableReader {
             }
         }
         return null;
+    }
+
+    /**
+     * Валюта из текста вне данных таблицы (КП «Рикта»: «на сумму 171 343,00 руб.» — абзацем под таблицей): шапка и всё
+     * над ней, строка «Итого» и всё под ней, абзацы Word. Строки данных не в счёт — в наименованиях бывает «вилка евро».
+     * Ровно одна валюта — она; разные — MoneyText.MIXED (не угадывать); ни одной — null.
+     */
+    static String textCurrency(List<List<String>> rows, int data, int end, List<String> text) {
+        Set<String> found = new TreeSet<>();
+        for (int r = 0; r < rows.size(); r++) {
+            if (r >= data && r < end) continue;
+            for (String c : rows.get(r)) found.addAll(MoneyText.textCurrencies(c));
+        }
+        for (String t : text) found.addAll(MoneyText.textCurrencies(t));
+        return found.isEmpty() ? null : found.size() == 1 ? found.iterator().next() : MoneyText.MIXED;
     }
 
     private static List<String> pad(List<String> row, int width) {

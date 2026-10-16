@@ -190,7 +190,8 @@ public class SupplierReplyViewBuilder {
     /**
      * Расхождения строки файла с позицией (спека §4.1). Строка в валюте курса: цена позиции — пересчёт строки — не
      * расхождение (пересчёт и так в строке файла: «60 000 тг = 10 000 руб. × 6»); не равна ему (поправили руками) —
-     * «цена не по курсу 6: по строке файла — 60 000,00 тг»; курса нет — «цена файла в руб.» («в юанях»).
+     * «цена не по курсу 6: по строке файла — 60 000,00 тг»; курса нет — «цена файла в руб.» («в юанях»); валюта не ясна
+     * (в тексте документа — разные валюты) — так и сказано.
      */
     static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market,
                               SupplierReplyService.FileRate rate) {
@@ -207,7 +208,9 @@ public class SupplierReplyViewBuilder {
             BigDecimal tol = r.sum().multiply(new BigDecimal("0.005")).max(BigDecimal.ONE);
             if (diff.compareTo(tol) > 0) out.add("сумма ≠ цена × кол-во");
         }
-        if (r.currency() != null && market != null && !r.currency().equals(market)) {
+        if (MoneyText.MIXED.equals(r.currency())) {
+            out.add("валюта цены не ясна — в документе названы разные валюты");
+        } else if (r.currency() != null && market != null && !r.currency().equals(market)) {
             BigDecimal conv = SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
             if (conv == null) {
                 out.add("цена файла в " + MoneyText.label(r.currency()));

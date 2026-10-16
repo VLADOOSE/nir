@@ -15,7 +15,7 @@ export interface ReplyHead {
 export interface ReplyRowRef {
   fileRow: number; text: string; quantity: number | null; unit: string | null; price: number | null; priceComputed: boolean;
   note: string | null; score: number;
-  /** валюта строки файла (код KZT / RUB / USD / EUR / CNY / UE); чужая для рынка — цена не подставляется */
+  /** валюта строки файла (код KZT / RUB / USD / EUR / CNY / UE, MIXED — не ясна); чужая для рынка — цена не подставляется */
   currency: string | null;
   /** цена, пересчитанная по курсу файла в валюту запроса; курса нет или валюта не та — null */
   converted: number | null;
@@ -36,9 +36,15 @@ export interface ReplyTableRow {
   converted: number | null;
 }
 
+/**
+ * Валюта не ясна: в таблице её нет, а в тексте документа названы разные валюты (MoneyText.MIXED). Цены сами не
+ * подставляются, курс не применить — только вручную.
+ */
+export const MIXED_CURRENCY = 'MIXED';
+
 /** Подпись валюты файла рядом с числом (как MoneyText.label на сервере). */
 export function currencyLabel(code: string | null): string {
-  const labels: Record<string, string> = { KZT: 'тг', RUB: 'руб.', USD: '$', EUR: '€', CNY: 'юань', UE: 'у.е.' };
+  const labels: Record<string, string> = { KZT: 'тг', RUB: 'руб.', USD: '$', EUR: '€', CNY: 'юань', UE: 'у.е.', [MIXED_CURRENCY]: '(валюта?)' };
   return code ? labels[code] || code : '';
 }
 export interface ReplyTableView { source: string; headerRow: number; currency: string | null; columns: ReplyColumn[]; rows: ReplyTableRow[]; }

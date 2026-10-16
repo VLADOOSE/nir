@@ -151,6 +151,9 @@ public class MailIngestWriter {
                     + (o.rate() != null ? " по курсу " + SupplierReplyService.rateText(o.rate()) : "") + " — сверьте"
                     + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
         }
+        if (MoneyText.MIXED.equals(o.foreignCurrency())) {
+            return "Цены в файле «" + name + "» не подставлены: в документе названы разные валюты — сверьте по документу и впишите цены вручную";
+        }
         if (o.foreignCurrency() != null) {
             return "Цены в файле «" + name + "» — в " + MoneyText.label(o.foreignCurrency()) + ", не подставлены — впишите курс на экране сверки";
         }

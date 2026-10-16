@@ -238,6 +238,9 @@ public class SupplierReplyService {
         if (cur == null || market == null || cur.equals(market)) {
             throw new BadRequestException("Цены в файле — в валюте запроса, курс не нужен");
         }
+        if (MoneyText.MIXED.equals(cur)) {
+            throw new BadRequestException("Валюта цен в файле не ясна — в документе названы разные валюты: курс не применить, впишите цены вручную");
+        }
         if (rate != null) {
             if (rate.signum() <= 0) throw new BadRequestException("Курс — число больше нуля");
             if (rate.compareTo(MAX_RATE) > 0) throw new BadRequestException("Курс слишком большой — не больше 100 000");

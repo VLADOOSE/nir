@@ -117,6 +117,22 @@ class SupplierReplyServiceTest {
         assertThat(item(0).getResponsePrice()).isNull();
     }
 
+    /**
+     * Валюта не ясна (в тексте документа названы разные валюты): цены сами не подставляются, и курс применить не к чему
+     * — неизвестно, из какой валюты пересчитывать.
+     */
+    @Test
+    void mixedCurrency_notApplied_rateRejected() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.docx", table(MoneyText.MIXED,
+                "Скальпели офтальмологические: Скальпель MSL24", "4700"))), null);
+        assertThat(o.applied()).isZero();
+        assertThat(o.foreignCurrency()).isEqualTo(MoneyText.MIXED);
+        assertThat(item(0).getResponsePrice()).isNull();
+        assertThatThrownBy(() -> service.setRate(pr.getId(), o.fileIds().get(0), new BigDecimal("6")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("Валюта цен в файле не ясна");
+        assertThat(item(0).getResponsePrice()).isNull();
+    }
+
     @Test
     void closedRequestStoresFilesButNoPrices() {
         pr.setStatus("CLOSED");

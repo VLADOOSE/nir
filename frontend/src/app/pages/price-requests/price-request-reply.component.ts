@@ -10,7 +10,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { numText, parseNum } from '../../shared/client-offer';
 import { dateText, plural } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
-import { backLink, currencyIn, currencyLabel } from '../../shared/supplier-reply';
+import { MIXED_CURRENCY, backLink, currencyIn, currencyLabel } from '../../shared/supplier-reply';
 import type { ReplyPosition, ReplyTableRow, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
 
@@ -42,16 +42,19 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
       <div class="body">
         <section class="pane-prices" [class.off]="tab !== 'prices'">
           <div class="rate" *ngIf="v.rate as rt">
-            <span class="rate-t">Цены в файле — в {{ inLabel(rt.currency) }}<ng-container *ngIf="rt.value == null">{{ admin ? ': впишите курс — цены пересчитаются и встанут с 💡' : ' — курс не вписан' }}</ng-container></span>
-            <ng-container *ngIf="admin; else rateRead">
-              <label class="rate-in">1 {{ label(rt.currency) }} =
-                <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" placeholder="курс"
-                       aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
-              <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
-              <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
-              <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
-            </ng-container>
-            <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
+            <span class="rate-t" *ngIf="rt.currency === mixed; else rateBlock">Валюта цен в файле не ясна: в документе названы разные валюты — сверьте по документу<ng-container *ngIf="admin"> и впишите цены вручную</ng-container></span>
+            <ng-template #rateBlock>
+              <span class="rate-t">Цены в файле — в {{ inLabel(rt.currency) }}<ng-container *ngIf="rt.value == null">{{ admin ? ': впишите курс — цены пересчитаются и встанут с 💡' : ' — курс не вписан' }}</ng-container></span>
+              <ng-container *ngIf="admin; else rateRead">
+                <label class="rate-in">1 {{ label(rt.currency) }} =
+                  <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" placeholder="курс"
+                         aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
+                <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
+                <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
+                <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
+              </ng-container>
+              <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
+            </ng-template>
           </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
@@ -62,7 +65,7 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
             <div class="p-row muted" *ngIf="!p.row && !p.suggestion && p.price == null && v.table">нет в файле</div>
             <div class="p-sugg" *ngIf="p.suggestion as s">
               <span>строка {{ s.fileRow }}? «{{ s.text }}» ·
-                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign><ng-container *ngIf="s.converted != null; else noRate">{{ s.converted | money:2 }} = {{ foreignPrice(s.price, s.currency) }} × {{ rateText(v.rate?.value) }}</ng-container><ng-template #noRate>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}<ng-container *ngIf="admin">: {{ v.rate?.currency === s.currency ? 'впишите курс выше или цену вручную' : 'впишите цену вручную' }}</ng-container></ng-template></ng-template></ng-container>
+                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign><ng-container *ngIf="s.converted != null; else noRate">{{ s.converted | money:2 }} = {{ foreignPrice(s.price, s.currency) }} × {{ rateText(v.rate?.value) }}</ng-container><ng-template #noRate>{{ foreignPrice(s.price, s.currency) }}{{ noRateHint(s.currency) }}</ng-template></ng-template></ng-container>
                 <ng-template #noPrice>в файле без цены<ng-container *ngIf="s.note"> — {{ s.note }}</ng-container></ng-template></span>
               <button type="button" class="btn btn-line" *ngIf="admin && s.price != null && (!foreign(s.currency) || s.converted != null)" (click)="applySuggestion(p)">Подставить</button>
             </div>
@@ -163,6 +166,8 @@ export class PriceRequestReplyComponent implements OnInit {
   busy = false;
   tab: 'prices' | 'doc' = 'prices';
   saveText = '';
+  /** Валюта не ясна (в документе — разные валюты): блок курса без поля, цены вписываются вручную. */
+  readonly mixed = MIXED_CURRENCY;
   private sub?: Subscription;
   /** Номер загрузки и файл, который просили: ответ курса, обогнанный сменой файла, не подменяет выбранный файл. */
   private seq = 0;
@@ -209,6 +214,12 @@ export class PriceRequestReplyComponent implements OnInit {
   foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
   marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
+  /** Пометка у цены строки файла не в валюте рынка, когда курса нет; валюта не ясна («(валюта?)») — курс не поможет. */
+  noRateHint(code: string | null): string {
+    if (code === this.mixed) return this.admin ? ' — впишите цену вручную' : '';
+    return ' — не ' + this.marketIn()
+      + (this.admin ? (this.view?.rate?.currency === code ? ': впишите курс выше или цену вручную' : ': впишите цену вручную') : '');
+  }
   priced(): ReplyTableRow[] { return (this.view?.table?.rows || []).filter(r => r.priced); }
   /** Курс без группировки разрядов и с 6 знаками: «6», «5,85555». */
   rateText(v: number | null | undefined) { return v == null ? '' : RATE.format(v); }

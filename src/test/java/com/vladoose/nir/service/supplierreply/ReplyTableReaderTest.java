@@ -3,6 +3,7 @@ package com.vladoose.nir.service.supplierreply;
 import com.vladoose.nir.entity.LineField;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.ReplyTable;
+import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -12,6 +13,7 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.junit.jupiter.api.Test;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -247,6 +249,84 @@ class ReplyTableReaderTest {
                     assertThat(v.name()).contains("ЭХВЧ-350-03");
                     assertThat(v.price()).isEqualByComparingTo("6900000");
                 });
+    }
+
+    /**
+     * КП «Рикта»: в таблице валюты нет, «руб.» — только в абзаце под ней. Без этого таблица считалась в валюте запроса, и
+     * на запросе West-Med рубли встали бы тенге (в 6 раз дешевле).
+     */
+    @Test
+    void docx_currencyOnlyInParagraphUnderTable() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        d.createParagraph().createRun().setText("В ответ на Ваш запрос направляем предложение на следующих условиях:");
+        table(d, List.of(List.of("№№", "Наименование изделия", "Стоимость единицы товара", "НДС", "Коли-чество", "Сумма заказа позиции"),
+                List.of("1.", "Аппарат магнитоинфракрасный лазерный терапевтический", "52 800,00", "Не облагается", "1", "52 800,00"),
+                List.of("ИТОГО", "", "", "", "1", "52 800,00")));
+        d.createParagraph().createRun().setText("ВСЕГО К ОПЛАТЕ: 1 единица товара на сумму 52 800,00 руб., НДС не облагается.");
+        ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo("RUB");
+        assertThat(ReplyRowValues.of(t).get(0).currency()).isEqualTo("RUB");
+    }
+
+    /** В тексте документа разные валюты — не угадывать: таблица «валюта не ясна», цены сами не подставятся. */
+    @Test
+    void docx_differentCurrenciesInText_mixed() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        table(d, List.of(List.of("Наименование", "Кол-во", "Цена"), List.of("Аппарат лазерный терапевтический", "1", "52 800,00")));
+        d.createParagraph().createRun().setText("Цены указаны в рублях.");
+        d.createParagraph().createRun().setText("Оплата в тенге по курсу на день оплаты.");
+        ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo(MoneyText.MIXED);
+    }
+
+    /** Валюта в шапке таблицы главнее текста вокруг. */
+    @Test
+    void docx_tableCurrencyWinsOverText() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        table(d, List.of(List.of("Наименование", "Цена, тг"), List.of("Кушетка", "95 000")));
+        d.createParagraph().createRun().setText("Доставка — 15 000 руб.");
+        assertThat(ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow().currency()).isEqualTo("KZT");
+    }
+
+    /**
+     * Excel: валюта в строке «Итого», на которой таблица кончается; строки данных не в счёт — «вилка евро» в
+     * наименовании не валюта.
+     */
+    @Test
+    void xlsx_currencyInTotalRow_dataRowsNotScanned() throws Exception {
+        ReplyTable t = ReplyTableReader.read(xlsx(List.of(
+                List.of("Наименование", "Кол-во", "Цена", "Сумма"),
+                List.of("Кабель питания, вилка евро", "2", "1 500", "3 000"),
+                List.of("Итого", "", "", "3 000 тенге"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo("KZT");
+    }
+
+    /** Excel: валюта названа над шапкой, под бланком. */
+    @Test
+    void xlsx_currencyAboveHeader() throws Exception {
+        ReplyTable t = ReplyTableReader.read(xlsx(List.of(
+                List.of("Коммерческое предложение № 23142. Цены указаны в рублях РФ."),
+                List.of(),
+                List.of("Наименование", "Кол-во", "Цена"),
+                List.of("Кушетка смотровая", "1", "30 000"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo("RUB");
+    }
+
+    /** Word 97 (.doc): валюта в абзаце вне таблицы. */
+    @Test
+    void doc_currencyInParagraph() throws Exception {
+        byte[] doc;
+        try (HWPFDocument d = new HWPFDocument(new ByteArrayInputStream(res("price-table.doc")));
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            d.getRange().replaceText("Цена, тг", "Цена");
+            // замена без исходного текста внутри: replaceText(String, String) ищет его заново, пока находит
+            d.getRange().replaceText("коммерческое предложение", "КП, цены указаны в рублях");
+            d.write(out);
+            doc = out.toByteArray();
+        }
+        ReplyTable t = ReplyTableReader.read(doc, ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.columns().get(4).header()).isEqualTo("Цена");
+        assertThat(t.currency()).isEqualTo("RUB");
     }
 
     /** «Цена, у.е.» — валюта таблицы «у.е.», а не «не названа» (иначе цены встали бы как цены рынка). */

@@ -22,6 +22,14 @@ class SupplierReplyFlagsTest {
         assertThat(SupplierReplyViewBuilder.flags(it, null, row("RUB"), 1.0, "KZT", null)).containsExactly("цена файла в руб.");
     }
 
+    /** Валюта не ясна (в тексте документа — разные валюты): своя пометка, а не «цена файла в (валюта?)». */
+    @Test
+    void mixedCurrencyRow_flag() {
+        PriceRequestItem it = PriceRequestItem.builder().responsePrice(new BigDecimal("8500")).build();
+        assertThat(SupplierReplyViewBuilder.flags(it, null, row(MoneyText.MIXED), 1.0, "KZT", null))
+                .containsExactly("валюта цены не ясна — в документе названы разные валюты");
+    }
+
     /** Цена позиции = пересчёт строки по курсу — без пометки; поправлена руками — «цена не по курсу». */
     @Test
     void convertedRow_noFlag_handEdited_notByRate() {

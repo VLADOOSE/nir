@@ -59,4 +59,31 @@ class MoneyTextTest {
         assertThat(MoneyText.currency("Цена, у. е.")).isEqualTo("UE");
         assertThat(MoneyText.label("UE")).isEqualTo("у.е.");
     }
+
+    /**
+     * Валюта в тексте вне таблицы (абзац под таблицей КП «Рикта», строка «Итого», бланк над шапкой) — только явным словом
+     * или знаком: в описаниях изделий и реквизитах встречаются похожие слова («противорубцовый», «евростандарт»).
+     */
+    @Test
+    void currenciesInText() {
+        assertThat(MoneyText.textCurrencies("ВСЕГО К ОПЛАТЕ: 4 единицы товара на сумму 171 343,00 руб., НДС не облагается."))
+                .containsExactly("RUB");
+        assertThat(MoneyText.textCurrencies("Цены указаны в рублях РФ")).containsExactly("RUB");
+        assertThat(MoneyText.textCurrencies("Итого: 238 500 руб")).containsExactly("RUB");
+        assertThat(MoneyText.textCurrencies("Итого: 238 500 тенге")).containsExactly("KZT");
+        assertThat(MoneyText.textCurrencies("Итого 238 500 тг.")).containsExactly("KZT");
+        assertThat(MoneyText.textCurrencies("1 200 $, курс USD")).containsExactly("USD");
+        assertThat(MoneyText.textCurrencies("цена в долларах США")).containsExactly("USD");
+        assertThat(MoneyText.textCurrencies("цены в евро")).containsExactly("EUR");
+        assertThat(MoneyText.textCurrencies("10 000 юаней")).containsExactly("CNY");
+        assertThat(MoneyText.textCurrencies("в у.е. по курсу")).containsExactly("UE");
+        assertThat(MoneyText.textCurrencies("₸ ₽ € ¥")).containsExactlyInAnyOrder("KZT", "RUB", "EUR", "CNY");
+        assertThat(MoneyText.textCurrencies("KZT, RUB, EUR, CNY")).containsExactlyInAnyOrder("KZT", "RUB", "EUR", "CNY");
+        assertThat(MoneyText.textCurrencies("Оплата в рублях по курсу на день оплаты, цены в тенге")).containsExactlyInAnyOrder("RUB", "KZT");
+        assertThat(MoneyText.textCurrencies("Гель противорубцовый; рубцы; Рубцовск; рубеж; рубин")).isEmpty();
+        assertThat(MoneyText.textCurrencies("вилка евростандарта, Neurosoft, Europe, rubber, Долли")).isEmpty();
+        assertThat(MoneyText.textCurrencies("доставка от 1000 р., e-mail: sales@bk.ru")).isEmpty();
+        assertThat(MoneyText.textCurrencies(null)).isEmpty();
+        assertThat(MoneyText.label(MoneyText.MIXED)).isEqualTo("(валюта?)");
+    }
 }
