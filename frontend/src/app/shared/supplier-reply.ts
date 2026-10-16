@@ -17,6 +17,8 @@ export interface ReplyRowRef {
   note: string | null; score: number;
   /** валюта строки файла (код KZT / RUB / USD / EUR / CNY / UE); чужая для рынка — цена не подставляется */
   currency: string | null;
+  /** цена, пересчитанная по курсу файла в валюту запроса; курса нет или валюта не та — null */
+  converted: number | null;
 }
 export interface ReplyPosition {
   itemId: number; ordinal: number; name: string; brand: string | null; model: string | null; quantity: number | null;
@@ -31,6 +33,7 @@ export interface ReplySource {
 export interface ReplyColumn { index: number; header: string; role: ReplyRole; }
 export interface ReplyTableRow {
   fileRow: number; cells: string[]; ordinal: number | null; priced: boolean; text: string; price: number | null; currency: string | null;
+  converted: number | null;
 }
 
 /** Подпись валюты файла рядом с числом (как MoneyText.label на сервере). */
@@ -40,8 +43,11 @@ export function currencyLabel(code: string | null): string {
 }
 export interface ReplyTableView { source: string; headerRow: number; currency: string | null; columns: ReplyColumn[]; rows: ReplyTableRow[]; }
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
+/** Курс выбранного файла в чужой валюте: 1 currency = value валюты запроса; suggestion — последний курс этой валюты. */
+export interface ReplyRate { currency: string; value: number | null; suggestion: number | null; }
 export interface SupplierReply {
   head: ReplyHead; positions: ReplyPosition[]; sources: ReplySource[]; fileId: number | null; table: ReplyTableView | null; counts: ReplyCounts;
+  rate: ReplyRate | null;
 }
 
 /** Куда вернуться из ответа: частная заявка или карточка тендера. */

@@ -301,6 +301,9 @@ export class ApiService {
   deleteSupplierReplyFile(id: number, fileId: number): Observable<SupplierReply> {
     return this.http.delete<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}`);
   }
+  setSupplierReplyRate(id: number, fileId: number, rate: number | null): Observable<SupplierReply> {
+    return this.http.put<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}/rate`, { rate });
+  }
   verifySupplierReply(id: number): Observable<SupplierReply> {
     return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/verify`, {});
   }

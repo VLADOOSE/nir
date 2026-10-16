@@ -14,6 +14,8 @@ import { backLink, currencyLabel } from '../../shared/supplier-reply';
 import type { ReplyPosition, ReplyTableRow, SupplierReply } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
 
+const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGrouping: false });
+
 /**
  * «Ответ поставщика» (спека 2026-10-15 §4.1): позиции запроса с ценой и строкой файла рядом — сверить глазами, не
  * открывая документ; справа документ. Ручная правка цены и выбор строки = сверено; «Всё верно» снимает 💡 со всех.
@@ -39,18 +41,27 @@ import { ReplyDocumentComponent } from './reply-document.component';
 
       <div class="body">
         <section class="pane-prices" [class.off]="tab !== 'prices'">
+          <div class="rate" *ngIf="v.rate as rt">
+            <span class="rate-t">Цены в файле — в {{ label(rt.currency) }}<ng-container *ngIf="rt.value == null">: впишите курс — цены пересчитаются и встанут с 💡</ng-container></span>
+            <label class="rate-in">1 {{ label(rt.currency) }} =
+              <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" [disabled]="!admin" placeholder="курс"
+                     aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
+            <button type="button" class="btn btn-primary" *ngIf="admin" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
+            <button type="button" class="btn btn-line" *ngIf="admin && rt.value != null" [disabled]="busy" (click)="setRate('')">Снять курс</button>
+            <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}</span>
+          </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
               <span class="p-name">{{ p.ordinal }}. {{ p.name }}<ng-container *ngIf="p.brand"> ({{ p.brand }})</ng-container><ng-container *ngIf="p.model"> · {{ p.model }}</ng-container></span>
               <span class="p-qty">{{ p.quantity ?? '—' }} {{ p.unit || 'шт' }}</span>
             </div>
-            <div class="p-row" *ngIf="p.row as r">← стр. {{ r.fileRow }}: «{{ r.text }}»<ng-container *ngIf="r.quantity != null"> · {{ r.quantity }} {{ r.unit || '' }}</ng-container><ng-container *ngIf="r.price != null"> · <ng-container *ngIf="!foreign(r.currency); else rowForeign">{{ r.price | money:2 }}</ng-container><ng-template #rowForeign>{{ foreignPrice(r.price, r.currency) }}</ng-template></ng-container></div>
+            <div class="p-row" *ngIf="p.row as r">← стр. {{ r.fileRow }}: «{{ r.text }}»<ng-container *ngIf="r.quantity != null"> · {{ r.quantity }} {{ r.unit || '' }}</ng-container><ng-container *ngIf="r.price != null"> · <ng-container *ngIf="!foreign(r.currency); else rowForeign">{{ r.price | money:2 }}</ng-container><ng-template #rowForeign><ng-container *ngIf="r.converted != null">{{ r.converted | money:2 }} = </ng-container>{{ foreignPrice(r.price, r.currency) }}<ng-container *ngIf="r.converted != null"> × {{ rateText(v.rate?.value) }}</ng-container></ng-template></ng-container></div>
             <div class="p-row muted" *ngIf="!p.row && !p.suggestion && p.price == null && v.table">нет в файле</div>
             <div class="p-sugg" *ngIf="p.suggestion as s">
               <span>строка {{ s.fileRow }}? «{{ s.text }}» ·
-                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}: впишите цену вручную</ng-template></ng-container>
+                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign><ng-container *ngIf="s.converted != null; else noRate">{{ s.converted | money:2 }} = {{ foreignPrice(s.price, s.currency) }} × {{ rateText(v.rate?.value) }}</ng-container><ng-template #noRate>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}: впишите курс выше или цену вручную</ng-template></ng-template></ng-container>
                 <ng-template #noPrice>в файле без цены<ng-container *ngIf="s.note"> — {{ s.note }}</ng-container></ng-template></span>
-              <button type="button" class="btn btn-line" *ngIf="admin && s.price != null && !foreign(s.currency)" (click)="applySuggestion(p)">Подставить</button>
+              <button type="button" class="btn btn-line" *ngIf="admin && s.price != null && (!foreign(s.currency) || s.converted != null)" (click)="applySuggestion(p)">Подставить</button>
             </div>
             <div class="p-flags" *ngIf="p.flags.length"><span class="flag" *ngFor="let f of p.flags">⚠ {{ f }}</span></div>
             <div class="p-ctl">
@@ -62,7 +73,7 @@ import { ReplyDocumentComponent } from './reply-document.component';
                    элемент на пути Tab ронял фокус (ввод цен по PDF подряд — живая проверка после ревью) -->
               <select *ngIf="admin && v.table" class="pick" (change)="pickRow(p, $event)" aria-label="Другая строка файла">
                 <option value="">Другая строка ▾</option>
-                <option *ngFor="let r of priced()" [value]="r.fileRow" [disabled]="foreign(r.currency)">стр. {{ r.fileRow }} · {{ cut(r.text) }}<ng-container *ngIf="r.price != null"> · {{ num(r.price) }}<ng-container *ngIf="foreign(r.currency)"> {{ label(r.currency) }}</ng-container></ng-container></option>
+                <option *ngFor="let r of priced()" [value]="r.fileRow" [disabled]="foreign(r.currency) && r.converted == null">стр. {{ r.fileRow }} · {{ cut(r.text) }}<ng-container *ngIf="r.price != null"> · {{ num(r.converted ?? r.price) }}<ng-container *ngIf="foreign(r.currency) && r.converted == null"> {{ label(r.currency) }}</ng-container></ng-container></option>
                 <option value="none">— нет в файле —</option>
               </select>
             </div>
@@ -95,6 +106,14 @@ import { ReplyDocumentComponent } from './reply-document.component';
     .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 46%); gap: 16px; align-items: start; }
     .pane-prices { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
     .pane-doc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 150px); overflow: auto; min-width: 0; }
+    .rate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; font-size: 13px; border: 1px solid var(--accent);
+            border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+    .rate-t { flex: 1 1 100%; font-weight: 600; }
+    .rate-in { display: flex; align-items: center; gap: 6px; }
+    .rate-in input { width: 110px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
+                     font-size: 14px; font-variant-numeric: tabular-nums; }
+    .rate-in input:disabled { background: var(--surface-2); }
+    .rate-h { color: var(--text-muted); }
     .pos { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
     .pos.auto { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .p-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
@@ -129,7 +148,8 @@ import { ReplyDocumentComponent } from './reply-document.component';
       /* ширина select по умолчанию — по самому длинному варианту («стр. 5 · Столик процедурный…»): без width и
          min-width: 0 он вылезал за край карточки на телефоне (живая проверка) */
       .pick { max-width: none; flex: 1 1 100%; width: 100%; min-width: 0; }
-      .bar .btn, .p-sugg .btn { min-height: 40px; }
+      .bar .btn, .p-sugg .btn, .rate .btn { min-height: 40px; }
+      .rate-in input { font-size: 16px; min-height: 40px; }
     }
   `],
 })
@@ -181,6 +201,29 @@ export class PriceRequestReplyComponent implements OnInit {
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
   marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
   priced(): ReplyTableRow[] { return (this.view?.table?.rows || []).filter(r => r.priced); }
+  /** Курс без группировки разрядов и с 6 знаками: «6», «5,85555». */
+  rateText(v: number | null | undefined) { return v == null ? '' : RATE.format(v); }
+
+  /** Курс для файла в чужой валюте: цены файла × курс встают с 💡; пусто — снять курс. */
+  setRate(text: string) {
+    const fileId = this.view?.fileId;
+    if (!fileId) return;
+    const t = text.trim();
+    const v = t === '' ? null : parseNum(t);
+    if (t !== '' && (v == null || v <= 0)) { this.notify.error('Курс — число больше нуля, например 6 или 5,85'); return; }
+    this.busy = true;
+    this.saveText = 'Сохраняю…';
+    this.api.setSupplierReplyRate(this.id, fileId, v).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        this.busy = false;
+        this.view = r;
+        this.saved();
+        this.notify.success(v == null ? 'Курс снят — пересчитанные цены убраны' : `Цены пересчитаны по курсу ${this.rateText(v)} — сверьте`);
+        this.cdr.markForCheck();
+      },
+      error: e => { this.busy = false; this.saveText = 'Не сохранено: ' + errorText(e); this.notify.error(errorText(e)); this.cdr.markForCheck(); },
+    });
+  }
 
   savePrice(p: ReplyPosition, ev: Event) {
     const input = ev.target as HTMLInputElement;
@@ -197,17 +240,22 @@ export class PriceRequestReplyComponent implements OnInit {
     if (!val || !this.view) return;
     if (val === 'none') { this.put([{ itemId: p.itemId, responsePrice: null, responseNote: null, clearFile: true }]); return; }
     const row = this.view.table?.rows.find(r => r.fileRow === Number(val));
-    if (row && !this.foreign(row.currency)) this.putRow(p, row.fileRow, row.price);
+    if (row) this.putPicked(p, row);
   }
 
   applySuggestion(p: ReplyPosition) {
-    if (p.suggestion && !this.foreign(p.suggestion.currency)) this.putRow(p, p.suggestion.fileRow, p.suggestion.price);
+    if (p.suggestion) this.putPicked(p, p.suggestion);
   }
 
-  private putRow(p: ReplyPosition, fileRow: number, price: number | null) {
+  /** Цена выбранной строки в валюте запроса: своя — как есть, в валюте курса — пересчитанная; без курса чужая не пишется. */
+  private putPicked(p: ReplyPosition, row: { fileRow: number; price: number | null; currency: string | null; converted: number | null }) {
+    const price = row.converted ?? (this.foreign(row.currency) ? null : row.price);
+    if (price == null) return;
     const name = this.view?.sources.find(s => s.fileId === this.view?.fileId)?.name || 'файла';
-    this.put([{ itemId: p.itemId, responsePrice: price, responseNote: `Из файла «${name}», строка ${fileRow} — выбрано вручную.`,
-                fileId: this.view?.fileId, fileRow }]);
+    const rate = row.converted != null && this.view?.rate?.value != null
+      ? ` Цена ${numText(row.price)} ${currencyLabel(row.currency)} × курс ${this.rateText(this.view.rate.value)}.` : '';
+    this.put([{ itemId: p.itemId, responsePrice: price, responseNote: `Из файла «${name}», строка ${row.fileRow} — выбрано вручную.${rate}`,
+                fileId: this.view?.fileId, fileRow: row.fileRow }]);
   }
 
   private put(updates: any[]) {
@@ -216,12 +264,16 @@ export class PriceRequestReplyComponent implements OnInit {
     this.api.updatePriceRequestResponses(this.id, updates).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busy = false;
-        const d = new Date();
-        this.saveText = `Сохранено · ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        this.saved();
         this.load(this.view?.fileId ?? null);
       },
       error: e => { this.busy = false; this.saveText = 'Не сохранено: ' + errorText(e); this.cdr.markForCheck(); },
     });
+  }
+
+  private saved() {
+    const d = new Date();
+    this.saveText = `Сохранено · ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
   verify() {
