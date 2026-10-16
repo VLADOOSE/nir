@@ -28,6 +28,25 @@ class HeaderRolesTest {
         assertThat(HeaderRoles.role(header, Map.of())).as(header).isEqualTo(role);
     }
 
+    /**
+     * Перенос внутри слова в заголовке (КП «Рикта»: «Коли-чество»; ФОТЕК: «Скид- ка» — перевод строки в ячейке стал
+     * пробелом): роль «Игнорировать» — пробуем слово без переноса. Что узнаётся сейчас («Кол-во»), не меняется.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Коли-чество|QUANTITY", "Коли- чество|QUANTITY", "Коли\u00ADчество|QUANTITY", "Коли\u001Fчество|QUANTITY",
+            "Наиме-нование изделия|NAME", "Сум-ма заказа|SUM", "Кол-во|QUANTITY", "Скид- ка|IGNORE", "Страна-производитель|IGNORE"
+    })
+    void hyphenInsideWord(String header, LineField role) {
+        assertThat(HeaderRoles.role(header, Map.of())).as(header).isEqualTo(role);
+    }
+
+    /** Слово без переноса ищется и в словаре оператора. */
+    @Test
+    void hyphenInsideWord_dictionary() {
+        assertThat(HeaderRoles.role("Изде-лие", Map.of("изделие", LineField.NAME))).isEqualTo(LineField.NAME);
+    }
+
     @Test
     void dictionaryWins_andBlankIsIgnore() {
         assertThat(HeaderRoles.role("  Цена  ", Map.of("цена", LineField.SUM))).isEqualTo(LineField.SUM);

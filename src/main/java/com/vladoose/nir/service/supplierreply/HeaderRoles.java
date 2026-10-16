@@ -4,6 +4,7 @@ import com.vladoose.nir.entity.LineField;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Роль колонки по заголовку (спека 2026-10-15 §3.2): сначала обучаемый словарь header_synonym (ключ — как его пишет
@@ -13,17 +14,32 @@ import java.util.Map;
  */
 public final class HeaderRoles {
 
+    /** Мягкий перенос: U+00AD (.docx) и 0x1F — «необязательный дефис» Word 97 (.doc). */
+    private static final Pattern SOFT_HYPHEN = Pattern.compile("[\\u00AD\\u001F]");
+    /** Перенос внутри слова: дефис вплотную за буквой, дальше — пробелы (перевод строки в ячейке) и снова буква. */
+    private static final Pattern WORD_BREAK = Pattern.compile("(?<=\\p{L})-\\s*(?=\\p{L})");
+
     private HeaderRoles() {}
 
     public static String key(String header) {
         return header == null ? "" : header.trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Роль: словарь, иначе правила. Вышло «Игнорировать» по правилам — ещё раз для заголовка без переноса внутри слова
+     * («Коли-чество», «Скид- ка»): что узнаётся с дефисом («Кол-во»), так и остаётся.
+     */
     public static LineField role(String header, Map<String, LineField> learned) {
         String k = key(header);
         if (k.isEmpty()) return LineField.IGNORE;
         LineField l = learnedRole(header, learned);
-        return l != null ? l : heuristic(norm(k));
+        if (l != null) return l;
+        LineField h = heuristic(norm(k));
+        if (h != LineField.IGNORE) return h;
+        String joined = WORD_BREAK.matcher(SOFT_HYPHEN.matcher(k).replaceAll("")).replaceAll("");
+        if (joined.equals(k)) return h;
+        LineField lj = learnedRole(joined, learned);
+        return lj != null ? lj : heuristic(norm(joined));
     }
 
     /** Роль из словаря оператора (как есть или со сжатыми пробелами и «ё» → «е»); нет в словаре — null. */
