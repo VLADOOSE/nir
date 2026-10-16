@@ -43,6 +43,9 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
 
     public record Counts(int unverified, int noPrice, int unassignedRows) {}
 
-    /** Курс выбранного файла: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на рынке. */
-    public record Rate(String currency, BigDecimal value, BigDecimal suggestion) {}
+    /**
+     * Курс выбранного файла: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на рынке,
+     * suggestedAt — когда его вписали (курс меняется — оператор видит, насколько подсказка старая).
+     */
+    public record Rate(String currency, BigDecimal value, BigDecimal suggestion, OffsetDateTime suggestedAt) {}
 }

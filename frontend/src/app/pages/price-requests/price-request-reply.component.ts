@@ -8,10 +8,10 @@ import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { numText, parseNum } from '../../shared/client-offer';
-import { dateText } from '../../shared/private-request';
+import { dateText, plural } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
-import { backLink, currencyLabel } from '../../shared/supplier-reply';
-import type { ReplyPosition, ReplyTableRow, SupplierReply } from '../../shared/supplier-reply';
+import { backLink, currencyIn, currencyLabel } from '../../shared/supplier-reply';
+import type { ReplyPosition, ReplyTableRow, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
 
 const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGrouping: false });
@@ -42,13 +42,16 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
       <div class="body">
         <section class="pane-prices" [class.off]="tab !== 'prices'">
           <div class="rate" *ngIf="v.rate as rt">
-            <span class="rate-t">Цены в файле — в {{ label(rt.currency) }}<ng-container *ngIf="rt.value == null">: впишите курс — цены пересчитаются и встанут с 💡</ng-container></span>
-            <label class="rate-in">1 {{ label(rt.currency) }} =
-              <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" [disabled]="!admin" placeholder="курс"
-                     aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
-            <button type="button" class="btn btn-primary" *ngIf="admin" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
-            <button type="button" class="btn btn-line" *ngIf="admin && rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
-            <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}</span>
+            <span class="rate-t">Цены в файле — в {{ inLabel(rt.currency) }}<ng-container *ngIf="rt.value == null">{{ admin ? ': впишите курс — цены пересчитаются и встанут с 💡' : ' — курс не вписан' }}</ng-container></span>
+            <ng-container *ngIf="admin; else rateRead">
+              <label class="rate-in">1 {{ label(rt.currency) }} =
+                <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" placeholder="курс"
+                       aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
+              <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
+              <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
+              <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
+            </ng-container>
+            <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
           </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
@@ -59,7 +62,7 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
             <div class="p-row muted" *ngIf="!p.row && !p.suggestion && p.price == null && v.table">нет в файле</div>
             <div class="p-sugg" *ngIf="p.suggestion as s">
               <span>строка {{ s.fileRow }}? «{{ s.text }}» ·
-                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign><ng-container *ngIf="s.converted != null; else noRate">{{ s.converted | money:2 }} = {{ foreignPrice(s.price, s.currency) }} × {{ rateText(v.rate?.value) }}</ng-container><ng-template #noRate>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}: впишите курс выше или цену вручную</ng-template></ng-template></ng-container>
+                <ng-container *ngIf="s.price != null; else noPrice"><ng-container *ngIf="!foreign(s.currency); else suggForeign">{{ s.price | money:2 }}</ng-container><ng-template #suggForeign><ng-container *ngIf="s.converted != null; else noRate">{{ s.converted | money:2 }} = {{ foreignPrice(s.price, s.currency) }} × {{ rateText(v.rate?.value) }}</ng-container><ng-template #noRate>{{ foreignPrice(s.price, s.currency) }} — не {{ marketIn() }}<ng-container *ngIf="admin">: {{ v.rate?.currency === s.currency ? 'впишите курс выше или цену вручную' : 'впишите цену вручную' }}</ng-container></ng-template></ng-template></ng-container>
                 <ng-template #noPrice>в файле без цены<ng-container *ngIf="s.note"> — {{ s.note }}</ng-container></ng-template></span>
               <button type="button" class="btn btn-line" *ngIf="admin && s.price != null && (!foreign(s.currency) || s.converted != null)" (click)="applySuggestion(p)">Подставить</button>
             </div>
@@ -113,7 +116,7 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
     .rate-in input { width: 110px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
                      font-size: 14px; font-variant-numeric: tabular-nums; }
     .rate-in input:disabled { background: var(--surface-2); }
-    .rate-h { color: var(--text-muted); }
+    .rate-h { color: var(--text); }   /* --text-muted на подсветке блока — меньше 4,5:1 */
     .pos { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
     .pos.auto { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .p-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
@@ -161,6 +164,9 @@ export class PriceRequestReplyComponent implements OnInit {
   tab: 'prices' | 'doc' = 'prices';
   saveText = '';
   private sub?: Subscription;
+  /** Номер загрузки и файл, который просили: ответ курса, обогнанный сменой файла, не подменяет выбранный файл. */
+  private seq = 0;
+  private target: number | null = null;
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService, private notify: NotificationService,
               private cdr: ChangeDetectorRef, private destroyRef: DestroyRef) {}
@@ -176,6 +182,8 @@ export class PriceRequestReplyComponent implements OnInit {
   }
 
   load(fileId: number | null) {
+    this.seq++;
+    this.target = fileId;
     this.sub?.unsubscribe();
     this.sub = this.api.getSupplierReply(this.id, fileId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: v => { this.view = v; this.error = ''; this.cdr.markForCheck(); },
@@ -197,6 +205,7 @@ export class PriceRequestReplyComponent implements OnInit {
   /** Валюта строки файла не рынка запроса: цена не подставляется и не выдаётся за цену рынка (ревью ветки). */
   foreign(code: string | null): boolean { return !!code && !!this.view?.head.currency && code !== this.view.head.currency; }
   label(code: string | null) { return currencyLabel(code); }
+  inLabel(code: string | null) { return currencyIn(code); }
   foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
   marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
@@ -204,8 +213,12 @@ export class PriceRequestReplyComponent implements OnInit {
   /** Курс без группировки разрядов и с 6 знаками: «6», «5,85555». */
   rateText(v: number | null | undefined) { return v == null ? '' : RATE.format(v); }
 
-  /** «Пересчитать»: курс для файла в чужой валюте — цены файла × курс встают с 💡. Пустое поле — подсказка, не снятие курса. */
+  /**
+   * «Пересчитать»: курс для файла в чужой валюте — цены файла × курс встают с 💡. Пустое поле — подсказка, не снятие
+   * курса; Enter во время запроса — не второй запрос.
+   */
   setRate(text: string) {
+    if (this.busy) return;
     const v = parseNum(text.trim());
     if (v == null || v <= 0) { this.notify.error('Впишите курс — число больше нуля, например 6 или 5,85'); return; }
     this.sendRate(v);
@@ -216,20 +229,34 @@ export class PriceRequestReplyComponent implements OnInit {
 
   private sendRate(v: number | null) {
     const fileId = this.view?.fileId;
-    if (!fileId) return;
+    if (!fileId || this.busy) return;
+    const seq = this.seq;
     this.busy = true;
     this.saveText = 'Сохраняю…';
     this.api.setSupplierReplyRate(this.id, fileId, v).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: r => {
         this.busy = false;
-        this.view = r;
+        // пока шёл запрос, выбрали другой файл — показать его (с ценами после курса), а не файл курса
+        if (seq === this.seq) this.view = r.view; else this.load(this.target);
         this.saved();
-        this.notify.success(v == null ? 'Курс снят — пересчитанные цены убраны' : `Цены пересчитаны по курсу ${this.rateText(v)} — сверьте`);
+        const text = this.rateToast(r, v);
+        if (r.closed || (v != null && !r.applied)) this.notify.info(text); else this.notify.success(text);
         this.cdr.markForCheck();
       },
       error: e => { this.busy = false; this.saveText = 'Не сохранено: ' + errorText(e); this.notify.error(errorText(e)); this.cdr.markForCheck(); },
     });
   }
+
+  /** Тост по итогу курса — что сервер действительно сделал, а не «пересчитано» наугад. */
+  private rateToast(r: SupplierReplyRateResult, v: number | null): string {
+    const kept = r.keptManual ? `; ручные цены не тронуты: ${r.keptManual}` : '';
+    if (r.closed) return 'Курс сохранён — запрос закрыт, цены не меняли';
+    if (v == null) return (r.removed ? `Курс снят — ${this.prices(r.removed)} по нему убрали` : 'Курс снят') + kept;
+    if (r.applied) return `По курсу ${this.rateText(v)} подставили ${this.prices(r.applied)} — сверьте` + kept;
+    return (r.keptManual ? 'Курс сохранён' : 'Курс сохранён — уверенных совпадений нет: выберите строки вручную') + kept;
+  }
+
+  private prices(n: number) { return `${n} ${plural(n, 'цену', 'цены', 'цен')}`; }
 
   savePrice(p: ReplyPosition, ev: Event) {
     const input = ev.target as HTMLInputElement;

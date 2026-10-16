@@ -38,16 +38,21 @@ class SupplierReplyServiceTest {
 
     @BeforeEach
     void setUp() {
-        MarketContext.set(Market.KZ);
+        pr = request(Market.KZ);
+    }
+
+    /** Заявка рынка m на три позиции и запрос цен к ней (SENT); MarketContext остаётся на m. */
+    PriceRequest request(Market m) {
+        MarketContext.set(m);
         Tender t = Tender.builder().tenderNumber("ZZSVC-" + System.nanoTime()).status("NEW").source(Source.PRIVATE_REQUEST).build();
         for (String n : List.of("Скальпель офтальмологический MSL24", "Скальпель офтальмологический MST15", "Материал шовный нейлон 2056")) {
             t.getLots().add(TenderLot.builder().tender(t).equipName(n).quantity(2).build());
         }
         t = tenders.save(t);
         Distributor d = distributors.save(Distributor.builder().name("ZZSVC Дистр " + System.nanoTime()).build());
-        pr = PriceRequest.builder().tender(t).distributor(d).status("SENT").build();
-        for (TenderLot l : t.getLots()) pr.getItems().add(PriceRequestItem.builder().priceRequest(pr).tenderLot(l).requestedQuantity(2).build());
-        pr = requests.save(pr);
+        PriceRequest p = PriceRequest.builder().tender(t).distributor(d).status("SENT").build();
+        for (TenderLot l : t.getLots()) p.getItems().add(PriceRequestItem.builder().priceRequest(p).tenderLot(l).requestedQuantity(2).build());
+        return requests.save(p);
     }
 
     @AfterEach void clear() { MarketContext.clear(); }
@@ -297,6 +302,125 @@ class SupplierReplyServiceTest {
 
         assertThat(item(0).getResponsePrice()).isEqualByComparingTo("28200");
         assertThat(item(2).getResponsePrice()).isNull();
+    }
+
+    static ReplyTable rubTable() {
+        return table("RUB", "Скальпели офтальмологические: Скальпель MSL24", "4 700",
+                "Скальпели офтальмологические: Скальпель MST15", "4 200",
+                "Материал шовный стерильный нейлон 2056", "11 750");
+    }
+
+    /**
+     * Ревью ветки курса: смена курса после «Всё верно» и после выбора строки — цены, которые никто не правил (равны
+     * пересчёту по прежнему курсу), идут за новым курсом со своей строкой и снова 💡; правленная руками — не трогается.
+     */
+    @Test
+    void rateChange_followsVerifiedAndPickedPrices_keepsHandEdited() {
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", rubTable())), null).fileIds().get(0);
+        service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+        service.verify(pr.getId());                                          // «Всё верно»
+        PriceRequestItem picked = item(1);                                    // «Другая строка ▾»: строка 5 вместо 6
+        picked.setResponsePrice(new BigDecimal("28200"));
+        picked.setResponseFileRow(5);
+        item(2).setResponsePrice(new BigDecimal("70000"));                    // 70 500 поправили руками
+        em.flush();
+
+        SupplierReplyService.RateResult r = service.setRate(pr.getId(), fileId, new BigDecimal("5.8"));
+
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("27260");    // 4 700 × 5,8
+        assertThat(item(0).isResponseAuto()).isTrue();
+        assertThat(item(0).getResponseNote()).contains("× курс 5,8");
+        assertThat(item(1).getResponsePrice()).isEqualByComparingTo("27260");    // своя выбранная строка, не строка сопоставления
+        assertThat(item(1).getResponseFileRow()).isEqualTo(5);
+        assertThat(item(1).isResponseAuto()).isTrue();
+        assertThat(item(2).getResponsePrice()).isEqualByComparingTo("70000");
+        assertThat(item(2).isResponseAuto()).isFalse();
+        assertThat(r.applied()).isEqualTo(2);
+        assertThat(r.keptManual()).isEqualTo(1);
+        assertThat(r.closed()).isFalse();
+    }
+
+    /** Снять курс — уходят и сверенные цены по нему; правленная руками остаётся. */
+    @Test
+    void clearingRate_removesVerifiedPricesToo_keepsHandEdited() {
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", rubTable())), null).fileIds().get(0);
+        service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+        service.verify(pr.getId());
+        item(2).setResponsePrice(new BigDecimal("70000"));
+        em.flush();
+
+        SupplierReplyService.RateResult r = service.setRate(pr.getId(), fileId, null);
+
+        assertThat(item(0).getResponsePrice()).isNull();
+        assertThat(item(0).getResponseFileId()).isNull();
+        assertThat(item(1).getResponsePrice()).isNull();
+        assertThat(item(2).getResponsePrice()).isEqualByComparingTo("70000");
+        assertThat(r.removed()).isEqualTo(2);
+        assertThat(r.keptManual()).isEqualTo(1);
+    }
+
+    /** Тот же курс ещё раз («Пересчитать заново») сверенные цены не возвращает в 💡. */
+    @Test
+    void sameRateAgain_keepsVerifiedState() {
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", rubTable())), null).fileIds().get(0);
+        service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+        service.verify(pr.getId());
+
+        service.setRate(pr.getId(), fileId, new BigDecimal("6.000"));
+
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("28200");
+        assertThat(item(0).isResponseAuto()).isFalse();
+    }
+
+    /** Рынок РФ, КП в тенге: в примечании «… = 940,00 руб.» — без второй точки после «руб.». */
+    @Test
+    void rfMarketNote_noDoubleDot() {
+        PriceRequest rf = request(Market.RF);
+        Long fileId = service.ingest(rf, List.of(parsed("kp.xlsx", kzTable())), null).fileIds().get(0);
+
+        service.setRate(rf.getId(), fileId, new BigDecimal("0.2"));
+
+        PriceRequestItem it = items.findById(rf.getItems().get(0).getId()).orElseThrow();
+        assertThat(it.getResponsePrice()).isEqualByComparingTo("940");   // 4 700 тг × 0,2
+        assertThat(it.getResponseNote()).endsWith("940,00 руб.").doesNotContain("..");
+    }
+
+    /** У закрытого запроса — итог «закрыт»: экран не скажет «пересчитано». */
+    @Test
+    void rateOnClosedRequest_resultSaysClosed() {
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", rubTable())), null).fileIds().get(0);
+        pr.setStatus("CLOSED");
+        em.flush();
+
+        SupplierReplyService.RateResult r = service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+
+        assertThat(r.closed()).isTrue();
+        assertThat(r.applied()).isZero();
+    }
+
+    /**
+     * Исправленное КП в той же валюте (второе письмо, загрузка вручную) берёт курс, уже вписанный в этом запросе:
+     * цены подставляются сразу, по курсу — он в итоге (строка уведомления).
+     */
+    @Test
+    void newFileInSameCurrency_takesRateOfRequest() throws Exception {
+        Long first = service.ingest(pr, List.of(parsed("kp.xls", rubTable())), null).fileIds().get(0);
+        service.setRate(pr.getId(), first, new BigDecimal("6"));
+
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp2.xls", table("RUB",
+                "Скальпели офтальмологические: Скальпель MSL24", "4 500"))), null);
+
+        assertThat(o.applied()).isEqualTo(1);
+        assertThat(o.rate()).isEqualByComparingTo("6");
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("27000");   // 4 500 × 6
+        assertThat(item(0).getResponseFileId()).isEqualTo(o.fileIds().get(0));
+        assertThat(files.findById(o.fileIds().get(0)).orElseThrow().getRate()).isEqualByComparingTo("6");
+
+        byte[] xlsx = ReplyTableReaderTest.xlsx(List.of(List.of("Наименование", "Кол-во", "Цена, руб."),
+                List.of("Скальпели офтальмологические: Скальпель MST15", "2", "4 100")));
+        SupplierReplyFile up = service.upload(pr.getId(), "kp3.xlsx", "application/octet-stream", xlsx, "admin");
+        assertThat(up.getRate()).isEqualByComparingTo("6");
+        assertThat(item(1).getResponsePrice()).isEqualByComparingTo("24600");   // 4 100 × 6
     }
 
     /** Словарь учится только на колонке, которую поправил оператор, — не на догадках по остальным (ревью ветки). */

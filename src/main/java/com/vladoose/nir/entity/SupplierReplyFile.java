@@ -2,6 +2,7 @@ package com.vladoose.nir.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -10,8 +11,10 @@ import java.time.OffsetDateTime;
 /**
  * Файл ответа поставщика (спека 2026-10-15 §3.1): из письма с меткой [КП-…] или загруженный вручную. НЕ рыночный —
  * доступ только через запрос цен с явным гардом рынка (SupplierReplyService.guard). parsed — разобранная таблица
- * Excel / Word (роли колонок правятся в ней же).
+ * Excel / Word (роли колонок правятся в ней же). @DynamicUpdate: курс, роли колонок и ссылку на письмо меняют разные
+ * запросы — UPDATE пишет только изменённое (и не переписывает байты файла).
  */
+@DynamicUpdate
 @Entity
 @Table(name = "supplier_reply_file")
 @Getter

@@ -147,7 +147,8 @@ public class MailIngestWriter {
         String name = o.parsedName() != null ? o.parsedName() : o.fileName();
         if (o.closed()) return "Файл «" + name + "» сохранён — запрос закрыт, цены не меняли";
         if (o.applied() > 0) {
-            return "💡 Цены из файла «" + name + "»: подставлено " + o.applied() + " из " + o.positions() + " — сверьте"
+            return "💡 Цены из файла «" + name + "»: подставлено " + o.applied() + " из " + o.positions()
+                    + (o.rate() != null ? " по курсу " + SupplierReplyService.rateText(o.rate()) : "") + " — сверьте"
                     + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
         }
         if (o.foreignCurrency() != null) {

@@ -484,4 +484,20 @@ class MailIngestWriterTest {
                 List.of(parsed("kp.xlsx", table("RUB", "Кушетка смотровая КС-1", "100", "Столик процедурный СП-2", "200"))), 5);
         assertThat(rows().get(0).getNotifyText()).contains("Цены в файле «kp.xlsx» — в руб., не подставлены — впишите курс на экране сверки");
     }
+
+    /** Исправленное КП в рублях к запросу, где курс уже вписан: цены подставлены по нему — строка говорит, по какому. */
+    @Test
+    void foreignCurrencyFile_rateOfRequest_lineSaysRate() {
+        PriceRequest p = prNamed("SENT", Source.PRIVATE_REQUEST, "Кушетка смотровая", "Столик процедурный");
+        writer().write(mail().uid(35).subject("Re: " + KpToken.subjectToken(p.getId())).text("КП").build(),
+                List.of(parsed("kp.xlsx", table("RUB", "Кушетка смотровая КС-1", "100", "Столик процедурный СП-2", "200"))), 5);
+        replies.setRate(p.getId(), replyFiles.findInfo(p.getId()).get(0).id(), new BigDecimal("6"));
+
+        writer().write(mail().uid(36).subject("Re: " + KpToken.subjectToken(p.getId())).text("Исправленное КП").build(),
+                List.of(parsed("kp2.xlsx", table("RUB", "Кушетка смотровая КС-1", "90", "Столик процедурный СП-2", "190"))), 5);
+
+        InboundEmail second = rows().stream().filter(e -> Long.valueOf(36).equals(e.getImapUid())).findFirst().orElseThrow();
+        assertThat(second.getNotifyText()).contains("💡 Цены из файла «kp2.xlsx»: подставлено 2 из 2 по курсу 6 — сверьте");
+        assertThat(prRepo.findById(p.getId()).orElseThrow().getItems().get(0).getResponsePrice()).isEqualByComparingTo("540");
+    }
 }

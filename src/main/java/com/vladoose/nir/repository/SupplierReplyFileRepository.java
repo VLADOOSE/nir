@@ -21,11 +21,16 @@ public interface SupplierReplyFileRepository extends JpaRepository<SupplierReply
             + "FROM SupplierReplyFile f WHERE f.priceRequestId = :prId ORDER BY f.id")
     List<ReplyFileInfo> findInfo(@Param("prId") Long prId);
 
-    /** Последний курс, вписанный для этой валюты на рынке (подсказка в поле курса); не было — пусто. */
-    @Query(value = "SELECT f.rate FROM supplier_reply_file f JOIN price_request pr ON pr.id = f.price_request_id "
+    /** Курсы этой валюты, вписанные в файлах запроса, — [курс, когда вписан], последний первым (новый файл берёт его). */
+    @Query("SELECT f.rate, f.rateSetAt FROM SupplierReplyFile f WHERE f.priceRequestId = :prId AND f.rateCurrency = :currency "
+            + "AND f.rate IS NOT NULL ORDER BY f.rateSetAt DESC NULLS LAST, f.id DESC")
+    List<Object[]> findRatesOfRequest(@Param("prId") Long prId, @Param("currency") String currency);
+
+    /** Последний курс, вписанный для этой валюты на рынке (подсказка в поле курса), — [курс, когда вписан]; не было — пусто. */
+    @Query(value = "SELECT f.rate, f.rate_set_at FROM supplier_reply_file f JOIN price_request pr ON pr.id = f.price_request_id "
             + "WHERE pr.market = :market AND f.rate_currency = :currency AND f.rate IS NOT NULL "
             + "ORDER BY f.rate_set_at DESC NULLS LAST, f.id DESC LIMIT 1", nativeQuery = true)
-    Optional<java.math.BigDecimal> findLastRate(@Param("market") String market, @Param("currency") String currency);
+    List<Object[]> findLastRate(@Param("market") String market, @Param("currency") String currency);
 
     /**
      * Только таблица файла, без байтов. Тип результата — Object: с типом-записью Spring Data 3.5 переписывает

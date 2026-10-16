@@ -251,7 +251,9 @@ public final class ReplyTableReader {
 
     /**
      * Форма КП для больниц РК: «Стоимость (тенге)» рядом с «Сумма (тенге)» — цена за единицу, а не вторая сумма. Только
-     * если колонки цены нет, рядом есть «Сумма» и роль «Стоимости» — догадка правил, а не словарь оператора.
+     * если колонки цены нет, рядом есть «Сумма», роль «Стоимости» — догадка правил, а не словарь оператора, и в её
+     * заголовке нет признаков итога, НДС или другой величины («Стоимость без НДС», «Общая стоимость», «Стоимость
+     * доставки» — суммы).
      */
     private static List<LineField> costAsPrice(List<String> header, List<LineField> roles, Map<String, LineField> learned) {
         if (roles.contains(LineField.PRICE)) return roles;
@@ -261,12 +263,17 @@ public final class ReplyTableReader {
             if (roles.get(c) != LineField.SUM) continue;
             String h = HeaderRoles.norm(HeaderRoles.key(header.get(c)));
             if (h.contains("сумм")) sum = true;
-            else if (cost < 0 && h.contains("стоимост") && HeaderRoles.learnedRole(header.get(c), learned) == null) cost = c;
+            else if (cost < 0 && h.contains("стоимост") && !notUnitCost(h) && HeaderRoles.learnedRole(header.get(c), learned) == null) cost = c;
         }
         if (cost < 0 || !sum) return roles;
         List<LineField> out = new ArrayList<>(roles);
         out.set(cost, LineField.PRICE);
         return out;
+    }
+
+    private static boolean notUnitCost(String h) {
+        for (String w : List.of("ндс", "всего", "общ", "итог", "доставк")) if (h.contains(w)) return true;
+        return false;
     }
 
     /** Узнанные заголовки; 0 — не шапка (нет наименования или нет ни цены, ни суммы). */

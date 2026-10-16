@@ -43,8 +43,17 @@ export function currencyLabel(code: string | null): string {
 }
 export interface ReplyTableView { source: string; headerRow: number; currency: string | null; columns: ReplyColumn[]; rows: ReplyTableRow[]; }
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
-/** Курс выбранного файла в чужой валюте: 1 currency = value валюты запроса; suggestion — последний курс этой валюты. */
-export interface ReplyRate { currency: string; value: number | null; suggestion: number | null; }
+/** «в рублях»-форма после «в»: «Цены в файле — в руб.», «— в юанях». */
+export function currencyIn(code: string | null): string {
+  return code === 'CNY' ? 'юанях' : currencyLabel(code);
+}
+/**
+ * Курс выбранного файла в чужой валюте: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на
+ * рынке, suggestedAt — когда его вписали.
+ */
+export interface ReplyRate { currency: string; value: number | null; suggestion: number | null; suggestedAt: string | null; }
+/** Ответ на курс: вид и итог — подставлено, снято, ручных не тронуто; closed — запрос закрыт, цены не меняли. */
+export interface SupplierReplyRateResult { view: SupplierReply; applied: number; removed: number; keptManual: number; closed: boolean; }
 export interface SupplierReply {
   head: ReplyHead; positions: ReplyPosition[]; sources: ReplySource[]; fileId: number | null; table: ReplyTableView | null; counts: ReplyCounts;
   rate: ReplyRate | null;

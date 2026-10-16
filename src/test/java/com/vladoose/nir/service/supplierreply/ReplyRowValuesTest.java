@@ -88,6 +88,87 @@ class ReplyRowValuesTest {
         assertThat(v.get(2).priceComputed()).isFalse();
     }
 
+    /** Ревью ветки курса: «Цена без скидки, с НДС» не равна «Цене, с НДС» — из двух берётся цена со скидкой (как в main). */
+    @Test
+    void priceWithoutDiscountWithVat_losesToPriceWithVat() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена без скидки, с НДС", "Сумма без скидки, с НДС",
+                        "Скидка, %", "Цена, с НДС", "Сумма, с НДС"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM, LineField.IGNORE, LineField.PRICE, LineField.SUM),
+                "KZT", List.of(List.of("Набор", "2", "100 000", "200 000", "30", "70 000", "140 000")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("70000");
+        assertThat(v.sum()).isEqualByComparingTo("140000");
+    }
+
+    /** «Цена до скидки» — тоже цена без скидки: «Цена со скидкой» правее её всё равно перебивает. */
+    @Test
+    void priceBeforeDiscountIsNotDiscountPrice() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Цена до скидки", "Цена со скидкой"),
+                List.of(LineField.NAME, LineField.PRICE, LineField.PRICE), "RUB",
+                List.of(List.of("Скальпель", "7200", "4700")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("4700");
+    }
+
+    /**
+     * Правило «Сумма со скидкой ÷ количество» — только при распознанном количестве и в разумных пределах: без
+     * количества сумма всей строки стала бы ценой за штуку (ревью ветки).
+     */
+    @Test
+    void discountRule_needsQuantity_andStaysNearPrice() {
+        List<String> h = List.of("Наименование", "Цена без скидки", "Сумма со скидкой");
+        List<LineField> roles = List.of(LineField.NAME, LineField.PRICE, LineField.SUM);
+        // без количества сумма может быть и за несколько штук — не угадываем, даже если она похожа на цену со скидкой
+        ReplyRowValues noQty = ReplyRowValues.of(t(h, roles, "RUB", List.of(List.of("Набор", "395 750", "300 000")))).get(0);
+        assertThat(noQty.price()).isEqualByComparingTo("395750");
+        assertThat(noQty.priceComputed()).isFalse();
+
+        ReplyRowValues tooHigh = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена без скидки", "Сумма со скидкой"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM), "RUB",
+                List.of(List.of("Набор", "1", "395 750", "1 000 000")))).get(0);
+        assertThat(tooHigh.price()).isEqualByComparingTo("395750");
+    }
+
+    /** Размер скидки («Скидка (сумма)») — не сумма со скидкой: ценой не становится. */
+    @Test
+    void discountAmountIsNotDiscountedSum() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена без скидки", "Скидка (сумма)", "Сумма"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM, LineField.SUM), "RUB",
+                List.of(List.of("Набор", "1", "395 750", "118 725", "277 025")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("395750");
+        assertThat(v.sum()).isEqualByComparingTo("277025");   // сумма строки — «Сумма», не размер скидки левее неё
+    }
+
+    /** «Стоимость со скидкой» бывает ценой за единицу — делить её на количество нельзя (ревью ветки). */
+    @Test
+    void costWithDiscountIsNotDiscountedSum() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена без скидки", "Стоимость со скидкой"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM), "RUB",
+                List.of(List.of("Набор", "3", "395 750", "277 025")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("395750");
+    }
+
+    /** Частая форма 1С «Цена | Скидка | Сумма со скидкой»: цена за единицу — из суммы со скидкой; без скидки — как есть. */
+    @Test
+    void plainPriceWithDiscountedSum_1cForm() {
+        List<ReplyRowValues> v = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена", "Скидка", "Сумма со скидкой"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.IGNORE, LineField.SUM), "RUB",
+                List.of(List.of("Скальпель", "2", "7 200", "35%", "9 360"), List.of("Пинцет", "1", "1 000", "", "1 000"))));
+        assertThat(v.get(0).price()).isEqualByComparingTo("4680");
+        assertThat(v.get(0).priceComputed()).isTrue();
+        assertThat(v.get(1).price()).isEqualByComparingTo("1000");
+        assertThat(v.get(1).priceComputed()).isFalse();
+    }
+
+    /** Сумма для сверки «сумма ≠ цена × кол-во» — с той же ставкой НДС, что у колонки цены (иначе ложная тревога). */
+    @Test
+    void sumForCheckHasSameVatAsPrice() {
+        ReplyRowValues v = ReplyRowValues.of(t(List.of("Наименование", "Кол-во", "Цена со скидкой без НДС", "Сумма со скидкой без НДС",
+                        "Сумма со скидкой с НДС"),
+                List.of(LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM, LineField.SUM), "KZT",
+                List.of(List.of("Скальпель", "2", "4 700", "9 400", "10 528")))).get(0);
+        assertThat(v.price()).isEqualByComparingTo("4700");
+        assertThat(v.sum()).isEqualByComparingTo("9400");
+    }
+
     /** «Цена без скидки» — обычная цена: при паре колонок берётся «Цена со скидкой» (ревью ветки). */
     @Test
     void priceWithoutDiscountIsNotDiscountPrice() {

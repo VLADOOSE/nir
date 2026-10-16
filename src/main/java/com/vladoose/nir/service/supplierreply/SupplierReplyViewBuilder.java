@@ -13,6 +13,7 @@ import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
+import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.EmailReplyText;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -131,9 +132,12 @@ public class SupplierReplyViewBuilder {
         Head head = new Head(pr.getId(), pr.getStatus(), pr.getDistributor() == null ? "поставщик" : pr.getDistributor().getName(),
                 t.getId(), t.getTenderNumber(), t.getSource() == com.vladoose.nir.entity.Source.PRIVATE_REQUEST, pr.getSentAt(),
                 pr.getResponseDate(), market);
-        Rate rateView = table != null && cur != null && market != null && !cur.equals(market)
-                ? new Rate(cur, rate == null ? null : rate.rate(), files.findLastRate(pr.getMarket().name(), cur).orElse(null))
-                : null;
+        Rate rateView = null;
+        if (table != null && cur != null && market != null && !cur.equals(market)) {
+            List<Object[]> last = files.findLastRate(pr.getMarket().name(), cur);
+            rateView = new Rate(cur, rate == null ? null : rate.rate(), last.isEmpty() ? null : (BigDecimal) last.get(0)[0],
+                    last.isEmpty() ? null : at(last.get(0)[1]));
+        }
         return new SupplierReplyView(head, positions, sources(prId, infos), selected, tbl, new Counts(unverified, noPrice, unassigned),
                 rateView);
     }
@@ -183,7 +187,11 @@ public class SupplierReplyViewBuilder {
         return SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
     }
 
-    /** Расхождения строки файла с позицией (спека §4.1). */
+    /**
+     * Расхождения строки файла с позицией (спека §4.1). Строка в валюте курса: цена позиции — пересчёт строки — «цена
+     * файла в руб. × курс 6»; не равна ему (поправили руками, курс сменили позже) — «цена не по курсу 6: по строке
+     * файла — 60 000,00 тг».
+     */
     static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market,
                               SupplierReplyService.FileRate rate) {
         List<String> out = new ArrayList<>();
@@ -200,9 +208,15 @@ public class SupplierReplyViewBuilder {
             if (diff.compareTo(tol) > 0) out.add("сумма ≠ цена × кол-во");
         }
         if (r.currency() != null && market != null && !r.currency().equals(market)) {
-            out.add(SupplierReplyService.converted(r, market, rate)
-                    ? "пересчитано из " + MoneyText.label(r.currency()) + " по курсу " + SupplierReplyService.rateText(rate.rate())
-                    : "валюта: " + MoneyText.label(r.currency()));
+            BigDecimal conv = SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
+            if (conv == null) {
+                out.add("валюта: " + MoneyText.label(r.currency()));
+            } else if (it.getResponsePrice() != null && it.getResponsePrice().compareTo(conv) != 0) {
+                out.add("цена не по курсу " + SupplierReplyService.rateText(rate.rate()) + ": по строке файла — "
+                        + DocFormat.money(conv) + " " + MoneyText.label(market));
+            } else {
+                out.add("цена файла в " + MoneyText.label(r.currency()) + " × курс " + SupplierReplyService.rateText(rate.rate()));
+            }
         }
         if (r.priceComputed()) out.add("цена посчитана из суммы");
         if (score < ReplyMatcher.AUTO_MIN) out.add("названия похожи слабо");

@@ -46,15 +46,21 @@ class SupplierReplyApiTest {
     @BeforeEach
     void setUp() {
         mvc = MockMvcBuilders.webAppContextSetup(wac).apply(SecurityMockMvcConfigurers.springSecurity()).build();
+        pr = newRequest();
+    }
+
+    /** Частная заявка KZ на две позиции и запрос цен к ней (SENT). */
+    PriceRequest newRequest() {
         MarketContext.set(Market.KZ);
         Tender t = requests.createEmpty();
         requests.addLines(t.getId(), List.of(
                 input("Кушетка медицинская смотровая", null, 2, null, null, null),
                 input("Столик процедурный", null, 1, null, null, null)), LinesMode.APPEND);
         Distributor d = distributors.save(Distributor.builder().name("ZZ Ответ API " + System.nanoTime()).build());
-        pr = priceRequests.save(PriceRequest.builder().tender(t).distributor(d).status("SENT").sentAt(OffsetDateTime.now()).build());
-        for (TenderLot l : t.getLots()) pr.getItems().add(items.save(PriceRequestItem.builder().priceRequest(pr).tenderLot(l).requestedQuantity(l.getQuantity()).build()));
+        PriceRequest p = priceRequests.save(PriceRequest.builder().tender(t).distributor(d).status("SENT").sentAt(OffsetDateTime.now()).build());
+        for (TenderLot l : t.getLots()) p.getItems().add(items.save(PriceRequestItem.builder().priceRequest(p).tenderLot(l).requestedQuantity(l.getQuantity()).build()));
         MarketContext.clear();
+        return p;
     }
 
     @AfterEach void clear() { MarketContext.clear(); }
@@ -171,13 +177,36 @@ class SupplierReplyApiTest {
                 .andExpect(jsonPath("$.table.rows[0].currency").value("RUB"));
     }
 
+    /** Цена, поправленная руками после курса, — пометка «цена не по курсу …» с ценой по строке (ревью ветки курса). */
+    @Test
+    void handEditedPriceAfterRate_flagSaysNotByRate() throws Exception {
+        MarketContext.set(Market.KZ);
+        ReplyTable rub = new ReplyTable("Лист1", 4, 3, "RUB", List.of(
+                new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, "Цена, руб.", LineField.PRICE)),
+                List.of(new ReplyTable.Row(5, List.of("Кушетка медицинская смотровая КМС-01", "2", "10 000"))));
+        Long fileId = replies.ingest(priceRequests.findById(pr.getId()).orElseThrow(), List.of(parsed("КП руб.xlsx", rub)), null)
+                .fileIds().get(0);
+        replies.setRate(pr.getId(), fileId, new java.math.BigDecimal("6"));
+        PriceRequestItem it = items.findById(pr.getItems().get(0).getId()).orElseThrow();
+        it.setResponsePrice(new java.math.BigDecimal("59000"));
+        it.setResponseAuto(false);
+        items.flush();
+        MarketContext.clear();
+
+        mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.positions[0].flags", hasItem(allOf(containsString("цена не по курсу 6"), containsString("60")))))
+                .andExpect(jsonPath("$.positions[0].flags", not(hasItem(containsString("цена файла")))));
+    }
+
     /**
-     * Поле курса (2026-10-16): у файла в чужой валюте — блок rate; PUT курса пересчитывает цены (💡, строка, пометка
-     * «по курсу»), у строк — пересчитанная цена; второй файл той же валюты получает подсказку — последний курс.
-     * Оператор курс не ставит.
+     * Поле курса (2026-10-16): у файла в чужой валюте — блок rate; PUT курса пересчитывает цены (💡, строка, пометка с
+     * курсом), у строк — пересчитанная цена, в ответе — итог (сколько подставлено). Оператор курс не ставит, чужой
+     * рынок — 404. Второй файл той же валюты в этом запросе (исправленное КП) берёт курс сам; файл другого запроса —
+     * подсказку: последний курс на рынке и когда он вписан.
      */
     @Test
-    void rateField_convertsPrices_suggestsLastRate() throws Exception {
+    void rateField_convertsPrices_inheritsInRequest_suggestsOnMarket() throws Exception {
         MarketContext.set(Market.KZ);
         ReplyTable rub = new ReplyTable("Лист1", 4, 3, "RUB", List.of(
                 new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
@@ -196,16 +225,22 @@ class SupplierReplyApiTest {
         mvc.perform(put(url).contentType("application/json").content("{\"rate\": 6}").header("X-Market", "KZ")
                         .with(user("op").roles("OPERATOR")))
                 .andExpect(status().isForbidden());
+        mvc.perform(put(url).contentType("application/json").content("{\"rate\": 6}").header("X-Market", "RF")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound());
 
         mvc.perform(put(url).contentType("application/json").content("{\"rate\": 6}").header("X-Market", "KZ")
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.rate.value").value(6.0))
-                .andExpect(jsonPath("$.positions[0].price").value(60000.0))
-                .andExpect(jsonPath("$.positions[0].auto").value(true))
-                .andExpect(jsonPath("$.positions[0].row.converted").value(60000.0))
-                .andExpect(jsonPath("$.positions[0].flags", hasItem(containsString("по курсу 6"))))
-                .andExpect(jsonPath("$.table.rows[1].converted").value(30000.0));
+                .andExpect(jsonPath("$.applied").value(2))
+                .andExpect(jsonPath("$.keptManual").value(0))
+                .andExpect(jsonPath("$.closed").value(false))
+                .andExpect(jsonPath("$.view.rate.value").value(6.0))
+                .andExpect(jsonPath("$.view.positions[0].price").value(60000.0))
+                .andExpect(jsonPath("$.view.positions[0].auto").value(true))
+                .andExpect(jsonPath("$.view.positions[0].row.converted").value(60000.0))
+                .andExpect(jsonPath("$.view.positions[0].flags", hasItem(containsString("курс 6"))))
+                .andExpect(jsonPath("$.view.table.rows[1].converted").value(30000.0));
 
         MarketContext.set(Market.KZ);
         ReplyTable again = new ReplyTable("Лист1", 4, 3, "RUB", rub.columns(),
@@ -215,7 +250,19 @@ class SupplierReplyApiTest {
         MarketContext.clear();
         mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").param("fileId", String.valueOf(second))
                         .header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.rate.value").value(6.0))
+                .andExpect(jsonPath("$.positions[0].price").value(66000.0));
+
+        PriceRequest other = newRequest();
+        MarketContext.set(Market.KZ);
+        Long third = replies.ingest(priceRequests.findById(other.getId()).orElseThrow(), List.of(parsed("КП руб 3.xlsx", rub)), null)
+                .fileIds().get(0);
+        MarketContext.clear();
+        mvc.perform(get("/api/price-requests/" + other.getId() + "/reply").param("fileId", String.valueOf(third))
+                        .header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
                 .andExpect(jsonPath("$.rate.value").value(nullValue()))
-                .andExpect(jsonPath("$.rate.suggestion").value(6.0));
+                .andExpect(jsonPath("$.rate.suggestion").value(6.0))
+                .andExpect(jsonPath("$.rate.suggestedAt").value(notNullValue()))
+                .andExpect(jsonPath("$.positions[0].price").value(nullValue()));
     }
 }

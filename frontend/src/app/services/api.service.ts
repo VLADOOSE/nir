@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { EquipmentHit, NewPriceLine, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
-import type { SupplierReply } from '../shared/supplier-reply';
+import type { SupplierReply, SupplierReplyRateResult } from '../shared/supplier-reply';
 import type {
   DocFormat, LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
@@ -301,8 +301,8 @@ export class ApiService {
   deleteSupplierReplyFile(id: number, fileId: number): Observable<SupplierReply> {
     return this.http.delete<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}`);
   }
-  setSupplierReplyRate(id: number, fileId: number, rate: number | null): Observable<SupplierReply> {
-    return this.http.put<SupplierReply>(`${this.base}/price-requests/${id}/files/${fileId}/rate`, { rate });
+  setSupplierReplyRate(id: number, fileId: number, rate: number | null): Observable<SupplierReplyRateResult> {
+    return this.http.put<SupplierReplyRateResult>(`${this.base}/price-requests/${id}/files/${fileId}/rate`, { rate });
   }
   verifySupplierReply(id: number): Observable<SupplierReply> {
     return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/verify`, {});

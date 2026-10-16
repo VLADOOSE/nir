@@ -42,17 +42,27 @@ public class SupplierReplyService {
     /**
      * Итог файлов письма — для строки уведомления (MailIngestWriter.fileLine). fileName — первый сохранённый файл,
      * parsedName — файл с разобранной таблицей (null — такого нет), unreadable — Excel / Word, который не разобрался,
-     * closed — запрос закрыт: файлы сохранены, цены не трогали.
+     * closed — запрос закрыт: файлы сохранены, цены не трогали; rate — курс запроса, по которому подставлены цены.
      */
     public record ReplyOutcome(List<Long> fileIds, String fileName, String parsedName, int applied, int positions,
                                int manualKept, String foreignCurrency, boolean viewOnly, boolean image, String unreadable,
-                               boolean closed) {
+                               boolean closed, BigDecimal rate) {
         public static ReplyOutcome none() {
-            return new ReplyOutcome(List.of(), null, null, 0, 0, 0, null, false, false, null, false);
+            return new ReplyOutcome(List.of(), null, null, 0, 0, 0, null, false, false, null, false, null);
         }
     }
 
-    public record ApplyResult(int applied, int positions, int manualKept, String foreignCurrency) {}
+    /** rate — курс, по которому подставлены цены в чужой валюте (null — пересчёта не было). */
+    public record ApplyResult(int applied, int positions, int manualKept, String foreignCurrency, BigDecimal rate) {}
+
+    /**
+     * Итог курса: applied — цен подставлено (в том числе сверенных и выбранных, пошедших за курсом), removed — снято
+     * (курс снят), keptManual — ручных цен не тронуто, closed — запрос закрыт: курс сохранён, цены не трогали.
+     */
+    public record RateResult(int applied, int removed, int keptManual, boolean closed) {}
+
+    /** Цены файла по прежнему курсу, которые никто не правил: skip — их не трогает сопоставление. */
+    private record Follow(Set<Long> skip, int moved, int removed, int kept) {}
 
     private final SupplierReplyFileRepository files;
     private final PriceRequestItemRepository items;
@@ -91,13 +101,30 @@ public class SupplierReplyService {
                 .map(SupplierReplyFile::getFileName).findFirst().orElse(null);
         String name = stored.get(0).getFileName();
         String parsedName = best.map(SupplierReplyFile::getFileName).orElse(null);
+        for (SupplierReplyFile f : stored) inheritRate(pr, f);
         boolean closed = CLOSED.contains(pr.getStatus());
         if (best.isEmpty() || closed) {
-            return new ReplyOutcome(ids, name, parsedName, 0, pr.getItems().size(), 0, null, view, image, unreadable, closed);
+            return new ReplyOutcome(ids, name, parsedName, 0, pr.getItems().size(), 0, null, view, image, unreadable, closed, null);
         }
         ApplyResult a = apply(pr, best.get());
         return new ReplyOutcome(ids, name, parsedName, a.applied(), a.positions(), a.manualKept(), a.foreignCurrency(),
-                view, image, unreadable, false);
+                view, image, unreadable, false, a.rate());
+    }
+
+    /**
+     * Исправленное КП в той же чужой валюте (второе письмо, загрузка вручную) берёт курс, уже вписанный в этом запросе
+     * (последний): иначе оператор вписывал бы его заново на каждое письмо (решение ревью ветки курса).
+     */
+    private void inheritRate(PriceRequest pr, SupplierReplyFile f) {
+        if (f.getParsed() == null || f.getRate() != null) return;
+        String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
+        String cur = tableCurrency(ReplyRowValues.of(f.getParsed()), f.getParsed());
+        if (cur == null || market == null || cur.equals(market)) return;
+        List<Object[]> rates = files.findRatesOfRequest(pr.getId(), cur);
+        if (rates.isEmpty()) return;
+        f.setRate((BigDecimal) rates.get(0)[0]);
+        f.setRateCurrency(cur);
+        f.setRateSetAt((OffsetDateTime) rates.get(0)[1]);
     }
 
     /** Письмо записано — файлам ставится ссылка на строку «Входящих». */
@@ -130,6 +157,7 @@ public class SupplierReplyService {
             throw new BadRequestException("Этот файл уже есть в ответе поставщика");
         }
         SupplierReplyFile f = files.save(entity(pr.getId(), p, user == null ? "admin" : user));
+        inheritRate(pr, f);
         if (f.getParseStatus() == ReplyParseStatus.PARSED && !CLOSED.contains(pr.getStatus())) {
             if (apply(pr, f).applied() > 0) markResponded(pr, null);
         }
@@ -194,16 +222,19 @@ public class SupplierReplyService {
 
     /**
      * Курс пересчёта цен файла в валюту запроса (поле на экране «Ответ поставщика», 2026-10-16): запоминается у файла,
-     * цены из файла пересчитываются — свои 💡 заново, ручные не трогаются; null — курс снят, пересчитанные цены уходят.
-     * У закрытого запроса курс запоминается, цены не трогаются (как роли колонок, спека §3.4).
+     * цены из файла пересчитываются — свои 💡 заново; цены по прежнему курсу, которые никто не правил (сверенные «Всё
+     * верно», выбранные «Другая строка ▾»), идут за курсом со своей строкой и снова 💡; правленные руками не трогаются;
+     * null — курс снят, цены по нему уходят. У закрытого запроса курс запоминается, цены не трогаются (как роли колонок,
+     * спека §3.4).
      */
     @Transactional
-    public void setRate(Long prId, Long fileId, BigDecimal rate) {
+    public RateResult setRate(Long prId, Long fileId, BigDecimal rate) {
         PriceRequest pr = guard(prId);
         SupplierReplyFile f = fileOf(pr, fileId);
         if (f.getParsed() == null) throw new BadRequestException("У файла нет разобранной таблицы — курс не к чему применить");
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
-        String cur = tableCurrency(ReplyRowValues.of(f.getParsed()), f.getParsed());
+        List<ReplyRowValues> rows = ReplyRowValues.of(f.getParsed());
+        String cur = tableCurrency(rows, f.getParsed());
         if (cur == null || market == null || cur.equals(market)) {
             throw new BadRequestException("Цены в файле — в валюте запроса, курс не нужен");
         }
@@ -212,12 +243,54 @@ public class SupplierReplyService {
             if (rate.compareTo(MAX_RATE) > 0) throw new BadRequestException("Курс слишком большой — не больше 100 000");
             if (rate.stripTrailingZeros().scale() > 6) throw new BadRequestException("Курс — не больше 6 знаков после запятой");
         }
+        FileRate old = fileRate(f.getRate(), f.getRateCurrency(), cur, market);
         f.setRate(rate);
         f.setRateCurrency(rate == null ? null : cur);
         f.setRateSetAt(rate == null ? null : OffsetDateTime.now());
-        if (CLOSED.contains(pr.getStatus())) return;
-        revertAuto(pr.getId(), f.getId(), false);
-        if (rate != null && apply(pr, f).applied() > 0) markResponded(pr, null);
+        if (CLOSED.contains(pr.getStatus())) return new RateResult(0, 0, 0, true);
+        int reverted = revertAuto(pr.getId(), f.getId(), false);
+        Follow follow = follow(pr, f, rows, old, rate == null ? null : new FileRate(cur, rate), market);
+        ApplyResult a = rate == null ? null : apply(pr, f, follow.skip());
+        int applied = (a == null ? 0 : a.applied()) + follow.moved();
+        if (applied > 0) markResponded(pr, null);
+        return new RateResult(applied, rate == null ? reverted + follow.removed() : follow.removed(),
+                (a == null ? 0 : a.manualKept()) + follow.kept(), false);
+    }
+
+    /**
+     * Цены файла по прежнему курсу, которые никто не правил (равны пересчёту своей строки): идут за новым курсом со
+     * своей строкой — снова 💡 (новую цену ещё никто не сверял); тот же курс — остаются как есть; курс снят — уходят.
+     * Цена, правленная руками (не равна пересчёту), не трогается. Все такие позиции сопоставление дальше не трогает.
+     */
+    private Follow follow(PriceRequest pr, SupplierReplyFile f, List<ReplyRowValues> rows, FileRate old, FileRate now, String market) {
+        Set<Long> skip = new HashSet<>();
+        if (old == null) return new Follow(skip, 0, 0, 0);
+        Map<Integer, ReplyRowValues> byRow = new HashMap<>();
+        for (ReplyRowValues r : rows) byRow.put(r.fileRow(), r);
+        int moved = 0, removed = 0, kept = 0;
+        for (PriceRequestItem it : items.lockByPriceRequestId(pr.getId())) {
+            if (!f.getId().equals(it.getResponseFileId()) || it.isResponseAuto() || it.getResponsePrice() == null) continue;
+            ReplyRowValues r = byRow.get(it.getResponseFileRow());
+            if (r == null || r.price() == null || !converted(r, market, old)) continue;
+            skip.add(it.getId());
+            BigDecimal was = convert(r.price(), old.rate());
+            if (was == null || was.compareTo(it.getResponsePrice()) != 0) {
+                kept++;
+                continue;
+            }
+            BigDecimal next = now == null ? null : convert(r.price(), now.rate());
+            if (next != null && next.compareTo(it.getResponsePrice()) == 0) continue;   // тот же курс — сверенное остаётся сверенным
+            if (next == null) {
+                clear(it);
+                removed++;
+                continue;
+            }
+            it.setResponsePrice(next);
+            it.setResponseAuto(true);
+            it.setResponseNote(note(f.getFileName(), r, next, now, market));
+            moved++;
+        }
+        return new Follow(skip, moved, removed, kept);
     }
 
     /** «Всё верно» — снять 💡 со всех цен запроса. */
@@ -228,12 +301,17 @@ public class SupplierReplyService {
     }
 
     ApplyResult apply(PriceRequest pr, SupplierReplyFile f) {
+        return apply(pr, f, Set.of());
+    }
+
+    /** skip — позиции, которые сопоставление не трогает (цены по прежнему курсу, пошедшие за курсом). */
+    private ApplyResult apply(PriceRequest pr, SupplierReplyFile f, Set<Long> skip) {
         List<PriceRequestItem> its = items.lockByPriceRequestId(pr.getId());
         List<ReplyRowValues> rows = ReplyRowValues.of(f.getParsed());
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
         String cur = tableCurrency(rows, f.getParsed());
         FileRate rate = fileRate(f.getRate(), f.getRateCurrency(), cur, market);
-        if (cur != null && market != null && !cur.equals(market) && rate == null) return new ApplyResult(0, its.size(), 0, cur);
+        if (cur != null && market != null && !cur.equals(market) && rate == null) return new ApplyResult(0, its.size(), 0, cur, null);
         Map<Integer, ReplyRowValues> byRow = new HashMap<>();
         List<ReplyMatcher.Row> mrows = new ArrayList<>();
         int order = 0;
@@ -250,8 +328,9 @@ public class SupplierReplyService {
             pos.add(new ReplyMatcher.Position(it.getId(), i + 1, positionText(it), it.getRequestedQuantity()));
         }
         int applied = 0, manual = 0;
+        boolean byRate = false;
         for (ReplyMatcher.Match m : ReplyMatcher.match(pos, mrows)) {
-            if (m.kind() != ReplyMatcher.Kind.AUTO) continue;
+            if (m.kind() != ReplyMatcher.Kind.AUTO || skip.contains(m.itemId())) continue;
             ReplyRowValues r = byRow.get(m.fileRow());
             if (r == null || r.price() == null) continue;
             // валюта строки (колонка «Валюта», «€» в ячейке) — не рынка: не подставлять, даже если таблица в валюте рынка;
@@ -268,26 +347,34 @@ public class SupplierReplyService {
             it.setResponseFileId(f.getId());
             it.setResponseFileRow(r.fileRow());
             it.setResponseNote(note(f.getFileName(), r, price, converted(r, market, rate) ? rate : null, market));
+            byRate |= converted(r, market, rate);
             applied++;
         }
-        return new ApplyResult(applied, its.size(), manual, null);
+        return new ApplyResult(applied, its.size(), manual, null, byRate ? rate.rate() : null);
     }
 
-    /** Несверенные цены из файла — снять; unlinkAll — ещё и связь ручных цен с этим файлом (файл удаляется). */
-    private void revertAuto(Long prId, Long fileId, boolean unlinkAll) {
+    /** Несверенные цены из файла — снять (сколько сняли); unlinkAll — ещё и связь ручных цен с этим файлом (файл удаляется). */
+    private int revertAuto(Long prId, Long fileId, boolean unlinkAll) {
+        int n = 0;
         for (PriceRequestItem it : items.lockByPriceRequestId(prId)) {
             if (!fileId.equals(it.getResponseFileId())) continue;
             if (it.isResponseAuto()) {
-                it.setResponsePrice(null);
-                it.setResponseNote(null);
-                it.setResponseAuto(false);
-                it.setResponseFileId(null);
-                it.setResponseFileRow(null);
+                clear(it);
+                n++;
             } else if (unlinkAll) {
                 it.setResponseFileId(null);
                 it.setResponseFileRow(null);
             }
         }
+        return n;
+    }
+
+    private static void clear(PriceRequestItem it) {
+        it.setResponsePrice(null);
+        it.setResponseNote(null);
+        it.setResponseAuto(false);
+        it.setResponseFileId(null);
+        it.setResponseFileRow(null);
     }
 
     /** Наименование, бренд позиции и предложенная модель — то, что видит поставщик в письме. */
@@ -311,7 +398,8 @@ public class SupplierReplyService {
         StringBuilder s = new StringBuilder("Из файла «").append(name).append("», строка ").append(r.fileRow()).append('.');
         if (rate != null) {   // пересчитано по курсу: исходная цена и курс — чтобы сверить с документом
             s.append(" Цена ").append(DocFormat.money(r.price())).append(' ').append(unit(r.currency())).append(" × курс ")
-                    .append(rateText(rate.rate())).append(" = ").append(DocFormat.money(price)).append(' ').append(unit(market)).append('.');
+                    .append(rateText(rate.rate())).append(" = ").append(DocFormat.money(price)).append(' ').append(unit(market));
+            if (s.charAt(s.length() - 1) != '.') s.append('.');   // «руб.» — без второй точки
         }
         if (r.priceComputed()) s.append(" Цена посчитана из суммы.");
         if (r.note() != null) s.append(" Примечание поставщика: «").append(r.note().length() <= 300 ? r.note() : r.note().substring(0, 300)).append("».");
