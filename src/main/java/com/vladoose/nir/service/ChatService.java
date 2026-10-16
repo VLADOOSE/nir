@@ -217,7 +217,7 @@ public class ChatService {
         // иначе кнопка «Создать обращение» спрятана, а ссылки нет (ревью 2026-09-28)
         Optional<Lead> open = c.isGroup() ? Optional.empty() : rules.findOpenLead(c, OffsetDateTime.now());
         Lead lead = open.orElseGet(() -> currentLeads(List.of(c.getId())).get(c.getId()));
-        r.setLead(lead == null ? null : new ChatLeadRef(lead.getId(), lead.getStatus().name()));
+        r.setLead(lead == null ? null : headerLeadRef(lead));
         r.setLeadOpen(open.isPresent());
         return r;
     }
@@ -233,8 +233,18 @@ public class ChatService {
         r.setNotClient(c.isNotClient());
         r.setLastMessageAt(c.getLastMessageAt());
         r.setLastMessagePreview(c.getLastMessagePreview());
-        r.setLead(lead == null ? null : new ChatLeadRef(lead.getId(), lead.getStatus().name()));
+        r.setLead(lead == null ? null : new ChatLeadRef(lead.getId(), lead.getStatus().name(), null, null));
         return r;
+    }
+
+    /**
+     * Обращение в шапке чата — со ссылкой на частную заявку, в которую оно превращено (переход «чат → заявка»,
+     * 2026-10-16). Только в шапке: в списке номер заявки стоил бы запроса на каждый чат.
+     */
+    private static ChatLeadRef headerLeadRef(Lead lead) {
+        Tender request = lead.getPrivateRequest();
+        return new ChatLeadRef(lead.getId(), lead.getStatus().name(),
+                request == null ? null : request.getId(), request == null ? null : request.getTenderNumber());
     }
 
     private static ChatMessageResponse toMessage(ChatMessage m, List<ChatAttachmentMeta> files) {

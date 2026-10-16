@@ -83,6 +83,7 @@ public class LeadResponseMapper {
         r.setSource(l.getSource());
         r.setStatus(l.getStatus().name());
         r.setReceivedAt(l.getReceivedAt());
+        r.setChatId(l.getChat() == null ? null : l.getChat().getId());
         return r;
     }
 

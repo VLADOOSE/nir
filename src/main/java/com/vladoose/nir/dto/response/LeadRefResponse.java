@@ -12,4 +12,6 @@ public class LeadRefResponse {
     private String source;
     private String status;
     private OffsetDateTime receivedAt;
+    /** Переписка обращения (WhatsApp или почта) — ссылка «Переписка» со страницы заявки; без чата — пусто. */
+    private Long chatId;
 }

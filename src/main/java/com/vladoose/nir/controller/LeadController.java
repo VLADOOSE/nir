@@ -27,6 +27,9 @@ import java.util.*;
 @RequestMapping("/api/leads")
 public class LeadController {
 
+    /** Ключ фильтра «Активные» в status (2026-10-16). */
+    public static final String ACTIVE = "ACTIVE";
+
     private final LeadService service;
     private final LeadResponseMapper mapper;
     private final WestmedLeadScheduler westmedScheduler;
@@ -40,11 +43,18 @@ public class LeadController {
         this.chatService = chatService;
     }
 
+    /**
+     * status — список статусов через запятую, «ALL» или «ACTIVE»: «Новое», «В работе» и «Заявка создана», пока частная
+     * заявка в работе (фильтр «Активные» экрана, 2026-10-16). Без параметра — «NEW,IN_WORK», как раньше.
+     */
     @GetMapping
     public List<LeadListItemResponse> list(@RequestParam(defaultValue = "NEW,IN_WORK") String status,
                                            @RequestParam(required = false) LeadChannel channel,
                                            @RequestParam(required = false) String q) {
-        return service.list(parseStatuses(status), channel, q).stream().map(mapper::toListItem).toList();
+        List<Lead> rows = ACTIVE.equalsIgnoreCase(status.trim())
+                ? service.listActive(channel, q)
+                : service.list(parseStatuses(status), channel, q);
+        return rows.stream().map(mapper::toListItem).toList();
     }
 
     @GetMapping("/count")

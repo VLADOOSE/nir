@@ -60,6 +60,25 @@ public class LeadService {
         List<Lead> rows = channel == null
                 ? leadRepository.findByStatusInOrderByReceivedAtDescIdDesc(statuses, top)
                 : leadRepository.findByStatusInAndChannelOrderByReceivedAtDescIdDesc(statuses, channel, top);
+        return search(rows, q);
+    }
+
+    /**
+     * Фильтр «Активные» (2026-10-16): «Новое» и «В работе» — и «Заявка создана», пока частная заявка в работе. Без них
+     * обращение после «Создать заявку» пропадало из списка по умолчанию, и переход «обращение → заявка» терялся.
+     */
+    @Transactional(readOnly = true)
+    public List<Lead> listActive(LeadChannel channel, String q) {
+        Pageable top = PageRequest.of(0, LIST_LIMIT);
+        Set<LeadStatus> open = EnumSet.of(LeadStatus.NEW, LeadStatus.IN_WORK);
+        String requestOpen = PrivateRequestStatus.NEW.name();
+        List<Lead> rows = channel == null
+                ? leadRepository.findActive(open, LeadStatus.CONVERTED, requestOpen, top)
+                : leadRepository.findActiveByChannel(open, LeadStatus.CONVERTED, requestOpen, channel, top);
+        return search(rows, q);
+    }
+
+    private static List<Lead> search(List<Lead> rows, String q) {
         if (isBlank(q)) return rows;
         String needle = q.trim().toLowerCase(Locale.ROOT);
         String digits = q.replaceAll("\\D", "");
