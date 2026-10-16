@@ -47,7 +47,7 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
               <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" [disabled]="!admin" placeholder="курс"
                      aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
             <button type="button" class="btn btn-primary" *ngIf="admin" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
-            <button type="button" class="btn btn-line" *ngIf="admin && rt.value != null" [disabled]="busy" (click)="setRate('')">Снять курс</button>
+            <button type="button" class="btn btn-line" *ngIf="admin && rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
             <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}</span>
           </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
@@ -204,13 +204,19 @@ export class PriceRequestReplyComponent implements OnInit {
   /** Курс без группировки разрядов и с 6 знаками: «6», «5,85555». */
   rateText(v: number | null | undefined) { return v == null ? '' : RATE.format(v); }
 
-  /** Курс для файла в чужой валюте: цены файла × курс встают с 💡; пусто — снять курс. */
+  /** «Пересчитать»: курс для файла в чужой валюте — цены файла × курс встают с 💡. Пустое поле — подсказка, не снятие курса. */
   setRate(text: string) {
+    const v = parseNum(text.trim());
+    if (v == null || v <= 0) { this.notify.error('Впишите курс — число больше нуля, например 6 или 5,85'); return; }
+    this.sendRate(v);
+  }
+
+  /** «Снять курс» — пересчитанные цены уходят. */
+  clearRate() { this.sendRate(null); }
+
+  private sendRate(v: number | null) {
     const fileId = this.view?.fileId;
     if (!fileId) return;
-    const t = text.trim();
-    const v = t === '' ? null : parseNum(t);
-    if (t !== '' && (v == null || v <= 0)) { this.notify.error('Курс — число больше нуля, например 6 или 5,85'); return; }
     this.busy = true;
     this.saveText = 'Сохраняю…';
     this.api.setSupplierReplyRate(this.id, fileId, v).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
