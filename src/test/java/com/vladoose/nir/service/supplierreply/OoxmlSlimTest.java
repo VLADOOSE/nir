@@ -2,11 +2,16 @@ package com.vladoose.nir.service.supplierreply;
 
 import com.vladoose.nir.entity.ReplyParseStatus;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
+import org.apache.poi.util.Units;
+import org.apache.poi.xddf.usermodel.chart.ChartTypes;
+import org.apache.poi.xddf.usermodel.chart.XDDFChartData;
+import org.apache.poi.xddf.usermodel.chart.XDDFDataSourcesFactory;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.Document;
+import org.apache.poi.xwpf.usermodel.XWPFChart;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +57,24 @@ class OoxmlSlimTest {
         // защита POI от zip-бомб не ослаблена для всех (умолчания POI 5.2.5): ею закрыт и разбор смет клиник (D1)
         assertThat(ZipSecureFile.getMinInflateRatio()).isEqualTo(0.01);
         assertThat(ZipSecureFile.getMaxEntrySize()).isEqualTo(0xFFFFFFFFL);
+    }
+
+    /** Диаграмма с книгой данных во вложении (word/embeddings): вложение пустое, документ всё равно открывается. */
+    @Test
+    void docxWithChartWorkbook_isParsed() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        ReplyTableReaderTest.table(d, List.of(List.of("Наименование", "Кол-во", "Цена, тг"), List.of("Кушетка смотровая", "2", "95 000")));
+        XWPFChart chart = d.createChart(5 * Units.EMU_PER_CENTIMETER, 5 * Units.EMU_PER_CENTIMETER);
+        XDDFChartData data = chart.createData(ChartTypes.PIE, null, null);
+        data.addSeries(XDDFDataSourcesFactory.fromArray(new String[]{"2025", "2026"}),
+                XDDFDataSourcesFactory.fromArray(new Double[]{1.0, 2.0}));
+        chart.plot(data);
+        byte[] docx = ReplyTableReaderTest.docx(d);
+        assertThat(entries(docx).keySet()).anyMatch(n -> n.startsWith("word/embeddings/"));
+
+        PreparedFile p = prepare("КП.docx", docx);
+        assertThat(p.status()).as(p.note()).isEqualTo(ReplyParseStatus.PARSED);
+        assertThat(ReplyRowValues.of(p.table()).get(0).price()).isEqualByComparingTo("95000");
     }
 
     /** Логотип-EMF бывает и в Excel (xl/media). */
