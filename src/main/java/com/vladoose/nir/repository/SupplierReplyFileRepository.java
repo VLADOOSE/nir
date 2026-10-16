@@ -17,9 +17,15 @@ public interface SupplierReplyFileRepository extends JpaRepository<SupplierReply
     boolean existsByPriceRequestIdAndSha256(Long priceRequestId, String sha256);
 
     @Query("SELECT new com.vladoose.nir.service.supplierreply.ReplyFileInfo(f.id, f.fileName, f.mimeType, f.sizeBytes, "
-            + "f.kind, f.parseStatus, f.parseNote, f.pageCount, f.inboundEmailId, f.uploadedBy, f.createdAt) "
+            + "f.kind, f.parseStatus, f.parseNote, f.pageCount, f.inboundEmailId, f.uploadedBy, f.createdAt, f.rate, f.rateCurrency) "
             + "FROM SupplierReplyFile f WHERE f.priceRequestId = :prId ORDER BY f.id")
     List<ReplyFileInfo> findInfo(@Param("prId") Long prId);
+
+    /** Последний курс, вписанный для этой валюты на рынке (подсказка в поле курса); не было — пусто. */
+    @Query(value = "SELECT f.rate FROM supplier_reply_file f JOIN price_request pr ON pr.id = f.price_request_id "
+            + "WHERE pr.market = :market AND f.rate_currency = :currency AND f.rate IS NOT NULL "
+            + "ORDER BY f.rate_set_at DESC NULLS LAST, f.id DESC LIMIT 1", nativeQuery = true)
+    Optional<java.math.BigDecimal> findLastRate(@Param("market") String market, @Param("currency") String currency);
 
     /**
      * Только таблица файла, без байтов. Тип результата — Object: с типом-записью Spring Data 3.5 переписывает

@@ -151,7 +151,7 @@ public class MailIngestWriter {
                     + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
         }
         if (o.foreignCurrency() != null) {
-            return "Цены в файле «" + name + "» — в " + MoneyText.label(o.foreignCurrency()) + ", не подставлены";
+            return "Цены в файле «" + name + "» — в " + MoneyText.label(o.foreignCurrency()) + ", не подставлены — впишите курс на экране сверки";
         }
         if (o.parsedName() != null) {
             return o.manualKept() > 0

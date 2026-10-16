@@ -27,7 +27,8 @@ import java.util.*;
  * Вид экрана «Ответ поставщика» (спека §4.1): позиции запроса с ценой, 💡 и строкой файла рядом, расхождения,
  * подсказки для позиций без цены (сопоставление считается заново из таблицы выбранного файла), источники (файлы и
  * письма), таблица выбранного файла, счётчики. Выбранный файл: присланный fileId этого запроса → файл, к строкам
- * которого привязано больше всего цен → последний разобранный → последний PDF / картинка → нет.
+ * которого привязано больше всего цен → последний разобранный → последний PDF / картинка → нет. Файл в чужой валюте —
+ * блок курса (вписанный курс и подсказка — последний курс этой валюты на рынке), у строк — цена, пересчитанная по курсу.
  */
 @Service
 public class SupplierReplyViewBuilder {
@@ -56,6 +57,10 @@ public class SupplierReplyViewBuilder {
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
 
         List<ReplyRowValues> values = table == null ? List.of() : ReplyRowValues.of(table);
+        String cur = table == null ? null : SupplierReplyService.tableCurrency(values, table);
+        ReplyFileInfo info = selected == null ? null : infos.stream().filter(f -> f.id().equals(selected)).findFirst().orElse(null);
+        SupplierReplyService.FileRate rate = info == null ? null
+                : SupplierReplyService.fileRate(info.rate(), info.rateCurrency(), cur, market);
         Map<Integer, ReplyRowValues> byRow = new HashMap<>();
         List<ReplyMatcher.Row> mrows = new ArrayList<>();
         int order = 0;
@@ -87,10 +92,10 @@ public class SupplierReplyViewBuilder {
                 ReplyRowValues r = byRow.get(it.getResponseFileRow());
                 if (r != null) {
                     double score = ReplyMatcher.score(pos.get(i).text(), r.matchText(), mrows);
-                    row = ref(r, score);
+                    row = ref(r, score, market, rate);
                     usedRows.add(r.fileRow());
                     rowOrdinal.put(r.fileRow(), i + 1);
-                    flags = flags(it, l, r, score, market);
+                    flags = flags(it, l, r, score, market, rate);
                 }
             } else if (it.getResponsePrice() == null && matches.containsKey(it.getId())) {
                 // строка файла для позиции без цены — и с ценой («Подставить»), и без («нет в наличии»: отказ виден
@@ -98,7 +103,7 @@ public class SupplierReplyViewBuilder {
                 ReplyMatcher.Match m = matches.get(it.getId());
                 ReplyRowValues r = byRow.get(m.fileRow());
                 if (r != null) {
-                    suggestion = ref(r, m.score());
+                    suggestion = ref(r, m.score(), market, rate);
                     usedRows.add(r.fileRow());
                 }
             }
@@ -117,7 +122,8 @@ public class SupplierReplyViewBuilder {
             for (ReplyTable.Row r : table.rows()) {
                 ReplyRowValues v = byRow.get(r.fileRow());
                 rows.add(new TRow(r.fileRow(), r.cells(), rowOrdinal.get(r.fileRow()), v != null && v.price() != null,
-                        v == null ? "" : v.displayText(), v == null ? null : v.price(), v == null ? null : v.currency()));
+                        v == null ? "" : v.displayText(), v == null ? null : v.price(), v == null ? null : v.currency(),
+                        v == null ? null : converted(v, market, rate)));
             }
             tbl = new Table(table.source(), table.headerRow(), table.currency(), cols, rows);
         }
@@ -125,7 +131,11 @@ public class SupplierReplyViewBuilder {
         Head head = new Head(pr.getId(), pr.getStatus(), pr.getDistributor() == null ? "поставщик" : pr.getDistributor().getName(),
                 t.getId(), t.getTenderNumber(), t.getSource() == com.vladoose.nir.entity.Source.PRIVATE_REQUEST, pr.getSentAt(),
                 pr.getResponseDate(), market);
-        return new SupplierReplyView(head, positions, sources(prId, infos), selected, tbl, new Counts(unverified, noPrice, unassigned));
+        Rate rateView = table != null && cur != null && market != null && !cur.equals(market)
+                ? new Rate(cur, rate == null ? null : rate.rate(), files.findLastRate(pr.getMarket().name(), cur).orElse(null))
+                : null;
+        return new SupplierReplyView(head, positions, sources(prId, infos), selected, tbl, new Counts(unverified, noPrice, unassigned),
+                rateView);
     }
 
     private static Long select(Long requested, List<PriceRequestItem> its, List<ReplyFileInfo> infos) {
@@ -163,13 +173,19 @@ public class SupplierReplyViewBuilder {
         return null;
     }
 
-    private static RowRef ref(ReplyRowValues r, double score) {
+    private static RowRef ref(ReplyRowValues r, double score, String market, SupplierReplyService.FileRate rate) {
         return new RowRef(r.fileRow(), r.displayText(), r.quantity() == null ? null : r.quantity().value(),
-                r.unit(), r.price(), r.priceComputed(), r.note(), score, r.currency());
+                r.unit(), r.price(), r.priceComputed(), r.note(), score, r.currency(), converted(r, market, rate));
+    }
+
+    /** Цена строки, пересчитанная по курсу файла в валюту запроса; курса нет или валюта не та — null. */
+    private static BigDecimal converted(ReplyRowValues r, String market, SupplierReplyService.FileRate rate) {
+        return SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
     }
 
     /** Расхождения строки файла с позицией (спека §4.1). */
-    static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market) {
+    static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market,
+                              SupplierReplyService.FileRate rate) {
         List<String> out = new ArrayList<>();
         Integer q = it.getRequestedQuantity();
         String unit = l == null || l.getUnit() == null || l.getUnit().isBlank() ? "шт" : l.getUnit();
@@ -183,7 +199,11 @@ public class SupplierReplyViewBuilder {
             BigDecimal tol = r.sum().multiply(new BigDecimal("0.005")).max(BigDecimal.ONE);
             if (diff.compareTo(tol) > 0) out.add("сумма ≠ цена × кол-во");
         }
-        if (r.currency() != null && market != null && !r.currency().equals(market)) out.add("валюта: " + MoneyText.label(r.currency()));
+        if (r.currency() != null && market != null && !r.currency().equals(market)) {
+            out.add(SupplierReplyService.converted(r, market, rate)
+                    ? "пересчитано из " + MoneyText.label(r.currency()) + " по курсу " + SupplierReplyService.rateText(rate.rate())
+                    : "валюта: " + MoneyText.label(r.currency()));
+        }
         if (r.priceComputed()) out.add("цена посчитана из суммы");
         if (score < ReplyMatcher.AUTO_MIN) out.add("названия похожи слабо");
         return out;

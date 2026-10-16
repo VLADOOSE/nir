@@ -215,6 +215,90 @@ class SupplierReplyServiceTest {
         assertThat(item(0).isResponseAuto()).isTrue();
     }
 
+    /**
+     * Курс (2026-10-16, КП ФОТЕК в рублях на запрос West-Med): цены файла × курс → цена в валюте запроса, до тиына
+     * (HALF_UP), с 💡 и исходной ценой и курсом в примечании; ручная цена не трогается; снять курс — пересчитанные
+     * цены уходят.
+     */
+    @Test
+    void rateConvertsForeignPrices_clearingRemovesThem() {
+        PriceRequestItem manual = pr.getItems().get(1);
+        manual.setResponsePrice(new BigDecimal("999"));
+        em.flush();
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xls", table("RUB",
+                "Скальпели офтальмологические: Скальпель MSL24", "4 700",
+                "Скальпели офтальмологические: Скальпель MST15", "4 200",
+                "Материал шовный стерильный нейлон 2056", "11 750"))), null);
+        assertThat(o.applied()).isZero();
+        Long fileId = o.fileIds().get(0);
+
+        service.setRate(pr.getId(), fileId, new BigDecimal("5.85555"));
+
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("27521.09");   // 4 700 × 5,85555 = 27 521,085
+        assertThat(item(0).isResponseAuto()).isTrue();
+        assertThat(item(0).getResponseFileRow()).isEqualTo(5);
+        assertThat(item(0).getResponseNote().replace(' ', ' ')).contains("4 700,00 руб. × курс 5,85555 = 27 521,09 тг");
+        assertThat(item(2).getResponsePrice()).isEqualByComparingTo("68802.71");   // 11 750 × 5,85555 = 68 802,7125
+        assertThat(item(1).getResponsePrice()).isEqualByComparingTo("999");
+        assertThat(item(1).isResponseAuto()).isFalse();
+        assertThat(requests.findById(pr.getId()).orElseThrow().getStatus()).isEqualTo("RESPONDED");
+        SupplierReplyFile f = files.findById(fileId).orElseThrow();
+        assertThat(f.getRate()).isEqualByComparingTo("5.85555");
+        assertThat(f.getRateCurrency()).isEqualTo("RUB");
+
+        service.setRate(pr.getId(), fileId, null);
+
+        assertThat(item(0).getResponsePrice()).isNull();
+        assertThat(item(0).isResponseAuto()).isFalse();
+        assertThat(item(1).getResponsePrice()).isEqualByComparingTo("999");
+        assertThat(files.findById(fileId).orElseThrow().getRate()).isNull();
+    }
+
+    @Test
+    void rateValidation_marketCurrencyFile_otherMarket() {
+        Long rub = service.ingest(pr, List.of(parsed("kp.xls", table("RUB", "Скальпели офтальмологические: Скальпель MSL24", "4 700"))), null)
+                .fileIds().get(0);
+        for (String bad : List.of("0", "-6", "100001", "6.1234567")) {
+            assertThatThrownBy(() -> service.setRate(pr.getId(), rub, new BigDecimal(bad))).as(bad).isInstanceOf(BadRequestException.class);
+        }
+        Long kzt = service.ingest(pr, List.of(parsed("kp2.xlsx", kzTable())), null).fileIds().get(0);
+        assertThatThrownBy(() -> service.setRate(pr.getId(), kzt, new BigDecimal("6")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("курс не нужен");
+        MarketContext.set(Market.RF);
+        assertThatThrownBy(() -> service.setRate(pr.getId(), rub, new BigDecimal("6"))).isInstanceOf(NotFoundException.class);
+    }
+
+    /** У закрытого запроса курс запоминается, а цены не трогаются (как роли колонок, спека §3.4). */
+    @Test
+    void rateOnClosedRequestStored_pricesUntouched() {
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", table("RUB", "Скальпели офтальмологические: Скальпель MSL24", "4 700"))), null)
+                .fileIds().get(0);
+        pr.setStatus("ACCEPTED");
+        em.flush();
+
+        service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+
+        assertThat(item(0).getResponsePrice()).isNull();
+        assertThat(files.findById(fileId).orElseThrow().getRate()).isEqualByComparingTo("6");
+    }
+
+    /** Курс — для валюты файла: строка в третьей валюте (колонка «Валюта») не пересчитывается. */
+    @Test
+    void rateConvertsOnlyItsCurrency() {
+        ReplyTable t = new ReplyTable("Лист1", 4, 4, "RUB", List.of(
+                new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, "Цена", LineField.PRICE), new ReplyTable.Column(3, "Валюта", LineField.CURRENCY)),
+                List.of(new ReplyTable.Row(5, List.of("Скальпели офтальмологические: Скальпель MSL24", "1", "4 700", "руб.")),
+                        new ReplyTable.Row(6, List.of("Скальпели офтальмологические: Скальпель MST15", "1", "4 200", "руб.")),
+                        new ReplyTable.Row(7, List.of("Материал шовный стерильный нейлон 2056", "1", "25", "EUR"))));
+        Long fileId = service.ingest(pr, List.of(parsed("kp.xls", t)), null).fileIds().get(0);
+
+        service.setRate(pr.getId(), fileId, new BigDecimal("6"));
+
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("28200");
+        assertThat(item(2).getResponsePrice()).isNull();
+    }
+
     /** Словарь учится только на колонке, которую поправил оператор, — не на догадках по остальным (ревью ветки). */
     @Test
     void setColumnsLearnsOnlyChangedColumns() {

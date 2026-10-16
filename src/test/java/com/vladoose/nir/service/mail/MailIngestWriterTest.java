@@ -482,6 +482,6 @@ class MailIngestWriterTest {
         PriceRequest p = prNamed("SENT", Source.PRIVATE_REQUEST, "Кушетка смотровая", "Столик процедурный");
         writer().write(mail().uid(33).subject("Re: " + KpToken.subjectToken(p.getId())).text("КП").build(),
                 List.of(parsed("kp.xlsx", table("RUB", "Кушетка смотровая КС-1", "100", "Столик процедурный СП-2", "200"))), 5);
-        assertThat(rows().get(0).getNotifyText()).contains("Цены в файле «kp.xlsx» — в руб., не подставлены");
+        assertThat(rows().get(0).getNotifyText()).contains("Цены в файле «kp.xlsx» — в руб., не подставлены — впишите курс на экране сверки");
     }
 }

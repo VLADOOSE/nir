@@ -170,4 +170,52 @@ class SupplierReplyApiTest {
                 .andExpect(jsonPath("$.positions[0].suggestion.currency").value("RUB"))
                 .andExpect(jsonPath("$.table.rows[0].currency").value("RUB"));
     }
+
+    /**
+     * Поле курса (2026-10-16): у файла в чужой валюте — блок rate; PUT курса пересчитывает цены (💡, строка, пометка
+     * «по курсу»), у строк — пересчитанная цена; второй файл той же валюты получает подсказку — последний курс.
+     * Оператор курс не ставит.
+     */
+    @Test
+    void rateField_convertsPrices_suggestsLastRate() throws Exception {
+        MarketContext.set(Market.KZ);
+        ReplyTable rub = new ReplyTable("Лист1", 4, 3, "RUB", List.of(
+                new ReplyTable.Column(0, "Наименование", LineField.NAME), new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY),
+                new ReplyTable.Column(2, "Цена, руб.", LineField.PRICE)),
+                List.of(new ReplyTable.Row(5, List.of("Кушетка медицинская смотровая КМС-01", "2", "10 000")),
+                        new ReplyTable.Row(6, List.of("Столик процедурный СП-02", "1", "5 000"))));
+        Long first = replies.ingest(priceRequests.findById(pr.getId()).orElseThrow(), List.of(parsed("КП руб.xlsx", rub)), null)
+                .fileIds().get(0);
+        MarketContext.clear();
+        String url = "/api/price-requests/" + pr.getId() + "/files/" + first + "/rate";
+
+        mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.rate.currency").value("RUB"))
+                .andExpect(jsonPath("$.rate.value").value(nullValue()))
+                .andExpect(jsonPath("$.positions[0].suggestion.converted").value(nullValue()));
+        mvc.perform(put(url).contentType("application/json").content("{\"rate\": 6}").header("X-Market", "KZ")
+                        .with(user("op").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
+
+        mvc.perform(put(url).contentType("application/json").content("{\"rate\": 6}").header("X-Market", "KZ")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rate.value").value(6.0))
+                .andExpect(jsonPath("$.positions[0].price").value(60000.0))
+                .andExpect(jsonPath("$.positions[0].auto").value(true))
+                .andExpect(jsonPath("$.positions[0].row.converted").value(60000.0))
+                .andExpect(jsonPath("$.positions[0].flags", hasItem(containsString("по курсу 6"))))
+                .andExpect(jsonPath("$.table.rows[1].converted").value(30000.0));
+
+        MarketContext.set(Market.KZ);
+        ReplyTable again = new ReplyTable("Лист1", 4, 3, "RUB", rub.columns(),
+                List.of(new ReplyTable.Row(5, List.of("Кушетка медицинская смотровая КМС-01", "2", "11 000"))));
+        Long second = replies.ingest(priceRequests.findById(pr.getId()).orElseThrow(), List.of(parsed("КП руб 2.xlsx", again)), null)
+                .fileIds().get(0);
+        MarketContext.clear();
+        mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").param("fileId", String.valueOf(second))
+                        .header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.rate.value").value(nullValue()))
+                .andExpect(jsonPath("$.rate.suggestion").value(6.0));
+    }
 }

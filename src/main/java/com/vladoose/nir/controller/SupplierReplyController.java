@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.ReplyColumnRole;
+import com.vladoose.nir.dto.request.ReplyRateRequest;
 import com.vladoose.nir.dto.response.SupplierReplyView;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.SupplierReplyFile;
@@ -91,6 +92,14 @@ public class SupplierReplyController {
     @PreAuthorize("hasRole('ADMIN')")
     public SupplierReplyView columns(@PathVariable Long id, @PathVariable Long fileId, @RequestBody List<ReplyColumnRole> roles) {
         service.setColumns(id, fileId, roles);
+        return views.view(id, fileId);
+    }
+
+    /** Курс для файла в чужой валюте: цены файла × курс → в ответ с 💡; пустой курс — снять. */
+    @PutMapping("/files/{fileId}/rate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public SupplierReplyView rate(@PathVariable Long id, @PathVariable Long fileId, @RequestBody ReplyRateRequest body) {
+        service.setRate(id, fileId, body == null ? null : body.rate());
         return views.view(id, fileId);
     }
 

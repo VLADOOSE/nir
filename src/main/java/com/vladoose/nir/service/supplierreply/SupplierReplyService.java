@@ -10,10 +10,14 @@ import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
 import com.vladoose.nir.service.PrivateRequestImportService;
+import com.vladoose.nir.util.DocFormat;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -21,7 +25,7 @@ import java.util.stream.Stream;
 /**
  * Файлы ответа поставщика и цены из них (спека 2026-10-15 §3.4): хранит файлы (один и тот же — один раз), подставляет
  * уверенные цены с 💡 в строки ответа (под блокировкой; ручную цену не трогает; свою прежнюю 💡 заменяет), снимает 💡
- * («Всё верно»), правит роли колонок, удаляет загруженные вручную файлы. Статус запроса после письма меняет приём почты
+ * («Всё верно»), правит роли колонок и курс файла в чужой валюте (цены × курс), удаляет загруженные вручную файлы. Статус запроса после письма меняет приём почты
  * (markResponded), после загрузки и «Взять цены» — этот сервис. Гард рынка — явный (findById фильтр рынка не режет).
  */
 @Service
@@ -29,6 +33,11 @@ public class SupplierReplyService {
 
     static final Set<String> CLOSED = Set.of("ACCEPTED", "REJECTED", "CLOSED");
     static final Set<String> RESPONDABLE = Set.of("CREATED", "SENT", "DECLINED", "RESPONDED");
+    /** Курс — не больше 100 000 валюты запроса за единицу валюты файла (USD → KZT ≈ 500; колонка — NUMERIC(14,6)). */
+    static final BigDecimal MAX_RATE = new BigDecimal("100000");
+
+    /** Курс файла к валюте запроса: 1 currency = rate валюты рынка. */
+    public record FileRate(String currency, BigDecimal rate) {}
 
     /**
      * Итог файлов письма — для строки уведомления (MailIngestWriter.fileLine). fileName — первый сохранённый файл,
@@ -183,6 +192,34 @@ public class SupplierReplyService {
         files.delete(f);
     }
 
+    /**
+     * Курс пересчёта цен файла в валюту запроса (поле на экране «Ответ поставщика», 2026-10-16): запоминается у файла,
+     * цены из файла пересчитываются — свои 💡 заново, ручные не трогаются; null — курс снят, пересчитанные цены уходят.
+     * У закрытого запроса курс запоминается, цены не трогаются (как роли колонок, спека §3.4).
+     */
+    @Transactional
+    public void setRate(Long prId, Long fileId, BigDecimal rate) {
+        PriceRequest pr = guard(prId);
+        SupplierReplyFile f = fileOf(pr, fileId);
+        if (f.getParsed() == null) throw new BadRequestException("У файла нет разобранной таблицы — курс не к чему применить");
+        String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
+        String cur = tableCurrency(ReplyRowValues.of(f.getParsed()), f.getParsed());
+        if (cur == null || market == null || cur.equals(market)) {
+            throw new BadRequestException("Цены в файле — в валюте запроса, курс не нужен");
+        }
+        if (rate != null) {
+            if (rate.signum() <= 0) throw new BadRequestException("Курс — число больше нуля");
+            if (rate.compareTo(MAX_RATE) > 0) throw new BadRequestException("Курс слишком большой — не больше 100 000");
+            if (rate.stripTrailingZeros().scale() > 6) throw new BadRequestException("Курс — не больше 6 знаков после запятой");
+        }
+        f.setRate(rate);
+        f.setRateCurrency(rate == null ? null : cur);
+        f.setRateSetAt(rate == null ? null : OffsetDateTime.now());
+        if (CLOSED.contains(pr.getStatus())) return;
+        revertAuto(pr.getId(), f.getId(), false);
+        if (rate != null && apply(pr, f).applied() > 0) markResponded(pr, null);
+    }
+
     /** «Всё верно» — снять 💡 со всех цен запроса. */
     @Transactional
     public int verify(Long prId) {
@@ -195,7 +232,8 @@ public class SupplierReplyService {
         List<ReplyRowValues> rows = ReplyRowValues.of(f.getParsed());
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
         String cur = tableCurrency(rows, f.getParsed());
-        if (cur != null && market != null && !cur.equals(market)) return new ApplyResult(0, its.size(), 0, cur);
+        FileRate rate = fileRate(f.getRate(), f.getRateCurrency(), cur, market);
+        if (cur != null && market != null && !cur.equals(market) && rate == null) return new ApplyResult(0, its.size(), 0, cur);
         Map<Integer, ReplyRowValues> byRow = new HashMap<>();
         List<ReplyMatcher.Row> mrows = new ArrayList<>();
         int order = 0;
@@ -216,18 +254,20 @@ public class SupplierReplyService {
             if (m.kind() != ReplyMatcher.Kind.AUTO) continue;
             ReplyRowValues r = byRow.get(m.fileRow());
             if (r == null || r.price() == null) continue;
-            // валюта строки (колонка «Валюта», «€» в ячейке) — не рынка: не подставлять, даже если таблица в валюте рынка
-            if (r.currency() != null && market != null && !r.currency().equals(market)) continue;
+            // валюта строки (колонка «Валюта», «€» в ячейке) — не рынка: не подставлять, даже если таблица в валюте рынка;
+            // валюта курса файла — пересчитать по курсу
+            BigDecimal price = marketPrice(r, market, rate);
+            if (price == null) continue;
             PriceRequestItem it = byId.get(m.itemId());
             if (it.getResponsePrice() != null && !it.isResponseAuto()) {
                 manual++;
                 continue;
             }
-            it.setResponsePrice(r.price());
+            it.setResponsePrice(price);
             it.setResponseAuto(true);
             it.setResponseFileId(f.getId());
             it.setResponseFileRow(r.fileRow());
-            it.setResponseNote(note(f.getFileName(), r));
+            it.setResponseNote(note(f.getFileName(), r, price, converted(r, market, rate) ? rate : null, market));
             applied++;
         }
         return new ApplyResult(applied, its.size(), manual, null);
@@ -266,12 +306,49 @@ public class SupplierReplyService {
                 .entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(t.currency());
     }
 
-    private static String note(String fileName, ReplyRowValues r) {
+    private static String note(String fileName, ReplyRowValues r, BigDecimal price, FileRate rate, String market) {
         String name = fileName.length() <= 120 ? fileName : fileName.substring(0, 120);
         StringBuilder s = new StringBuilder("Из файла «").append(name).append("», строка ").append(r.fileRow()).append('.');
+        if (rate != null) {   // пересчитано по курсу: исходная цена и курс — чтобы сверить с документом
+            s.append(" Цена ").append(DocFormat.money(r.price())).append(' ').append(unit(r.currency())).append(" × курс ")
+                    .append(rateText(rate.rate())).append(" = ").append(DocFormat.money(price)).append(' ').append(unit(market)).append('.');
+        }
         if (r.priceComputed()) s.append(" Цена посчитана из суммы.");
         if (r.note() != null) s.append(" Примечание поставщика: «").append(r.note().length() <= 300 ? r.note() : r.note().substring(0, 300)).append("».");
         return s.toString();
+    }
+
+    /** Курс файла к валюте запроса: вписан для валюты файла, а она не валюта запроса; иначе null. */
+    public static FileRate fileRate(BigDecimal rate, String rateCurrency, String tableCurrency, String market) {
+        if (rate == null || tableCurrency == null || market == null || tableCurrency.equals(market)) return null;
+        return tableCurrency.equals(rateCurrency) ? new FileRate(tableCurrency, rate) : null;
+    }
+
+    /** Строка в валюте курса (не запроса) — её цена пересчитывается. */
+    public static boolean converted(ReplyRowValues r, String market, FileRate rate) {
+        return rate != null && r.currency() != null && r.currency().equals(rate.currency()) && !r.currency().equals(market);
+    }
+
+    /** Цена строки в валюте запроса: своя (или валюта не названа) — как есть; валюта курса — × курс; другая чужая — null. */
+    public static BigDecimal marketPrice(ReplyRowValues r, String market, FileRate rate) {
+        if (r.price() == null) return null;
+        if (r.currency() == null || market == null || r.currency().equals(market)) return r.price();
+        return converted(r, market, rate) ? convert(r.price(), rate.rate()) : null;
+    }
+
+    /** Цена × курс до тиына / копейки (HALF_UP); не помещается в NUMERIC(15,2) — null (не подставлять). */
+    static BigDecimal convert(BigDecimal price, BigDecimal rate) {
+        BigDecimal v = price.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+        return v.precision() - v.scale() > 13 ? null : v;
+    }
+
+    /** «6», «5,85555» — курс без лишних нулей. */
+    public static String rateText(BigDecimal rate) {
+        return rate.stripTrailingZeros().toPlainString().replace('.', ',');
+    }
+
+    private static String unit(String code) {
+        return "CNY".equals(code) ? "юань" : MoneyText.label(code);
     }
 
     private SupplierReplyFile fileOf(PriceRequest pr, Long fileId) {

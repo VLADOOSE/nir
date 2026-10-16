@@ -7,8 +7,12 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/** Экран «Ответ поставщика» (спека 2026-10-15 §4.1). fileId / table — выбранный файл с разобранной таблицей (или null). */
-public record SupplierReplyView(Head head, List<Position> positions, List<Source> sources, Long fileId, Table table, Counts counts) {
+/**
+ * Экран «Ответ поставщика» (спека 2026-10-15 §4.1). fileId / table — выбранный файл с разобранной таблицей (или null);
+ * rate — поле курса, когда цены выбранного файла не в валюте запроса (иначе null).
+ */
+public record SupplierReplyView(Head head, List<Position> positions, List<Source> sources, Long fileId, Table table, Counts counts,
+                                Rate rate) {
 
     public record Head(Long id, String status, String supplierName, Long tenderId, String tenderNumber, boolean privateRequest,
                        OffsetDateTime sentAt, LocalDate responseDate, String currency) {}
@@ -18,9 +22,12 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
                            BigDecimal price, boolean auto, String note, Long fileId, Integer fileRow, RowRef row,
                            RowRef suggestion, List<String> flags) {}
 
-    /** currency — валюта строки файла (код): экран сравнивает с валютой рынка и чужую цену не выдаёт за свою. */
+    /**
+     * currency — валюта строки файла (код): экран сравнивает с валютой рынка и чужую цену не выдаёт за свою; converted —
+     * цена, пересчитанная по курсу файла в валюту запроса (курса нет или валюта не та — null).
+     */
     public record RowRef(int fileRow, String text, BigDecimal quantity, String unit, BigDecimal price, boolean priceComputed,
-                         String note, double score, String currency) {}
+                         String note, double score, String currency, BigDecimal converted) {}
 
     public record Source(String type, Long fileId, Long inboundId, String name, String kind, String parseStatus,
                          String parseNote, Long sizeBytes, Integer pageCount, boolean uploaded, OffsetDateTime at,
@@ -30,9 +37,12 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
 
     public record Col(int index, String header, LineField role) {}
 
-    /** ordinal — позиция, к которой привязана строка (или null); text, price и currency — для списка «Другая строка ▾». */
+    /** ordinal — позиция, к которой привязана строка (или null); text, price, currency, converted — для «Другая строка ▾». */
     public record TRow(int fileRow, List<String> cells, Integer ordinal, boolean priced, String text, BigDecimal price,
-                       String currency) {}
+                       String currency, BigDecimal converted) {}
 
     public record Counts(int unverified, int noPrice, int unassignedRows) {}
+
+    /** Курс выбранного файла: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на рынке. */
+    public record Rate(String currency, BigDecimal value, BigDecimal suggestion) {}
 }

@@ -70,6 +70,16 @@ public class SupplierReplyFile {
     @Column(name = "uploaded_by", length = 100)
     private String uploadedBy;
 
+    /** Курс пересчёта цен файла в валюту запроса: 1 rateCurrency = rate валюты рынка (V31); пусто — не пересчитывать. */
+    @Column(name = "rate", precision = 14, scale = 6)
+    private java.math.BigDecimal rate;
+
+    @Column(name = "rate_currency", length = 8)
+    private String rateCurrency;
+
+    @Column(name = "rate_set_at")
+    private OffsetDateTime rateSetAt;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
