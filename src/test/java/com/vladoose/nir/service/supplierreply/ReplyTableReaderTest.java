@@ -177,6 +177,62 @@ class ReplyTableReaderTest {
         }
     }
 
+    /**
+     * Форма КП для больниц РК: «Стоимость (тенге)» рядом с «Сумма (тенге)» — цена за единицу. Одна «Стоимость» — по-прежнему
+     * сумма; роль из словаря оператора правило не перебивает.
+     */
+    @Test
+    void costNextToSumIsUnitPrice() throws Exception {
+        byte[] xlsx = xlsx(List.of(
+                List.of("№", "Наименование медицинской техники", "Кол-во (ед. изм.)", "Стоимость (тенге)", "Сумма (тенге)"),
+                List.of("1", "Аппарат электрохирургический ЭХВЧ-350-03", "2 шт", "3 450 000,00", "6 900 000,00")));
+        ReplyTable t = ReplyTableReader.read(xlsx, ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(roles(t)).containsExactly(LineField.NUMBER, LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM);
+        assertThat(ReplyRowValues.of(t).get(0).price()).isEqualByComparingTo("3450000");
+
+        ReplyTable learned = ReplyTableReader.read(xlsx, ReplyFileKind.EXCEL, Map.of("стоимость (тенге)", LineField.SUM)).orElseThrow();
+        assertThat(roles(learned).get(3)).isEqualTo(LineField.SUM);
+
+        ReplyTable alone = ReplyTableReader.read(xlsx(List.of(List.of("Наименование", "Стоимость, тг"), List.of("Ширма", "30 000"))),
+                ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(roles(alone)).containsExactly(LineField.NAME, LineField.SUM);
+    }
+
+    /**
+     * Форма КП для больниц РК в Word: сверху в той же таблице — условия (дата КП, условия поставки, гарантия…, по две
+     * ячейки), шапка позиций — 9-я строка. Шапку раньше искали только в первых 5 строках таблицы — таблица не находилась.
+     */
+    @Test
+    void docx_hospitalForm_conditionsAboveHeader() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        List<List<String>> conditions = List.of(
+                List.of("Дата коммерческого предложения", "«25» февраля 2026 г."), List.of("Условия поставки", "DDP Заказчик"),
+                List.of("Гарантия", "37 месяцев"), List.of("Обучение", "Включено в стоимость"),
+                List.of("Срок действия предложения", "До «31» декабря 2026 года"), List.of("Срок поставки", "Согласно условиям договора"),
+                List.of("Сведения о регистрации медицинской техники", "РК-МТ-5№016696 от 28.06.2021 г."), List.of("", ""));
+        XWPFTable t = d.createTable(conditions.size() + 4, 6);
+        for (int r = 0; r < conditions.size(); r++) {
+            for (int c = 5; c >= 2; c--) t.getRow(r).removeCell(c);
+            t.getRow(r).getCell(0).setText(conditions.get(r).get(0));
+            t.getRow(r).getCell(1).setText(conditions.get(r).get(1));
+        }
+        List<List<String>> body = List.of(
+                List.of("№", "Наименование медицинской техники (по регистрационному удостоверению)", "Кол-во (ед. изм.)",
+                        "Стоимость (тенге)", "Сумма (тенге)", "Сведения о регистрации"),
+                List.of("1", "Аппарат электрохирургический высокочастотный ЭХВЧ-350-03", "1 шт", "6 900 000,00", "6 900 000,00", "РК-МТ-7№014847"),
+                List.of("Гарантийное сервисное обслуживание 37 месяцев", "Включено в стоимость медицинской техники", "", "", "", ""),
+                List.of("Итого сумма", "6 900 000,00", "", "", "", ""));
+        for (int r = 0; r < body.size(); r++) for (int c = 0; c < 6; c++) t.getRow(conditions.size() + r).getCell(c).setText(body.get(r).get(c));
+        ReplyTable rt = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(rt.headerRow()).isEqualTo(9);
+        assertThat(roles(rt).subList(0, 5)).containsExactly(LineField.NUMBER, LineField.NAME, LineField.QUANTITY, LineField.PRICE, LineField.SUM);
+        assertThat(ReplyRowValues.of(rt).stream().filter(ReplyRowValues::participates).toList())
+                .singleElement().satisfies(v -> {
+                    assertThat(v.name()).contains("ЭХВЧ-350-03");
+                    assertThat(v.price()).isEqualByComparingTo("6900000");
+                });
+    }
+
     /** «Цена, у.е.» — валюта таблицы «у.е.», а не «не названа» (иначе цены встали бы как цены рынка). */
     @Test
     void conventionalUnitsCurrency() throws Exception {

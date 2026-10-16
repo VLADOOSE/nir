@@ -34,21 +34,21 @@ import java.util.regex.Pattern;
 /**
  * Таблица КП поставщика из Excel (.xlsx / .xls) и Word (.docx / .doc) — спека 2026-10-15 §3.2. Шапка — строка с
  * наибольшим числом узнанных заголовков (не меньше двух, среди них наименование и цена или сумма) в первых 40 строках
- * листа или первых 5 строках таблицы Word; бланк и обращение над ней отбрасываются; шапка в две строки склеивается;
+ * листа или первых 20 строках таблицы Word (форма КП для больниц РК: сверху в той же таблице — 8 строк условий); бланк и обращение над ней отбрасываются; шапка в две строки склеивается;
  * конец таблицы — «Итого» / «Всего» / «Итог»; таблица Word, разорванная по страницам (следующая таблица той же ширины
  * без своей шапки), склеивается. Сбой чтения — исключение: его ловит SupplierReplyFiles.
  */
 public final class ReplyTableReader {
 
     static final int HEADER_SCAN = 40;
-    static final int WORD_HEADER_SCAN = 5;
+    static final int WORD_HEADER_SCAN = 20;
     static final int MAX_ROWS = 2000;
     static final int MAX_COLS = 40;
     private static final Pattern TOTAL = Pattern.compile("^(итого|всего|итог|total)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
     private ReplyTableReader() {}
 
-    /** Строки таблицы как текст; firstRow — номер первой строки в файле (с 1); word — таблица Word (шапка в первых 5 строках). */
+    /** Строки таблицы как текст; firstRow — номер первой строки в файле (с 1); word — таблица Word (шапка в первых 20 строках). */
     record Grid(String source, List<List<String>> rows, int firstRow, boolean word) {}
 
     public static Optional<ReplyTable> read(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
@@ -214,6 +214,7 @@ public final class ReplyTableReader {
                 combined.add(text);
                 combinedRoles.add(lr != LineField.IGNORE ? lr : HeaderRoles.role(text, learned));
             }
+            combinedRoles = costAsPrice(combined, combinedRoles, learned);
             if (headerScore(combinedRoles) >= bestScore) {
                 header = combined;
                 roles = combinedRoles;
@@ -245,6 +246,26 @@ public final class ReplyTableReader {
     private static List<LineField> roles(List<String> row, Map<String, LineField> learned) {
         List<LineField> out = new ArrayList<>(row.size());
         for (String h : row) out.add(HeaderRoles.role(h, learned));
+        return costAsPrice(row, out, learned);
+    }
+
+    /**
+     * Форма КП для больниц РК: «Стоимость (тенге)» рядом с «Сумма (тенге)» — цена за единицу, а не вторая сумма. Только
+     * если колонки цены нет, рядом есть «Сумма» и роль «Стоимости» — догадка правил, а не словарь оператора.
+     */
+    private static List<LineField> costAsPrice(List<String> header, List<LineField> roles, Map<String, LineField> learned) {
+        if (roles.contains(LineField.PRICE)) return roles;
+        int cost = -1;
+        boolean sum = false;
+        for (int c = 0; c < roles.size(); c++) {
+            if (roles.get(c) != LineField.SUM) continue;
+            String h = HeaderRoles.norm(HeaderRoles.key(header.get(c)));
+            if (h.contains("сумм")) sum = true;
+            else if (cost < 0 && h.contains("стоимост") && HeaderRoles.learnedRole(header.get(c), learned) == null) cost = c;
+        }
+        if (cost < 0 || !sum) return roles;
+        List<LineField> out = new ArrayList<>(roles);
+        out.set(cost, LineField.PRICE);
         return out;
     }
 

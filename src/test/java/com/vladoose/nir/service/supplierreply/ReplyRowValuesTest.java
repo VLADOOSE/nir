@@ -65,6 +65,29 @@ class ReplyRowValuesTest {
         assertThat(v.get(1).participates()).isFalse();
     }
 
+    /**
+     * КП ФОТЕК (07.10.2026): цена только «без скидки», скидка — в «Сумме со скидкой». Цена за единицу — из суммы со
+     * скидкой (277 025, а не 395 750); из двух сумм со скидкой — с НДС, как в счёте поставщика.
+     */
+    @Test
+    void onlyPriceWithoutDiscount_priceFromDiscountedSum() {
+        List<String> h = List.of("№", "Товары (работы, услуги)", "Кол.", "Ед. изм.", "Цена без скидки без НДС (руб.)",
+                "Сумма без скидки без НДС (руб.)", "Скид- ка", "Сумма со скидкой без НДС (руб.)", "НДС Ст. НДС",
+                "НДС Сумма НДС(руб.)", "Сумма со скидкой с НДС (руб.)");
+        List<LineField> roles = List.of(LineField.NUMBER, LineField.NAME, LineField.QUANTITY, LineField.UNIT, LineField.PRICE,
+                LineField.SUM, LineField.IGNORE, LineField.SUM, LineField.VAT, LineField.VAT, LineField.SUM);
+        List<ReplyRowValues> v = ReplyRowValues.of(t(h, roles, "RUB", List.of(
+                List.of("1", "Аппарат для аспирации дыма АСД-ФОТЕК", "2", "шт", "395 750,00", "791 500,00", "30%",
+                        "554 050,00", "0%", "", "554 050,00"),
+                List.of("2", "Набор электродов", "1", "шт", "10 000,00", "10 000,00", "30%", "7 000,00", "20%", "1 400,00", "8 400,00"),
+                List.of("3", "Доставка", "1", "шт", "5 000,00", "5 000,00", "", "5 000,00", "0%", "", "5 000,00"))));
+        assertThat(v.get(0).price()).isEqualByComparingTo("277025");
+        assertThat(v.get(0).priceComputed()).isTrue();
+        assertThat(v.get(1).price()).isEqualByComparingTo("8400");
+        assertThat(v.get(2).price()).isEqualByComparingTo("5000");   // скидки нет (сумма та же) — цена как есть, без пометки
+        assertThat(v.get(2).priceComputed()).isFalse();
+    }
+
     /** «Цена без скидки» — обычная цена: при паре колонок берётся «Цена со скидкой» (ревью ветки). */
     @Test
     void priceWithoutDiscountIsNotDiscountPrice() {

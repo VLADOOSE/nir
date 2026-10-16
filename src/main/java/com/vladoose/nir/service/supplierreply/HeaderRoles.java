@@ -22,11 +22,20 @@ public final class HeaderRoles {
     public static LineField role(String header, Map<String, LineField> learned) {
         String k = key(header);
         if (k.isEmpty()) return LineField.IGNORE;
+        LineField l = learnedRole(header, learned);
+        return l != null ? l : heuristic(norm(k));
+    }
+
+    /** Роль из словаря оператора (как есть или со сжатыми пробелами и «ё» → «е»); нет в словаре — null. */
+    static LineField learnedRole(String header, Map<String, LineField> learned) {
+        String k = key(header);
+        if (k.isEmpty()) return null;
         LineField l = learned.get(k);
-        if (l != null) return l;
-        String c = k.replaceAll("\\s+", " ").replace('ё', 'е');
-        l = learned.get(c);
-        return l != null ? l : heuristic(c);
+        return l != null ? l : learned.get(norm(k));
+    }
+
+    static String norm(String key) {
+        return key.replaceAll("\\s+", " ").replace('ё', 'е');
     }
 
     static LineField heuristic(String h) {
