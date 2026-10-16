@@ -239,7 +239,7 @@ class SupplierReplyApiTest {
                 .andExpect(jsonPath("$.view.positions[0].price").value(60000.0))
                 .andExpect(jsonPath("$.view.positions[0].auto").value(true))
                 .andExpect(jsonPath("$.view.positions[0].row.converted").value(60000.0))
-                .andExpect(jsonPath("$.view.positions[0].flags", hasItem(containsString("курс 6"))))
+                .andExpect(jsonPath("$.view.positions[0].flags", empty()))   // пересчёт виден в строке файла — не «расхождение»
                 .andExpect(jsonPath("$.view.table.rows[1].converted").value(30000.0));
 
         MarketContext.set(Market.KZ);
