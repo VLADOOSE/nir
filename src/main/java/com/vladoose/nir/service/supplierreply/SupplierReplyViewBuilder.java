@@ -190,7 +190,7 @@ public class SupplierReplyViewBuilder {
     /**
      * Расхождения строки файла с позицией (спека §4.1). Строка в валюте курса: цена позиции — пересчёт строки — не
      * расхождение (пересчёт и так в строке файла: «60 000 тг = 10 000 руб. × 6»); не равна ему (поправили руками) —
-     * «цена не по курсу 6: по строке файла — 60 000,00 тг»; курса нет — «валюта: руб.».
+     * «цена не по курсу 6: по строке файла — 60 000,00 тг»; курса нет — «цена файла в руб.» («в юанях»).
      */
     static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market,
                               SupplierReplyService.FileRate rate) {
@@ -210,7 +210,7 @@ public class SupplierReplyViewBuilder {
         if (r.currency() != null && market != null && !r.currency().equals(market)) {
             BigDecimal conv = SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
             if (conv == null) {
-                out.add("валюта: " + MoneyText.label(r.currency()));
+                out.add("цена файла в " + MoneyText.label(r.currency()));
             } else if (it.getResponsePrice() != null && it.getResponsePrice().compareTo(conv) != 0) {
                 out.add("цена не по курсу " + SupplierReplyService.rateText(rate.rate()) + ": по строке файла — "
                         + DocFormat.money(conv) + " " + MoneyText.label(market));
