@@ -12,8 +12,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -21,8 +19,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * Файлы ответа поставщика — вне транзакции письма (спека §3.1, решение плана 5): вид, SHA-256, таблица Excel / Word,
@@ -32,24 +28,27 @@ import java.util.zip.ZipInputStream;
 public class SupplierReplyFiles {
 
     public static final int PARSE_MAX = 5 * 1024 * 1024;
-    /** Распакованный XML книги / документа: 15 МБ — это десятки тысяч ячеек, КП на 40 позиций занимает сотни КБ. */
-    static final long XML_MAX = 15L * 1024 * 1024;
+    /**
+     * Распакованные части книги / документа, кроме картинок и вложенных объектов (OoxmlSlim): 15 МБ — это десятки тысяч
+     * ячеек, КП на 40 позиций занимает сотни КБ.
+     */
+    static final long PARTS_MAX = 15L * 1024 * 1024;
     private static final Logger log = LoggerFactory.getLogger(SupplierReplyFiles.class);
 
     private final HeaderDictionary dictionary;
     private final ReplyPdfPages pdf;
-    private final long xmlMax;
+    private final long partsMax;
 
     @Autowired
     public SupplierReplyFiles(HeaderDictionary dictionary, ReplyPdfPages pdf) {
-        this(dictionary, pdf, XML_MAX);
+        this(dictionary, pdf, PARTS_MAX);
     }
 
-    /** Тесты: свой предел распакованного XML. */
-    SupplierReplyFiles(HeaderDictionary dictionary, ReplyPdfPages pdf, long xmlMax) {
+    /** Тесты: свой предел распакованных частей. */
+    SupplierReplyFiles(HeaderDictionary dictionary, ReplyPdfPages pdf, long partsMax) {
         this.dictionary = dictionary;
         this.pdf = pdf;
-        this.xmlMax = xmlMax;
+        this.partsMax = partsMax;
     }
 
     /** Файлы письма с меткой [КП-…] в теме; прочим письмам разбор файлов не нужен. */
@@ -70,12 +69,14 @@ public class SupplierReplyFiles {
         try {
             switch (kind) {
                 case EXCEL, WORD -> {
-                    // POI держит книгу целиком в памяти: прайс-лист на десятки тысяч строк при -Xmx1g прода опасен
-                    if (bytes.length > PARSE_MAX || ooxmlTooBig(bytes, xmlMax)) {
+                    // POI держит книгу целиком в памяти: прайс-лист на десятки тысяч строк при -Xmx1g прода опасен;
+                    // разбор — по копии без картинок (OoxmlSlim), хранится присланный файл
+                    byte[] parse = bytes.length > PARSE_MAX ? null : OoxmlSlim.forParsing(bytes, partsMax);
+                    if (parse == null) {
                         return file(n, mime, bytes, sha, kind, ReplyParseStatus.NOT_PARSED,
                                 "Файл слишком большой для разбора — откройте его кнопкой «Скачать»", null, null);
                     }
-                    Optional<ReplyTable> t = ReplyTableReader.read(bytes, kind, learned);
+                    Optional<ReplyTable> t = ReplyTableReader.read(parse, kind, learned);
                     return t.isPresent()
                             ? file(n, mime, bytes, sha, kind, ReplyParseStatus.PARSED, null, t.get(), null)
                             : file(n, mime, bytes, sha, kind, ReplyParseStatus.NO_TABLE,
@@ -106,26 +107,6 @@ public class SupplierReplyFiles {
     static String fileName(String name) {
         String n = name == null ? "" : name.replace("\0", "").replaceAll(".*[/\\\\]", "").trim();
         return n.isEmpty() ? "файл" : cut(n, 255);
-    }
-
-    /**
-     * Распакованный объём XML-частей OOXML (листы, общие строки, document.xml) больше limit. Не zip (.xls, .doc) — false;
-     * битый zip — исключение (его ловит prepare: «не открылся»).
-     */
-    public static boolean ooxmlTooBig(byte[] b, long limit) throws IOException {
-        if (b.length < 2 || b[0] != 'P' || b[1] != 'K') return false;
-        long total = 0;
-        byte[] buf = new byte[64 * 1024];
-        try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(b))) {
-            for (ZipEntry e; (e = zin.getNextEntry()) != null; ) {
-                if (!e.getName().endsWith(".xml")) continue;
-                for (int r; (r = zin.read(buf)) > 0; ) {
-                    total += r;
-                    if (total > limit) return true;
-                }
-            }
-        }
-        return false;
     }
 
     static ReplyFileKind kind(String name, String mime, byte[] b) {

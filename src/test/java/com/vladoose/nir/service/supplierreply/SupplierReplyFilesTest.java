@@ -49,9 +49,8 @@ class SupplierReplyFilesTest {
         byte[] xlsx = ReplyTableReaderTest.xlsx(List.of(List.of("Наименование", "Цена, тг"), List.of("Кушетка", "95 000")));
         assertThat(new SupplierReplyFiles(dictionary, pages, 100).prepare("kp.xlsx", "x", xlsx).status())
                 .isEqualTo(ReplyParseStatus.NOT_PARSED);
-        assertThat(SupplierReplyFiles.ooxmlTooBig(xlsx, 100)).isTrue();
-        assertThat(SupplierReplyFiles.ooxmlTooBig(xlsx, SupplierReplyFiles.XML_MAX)).isFalse();
-        assertThat(SupplierReplyFiles.ooxmlTooBig(new byte[]{1, 2, 3}, 1)).isFalse();
+        assertThat(OoxmlSlim.forParsing(xlsx, 100)).isNull();
+        assertThat(OoxmlSlim.forParsing(xlsx, SupplierReplyFiles.PARTS_MAX)).isNotNull();
         assertThat(SupplierReplyFiles.fileName("C:\\Users\\x\\КП\0.xlsx")).isEqualTo("КП.xlsx");
         assertThat(SupplierReplyFiles.fileName("  ")).isEqualTo("файл");
     }
