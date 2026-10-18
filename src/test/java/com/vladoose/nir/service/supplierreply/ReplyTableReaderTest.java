@@ -252,17 +252,17 @@ class ReplyTableReaderTest {
     }
 
     /**
-     * КП «Рикта»: в таблице валюты нет, «руб.» — только в абзаце под ней. Без этого таблица считалась в валюте запроса, и
-     * на запросе West-Med рубли встали бы тенге (в 6 раз дешевле).
+     * КП, где валюты в таблице нет, а названа она только в абзаце под таблицей («на сумму … руб.»): без этого таблица
+     * считалась в валюте запроса, и на запросе West-Med рубли встали бы тенге (в 6 раз дешевле).
      */
     @Test
     void docx_currencyOnlyInParagraphUnderTable() throws Exception {
         XWPFDocument d = new XWPFDocument();
-        d.createParagraph().createRun().setText("В ответ на Ваш запрос направляем предложение на следующих условиях:");
-        table(d, List.of(List.of("№№", "Наименование изделия", "Стоимость единицы товара", "НДС", "Коли-чество", "Сумма заказа позиции"),
-                List.of("1.", "Аппарат магнитоинфракрасный лазерный терапевтический", "52 800,00", "Не облагается", "1", "52 800,00"),
-                List.of("ИТОГО", "", "", "", "1", "52 800,00")));
-        d.createParagraph().createRun().setText("ВСЕГО К ОПЛАТЕ: 1 единица товара на сумму 52 800,00 руб., НДС не облагается.");
+        d.createParagraph().createRun().setText("Направляем предложение на поставку оборудования:");
+        table(d, List.of(List.of("№", "Наименование", "Цена за единицу", "НДС", "Коли-чество", "Сумма"),
+                List.of("1.", "Облучатель ультрафиолетовый настенный", "18 450,00", "Не облагается", "1", "18 450,00"),
+                List.of("ИТОГО", "", "", "", "1", "18 450,00")));
+        d.createParagraph().createRun().setText("Общая стоимость предложения — 18 450,00 руб., НДС не облагается.");
         ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
         assertThat(t.currency()).isEqualTo("RUB");
         assertThat(ReplyRowValues.of(t).get(0).currency()).isEqualTo("RUB");
@@ -272,7 +272,7 @@ class ReplyTableReaderTest {
     @Test
     void docx_differentCurrenciesInText_mixed() throws Exception {
         XWPFDocument d = new XWPFDocument();
-        table(d, List.of(List.of("Наименование", "Кол-во", "Цена"), List.of("Аппарат лазерный терапевтический", "1", "52 800,00")));
+        table(d, List.of(List.of("Наименование", "Кол-во", "Цена"), List.of("Облучатель ультрафиолетовый настенный", "1", "18 450,00")));
         d.createParagraph().createRun().setText("Цены указаны в рублях.");
         d.createParagraph().createRun().setText("Оплата в тенге по курсу на день оплаты.");
         ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
@@ -289,23 +289,74 @@ class ReplyTableReaderTest {
     }
 
     /**
-     * Excel: валюта в строке «Итого», на которой таблица кончается; строки данных не в счёт — «вилка евро» в
-     * наименовании не валюта.
+     * Форма КП для больниц РК: строки условий — в той же таблице над шапкой позиций, валюта названа в них («оплата в
+     * тенге»), в шапке её нет.
+     */
+    @Test
+    void docx_currencyInConditionRowsAboveHeader() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        table(d, List.of(
+                List.of("Дата коммерческого предложения", "«2» марта 2026 г.", "", "", "", ""),
+                List.of("Условия поставки", "DDP Заказчик", "", "", "", ""),
+                List.of("Условия оплаты", "оплата в тенге по факту поставки", "", "", "", ""),
+                List.of("Срок поставки", "Согласно условиям договора", "", "", "", ""),
+                List.of("№", "Наименование", "Кол-во (ед. изм.)", "Стоимость", "Сумма", "Сведения о регистрации"),
+                List.of("1", "Облучатель ультрафиолетовый настенный", "2 шт", "18 450,00", "36 900,00", "РК МИ (МТ)-0№000001"),
+                List.of("Итого", "", "", "", "36 900,00", "")));
+        ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.headerRow()).isEqualTo(5);
+        assertThat(t.currency()).isEqualTo("KZT");
+        assertThat(ReplyRowValues.of(t).get(0).price()).isEqualByComparingTo("18450");
+    }
+
+    /**
+     * Абзац Word с разрывом строки: реквизиты вырезаются до конца своей строки, а не всего абзаца — фраза о ценах на
+     * следующей строке абзаца остаётся.
+     */
+    @Test
+    void docx_paragraphLineBreak_requisitesOnTheirLine() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        table(d, List.of(List.of("Наименование", "Кол-во", "Цена"), List.of("Кушетка смотровая", "1", "30 000")));
+        org.apache.poi.xwpf.usermodel.XWPFRun r = d.createParagraph().createRun();
+        r.setText("Р/с 40702810400000012345 в ПАО «Банк»");
+        r.addBreak();
+        r.setText("Цены указаны в рублях");
+        assertThat(ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow().currency()).isEqualTo("RUB");
+    }
+
+    /**
+     * Excel: валюта в строке «Итого», на которой таблица кончается (сумма и «тенге» — в разных ячейках); строки данных не
+     * в счёт — «доставка 1 500 руб.» в наименовании не валюта таблицы.
      */
     @Test
     void xlsx_currencyInTotalRow_dataRowsNotScanned() throws Exception {
         ReplyTable t = ReplyTableReader.read(xlsx(List.of(
                 List.of("Наименование", "Кол-во", "Цена", "Сумма"),
-                List.of("Кабель питания, вилка евро", "2", "1 500", "3 000"),
-                List.of("Итого", "", "", "3 000 тенге"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+                List.of("Кабель удлинитель (с доставкой 1 500 руб.)", "2", "1 500", "3 000"),
+                List.of("Итого", "", "3 000", "тенге"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
         assertThat(t.currency()).isEqualTo("KZT");
+    }
+
+    /**
+     * Таблица длиннее предела строк (2000): оборвались на пределе — остаток тоже строки данных и в текст вне таблицы не
+     * идёт («доставка 1 500 руб.» в наименовании за пределом — не валюта таблицы).
+     */
+    @Test
+    void xlsx_rowsAfterLimit_notText() throws Exception {
+        List<List<String>> rows = new java.util.ArrayList<>();
+        rows.add(List.of("Наименование", "Кол-во", "Цена"));
+        for (int i = 1; i <= ReplyTableReader.MAX_ROWS; i++) rows.add(List.of("Позиция " + i, "1", "100"));
+        for (int i = 0; i < 5; i++) rows.add(List.of("Кабель (с доставкой 1 500 руб.)", "1", "1 500 руб."));
+        ReplyTable t = ReplyTableReader.read(xlsx(rows), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.rows()).hasSize(ReplyTableReader.MAX_ROWS);
+        assertThat(t.currency()).isNull();
     }
 
     /** Excel: валюта названа над шапкой, под бланком. */
     @Test
     void xlsx_currencyAboveHeader() throws Exception {
         ReplyTable t = ReplyTableReader.read(xlsx(List.of(
-                List.of("Коммерческое предложение № 23142. Цены указаны в рублях РФ."),
+                List.of("Коммерческое предложение № 105. Цены указаны в рублях РФ."),
                 List.of(),
                 List.of("Наименование", "Кол-во", "Цена"),
                 List.of("Кушетка смотровая", "1", "30 000"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();

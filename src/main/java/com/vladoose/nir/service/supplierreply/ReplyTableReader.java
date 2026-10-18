@@ -29,11 +29,10 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -42,8 +41,9 @@ import java.util.regex.Pattern;
  * листа или первых 20 строках таблицы Word (форма КП для больниц РК: сверху в той же таблице — 8 строк условий); бланк и обращение над ней отбрасываются; шапка в две строки склеивается;
  * конец таблицы — «Итого» / «Всего» / «Итог»; таблица Word, разорванная по страницам (следующая таблица той же ширины
  * без своей шапки), склеивается. Валюта — из шапки и ячеек таблицы, а нет там — из текста вне её (шапка и всё над ней,
- * строка «Итого» и всё под ней, абзацы Word): ровно одна валюта — она, разные — «не ясна» (MoneyText.MIXED). Сбой
- * чтения — исключение: его ловит SupplierReplyFiles.
+ * строка «Итого» и всё под ней, абзацы Word; валюта — вплотную к числу или явной фразой, MoneyText.textHits): ровно одна
+ * валюта — она, разные или суммы в тысячах — «не ясна» (MoneyText.MIXED). Сбой чтения — исключение: его ловит
+ * SupplierReplyFiles.
  */
 public final class ReplyTableReader {
 
@@ -52,6 +52,10 @@ public final class ReplyTableReader {
     static final int MAX_ROWS = 2000;
     static final int MAX_COLS = 40;
     private static final Pattern TOTAL = Pattern.compile("^(итого|всего|итог|total)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern LINE_BREAK = Pattern.compile("[\\r\\n\\u000B\\f]+");
+    /** Фрагмент текста, где нашлась валюта, — до 120 символов («по тексту «…»»); при разных валютах — по 80 на каждую. */
+    static final int FRAGMENT = 120;
+    static final int MIXED_FRAGMENT = 80;
 
     private ReplyTableReader() {}
 
@@ -139,10 +143,7 @@ public final class ReplyTableReader {
         List<Grid> out = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
             List<String> text = new ArrayList<>();
-            for (XWPFParagraph p : doc.getParagraphs()) {
-                String v = clean(p.getText());
-                if (!v.isEmpty()) text.add(v);
-            }
+            for (XWPFParagraph p : doc.getParagraphs()) addLines(text, p.getText());
             int n = 0;
             for (XWPFTable t : doc.getTables()) {
                 n++;
@@ -163,6 +164,15 @@ public final class ReplyTableReader {
         return out;
     }
 
+    /** Абзац — строками (мягкий перенос и разрыв строки внутри абзаца — новая строка): реквизиты и курс вырезаются построчно. */
+    private static void addLines(List<String> out, String paragraph) {
+        if (paragraph == null) return;
+        for (String line : LINE_BREAK.split(paragraph)) {
+            String v = clean(line);
+            if (!v.isEmpty()) out.add(v);
+        }
+    }
+
     private static int span(XWPFTableCell cell) {
         CTTcPr pr = cell.getCTTc().getTcPr();
         if (pr == null || pr.getGridSpan() == null || pr.getGridSpan().getVal() == null) return 1;
@@ -176,9 +186,7 @@ public final class ReplyTableReader {
             List<String> text = new ArrayList<>();
             for (int i = 0; i < range.numParagraphs(); i++) {
                 Paragraph p = range.getParagraph(i);
-                if (p.isInTable()) continue;
-                String v = clean(Range.stripFields(p.text()));
-                if (!v.isEmpty()) text.add(v);
+                if (!p.isInTable()) addLines(text, Range.stripFields(p.text()));
             }
             TableIterator it = new TableIterator(range);
             int n = 0;
@@ -249,12 +257,14 @@ public final class ReplyTableReader {
         width = Math.min(width, MAX_COLS);
 
         List<ReplyTable.Row> out = new ArrayList<>();
-        int end = rows.size();   // первая строка после данных: «Итого» или предел строк
-        for (int r = data; r < rows.size(); r++) {
+        // строка «Итого» — конец данных: она и всё под ней — текст вне таблицы; оборвались на пределе строк — остаток
+        // тоже строки данных (в наименованиях бывает «… 1 500 руб.»), в текст не идёт
+        int end = rows.size();
+        for (int r = data; r < rows.size() && out.size() < MAX_ROWS; r++) {
             List<String> cells = pad(rows.get(r), width);
             String first = cells.stream().filter(s -> !s.isBlank()).findFirst().orElse("");
             if (first.isEmpty()) continue;
-            if (TOTAL.matcher(first).find() || out.size() >= MAX_ROWS) {
+            if (TOTAL.matcher(first).find()) {
                 end = r;
                 break;
             }
@@ -268,7 +278,10 @@ public final class ReplyTableReader {
             columns.add(new ReplyTable.Column(c, h, role));
         }
         String currency = currency(columns, out);
-        if (currency == null) currency = textCurrency(rows, data, end, g.text());
+        if (currency == null) {
+            TextCurrency tc = textCurrency(rows, data, end, g.text());
+            if (tc != null) currency = tc.code();
+        }
         return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out));
     }
 
@@ -364,19 +377,55 @@ public final class ReplyTableReader {
         return null;
     }
 
+    /** Валюта из текста: код (MIXED — разные валюты или суммы в тысячах) и фрагменты текста, где нашлась. */
+    record TextCurrency(String code, List<String> fragments) {}
+
     /**
-     * Валюта из текста вне данных таблицы (КП «Рикта»: «на сумму 171 343,00 руб.» — абзацем под таблицей): шапка и всё
-     * над ней, строка «Итого» и всё под ней, абзацы Word. Строки данных не в счёт — в наименованиях бывает «вилка евро».
-     * Ровно одна валюта — она; разные — MoneyText.MIXED (не угадывать); ни одной — null.
+     * Валюта из текста вне данных таблицы (абзац под таблицей: «на сумму … руб.»): шапка и всё над ней, строка «Итого» и
+     * всё под ней — построчно, ячейки строки через пробел; абзацы Word. Строки данных не в счёт — в наименованиях бывает
+     * «… 1 500 руб.». Правила — MoneyText.textHits (вплотную к числу или явной фразой). Ровно одна валюта — она; разные
+     * (или суммы в тысячах) — MoneyText.MIXED (не угадывать); ни одной — null.
      */
-    static String textCurrency(List<List<String>> rows, int data, int end, List<String> text) {
-        Set<String> found = new TreeSet<>();
+    static TextCurrency textCurrency(List<List<String>> rows, int data, int end, List<String> text) {
+        List<String> lines = new ArrayList<>();
         for (int r = 0; r < rows.size(); r++) {
             if (r >= data && r < end) continue;
-            for (String c : rows.get(r)) found.addAll(MoneyText.textCurrencies(c));
+            String line = joined(rows.get(r));
+            if (!line.isEmpty()) lines.add(line);
         }
-        for (String t : text) found.addAll(MoneyText.textCurrencies(t));
-        return found.isEmpty() ? null : found.size() == 1 ? found.iterator().next() : MoneyText.MIXED;
+        lines.addAll(text);
+        Map<String, String> first = new LinkedHashMap<>();   // валюта → строка и находка, где она впервые
+        Map<String, MoneyText.TextHit> hits = new LinkedHashMap<>();
+        for (String line : lines) {
+            for (MoneyText.TextHit h : MoneyText.textHits(line)) {
+                if (first.putIfAbsent(h.code(), line) == null) hits.put(h.code(), h);
+            }
+        }
+        if (first.isEmpty()) return null;
+        if (first.size() == 1) {
+            String code = first.keySet().iterator().next();
+            int max = MoneyText.MIXED.equals(code) ? MIXED_FRAGMENT : FRAGMENT;
+            return new TextCurrency(code, List.of(MoneyText.fragment(first.get(code), hits.get(code), max)));
+        }
+        List<String> fragments = new ArrayList<>();
+        for (String code : first.keySet()) {
+            if (fragments.size() == 3) break;
+            fragments.add(MoneyText.fragment(first.get(code), hits.get(code), MIXED_FRAGMENT));
+        }
+        return new TextCurrency(MoneyText.MIXED, fragments);
+    }
+
+    /** Ячейки строки через пробел; объединённые (тот же текст подряд) — один раз. */
+    private static String joined(List<String> row) {
+        StringBuilder b = new StringBuilder();
+        String prev = null;
+        for (String c : row) {
+            if (c.isBlank() || c.equals(prev)) continue;
+            if (b.length() > 0) b.append(' ');
+            b.append(c);
+            prev = c;
+        }
+        return b.toString();
     }
 
     private static List<String> pad(List<String> row, int width) {
