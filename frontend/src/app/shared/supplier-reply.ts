@@ -37,17 +37,39 @@ export interface ReplyTableRow {
 }
 
 /**
- * Валюта не ясна: в таблице её нет, а в тексте документа названы разные валюты (MoneyText.MIXED). Цены сами не
- * подставляются, курс не применить — только вручную.
+ * Валюта не ясна: в таблице её нет, а в тексте документа — разные валюты или суммы в тысячах (MoneyText.MIXED). Цены
+ * сами не подставляются, курс не применить — сначала валюту выбирают над таблицей файла.
  */
 export const MIXED_CURRENCY = 'MIXED';
+
+/**
+ * Откуда валюта цен файла: TABLE — шапка, колонка «Валюта», цены; TEXT — текст документа вне таблицы (texts — где);
+ * MIXED — разные валюты или суммы в тысячах (texts — где); NONE — не названа (считается валютой запроса); MANUAL —
+ * выбрал человек (by — кто, at — когда).
+ */
+export type CurrencySource = 'TABLE' | 'TEXT' | 'MIXED' | 'NONE' | 'MANUAL';
+export interface ReplyCurrencyOrigin { source: CurrencySource; texts: string[]; by: string | null; at: string | null; }
+
+/** Валюты, которые можно выбрать файлу (MoneyText.CHOOSABLE; «у.е.» и MIXED — нельзя). */
+export const CURRENCY_CHOICES: { v: string; l: string }[] = [
+  { v: 'KZT', l: 'тенге' }, { v: 'RUB', l: 'рубли' }, { v: 'USD', l: 'доллары' }, { v: 'EUR', l: 'евро' }, { v: 'CNY', l: 'юани' },
+];
+
+/** Название валюты для строки над таблицей: «рубли», «тенге». */
+export function currencyName(code: string | null): string {
+  const names: Record<string, string> = { KZT: 'тенге', RUB: 'рубли', USD: 'доллары', EUR: 'евро', CNY: 'юани', UE: 'у.е.', [MIXED_CURRENCY]: 'не ясна' };
+  return code ? names[code] || code : 'не указана';
+}
 
 /** Подпись валюты файла рядом с числом (как MoneyText.label на сервере). */
 export function currencyLabel(code: string | null): string {
   const labels: Record<string, string> = { KZT: 'тг', RUB: 'руб.', USD: '$', EUR: '€', CNY: 'юань', UE: 'у.е.', [MIXED_CURRENCY]: '(валюта?)' };
   return code ? labels[code] || code : '';
 }
-export interface ReplyTableView { source: string; headerRow: number; currency: string | null; columns: ReplyColumn[]; rows: ReplyTableRow[]; }
+export interface ReplyTableView {
+  source: string; headerRow: number; currency: string | null; currencyOrigin: ReplyCurrencyOrigin | null;
+  columns: ReplyColumn[]; rows: ReplyTableRow[];
+}
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
 /** «в рублях»-форма после «в»: «Цены в файле — в руб.», «— в юанях». */
 export function currencyIn(code: string | null): string {
@@ -58,7 +80,7 @@ export function currencyIn(code: string | null): string {
  * рынке, suggestedAt — когда его вписали.
  */
 export interface ReplyRate { currency: string; value: number | null; suggestion: number | null; suggestedAt: string | null; }
-/** Ответ на курс: вид и итог — подставлено, снято, ручных не тронуто; closed — запрос закрыт, цены не меняли. */
+/** Ответ на курс или валюту файла: вид и итог — подставлено, снято, ручных не тронуто; closed — запрос закрыт, цены не меняли. */
 export interface SupplierReplyRateResult { view: SupplierReply; applied: number; removed: number; keptManual: number; closed: boolean; }
 export interface SupplierReply {
   head: ReplyHead; positions: ReplyPosition[]; sources: ReplySource[]; fileId: number | null; table: ReplyTableView | null; counts: ReplyCounts;

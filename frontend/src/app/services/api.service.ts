@@ -304,6 +304,10 @@ export class ApiService {
   setSupplierReplyRate(id: number, fileId: number, rate: number | null): Observable<SupplierReplyRateResult> {
     return this.http.put<SupplierReplyRateResult>(`${this.base}/price-requests/${id}/files/${fileId}/rate`, { rate });
   }
+  /** Валюта цен файла, выбранная на экране сверки (KZT / RUB / USD / EUR / CNY): цены файла подставляются заново. */
+  setSupplierReplyCurrency(id: number, fileId: number, currency: string): Observable<SupplierReplyRateResult> {
+    return this.http.put<SupplierReplyRateResult>(`${this.base}/price-requests/${id}/files/${fileId}/currency`, { currency });
+  }
   verifySupplierReply(id: number): Observable<SupplierReply> {
     return this.http.post<SupplierReply>(`${this.base}/price-requests/${id}/verify`, {});
   }

@@ -41,20 +41,21 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
 
       <div class="body">
         <section class="pane-prices" [class.off]="tab !== 'prices'">
+          <!-- валюта не ясна (в документе разные валюты или суммы в тысячах): поля курса нет — валюту выбирают над таблицей файла -->
+          <div class="rate" *ngIf="v.table?.currencyOrigin?.source === 'MIXED'">
+            <span class="rate-t">Валюта цен в файле не ясна — цены не подставлены<ng-container *ngIf="admin">: укажите валюту над таблицей файла</ng-container></span>
+          </div>
           <div class="rate" *ngIf="v.rate as rt">
-            <span class="rate-t" *ngIf="rt.currency === mixed; else rateBlock">Валюта цен в файле не ясна: в документе названы разные валюты — сверьте по документу<ng-container *ngIf="admin"> и впишите цены вручную</ng-container></span>
-            <ng-template #rateBlock>
-              <span class="rate-t">Цены в файле — в {{ inLabel(rt.currency) }}<ng-container *ngIf="rt.value == null">{{ admin ? ': впишите курс — цены пересчитаются и встанут с 💡' : ' — курс не вписан' }}</ng-container></span>
-              <ng-container *ngIf="admin; else rateRead">
-                <label class="rate-in">1 {{ label(rt.currency) }} =
-                  <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" placeholder="курс"
-                         aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
-                <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
-                <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
-                <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
-              </ng-container>
-              <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
-            </ng-template>
+            <span class="rate-t">Цены в файле — в {{ inLabel(rt.currency) }}<ng-container *ngIf="rt.value == null">{{ admin ? ': впишите курс — цены пересчитаются и встанут с 💡' : ' — курс не вписан' }}</ng-container></span>
+            <ng-container *ngIf="admin; else rateRead">
+              <label class="rate-in">1 {{ label(rt.currency) }} =
+                <input #rateEl inputmode="decimal" [value]="rateText(rt.value ?? rt.suggestion)" placeholder="курс"
+                       aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
+              <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
+              <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
+              <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
+            </ng-container>
+            <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
           </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
@@ -166,7 +167,7 @@ export class PriceRequestReplyComponent implements OnInit {
   busy = false;
   tab: 'prices' | 'doc' = 'prices';
   saveText = '';
-  /** Валюта не ясна (в документе — разные валюты): блок курса без поля, цены вписываются вручную. */
+  /** Валюта не ясна (в документе разные валюты или суммы в тысячах): поля курса нет — валюту выбирают над таблицей файла. */
   readonly mixed = MIXED_CURRENCY;
   private sub?: Subscription;
   /** Номер загрузки и файл, который просили: ответ курса, обогнанный сменой файла, не подменяет выбранный файл. */
@@ -214,9 +215,9 @@ export class PriceRequestReplyComponent implements OnInit {
   foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
   marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
-  /** Пометка у цены строки файла не в валюте рынка, когда курса нет; валюта не ясна («(валюта?)») — курс не поможет. */
+  /** Пометка у цены строки файла не в валюте рынка, когда курса нет; валюта не ясна («(валюта?)») — сначала её выбирают. */
   noRateHint(code: string | null): string {
-    if (code === this.mixed) return this.admin ? ' — впишите цену вручную' : '';
+    if (code === this.mixed) return this.admin ? ' — укажите валюту цен над таблицей файла' : '';
     return ' — не ' + this.marketIn()
       + (this.admin ? (this.view?.rate?.currency === code ? ': впишите курс выше или цену вручную' : ': впишите цену вручную') : '');
   }

@@ -7,8 +7,9 @@ import { NotificationService } from '../../services/notification.service';
 import { saveBlob } from '../../shared/client-offer';
 import { responseFile } from '../../shared/share';
 import { errorText } from '../../shared/error-text';
-import { REPLY_ROLE_OPTIONS, sourceLabel } from '../../shared/supplier-reply';
-import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/supplier-reply';
+import { plural } from '../../shared/private-request';
+import { CURRENCY_CHOICES, REPLY_ROLE_OPTIONS, currencyName, sourceLabel } from '../../shared/supplier-reply';
+import type { CurrencySource, ReplyColumn, ReplySource, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 
 /** Документ ответа (спека §4.1): источники, таблица файла с ролями колонок, страницы PDF, картинка, текст письма. */
 @Component({
@@ -36,6 +37,16 @@ import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/suppl
             <button type="button" class="link danger" [disabled]="busy" (click)="remove(s)">Да</button>
             <button type="button" class="link" (click)="confirmDelete = false">Нет</button></span>
         </ng-container>
+      </div>
+
+      <!-- откуда валюта цен файла, если не из самой таблицы: «по тексту», «не указана», «разные валюты», «вручную» -->
+      <div class="cur" *ngIf="s.type === 'FILE' && s.fileId === view.fileId && curLine() as cl" [class.warn]="curSource() === 'MIXED'">
+        <span class="cur-t">{{ cl }}</span>
+        <select *ngIf="admin" class="cur-pick" (change)="setCurrency($event)" [disabled]="busy" aria-label="Валюта цен файла">
+          <option value="" selected>{{ curSource() === 'MIXED' ? 'Укажите ▾' : 'Сменить ▾' }}</option>
+          <option *ngFor="let c of currencies" [value]="c.v">{{ c.l }}</option>
+        </select>
+        <span class="cur-f" *ngIf="curSource() === 'MIXED' && curTexts().length">по тексту: {{ quoted(curTexts()) }}</span>
       </div>
 
       <div class="tbl" *ngIf="s.type === 'FILE' && s.fileId === view.fileId && view.table as t">
@@ -90,6 +101,12 @@ import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/suppl
     .link.danger { color: var(--danger-text); }
     .link:disabled { color: var(--text-muted); cursor: default; }
     .hint { margin: 0; font-size: 12px; color: var(--text-muted); }
+    .cur { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border);
+           border-radius: 8px; background: var(--surface-2); }
+    .cur.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+    .cur-t { flex: 1 1 260px; overflow-wrap: anywhere; }
+    .cur-pick { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 13px; }
+    .cur-f { flex: 1 1 100%; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
     .tbl { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .t-cap { font-size: 12px; color: var(--text-muted); padding: 6px 10px; background: var(--surface-2); }
     .t-scroll { overflow: auto; max-height: 70vh; }
@@ -108,7 +125,7 @@ import type { ReplyColumn, ReplySource, SupplierReply } from '../../shared/suppl
     .mail pre { white-space: pre-wrap; font: inherit; font-size: 13px; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
     .zoom { position: fixed; inset: 0; background: rgba(17, 24, 39, .8); z-index: 1200; display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 16px; cursor: zoom-out; }
     .zoom img { max-width: min(1100px, 100%); background: #fff; }
-    @media (max-width: 900px) { .chip, .link, .up { min-height: 40px; } th select { font-size: 16px; } }
+    @media (max-width: 900px) { .chip, .link, .up, .cur-pick { min-height: 40px; } th select, .cur-pick { font-size: 16px; } }
   `],
 })
 export class ReplyDocumentComponent implements OnChanges, OnDestroy {
@@ -119,6 +136,7 @@ export class ReplyDocumentComponent implements OnChanges, OnDestroy {
   @Output() selectFile = new EventEmitter<number>();
 
   readonly roles = REPLY_ROLE_OPTIONS;
+  readonly currencies = CURRENCY_CHOICES;
   current: ReplySource | null = null;
   pageUrls: string[] = [];
   pagesLoading = false;
@@ -239,6 +257,69 @@ export class ReplyDocumentComponent implements OnChanges, OnDestroy {
       next: v => { this.busy = false; this.changed.emit(v); },
       error: e => { this.busy = false; this.notify.error('Роль не сохранилась: ' + errorText(e)); this.cdr.markForCheck(); },
     });
+  }
+
+  curSource(): CurrencySource | null { return this.view.table?.currencyOrigin?.source ?? null; }
+  curTexts(): string[] { return this.view.table?.currencyOrigin?.texts || []; }
+  quoted(texts: string[]) { return texts.map(t => `«${t}»`).join(', '); }
+
+  /**
+   * Строка над таблицей файла — откуда валюта цен, если не из самой таблицы (из шапки или ячеек — строки нет): валюта
+   * из текста — догадка, не названа — считается валютой запроса, разные — цены не подставлены, выбрана — кем и когда.
+   */
+  curLine(): string | null {
+    const t = this.view.table;
+    const o = t?.currencyOrigin;
+    if (!t || !o || o.source === 'TABLE') return null;
+    switch (o.source) {
+      case 'TEXT': return `Валюта цен: ${currencyName(t.currency)} — ` + (o.texts.length ? `по тексту «${o.texts[0]}»` : 'по тексту документа');
+      case 'NONE': return `Валюта в файле не указана — считаем ${currencyName(this.view.head.currency)}`;
+      case 'MIXED': return 'В документе разные валюты или суммы в тысячах — укажите валюту цен';
+      case 'MANUAL': {
+        const who = [o.by, this.shortDate(o.at)].filter(x => !!x).join(', ');
+        return `Валюта цен: ${currencyName(t.currency)} — выбрана вручную` + (who ? ` (${who})` : '');
+      }
+    }
+    return null;
+  }
+
+  /** «18.10» — когда выбрали валюту. */
+  private shortDate(iso: string | null): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  /** Валюта цен файла выбрана — цены файла подставляются заново; тост — из итога сервера. */
+  setCurrency(ev: Event) {
+    const sel = ev.target as HTMLSelectElement;
+    const code = sel.value;
+    sel.value = '';
+    if (!code || this.view.fileId == null || this.busy) return;
+    this.busy = true;
+    this.api.setSupplierReplyCurrency(this.requestId, this.view.fileId, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        this.busy = false;
+        const text = this.currencyToast(r, code);
+        if (r.closed || (!r.applied && !r.removed)) this.notify.info(text); else this.notify.success(text);
+        this.changed.emit(r.view);
+      },
+      error: e => { this.busy = false; this.notify.error('Валюта не сохранилась: ' + errorText(e)); this.cdr.markForCheck(); },
+    });
+  }
+
+  /** Что сервер действительно сделал: подставил, снял, не тронул ручные; чужая валюта без курса — впишите курс. */
+  private currencyToast(r: SupplierReplyRateResult, code: string): string {
+    const head = `Валюта цен — ${currencyName(code)}`;
+    if (r.closed) return head + ': сохранено, запрос закрыт — цены не меняли';
+    const prices = (n: number) => `${n} ${plural(n, 'цену', 'цены', 'цен')}`;
+    const parts: string[] = [];
+    if (r.applied) parts.push(`подставили ${prices(r.applied)} — сверьте`);
+    if (r.removed) parts.push(`сняли ${prices(r.removed)}`);
+    if (!r.applied && code !== this.view.head.currency) parts.push('впишите курс — цены пересчитаются');
+    if (r.keptManual) parts.push(`ручные цены не тронуты: ${r.keptManual}`);
+    return head + (parts.length ? ': ' + parts.join('; ') : '');
   }
 
   remove(s: ReplySource) {
