@@ -118,8 +118,9 @@ class SupplierReplyServiceTest {
     }
 
     /**
-     * Валюта не ясна (в тексте документа названы разные валюты): цены сами не подставляются, и курс применить не к чему
-     * — неизвестно, из какой валюты пересчитывать.
+     * Валюта не ясна (в тексте документа разные валюты или суммы в тысячах): цены сами не подставляются, курс — 400. И
+     * курс, записанный такому файлу прежним кодом (до 2026-10-18 он принимал курс к любой «чужой» валюте, в том числе
+     * MIXED), цены не подставляет: из «валюты не ясна» пересчитывать нечего.
      */
     @Test
     void mixedCurrency_notApplied_rateRejected() {
@@ -129,7 +130,30 @@ class SupplierReplyServiceTest {
         assertThat(o.foreignCurrency()).isEqualTo(MoneyText.MIXED);
         assertThat(item(0).getResponsePrice()).isNull();
         assertThatThrownBy(() -> service.setRate(pr.getId(), o.fileIds().get(0), new BigDecimal("6")))
-                .isInstanceOf(BadRequestException.class).hasMessageContaining("Валюта цен в файле не ясна");
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("не ясна");
+
+        SupplierReplyFile f = files.findById(o.fileIds().get(0)).orElseThrow();
+        f.setRate(new BigDecimal("6"));
+        f.setRateCurrency(MoneyText.MIXED);
+        em.flush();
+        assertThat(service.applyFile(pr.getId(), f.getId()).applied()).isZero();
+        assertThat(item(0).getResponsePrice()).isNull();
+    }
+
+    /** Такой курс («валюта не ясна», записанный прежним кодом) новый файл того же запроса не наследует. */
+    @Test
+    void mixedRateNotInherited() {
+        ReplyOutcome first = service.ingest(pr, List.of(parsed("kp1.docx", table(MoneyText.MIXED,
+                "Скальпели офтальмологические: Скальпель MSL24", "4700"))), null);
+        SupplierReplyFile f = files.findById(first.fileIds().get(0)).orElseThrow();
+        f.setRate(new BigDecimal("6"));
+        f.setRateCurrency(MoneyText.MIXED);
+        f.setRateSetAt(java.time.OffsetDateTime.now());
+        em.flush();
+        ReplyOutcome second = service.ingest(pr, List.of(parsed("kp2.docx", table(MoneyText.MIXED,
+                "Скальпели офтальмологические: Скальпель MSL24", "4800"))), null);
+        assertThat(files.findById(second.fileIds().get(0)).orElseThrow().getRate()).isNull();
+        assertThat(second.applied()).isZero();
         assertThat(item(0).getResponsePrice()).isNull();
     }
 

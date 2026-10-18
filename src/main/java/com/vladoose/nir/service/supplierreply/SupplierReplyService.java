@@ -119,7 +119,7 @@ public class SupplierReplyService {
         if (f.getParsed() == null || f.getRate() != null) return;
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
         String cur = tableCurrency(ReplyRowValues.of(f.getParsed()), f.getParsed());
-        if (cur == null || market == null || cur.equals(market)) return;
+        if (cur == null || market == null || cur.equals(market) || MoneyText.MIXED.equals(cur)) return;
         List<Object[]> rates = files.findRatesOfRequest(pr.getId(), cur);
         if (rates.isEmpty()) return;
         f.setRate((BigDecimal) rates.get(0)[0]);
@@ -409,9 +409,14 @@ public class SupplierReplyService {
         return s.toString();
     }
 
-    /** Курс файла к валюте запроса: вписан для валюты файла, а она не валюта запроса; иначе null. */
+    /**
+     * Курс файла к валюте запроса: вписан для валюты файла, а она не валюта запроса; иначе null. «Валюта не ясна»
+     * (MoneyText.MIXED) — всегда null: пересчитывать нечего, даже если курс записал прежний код (он принимал курс к любой
+     * «чужой» валюте).
+     */
     public static FileRate fileRate(BigDecimal rate, String rateCurrency, String tableCurrency, String market) {
         if (rate == null || tableCurrency == null || market == null || tableCurrency.equals(market)) return null;
+        if (MoneyText.MIXED.equals(tableCurrency)) return null;
         return tableCurrency.equals(rateCurrency) ? new FileRate(tableCurrency, rate) : null;
     }
 
