@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { Component, ChangeDetectorRef, DestroyRef, ElementRef, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Location, NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
@@ -22,11 +22,16 @@ import { importToast } from '../../shared/import-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 import { TenderLotsComponent } from './tender-lots.component';
 import { applyStatusLabel } from '../../shared/apply-labels';
+import { DealLayoutComponent } from '../../shared/deal-layout.component';
+import { DealProgressComponent } from '../../shared/deal-progress.component';
+import { DealTimelineComponent } from '../../shared/deal-timeline.component';
+import type { DealAction, DealProgress } from '../../shared/deal';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent,
+            DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -211,6 +216,12 @@ import { applyStatusLabel } from '../../shared/apply-labels';
         <p *ngIf="selectedTender.description" class="info-desc"><strong>Описание:</strong> {{ selectedTender.description }}</p>
       </div>
 
+      <!-- этапы, «Дальше» и «История» — единая страница сделки (спека 2026-10-18 §4) -->
+      <app-deal-progress [progress]="tenderProgress" [canAct]="auth.isAdmin()"
+                         (act)="onTenderAct($event)" (stepClick)="scrollTenderTo($event)"></app-deal-progress>
+      <app-deal-layout storageKey="ais.tender.history" mainLabel="Тендер" sideLabel="История" sideTitle="История">
+      <div dealMain class="deal-main">
+      <div #lotsAnchor class="anchor">
       <h3>Лоты тендера</h3>
 
       <app-tender-lots
@@ -221,6 +232,7 @@ import { applyStatusLabel } from '../../shared/apply-labels';
         (bulkPriceRequested)="bulkPriceTenderId = selectedTender.id"
         (matchRequested)="onMatchRequested($event)">
       </app-tender-lots>
+      </div>
 
       <app-smart-match
         *ngIf="matchLotId !== null"
@@ -233,7 +245,8 @@ import { applyStatusLabel } from '../../shared/apply-labels';
       </app-smart-match>
 
       <!-- ========== ЗАПРОСЫ КП ========== -->
-      <section *ngIf="priceRequests.length > 0" class="pr-section">
+      <div #requestsAnchor class="anchor" *ngIf="priceRequests.length > 0">
+      <section class="pr-section">
         <div class="pr-section-head">
           <h3>Запросы КП</h3>
           <button class="btn btn-line" (click)="checkKpResponses()">Проверить ответы</button>
@@ -315,6 +328,10 @@ import { applyStatusLabel } from '../../shared/apply-labels';
           </div>
         </div>
       </section>
+      </div>
+      </div>
+        <app-deal-timeline dealSide #tenderTimeline kind="tender" [dealId]="selectedTender.id" [canWrite]="auth.isAdmin()"></app-deal-timeline>
+      </app-deal-layout>
     </ng-container>
   `,
   styles: [`
@@ -398,6 +415,8 @@ import { applyStatusLabel } from '../../shared/apply-labels';
     .dims-row label { flex: 1; }
     .input-error { border-color: var(--danger) !important; }
     .pr-section { margin-top: 24px; }
+    .deal-main { min-width: 0; }
+    .anchor { scroll-margin-top: 12px; }
     .pr-card { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--surface); }
     .pr-card.expanded { border-color: var(--accent); }
     .pr-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
@@ -573,6 +592,11 @@ export class TendersComponent {
 
   /** Заявки на участие по открытому тендеру — строка «Заявки на участие» в карточке. */
   tenderApplies: any[] = [];
+  tenderProgress: DealProgress | null = null;
+  private progressSeq = 0;
+  @ViewChild('tenderTimeline') tenderTimeline?: DealTimelineComponent;
+  @ViewChild('lotsAnchor') lotsAnchor?: ElementRef<HTMLElement>;
+  @ViewChild('requestsAnchor') requestsAnchor?: ElementRef<HTMLElement>;
   /**
    * Карточка открыта кликом по списку этой страницы — запись истории с ?openId= поставили мы, и «← Назад к списку»
    * это шаг назад по истории (вперёд — снова карточка). Открыта по ссылке (дашборд, поиск, Telegram) — список
@@ -1092,6 +1116,7 @@ export class TendersComponent {
     this.selectedTender = t;
     this.loadLots();
     this.loadTenderApplies();
+    this.loadTenderProgress();
   }
 
   private showList() {
@@ -1115,6 +1140,38 @@ export class TendersComponent {
     this.lots = [];
     this.priceRequests = [];
     this.tenderApplies = [];
+    this.tenderProgress = null;
+    this.progressSeq++;   // ответ этапов прежней карточки отбрасывается
+  }
+
+  /** Этапы и «Дальше» карточки — с сервера; без них карточка работает как раньше. */
+  loadTenderProgress() {
+    const t = this.selectedTender;
+    if (!t) return;
+    const seq = ++this.progressSeq;
+    this.api.getTenderProgress(t.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: p => {
+        if (seq !== this.progressSeq || this.selectedTender?.id !== t.id) return;
+        this.tenderProgress = p;
+        this.cdr.detectChanges();
+      },
+      error: () => { /* без этапов карточка работает как раньше */ },
+    });
+  }
+
+  /** Кнопка «Дальше» карточки тендера. */
+  onTenderAct(a: DealAction) {
+    switch (a.action) {
+      case 'TO_LOTS': this.scrollTenderTo('LOTS'); break;
+      case 'OPEN_REQUESTS': this.scrollTenderTo('PRICES'); break;
+      case 'OPEN_APPLY': if (a.refId) this.router.navigate(['/applies'], { queryParams: { openId: a.refId } }); break;
+    }
+  }
+
+  /** Шаг этапов → раздел карточки: лоты или «Запросы КП» (их нет — лоты). */
+  scrollTenderTo(key: string) {
+    const el = key === 'PRICES' ? (this.requestsAnchor ?? this.lotsAnchor) : key === 'LOTS' ? this.lotsAnchor : null;
+    el?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   private loadTenderApplies() {
@@ -1125,6 +1182,8 @@ export class TendersComponent {
         if (this.selectedTender?.id !== id) return;
         this.tenderApplies = [...(list || [])].sort((a: any, b: any) => a.id - b.id);
         this.cdr.detectChanges();
+        this.loadTenderProgress();
+        this.tenderTimeline?.refresh();
       },
       error: () => { /* строка «Заявки на участие» не критична — карточка работает без неё */ },
     });
@@ -1156,6 +1215,8 @@ export class TendersComponent {
         if (this.selectedTender?.id !== id) return;
         this.priceRequests = data;
         this.cdr.detectChanges();
+        this.loadTenderProgress();
+        this.tenderTimeline?.refresh();
       },
       error: () => { if (this.selectedTender?.id === id) this.priceRequests = []; }
     });
