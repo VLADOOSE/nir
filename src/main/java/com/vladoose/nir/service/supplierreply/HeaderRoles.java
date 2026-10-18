@@ -16,6 +16,8 @@ public final class HeaderRoles {
 
     /** Мягкий перенос: U+00AD (.docx) и 0x1F — «необязательный дефис» Word 97 (.doc). */
     private static final Pattern SOFT_HYPHEN = Pattern.compile("[\\u00AD\\u001F]");
+    /** Перевод строки (или пробел) после дефиса внутри слова: «Кол-\nво» → «кол-во» — дефис остаётся. */
+    private static final Pattern HYPHEN_BREAK = Pattern.compile("(?<=\\p{L})-\\s+(?=\\p{L})");
     /** Перенос внутри слова: дефис вплотную за буквой, дальше — пробелы (перевод строки в ячейке) и снова буква. */
     private static final Pattern WORD_BREAK = Pattern.compile("(?<=\\p{L})-\\s*(?=\\p{L})");
 
@@ -26,18 +28,25 @@ public final class HeaderRoles {
     }
 
     /**
-     * Роль: словарь, иначе правила. Вышло «Игнорировать» по правилам — ещё раз для заголовка без переноса внутри слова
-     * («Коли-чество», «Скид- ка»): что узнаётся с дефисом («Кол-во»), так и остаётся.
+     * Роль: словарь, иначе правила. Перед правилами — заголовок без мягких переносов и без пробела после дефиса внутри
+     * слова (перевод строки в ячейке: «Кол-\nво» → «кол-во», и «Кол-\nво товара» — количество, а не «товар»). Вышло
+     * «Игнорировать» — ещё раз для заголовка без переноса внутри слова («Коли-чество», «Скид- ка»): что узнаётся с
+     * дефисом («Кол-во»), так и остаётся.
      */
     public static LineField role(String header, Map<String, LineField> learned) {
         String k = key(header);
         if (k.isEmpty()) return LineField.IGNORE;
         LineField l = learnedRole(header, learned);
         if (l != null) return l;
-        LineField h = heuristic(norm(k));
+        String kept = HYPHEN_BREAK.matcher(SOFT_HYPHEN.matcher(k).replaceAll("")).replaceAll("-");
+        if (!kept.equals(k)) {
+            LineField lk = learnedRole(kept, learned);
+            if (lk != null) return lk;
+        }
+        LineField h = heuristic(norm(kept));
         if (h != LineField.IGNORE) return h;
-        String joined = WORD_BREAK.matcher(SOFT_HYPHEN.matcher(k).replaceAll("")).replaceAll("");
-        if (joined.equals(k)) return h;
+        String joined = WORD_BREAK.matcher(kept).replaceAll("");
+        if (joined.equals(kept)) return h;
         LineField lj = learnedRole(joined, learned);
         return lj != null ? lj : heuristic(norm(joined));
     }

@@ -29,8 +29,8 @@ class HeaderRolesTest {
     }
 
     /**
-     * Перенос внутри слова в заголовке (КП «Рикта»: «Коли-чество»; ФОТЕК: «Скид- ка» — перевод строки в ячейке стал
-     * пробелом): роль «Игнорировать» — пробуем слово без переноса. Что узнаётся сейчас («Кол-во»), не меняется.
+     * Перенос внутри слова в заголовке («Коли-чество»; «Скид- ка» — перевод строки в ячейке стал пробелом): роль
+     * «Игнорировать» — пробуем слово без переноса. Что узнаётся сейчас («Кол-во»), не меняется.
      */
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
@@ -39,6 +39,23 @@ class HeaderRolesTest {
     })
     void hyphenInsideWord(String header, LineField role) {
         assertThat(HeaderRoles.role(header, Map.of())).as(header).isEqualTo(role);
+    }
+
+    /**
+     * Перевод строки после дефиса («Кол-\nво», в ячейке — «Кол- во»): сначала дефис остаётся, а пробел уходит — «кол-во»;
+     * и до правил, а не только после «Игнорировать»: «Кол-\nво товара» — количество, а не наименование («товар»).
+     */
+    @Test
+    void hyphenThenLineBreak() {
+        Map<String, LineField> cases = new java.util.LinkedHashMap<>();
+        cases.put("Кол-\nво", LineField.QUANTITY);
+        cases.put("Кол- во", LineField.QUANTITY);
+        cases.put("Кол-\r\nво, шт", LineField.QUANTITY);
+        cases.put("Кол-\nво товара", LineField.QUANTITY);
+        cases.put("Коли-\nчество", LineField.QUANTITY);
+        cases.put("Наиме-\nнование", LineField.NAME);
+        cases.put("Скид-\nка", LineField.IGNORE);
+        cases.forEach((h, role) -> assertThat(HeaderRoles.role(h, Map.of())).as(h).isEqualTo(role));
     }
 
     /** Слово без переноса ищется и в словаре оператора. */
