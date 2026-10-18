@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.exception.BadRequestException;
@@ -31,6 +32,28 @@ public class TenderService {
     public Tender findById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Тендер не найден: id=" + id));
+    }
+
+    /**
+     * Тендер текущего рынка для путей `/api/tenders/{id}` — карточка, правка, удаление (2026-10-18). `findById` — это
+     * `em.find`, фильтр рынка его не режет (§14 CLAUDE.md): открытая карточка живёт в адресе (`/tenders?openId=`),
+     * смена рынка перезагружает тот же адрес — и на РФ открывался KZ-тендер. Частная заявка здесь тоже «не найдена»:
+     * у неё своя страница и свои пути (`/api/private-requests/{id}`), а форма тендера её правку или удаление мимо
+     * её проверок испортила бы.
+     */
+    public Tender findPublic(Long id) {
+        Tender t = findInMarket(id);
+        if (t.getSource() != Source.PUBLIC_TENDER) throw new NotFoundException("Тендер не найден: id=" + id);
+        return t;
+    }
+
+    /** Тендер или частная заявка текущего рынка (лоты по id тендера): чужой рынок — «не найден», как несуществующий. */
+    public Tender findInMarket(Long id) {
+        Tender t = findById(id);
+        if (t.getMarket() != null && t.getMarket() != MarketContext.get()) {
+            throw new NotFoundException("Тендер не найден: id=" + id);
+        }
+        return t;
     }
 
     @Transactional

@@ -122,9 +122,10 @@ public class TenderController {
                 service.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo));
     }
 
+    /** Карточка тендера: чужой рынок и частная заявка — 404 (TenderService.findPublic). */
     @GetMapping("/{id}")
     public TenderResponse findById(@PathVariable Long id) {
-        return mapper.toResponse(service.findById(id));
+        return mapper.toResponse(service.findPublic(id));
     }
 
     @PostMapping
@@ -141,18 +142,21 @@ public class TenderController {
         if (request.getDeadline() != null && request.getDeadline().isBefore(LocalDate.now())) {
             throw new BadRequestException("Дедлайн не может быть в прошлом");
         }
-        Tender existing = service.findById(id);
+        Tender existing = service.findPublic(id);
         mapper.updateEntity(request, existing);
         return mapper.toResponse(service.save(existing));
     }
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
+        service.findPublic(id);
         service.deleteById(id);
     }
 
+    /** Лоты тендера: у лота своего фильтра рынка нет («через тендер») — сверка рынка по самому тендеру. */
     @GetMapping("/{id}/lots")
     public List<TenderLotResponse> getLots(@PathVariable Long id) {
+        service.findInMarket(id);
         return tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
     }
 
