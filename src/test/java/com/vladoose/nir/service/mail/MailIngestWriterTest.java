@@ -486,14 +486,14 @@ class MailIngestWriterTest {
         assertThat(rows().get(0).getNotifyText()).contains("Цены в файле «kp.xlsx» — в руб., не подставлены — впишите курс на экране сверки");
     }
 
-    /** Валюта не ясна (в тексте документа — разные валюты): не подставлены, и курс тут не поможет — своя строка. */
+    /** Валюта не ясна (в тексте документа — разные валюты или суммы в тысячах): не подставлены, курс не поможет — своя строка. */
     @Test
     void mixedCurrencyFileLine() {
         PriceRequest p = prNamed("SENT", Source.PRIVATE_REQUEST, "Кушетка смотровая", "Столик процедурный");
         writer().write(mail().uid(37).subject("Re: " + KpToken.subjectToken(p.getId())).text("КП").build(),
                 List.of(parsed("kp.docx", table(MoneyText.MIXED, "Кушетка смотровая КС-1", "100", "Столик процедурный СП-2", "200"))), 5);
         assertThat(rows().get(0).getNotifyText())
-                .contains("Цены в файле «kp.docx» не подставлены: в документе названы разные валюты — сверьте по документу и впишите цены вручную");
+                .contains("Цены в файле «kp.docx» не подставлены: валюта не ясна (в документе разные валюты или суммы в тысячах) — укажите её на экране сверки");
         assertThat(prRepo.findById(p.getId()).orElseThrow().getItems().get(0).getResponsePrice()).isNull();
     }
 

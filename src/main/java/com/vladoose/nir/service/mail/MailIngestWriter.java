@@ -152,7 +152,7 @@ public class MailIngestWriter {
                     + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
         }
         if (MoneyText.MIXED.equals(o.foreignCurrency())) {
-            return "Цены в файле «" + name + "» не подставлены: в документе названы разные валюты — сверьте по документу и впишите цены вручную";
+            return "Цены в файле «" + name + "» не подставлены: валюта не ясна (в документе разные валюты или суммы в тысячах) — укажите её на экране сверки";
         }
         if (o.foreignCurrency() != null) {
             return "Цены в файле «" + name + "» — в " + MoneyText.label(o.foreignCurrency()) + ", не подставлены — впишите курс на экране сверки";

@@ -33,7 +33,19 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
                          String parseNote, Long sizeBytes, Integer pageCount, boolean uploaded, OffsetDateTime at,
                          String from, String subject, String text) {}
 
-    public record Table(String source, int headerRow, String currency, List<Col> columns, List<TRow> rows) {}
+    /**
+     * currency — валюта цен файла (код; MIXED — не ясна; null — не названа, считается валютой запроса); currencyOrigin —
+     * откуда она: строка над таблицей файла, если не из самой таблицы.
+     */
+    public record Table(String source, int headerRow, String currency, CurrencyOrigin currencyOrigin, List<Col> columns,
+                        List<TRow> rows) {}
+
+    /**
+     * Откуда валюта цен файла: source — TABLE (шапка, колонка «Валюта», цены), TEXT (текст документа вне таблицы;
+     * texts — где нашлась), MIXED (разные валюты или суммы в тысячах; texts — где), NONE (не названа — валюта запроса),
+     * MANUAL (выбрал человек: by — кто, at — когда).
+     */
+    public record CurrencyOrigin(String source, List<String> texts, String by, OffsetDateTime at) {}
 
     public record Col(int index, String header, LineField role) {}
 

@@ -1,6 +1,7 @@
 package com.vladoose.nir.service.supplierreply;
 
 import com.vladoose.nir.entity.LineField;
+import com.vladoose.nir.entity.ReplyCurrencySource;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.ReplyTable;
 import org.apache.poi.hwpf.HWPFDocument;
@@ -266,6 +267,9 @@ class ReplyTableReaderTest {
         ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
         assertThat(t.currency()).isEqualTo("RUB");
         assertThat(ReplyRowValues.of(t).get(0).currency()).isEqualTo("RUB");
+        // откуда валюта — для строки над таблицей файла: «по тексту «…»»
+        assertThat(t.currencySource()).isEqualTo(ReplyCurrencySource.TEXT);
+        assertThat(t.currencyFrom().texts()).containsExactly("Общая стоимость предложения — 18 450,00 руб., НДС не облагается.");
     }
 
     /** В тексте документа разные валюты — не угадывать: таблица «валюта не ясна», цены сами не подставятся. */
@@ -277,6 +281,8 @@ class ReplyTableReaderTest {
         d.createParagraph().createRun().setText("Оплата в тенге по курсу на день оплаты.");
         ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
         assertThat(t.currency()).isEqualTo(MoneyText.MIXED);
+        assertThat(t.currencySource()).isEqualTo(ReplyCurrencySource.MIXED);
+        assertThat(t.currencyFrom().texts()).containsExactly("Цены указаны в рублях.", "Оплата в тенге по курсу на день оплаты.");
     }
 
     /** Валюта в шапке таблицы главнее текста вокруг. */
@@ -285,7 +291,20 @@ class ReplyTableReaderTest {
         XWPFDocument d = new XWPFDocument();
         table(d, List.of(List.of("Наименование", "Цена, тг"), List.of("Кушетка", "95 000")));
         d.createParagraph().createRun().setText("Доставка — 15 000 руб.");
-        assertThat(ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow().currency()).isEqualTo("KZT");
+        ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.currency()).isEqualTo("KZT");
+        assertThat(t.currencySource()).isEqualTo(ReplyCurrencySource.TABLE);
+        assertThat(t.currencyFrom().texts()).isEmpty();
+    }
+
+    /** Валюта нигде не названа — NONE: считается валютой запроса, на экране — «не указана, считаем …». */
+    @Test
+    void currencyNowhere_none() throws Exception {
+        ReplyTable t = ReplyTableReader.read(xlsx(List.of(List.of("Наименование", "Кол-во", "Цена"),
+                List.of("Кушетка смотровая", "1", "30 000"))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.currency()).isNull();
+        assertThat(t.currencySource()).isEqualTo(ReplyCurrencySource.NONE);
+        assertThat(t.currencyFrom().kind()).isEqualTo(ReplyCurrencySource.NONE);
     }
 
     /**

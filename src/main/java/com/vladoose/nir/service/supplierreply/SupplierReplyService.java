@@ -239,7 +239,7 @@ public class SupplierReplyService {
             throw new BadRequestException("Цены в файле — в валюте запроса, курс не нужен");
         }
         if (MoneyText.MIXED.equals(cur)) {
-            throw new BadRequestException("Валюта цен в файле не ясна — в документе названы разные валюты: курс не применить, впишите цены вручную");
+            throw new BadRequestException("Валюта цен в файле не ясна — сначала укажите её над таблицей файла");
         }
         if (rate != null) {
             if (rate.signum() <= 0) throw new BadRequestException("Курс — число больше нуля");
@@ -251,7 +251,7 @@ public class SupplierReplyService {
         f.setRateCurrency(rate == null ? null : cur);
         f.setRateSetAt(rate == null ? null : OffsetDateTime.now());
         if (CLOSED.contains(pr.getStatus())) return new RateResult(0, 0, 0, true);
-        int reverted = revertAuto(pr.getId(), f.getId(), false);
+        int reverted = revertAuto(pr.getId(), f.getId(), false).size();
         Follow follow = follow(pr, f, rows, old, rate == null ? null : new FileRate(cur, rate), market);
         ApplyResult a = rate == null ? null : apply(pr, f, follow.skip());
         int applied = (a == null ? 0 : a.applied()) + follow.moved();
@@ -294,6 +294,41 @@ public class SupplierReplyService {
             moved++;
         }
         return new Follow(skip, moved, removed, kept);
+    }
+
+    /**
+     * Валюта цен файла, выбранная на экране сверки (2026-10-18): валюта, найденная в тексте, — догадка, а при «разных
+     * валютах» иначе выхода нет. Запоминается в таблице файла (MANUAL — кто и когда), курс файла, вписанный для другой
+     * валюты, снимается; дальше — как при смене ролей колонок: свои 💡 этого файла снимаются и подставляются заново
+     * (валюта рынка — цены как есть; чужая — путь курса: подсказка и «Пересчитать»). Ручные цены не трогаются; у
+     * закрытого запроса выбор запоминается, цены нет. Итог — как у курса: подставлено, снято, ручных не тронуто, закрыт.
+     */
+    @Transactional
+    public RateResult setCurrency(Long prId, Long fileId, String code, String user) {
+        PriceRequest pr = guard(prId);
+        SupplierReplyFile f = fileOf(pr, fileId);
+        ReplyTable t = f.getParsed();
+        if (t == null) throw new BadRequestException("У файла нет разобранной таблицы — валюту не к чему применить");
+        String cur = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
+        if (!MoneyText.CHOOSABLE.contains(cur)) {
+            throw new BadRequestException("Неизвестная валюта: «" + (code == null ? "" : code) + "» — выберите тенге, рубли, доллары, евро или юани");
+        }
+        f.setParsed(t.withCurrency(cur, new ReplyTable.CurrencyFrom(ReplyCurrencySource.MANUAL, List.of(),
+                user == null || user.isBlank() ? "admin" : user, OffsetDateTime.now().toString())));
+        if (f.getRate() != null && !cur.equals(f.getRateCurrency())) {   // курс был для другой валюты
+            f.setRate(null);
+            f.setRateCurrency(null);
+            f.setRateSetAt(null);
+        }
+        if (CLOSED.contains(pr.getStatus())) return new RateResult(0, 0, 0, true);
+        Set<Long> reverted = revertAuto(pr.getId(), f.getId(), false);
+        ApplyResult a = apply(pr, f);
+        int removed = 0;
+        for (PriceRequestItem it : items.lockByPriceRequestId(pr.getId())) {
+            if (reverted.contains(it.getId()) && it.getResponsePrice() == null) removed++;
+        }
+        if (a.applied() > 0) markResponded(pr, null);
+        return new RateResult(a.applied(), removed, a.manualKept(), false);
     }
 
     /** «Всё верно» — снять 💡 со всех цен запроса. */
@@ -356,20 +391,20 @@ public class SupplierReplyService {
         return new ApplyResult(applied, its.size(), manual, null, byRate ? rate.rate() : null);
     }
 
-    /** Несверенные цены из файла — снять (сколько сняли); unlinkAll — ещё и связь ручных цен с этим файлом (файл удаляется). */
-    private int revertAuto(Long prId, Long fileId, boolean unlinkAll) {
-        int n = 0;
+    /** Несверенные цены из файла — снять (какие позиции сняли); unlinkAll — ещё и связь ручных цен с этим файлом (файл удаляется). */
+    private Set<Long> revertAuto(Long prId, Long fileId, boolean unlinkAll) {
+        Set<Long> reverted = new HashSet<>();
         for (PriceRequestItem it : items.lockByPriceRequestId(prId)) {
             if (!fileId.equals(it.getResponseFileId())) continue;
             if (it.isResponseAuto()) {
                 clear(it);
-                n++;
+                reverted.add(it.getId());
             } else if (unlinkAll) {
                 it.setResponseFileId(null);
                 it.setResponseFileRow(null);
             }
         }
-        return n;
+        return reverted;
     }
 
     private static void clear(PriceRequestItem it) {

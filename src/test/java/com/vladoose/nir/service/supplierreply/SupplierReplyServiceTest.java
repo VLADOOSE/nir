@@ -157,6 +157,140 @@ class SupplierReplyServiceTest {
         assertThat(item(0).getResponsePrice()).isNull();
     }
 
+    // ---- Валюта цен файла, выбранная на экране сверки (2026-10-18) -------------------------------------------------
+
+    /** Строки как у kzTable, но валюту знает не таблица: валюта и её источник заданы отдельно. */
+    static ReplyTable kzRows(String currency, ReplyCurrencySource kind, String... texts) {
+        ReplyTable t = table(null, "Скальпели офтальмологические: Скальпель MSL24", "4 700",
+                "Скальпели офтальмологические: Скальпель MST15", "4 200",
+                "Материал шовный стерильный нейлон 2056", "11 750", "Доставка", "5 000");
+        return t.withCurrency(currency, new ReplyTable.CurrencyFrom(kind, List.of(texts), null, null));
+    }
+
+    SupplierReplyFile file(ReplyOutcome o) {
+        return files.findById(o.fileIds().get(0)).orElseThrow();
+    }
+
+    /** Рубли нашлись в тексте (догадка), а цены в тенге: выбрали «тенге» — цены подставлены, источник — вручную, кто и когда. */
+    @Test
+    void setCurrency_textToMarket_pricesApplied() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.docx", kzRows("RUB", ReplyCurrencySource.TEXT, "…на сумму 18 450,00 руб.…"))), null);
+        assertThat(o.applied()).isZero();
+
+        SupplierReplyService.RateResult r = service.setCurrency(pr.getId(), o.fileIds().get(0), "KZT", "vlad");
+
+        assertThat(r.applied()).isEqualTo(3);
+        assertThat(r.removed()).isZero();
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("4700");
+        assertThat(item(0).isResponseAuto()).isTrue();
+        ReplyTable t = file(o).getParsed();
+        assertThat(t.currency()).isEqualTo("KZT");
+        assertThat(t.currencySource()).isEqualTo(ReplyCurrencySource.MANUAL);
+        assertThat(t.currencyFrom().by()).isEqualTo("vlad");
+        assertThat(t.currencyFrom().at()).isNotBlank();
+        assertThat(t.rows()).hasSize(4);   // таблица та же — меняется только валюта
+        assertThat(requests.findById(pr.getId()).orElseThrow().getStatus()).isEqualTo("RESPONDED");
+    }
+
+    /**
+     * Валюта не указана (считали тенге — цены подставлены), а цены в рублях: выбрали «рубли» — несверенные цены этого
+     * файла сняты, дальше — путь курса: «Пересчитать» подставляет цены × курс.
+     */
+    @Test
+    void setCurrency_noneToForeign_pricesRemoved_thenRatePath() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", kzRows(null, ReplyCurrencySource.NONE))), null);
+        assertThat(o.applied()).isEqualTo(3);
+
+        SupplierReplyService.RateResult r = service.setCurrency(pr.getId(), o.fileIds().get(0), "RUB", "vlad");
+
+        assertThat(r.applied()).isZero();
+        assertThat(r.removed()).isEqualTo(3);
+        assertThat(item(0).getResponsePrice()).isNull();
+        assertThat(item(0).getResponseFileId()).isNull();
+        assertThat(service.setRate(pr.getId(), o.fileIds().get(0), new BigDecimal("6")).applied()).isEqualTo(3);
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("28200");
+    }
+
+    /** В документе разные валюты: цены не подставлялись; выбрали «тенге» — подставлены. */
+    @Test
+    void setCurrency_mixedToMarket_pricesApplied() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.docx", kzRows(MoneyText.MIXED, ReplyCurrencySource.MIXED, "«в рублях»", "«в тенге»"))), null);
+        assertThat(o.applied()).isZero();
+        assertThat(service.setCurrency(pr.getId(), o.fileIds().get(0), "KZT", "vlad").applied()).isEqualTo(3);
+        assertThat(item(2).getResponsePrice()).isEqualByComparingTo("11750");
+    }
+
+    /** Ручная цена при смене валюты не трогается — и считается в «ручные не тронуты». */
+    @Test
+    void setCurrency_manualPriceKept() {
+        PriceRequestItem manual = pr.getItems().get(1);
+        manual.setResponsePrice(new BigDecimal("999"));
+        em.flush();
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", kzRows(null, ReplyCurrencySource.NONE))), null);
+        assertThat(o.applied()).isEqualTo(2);
+
+        SupplierReplyService.RateResult r = service.setCurrency(pr.getId(), o.fileIds().get(0), "KZT", "vlad");
+
+        assertThat(r.applied()).isEqualTo(2);
+        assertThat(r.keptManual()).isEqualTo(1);
+        assertThat(r.removed()).isZero();
+        assertThat(item(1).getResponsePrice()).isEqualByComparingTo("999");
+        assertThat(item(1).isResponseAuto()).isFalse();
+    }
+
+    /** Закрытый запрос: выбор запоминается, цены не трогаются (как курс у закрытого). */
+    @Test
+    void setCurrency_closedRequest_rememberedPricesKept() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", kzRows(null, ReplyCurrencySource.NONE))), null);
+        PriceRequest closed = requests.findById(pr.getId()).orElseThrow();
+        closed.setStatus("CLOSED");
+        em.flush();
+
+        SupplierReplyService.RateResult r = service.setCurrency(pr.getId(), o.fileIds().get(0), "RUB", "vlad");
+
+        assertThat(r.closed()).isTrue();
+        assertThat(r.applied()).isZero();
+        assertThat(file(o).getParsed().currency()).isEqualTo("RUB");
+        assertThat(file(o).getParsed().currencySource()).isEqualTo(ReplyCurrencySource.MANUAL);
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("4700");
+        assertThat(item(0).isResponseAuto()).isTrue();
+    }
+
+    /** Выбрать можно только тенге, рубли, доллары, евро, юани (регистр не важен); «у.е.», MIXED, чужое и пустое — 400. */
+    @Test
+    void setCurrency_unknownIs400() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.xlsx", kzRows(null, ReplyCurrencySource.NONE))), null);
+        Long f = o.fileIds().get(0);
+        for (String bad : new String[]{"UE", MoneyText.MIXED, "GBP", "", null}) {
+            assertThatThrownBy(() -> service.setCurrency(pr.getId(), f, bad, "vlad")).as(String.valueOf(bad))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("Неизвестная валюта");
+        }
+        assertThat(file(o).getParsed().currencySource()).isEqualTo(ReplyCurrencySource.NONE);
+        assertThat(service.setCurrency(pr.getId(), f, " kzt ", "vlad").closed()).isFalse();
+        assertThat(file(o).getParsed().currency()).isEqualTo("KZT");
+    }
+
+    /** Курс файла, вписанный для другой валюты, при смене валюты снимается; для той же — остаётся, цены по нему. */
+    @Test
+    void setCurrency_rateOfOtherCurrencyReset_sameKept() {
+        ReplyOutcome o = service.ingest(pr, List.of(parsed("kp.docx", kzRows("RUB", ReplyCurrencySource.TEXT, "…500 руб.…"))), null);
+        Long f = o.fileIds().get(0);
+        assertThat(service.setRate(pr.getId(), f, new BigDecimal("6")).applied()).isEqualTo(3);
+
+        SupplierReplyService.RateResult same = service.setCurrency(pr.getId(), f, "RUB", "vlad");
+        assertThat(same.applied()).isEqualTo(3);
+        assertThat(same.removed()).isZero();
+        assertThat(file(o).getRate()).isEqualByComparingTo("6");
+        assertThat(item(0).getResponsePrice()).isEqualByComparingTo("28200");
+
+        SupplierReplyService.RateResult other = service.setCurrency(pr.getId(), f, "USD", "vlad");
+        assertThat(other.applied()).isZero();
+        assertThat(other.removed()).isEqualTo(3);
+        assertThat(file(o).getRate()).isNull();
+        assertThat(file(o).getRateCurrency()).isNull();
+        assertThat(item(0).getResponsePrice()).isNull();
+    }
+
     @Test
     void closedRequestStoresFilesButNoPrices() {
         pr.setStatus("CLOSED");

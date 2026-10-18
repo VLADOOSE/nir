@@ -1,6 +1,7 @@
 package com.vladoose.nir.service.supplierreply;
 
 import com.vladoose.nir.entity.LineField;
+import com.vladoose.nir.entity.ReplyCurrencySource;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.ReplyTable;
 import org.apache.poi.hwpf.HWPFDocument;
@@ -278,11 +279,18 @@ public final class ReplyTableReader {
             columns.add(new ReplyTable.Column(c, h, role));
         }
         String currency = currency(columns, out);
+        ReplyTable.CurrencyFrom from = new ReplyTable.CurrencyFrom(ReplyCurrencySource.TABLE, List.of(), null, null);
         if (currency == null) {
             TextCurrency tc = textCurrency(rows, data, end, g.text());
-            if (tc != null) currency = tc.code();
+            if (tc == null) {
+                from = new ReplyTable.CurrencyFrom(ReplyCurrencySource.NONE, List.of(), null, null);
+            } else {
+                currency = tc.code();
+                ReplyCurrencySource kind = MoneyText.MIXED.equals(currency) ? ReplyCurrencySource.MIXED : ReplyCurrencySource.TEXT;
+                from = new ReplyTable.CurrencyFrom(kind, tc.fragments(), null, null);
+            }
         }
-        return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out));
+        return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out, from));
     }
 
     private static List<LineField> roles(List<String> row, Map<String, LineField> learned) {

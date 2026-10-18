@@ -126,20 +126,36 @@ public class SupplierReplyViewBuilder {
                         v == null ? "" : v.displayText(), v == null ? null : v.price(), v == null ? null : v.currency(),
                         v == null ? null : converted(v, market, rate)));
             }
-            tbl = new Table(table.source(), table.headerRow(), table.currency(), cols, rows);
+            tbl = new Table(table.source(), table.headerRow(), table.currency(), origin(table), cols, rows);
         }
         Tender t = pr.getTender();
         Head head = new Head(pr.getId(), pr.getStatus(), pr.getDistributor() == null ? "поставщик" : pr.getDistributor().getName(),
                 t.getId(), t.getTenderNumber(), t.getSource() == com.vladoose.nir.entity.Source.PRIVATE_REQUEST, pr.getSentAt(),
                 pr.getResponseDate(), market);
         Rate rateView = null;
-        if (table != null && cur != null && market != null && !cur.equals(market)) {
+        // «валюта не ясна» — без поля курса: пересчитывать нечего, сначала валюту выбирают над таблицей файла
+        if (table != null && cur != null && market != null && !cur.equals(market) && !MoneyText.MIXED.equals(cur)) {
             List<Object[]> last = files.findLastRate(pr.getMarket().name(), cur);
             rateView = new Rate(cur, rate == null ? null : rate.rate(), last.isEmpty() ? null : (BigDecimal) last.get(0)[0],
                     last.isEmpty() ? null : at(last.get(0)[1]));
         }
         return new SupplierReplyView(head, positions, sources(prId, infos), selected, tbl, new Counts(unverified, noPrice, unassigned),
                 rateView);
+    }
+
+    /** Откуда валюта цен файла — для строки над таблицей (у таблиц до 2026-10-18 источник выводится из валюты). */
+    static CurrencyOrigin origin(ReplyTable t) {
+        ReplyTable.CurrencyFrom f = t.currencyFrom();
+        List<String> texts = f == null || f.texts() == null ? List.of() : f.texts();
+        OffsetDateTime at = null;
+        if (f != null && f.at() != null) {
+            try {
+                at = OffsetDateTime.parse(f.at());
+            } catch (java.time.format.DateTimeParseException e) {
+                at = null;
+            }
+        }
+        return new CurrencyOrigin(t.currencySource().name(), texts, f == null ? null : f.by(), at);
     }
 
     private static Long select(Long requested, List<PriceRequestItem> its, List<ReplyFileInfo> infos) {
@@ -191,7 +207,7 @@ public class SupplierReplyViewBuilder {
      * Расхождения строки файла с позицией (спека §4.1). Строка в валюте курса: цена позиции — пересчёт строки — не
      * расхождение (пересчёт и так в строке файла: «60 000 тг = 10 000 руб. × 6»); не равна ему (поправили руками) —
      * «цена не по курсу 6: по строке файла — 60 000,00 тг»; курса нет — «цена файла в руб.» («в юанях»); валюта не ясна
-     * (в тексте документа — разные валюты) — так и сказано.
+     * (в тексте документа — разные валюты или суммы в тысячах) — так и сказано, с подсказкой выбрать валюту.
      */
     static List<String> flags(PriceRequestItem it, TenderLot l, ReplyRowValues r, double score, String market,
                               SupplierReplyService.FileRate rate) {
@@ -209,7 +225,7 @@ public class SupplierReplyViewBuilder {
             if (diff.compareTo(tol) > 0) out.add("сумма ≠ цена × кол-во");
         }
         if (MoneyText.MIXED.equals(r.currency())) {
-            out.add("валюта цены не ясна — в документе названы разные валюты");
+            out.add("валюта цены не ясна — укажите валюту цен файла");
         } else if (r.currency() != null && market != null && !r.currency().equals(market)) {
             BigDecimal conv = SupplierReplyService.converted(r, market, rate) ? SupplierReplyService.marketPrice(r, market, rate) : null;
             if (conv == null) {

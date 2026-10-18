@@ -265,4 +265,78 @@ class SupplierReplyApiTest {
                 .andExpect(jsonPath("$.rate.suggestedAt").value(notNullValue()))
                 .andExpect(jsonPath("$.positions[0].price").value(nullValue()));
     }
+
+    /**
+     * Валюта цен файла (2026-10-18): PUT — оператору 403, чужой рынок — 404, неизвестная валюта — 400; админ — вид и
+     * итог: валюта таблицы, источник «вручную» (кто и когда), несверенные цены сняты, дальше — поле курса.
+     */
+    @Test
+    void currencyPut_rightsMarketValidation_viewAndResult() throws Exception {
+        ingest();
+        String view = mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.table.currencyOrigin.source").value("TABLE"))
+                .andReturn().getResponse().getContentAsString();
+        Integer fileId = com.jayway.jsonpath.JsonPath.read(view, "$.fileId");
+        String url = "/api/price-requests/" + pr.getId() + "/files/" + fileId + "/currency";
+
+        mvc.perform(put(url).contentType("application/json").content("{\"currency\":\"RUB\"}").header("X-Market", "KZ")
+                        .with(user("op").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(url).contentType("application/json").content("{\"currency\":\"RUB\"}").header("X-Market", "RF")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound());
+        mvc.perform(put(url).contentType("application/json").content("{\"currency\":\"GBP\"}").header("X-Market", "KZ")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isBadRequest());
+
+        mvc.perform(put(url).contentType("application/json").content("{\"currency\":\"RUB\"}").header("X-Market", "KZ")
+                        .with(user("vlad").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applied").value(0))
+                .andExpect(jsonPath("$.removed").value(2))
+                .andExpect(jsonPath("$.closed").value(false))
+                .andExpect(jsonPath("$.view.table.currency").value("RUB"))
+                .andExpect(jsonPath("$.view.table.currencyOrigin.source").value("MANUAL"))
+                .andExpect(jsonPath("$.view.table.currencyOrigin.by").value("vlad"))
+                .andExpect(jsonPath("$.view.table.currencyOrigin.at").value(notNullValue()))
+                .andExpect(jsonPath("$.view.rate.currency").value("RUB"))
+                .andExpect(jsonPath("$.view.positions[0].price").value(nullValue()));
+    }
+
+    /**
+     * Откуда валюта — в виде экрана: из текста — TEXT и фрагмент; не названа — NONE; разные валюты — MIXED и без поля
+     * курса (пересчитывать нечего, сначала валюту выбирают).
+     */
+    @Test
+    void currencyOriginInView_textNoneMixed() throws Exception {
+        MarketContext.set(Market.KZ);
+        List<ReplyTable.Column> cols = List.of(new ReplyTable.Column(0, "Наименование", LineField.NAME),
+                new ReplyTable.Column(1, "Кол-во", LineField.QUANTITY), new ReplyTable.Column(2, "Цена", LineField.PRICE));
+        List<ReplyTable.Row> rows = List.of(new ReplyTable.Row(5, List.of("Кушетка медицинская смотровая КМС-01", "2", "4 700")));
+        ReplyTable text = new ReplyTable("таблица 1", 1, 3, "RUB", cols, rows,
+                new ReplyTable.CurrencyFrom(ReplyCurrencySource.TEXT, List.of("…на сумму 9 400,00 руб.…"), null, null));
+        ReplyTable none = new ReplyTable("таблица 1", 1, 3, null, cols, rows,
+                new ReplyTable.CurrencyFrom(ReplyCurrencySource.NONE, List.of(), null, null));
+        ReplyTable mixed = new ReplyTable("таблица 1", 1, 3, MoneyText.MIXED, cols, rows,
+                new ReplyTable.CurrencyFrom(ReplyCurrencySource.MIXED, List.of("Цены в рублях.", "Оплата в тенге."), null, null));
+        PriceRequest fresh = priceRequests.findById(pr.getId()).orElseThrow();
+        Long t = replies.ingest(fresh, List.of(parsed("text.docx", text)), null).fileIds().get(0);
+        Long n = replies.ingest(fresh, List.of(parsed("none.docx", none)), null).fileIds().get(0);
+        Long m = replies.ingest(fresh, List.of(parsed("mixed.docx", mixed)), null).fileIds().get(0);
+        MarketContext.clear();
+        String base = "/api/price-requests/" + pr.getId() + "/reply";
+
+        mvc.perform(get(base).param("fileId", String.valueOf(t)).header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.table.currencyOrigin.source").value("TEXT"))
+                .andExpect(jsonPath("$.table.currencyOrigin.texts[0]").value("…на сумму 9 400,00 руб.…"))
+                .andExpect(jsonPath("$.rate.currency").value("RUB"));
+        mvc.perform(get(base).param("fileId", String.valueOf(n)).header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.table.currency").value(nullValue()))
+                .andExpect(jsonPath("$.table.currencyOrigin.source").value("NONE"))
+                .andExpect(jsonPath("$.rate").value(nullValue()));
+        mvc.perform(get(base).param("fileId", String.valueOf(m)).header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(jsonPath("$.table.currencyOrigin.source").value("MIXED"))
+                .andExpect(jsonPath("$.table.currencyOrigin.texts", hasSize(2)))
+                .andExpect(jsonPath("$.rate").value(nullValue()));
+    }
 }

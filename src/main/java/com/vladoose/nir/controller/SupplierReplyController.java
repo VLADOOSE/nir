@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.ReplyColumnRole;
+import com.vladoose.nir.dto.request.ReplyCurrencyRequest;
 import com.vladoose.nir.dto.request.ReplyRateRequest;
 import com.vladoose.nir.dto.response.SupplierReplyRateResponse;
 import com.vladoose.nir.dto.response.SupplierReplyView;
@@ -101,6 +102,18 @@ public class SupplierReplyController {
     @PreAuthorize("hasRole('ADMIN')")
     public SupplierReplyRateResponse rate(@PathVariable Long id, @PathVariable Long fileId, @RequestBody ReplyRateRequest body) {
         SupplierReplyService.RateResult r = service.setRate(id, fileId, body == null ? null : body.rate());
+        return new SupplierReplyRateResponse(views.view(id, fileId), r.applied(), r.removed(), r.keptManual(), r.closed());
+    }
+
+    /**
+     * Валюта цен файла, выбранная человеком (найденная в тексте — догадка, «разные валюты» — без выхода): цены файла
+     * подставляются заново. В ответе — вид и итог, как у курса.
+     */
+    @PutMapping("/files/{fileId}/currency")
+    @PreAuthorize("hasRole('ADMIN')")
+    public SupplierReplyRateResponse currency(@PathVariable Long id, @PathVariable Long fileId, @RequestBody ReplyCurrencyRequest body) {
+        String user = SecurityContextHolder.getContext().getAuthentication().getName();
+        SupplierReplyService.RateResult r = service.setCurrency(id, fileId, body == null ? null : body.currency(), user);
         return new SupplierReplyRateResponse(views.view(id, fileId), r.applied(), r.removed(), r.keptManual(), r.closed());
     }
 

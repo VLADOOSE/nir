@@ -70,6 +70,41 @@ class SupplierReplySchemaTest {
         assertThat(files.findInfo(p.getId())).singleElement().extracting(i -> i.fileName()).isEqualTo("kp.xlsx");
     }
 
+    /**
+     * Откуда валюта (2026-10-18) переживает JSONB; таблица, записанная до него (поля нет), читается, а источник
+     * выводится из валюты: нет — NONE, есть — TABLE.
+     */
+    @Test
+    void currencyFromRoundTrips_oldJsonWithoutIt() {
+        PriceRequest p = pr();
+        ReplyTable manual = table().withCurrency("RUB", new ReplyTable.CurrencyFrom(ReplyCurrencySource.MANUAL, List.of(), "vlad",
+                "2026-10-18T10:15:00+05:00"));
+        ReplyTable text = table().withCurrency("RUB", new ReplyTable.CurrencyFrom(ReplyCurrencySource.TEXT,
+                List.of("…на сумму 18 450,00 руб.…"), null, null));
+        Long a = files.save(SupplierReplyFile.builder().priceRequestId(p.getId()).fileName("a.xlsx").sha256("cf-a")
+                .kind(ReplyFileKind.EXCEL).parseStatus(ReplyParseStatus.PARSED).parsed(manual).build()).getId();
+        Long b = files.save(SupplierReplyFile.builder().priceRequestId(p.getId()).fileName("b.docx").sha256("cf-b")
+                .kind(ReplyFileKind.WORD).parseStatus(ReplyParseStatus.PARSED).parsed(text).build()).getId();
+        Long oldNone = file(p.getId(), "cf-old-none").getId();
+        Long oldTable = file(p.getId(), "cf-old-table").getId();
+        em.flush();
+        em.createNativeQuery("UPDATE supplier_reply_file SET parsed = (parsed - 'currencyFrom') || '{\"currency\": null}'::jsonb WHERE id = :id")
+                .setParameter("id", oldNone).executeUpdate();
+        em.createNativeQuery("UPDATE supplier_reply_file SET parsed = parsed - 'currencyFrom' WHERE id = :id")
+                .setParameter("id", oldTable).executeUpdate();
+        em.clear();
+
+        assertThat(files.findParsed(a).orElseThrow()).isEqualTo(manual);
+        assertThat(files.findParsed(b).orElseThrow()).isEqualTo(text);
+        ReplyTable none = files.findParsed(oldNone).orElseThrow();
+        assertThat(none.currencyFrom()).isNull();
+        assertThat(none.currencySource()).isEqualTo(ReplyCurrencySource.NONE);
+        assertThat(files.findParsed(oldTable).orElseThrow().currencySource()).isEqualTo(ReplyCurrencySource.TABLE);
+        Object raw = em.createNativeQuery("SELECT parsed ->> 'currencySource' FROM supplier_reply_file WHERE id = :id")
+                .setParameter("id", a).getSingleResult();
+        assertThat(raw).as("выведенный источник в JSONB не пишется").isNull();
+    }
+
     @Test
     void sameFileTwiceInOneRequestRejected() {
         PriceRequest p = pr();
