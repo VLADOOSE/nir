@@ -8,6 +8,7 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.ChatService;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.TenderService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +44,7 @@ public class DealTimelineService {
     private static final Set<String> ANSWERED = Set.of("RESPONDED", "ACCEPTED", "DECLINED");
 
     private final PrivateRequestService privateRequests;
+    private final TenderService tenders;
     private final LeadRepository leads;
     private final ChatMessageRepository messages;
     private final ChatService chats;
@@ -50,13 +52,15 @@ public class DealTimelineService {
     private final InboundEmailRepository inbound;
     private final SupplierReplyFileRepository replyFiles;
     private final ClientOfferRepository offers;
+    private final ActivityApplyRepository applies;
     private final DealEventRepository events;
 
-    public DealTimelineService(PrivateRequestService privateRequests, LeadRepository leads,
+    public DealTimelineService(PrivateRequestService privateRequests, TenderService tenders, LeadRepository leads,
                                ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
                                InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
-                               ClientOfferRepository offers, DealEventRepository events) {
+                               ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events) {
         this.privateRequests = privateRequests;
+        this.tenders = tenders;
         this.leads = leads;
         this.messages = messages;
         this.chats = chats;
@@ -64,6 +68,7 @@ public class DealTimelineService {
         this.inbound = inbound;
         this.replyFiles = replyFiles;
         this.offers = offers;
+        this.applies = applies;
         this.events = events;
     }
 
@@ -79,6 +84,20 @@ public class DealTimelineService {
         addOffers(all, t.getId());
         addEvents(all, t.getId());
         return page(all, cursor, n);
+    }
+
+    /** История тендера (§4.2): найден / создан, запросы цен и ответы, заявки на участие и их даты, события. */
+    @Transactional(readOnly = true)
+    public DealTimelineResponse forTender(Long id, OffsetDateTime before, int limit) {
+        Tender t = tenders.findPublic(id);
+        OffsetDateTime cursor = before == null ? FAR : before;
+        ZoneId zone = zone(t);
+        List<DealTimelineItem> all = new ArrayList<>();
+        all.add(item(t.getCreatedAt(), "TENDER_FOUND", foundText(t), null, null, null));
+        addSupply(all, t, zone);
+        addApplies(all, t.getId(), zone);
+        addEvents(all, t.getId());
+        return page(all, cursor, clamp(limit));
     }
 
     public DealTimelineItem toItem(DealEvent e) {
@@ -209,6 +228,30 @@ public class DealTimelineService {
             last = pr.getSentAt();
         }
         return windows;
+    }
+
+    private static String foundText(Tender t) {
+        if (t.getPlatform() == TenderPlatform.GOSZAKUP) return "Тендер найден на goszakup.gov.kz";
+        if (t.getPlatform() == TenderPlatform.SK_PHARMACY) return "Тендер найден на СК-Фармации";
+        return "Тендер создан вручную";
+    }
+
+    private void addApplies(List<DealTimelineItem> all, Long tenderId, ZoneId zone) {
+        for (ActivityApply a : applies.findByTenderId(tenderId)) {
+            all.add(item(a.getCreatedAt(), "APPLY_CREATED", "Заявка на участие № " + a.getId() + " создана", null,
+                    "APPLY", a.getId()));
+            if (a.getContractSignedAt() != null) {
+                all.add(dateItem(a.getContractSignedAt(), zone, "CONTRACT", "Договор"
+                        + (blank(a.getContractNumber()) ? "" : " № " + a.getContractNumber().strip()) + " подписан", a.getId()));
+            }
+            if (a.getDeliveredAt() != null) all.add(dateItem(a.getDeliveredAt(), zone, "DELIVERED", "Поставлено", a.getId()));
+            if (a.getPaidAt() != null) all.add(dateItem(a.getPaidAt(), zone, "PAID", "Оплачено", a.getId()));
+        }
+    }
+
+    private static DealTimelineItem dateItem(LocalDate d, ZoneId zone, String kind, String text, Long applyId) {
+        return new DealTimelineItem(d.atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime(), true, kind, text, null,
+                "APPLY", applyId, null);
     }
 
     private void addOffers(List<DealTimelineItem> all, Long tenderId) {
