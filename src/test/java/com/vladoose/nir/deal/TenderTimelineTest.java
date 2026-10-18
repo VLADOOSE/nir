@@ -62,6 +62,34 @@ class TenderTimelineTest {
         assertThat(controller.tenderProgress(t.getId()).steps()).hasSize(7);
     }
 
+    /** Тендер, импортированный до V26: даты создания нет — строка истории по дате публикации, первой в дне. */
+    @Test
+    @WithMockUser(username = "vlad", roles = "ADMIN")
+    void oldTenderWithoutCreatedAtShowsPublishDay() {
+        Tender t = tenders.save(Tender.builder().tenderNumber("ZZ-T-" + System.nanoTime()).status("ACTIVE")
+                .platform(TenderPlatform.GOSZAKUP).publishDate(LocalDate.of(2026, 10, 8)).build());
+        em.flush();
+        em.createNativeQuery("update tender set created_at = null where id = :id").setParameter("id", t.getId())
+                .executeUpdate();
+        em.clear();
+        controller.tenderEvent(t.getId(), new DealEventRequest(DealEventType.CALL, "звонил заказчику"));
+        em.flush();
+        List<DealTimelineItem> items = controller.tenderTimeline(t.getId(), null, 50).items();
+        assertThat(items.get(0)).satisfies(i -> {
+            assertThat(i.kind()).isEqualTo("TENDER_FOUND");
+            assertThat(i.text()).isEqualTo("Тендер опубликован на goszakup.gov.kz");
+            assertThat(i.dateOnly()).isTrue();
+            assertThat(i.at()).isEqualTo(LocalDate.of(2026, 10, 8).atStartOfDay(Market.KZ.zone()).toOffsetDateTime());
+        });
+
+        Tender bare = tenders.save(Tender.builder().tenderNumber("ZZ-T-" + System.nanoTime()).status("ACTIVE").build());
+        em.flush();
+        em.createNativeQuery("update tender set created_at = null where id = :id").setParameter("id", bare.getId())
+                .executeUpdate();
+        em.clear();
+        assertThat(controller.tenderTimeline(bare.getId(), null, 50).items()).isEmpty();
+    }
+
     @Test
     @WithMockUser(roles = "USER")
     void guardsAndRights() {

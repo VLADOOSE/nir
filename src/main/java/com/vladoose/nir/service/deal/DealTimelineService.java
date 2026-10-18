@@ -93,7 +93,13 @@ public class DealTimelineService {
         OffsetDateTime cursor = before == null ? FAR : before;
         ZoneId zone = zone(t);
         List<DealTimelineItem> all = new ArrayList<>();
-        all.add(item(t.getCreatedAt(), "TENDER_FOUND", foundText(t), null, null, null));
+        if (t.getCreatedAt() != null) {
+            all.add(item(t.getCreatedAt(), "TENDER_FOUND", foundText(t), null, null, null));
+        } else if (t.getPublishDate() != null) {
+            // импортирован до V26 — когда нашли, неизвестно; известна дата публикации, она и открывает историю
+            all.add(new DealTimelineItem(t.getPublishDate().atStartOfDay(zone).toOffsetDateTime(), true,
+                    "TENDER_FOUND", publishedText(t), null, null, null, null));
+        }
         addSupply(all, t, zone);
         addApplies(all, t.getId(), zone);
         addEvents(all, t.getId());
@@ -237,6 +243,12 @@ public class DealTimelineService {
         if (t.getPlatform() == TenderPlatform.GOSZAKUP) return "Тендер найден на goszakup.gov.kz";
         if (t.getPlatform() == TenderPlatform.SK_PHARMACY) return "Тендер найден на СК-Фармации";
         return "Тендер создан вручную";
+    }
+
+    private static String publishedText(Tender t) {
+        if (t.getPlatform() == TenderPlatform.GOSZAKUP) return "Тендер опубликован на goszakup.gov.kz";
+        if (t.getPlatform() == TenderPlatform.SK_PHARMACY) return "Тендер опубликован на СК-Фармации";
+        return "Тендер опубликован";
     }
 
     private void addApplies(List<DealTimelineItem> all, Long tenderId, ZoneId zone) {
