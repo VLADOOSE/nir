@@ -2,6 +2,7 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.*;
+import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.service.PriceRequestSendService;
 import com.vladoose.nir.service.PrivateRequestImportService;
@@ -11,6 +12,7 @@ import com.vladoose.nir.service.RfqDocumentService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestPricesService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestRfqService;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
+import com.vladoose.nir.util.ListLimit;
 import com.vladoose.nir.util.PastedLinesParser;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
@@ -52,11 +54,15 @@ public class PrivateRequestController {
         this.pricesService = pricesService;
     }
 
+    /** limit — не больше стольких строк (глобальный поиск просит 5); без него — до {@link PrivateRequestService#LIST_LIMIT}. */
     @GetMapping
     public List<PrivateRequestListItemResponse> list(
             @RequestParam(defaultValue = "OPEN") PrivateRequestService.ListFilter status,
-            @RequestParam(required = false) String q) {
-        return viewBuilder.list(service.list(status, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Integer limit) {
+        List<Tender> rows = service.list(status, q);
+        int n = ListLimit.of(limit, PrivateRequestService.LIST_LIMIT);
+        return viewBuilder.list(rows.size() > n ? rows.subList(0, n) : rows);
     }
 
     @PostMapping

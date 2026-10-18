@@ -106,7 +106,13 @@ public class ClientOfferService {
 
     @Transactional(readOnly = true)
     public List<ClientOffer> list(Set<ClientOfferStatus> statuses, String q) {
-        Pageable top = PageRequest.of(0, LIST_LIMIT);
+        return list(statuses, q, LIST_LIMIT);
+    }
+
+    /** То же, не больше {@code limit} строк (1…LIST_LIMIT) — обрезка в самом запросе. */
+    @Transactional(readOnly = true)
+    public List<ClientOffer> list(Set<ClientOfferStatus> statuses, String q, int limit) {
+        Pageable top = PageRequest.of(0, Math.max(1, Math.min(limit, LIST_LIMIT)));
         if (q == null || q.isBlank()) return repository.findJournal(statuses, top);
         String needle = q.trim();
         Integer number = needle.matches("\\d{1,9}") ? Integer.valueOf(needle) : null;

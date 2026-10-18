@@ -19,6 +19,8 @@ import com.vladoose.nir.service.ChatIngestWriter;
 import com.vladoose.nir.service.LeadIntakeService;
 import com.vladoose.nir.service.LeadService;
 import com.vladoose.nir.service.PrivateRequestService;
+import jakarta.persistence.EntityManager;
+import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +30,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -50,6 +53,7 @@ class LeadCrossLinksTest {
     @Autowired PrivateRequestService privateRequests;
     @Autowired LeadRepository leadRepository;
     @Autowired ChatIngestWriter chatWriter;
+    @Autowired EntityManager em;
 
     /** Метка контакта: поиск по ней отрезает обращения живой nirdb — в выдаче только обращения теста. */
     private final String tag = "ZZ-переходы-" + System.nanoTime();
@@ -91,11 +95,11 @@ class LeadCrossLinksTest {
         orphan.setStatus(LeadStatus.CONVERTED);
         leadRepository.flush();
 
-        assertThat(ids(leadController.list("ACTIVE", null, tag)))
+        assertThat(ids(leadController.list("ACTIVE", null, tag, null)))
                 .containsExactlyInAnyOrder(fresh.getId(), inWork.getId(), open.getId())
                 .doesNotContain(won.getId(), lost.getId(), cancelled.getId(), closed.getId(), orphan.getId());
         // ключ — без учёта регистра и пробелов по краям, как прочие значения status
-        assertThat(ids(leadController.list(" active ", null, tag)))
+        assertThat(ids(leadController.list(" active ", null, tag, null)))
                 .containsExactlyInAnyOrder(fresh.getId(), inWork.getId(), open.getId());
     }
 
@@ -105,10 +109,57 @@ class LeadCrossLinksTest {
         Lead phone = converted(PrivateRequestStatus.NEW);
         Lead whatsapp = lead(LeadChannel.WHATSAPP, LeadStatus.NEW);
 
-        assertThat(ids(leadController.list("ACTIVE", LeadChannel.PHONE, tag))).containsExactly(phone.getId());
-        assertThat(ids(leadController.list("ACTIVE", LeadChannel.WHATSAPP, tag))).containsExactly(whatsapp.getId());
-        assertThat(ids(leadController.list("ACTIVE", null, tag)))
+        assertThat(ids(leadController.list("ACTIVE", LeadChannel.PHONE, tag, null))).containsExactly(phone.getId());
+        assertThat(ids(leadController.list("ACTIVE", LeadChannel.WHATSAPP, tag, null))).containsExactly(whatsapp.getId());
+        assertThat(ids(leadController.list("ACTIVE", null, tag, null)))
                 .containsExactlyInAnyOrder(phone.getId(), whatsapp.getId());
+    }
+
+    /**
+     * «Активные» — только своего рынка (ревью, 2026-10-18): обращение и его заявка другого рынка не видны ни без
+     * канала, ни с ним. Отбор — HQL по обращению, его режет фильтр рынка; нативный запрос без рынка его бы обошёл.
+     */
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void activeIsScopedToMarket() {
+        Lead kzOpen = converted(PrivateRequestStatus.NEW);
+        Lead kzNew = lead(LeadChannel.PHONE, LeadStatus.NEW);
+        MarketContext.set(Market.RF);
+        Lead rfOpen = converted(PrivateRequestStatus.NEW);
+        Lead rfNew = lead(LeadChannel.PHONE, LeadStatus.NEW);
+        leadRepository.flush();
+
+        assertThat(ids(leadController.list("ACTIVE", null, tag, null))).containsExactlyInAnyOrder(rfOpen.getId(), rfNew.getId());
+        assertThat(ids(leadController.list("ACTIVE", LeadChannel.PHONE, tag, null)))
+                .containsExactlyInAnyOrder(rfOpen.getId(), rfNew.getId());
+        MarketContext.set(Market.KZ);
+        assertThat(ids(leadController.list("ACTIVE", null, tag, null))).containsExactlyInAnyOrder(kzOpen.getId(), kzNew.getId());
+        assertThat(ids(leadController.list("ACTIVE", LeadChannel.PHONE, tag, null)))
+                .containsExactlyInAnyOrder(kzOpen.getId(), kzNew.getId());
+    }
+
+    /**
+     * Номер заявки у превращённого обращения берётся тем же запросом, что и список (ревью, 2026-10-18): маппер читает
+     * его у каждой строки, и ленивая ссылка давала запрос на каждое превращённое обращение (до 300 на список).
+     */
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void listsFetchPrivateRequestWithLeads() {
+        converted(PrivateRequestStatus.NEW);
+        em.flush();
+        em.clear();
+
+        assertThat(leadService.listActive(null, tag))
+                .singleElement().satisfies(l -> assertThat(Hibernate.isInitialized(l.getPrivateRequest())).isTrue());
+        em.clear();
+        assertThat(leadService.listActive(LeadChannel.PHONE, tag))
+                .singleElement().satisfies(l -> assertThat(Hibernate.isInitialized(l.getPrivateRequest())).isTrue());
+        em.clear();
+        assertThat(leadService.list(EnumSet.of(LeadStatus.CONVERTED), null, tag))
+                .singleElement().satisfies(l -> assertThat(Hibernate.isInitialized(l.getPrivateRequest())).isTrue());
+        em.clear();
+        assertThat(leadService.list(EnumSet.of(LeadStatus.CONVERTED), LeadChannel.PHONE, tag))
+                .singleElement().satisfies(l -> assertThat(Hibernate.isInitialized(l.getPrivateRequest())).isTrue());
     }
 
     @Test
@@ -118,9 +169,9 @@ class LeadCrossLinksTest {
         Lead open = converted(PrivateRequestStatus.NEW);
         Lead won = converted(PrivateRequestStatus.WON);
 
-        assertThat(ids(leadController.list("NEW,IN_WORK", null, tag))).containsExactly(fresh.getId());
-        assertThat(ids(leadController.list("CONVERTED", null, tag))).containsExactlyInAnyOrder(open.getId(), won.getId());
-        assertThat(ids(leadController.list("ALL", null, tag)))
+        assertThat(ids(leadController.list("NEW,IN_WORK", null, tag, null))).containsExactly(fresh.getId());
+        assertThat(ids(leadController.list("CONVERTED", null, tag, null))).containsExactlyInAnyOrder(open.getId(), won.getId());
+        assertThat(ids(leadController.list("ALL", null, tag, null)))
                 .containsExactlyInAnyOrder(fresh.getId(), open.getId(), won.getId());
     }
 

@@ -14,6 +14,7 @@ import com.vladoose.nir.integration.westmed.WestmedLeadScheduler;
 import com.vladoose.nir.mapper.LeadResponseMapper;
 import com.vladoose.nir.service.ChatService;
 import com.vladoose.nir.service.LeadService;
+import com.vladoose.nir.util.ListLimit;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -46,15 +47,17 @@ public class LeadController {
     /**
      * status — список статусов через запятую, «ALL» или «ACTIVE»: «Новое», «В работе» и «Заявка создана», пока частная
      * заявка в работе (фильтр «Активные» экрана, 2026-10-16). Без параметра — «NEW,IN_WORK», как раньше.
+     * limit — не больше стольких строк (глобальный поиск просит 5); без него — до {@link LeadService#LIST_LIMIT}.
      */
     @GetMapping
     public List<LeadListItemResponse> list(@RequestParam(defaultValue = "NEW,IN_WORK") String status,
                                            @RequestParam(required = false) LeadChannel channel,
-                                           @RequestParam(required = false) String q) {
+                                           @RequestParam(required = false) String q,
+                                           @RequestParam(required = false) Integer limit) {
         List<Lead> rows = ACTIVE.equalsIgnoreCase(status.trim())
                 ? service.listActive(channel, q)
                 : service.list(parseStatuses(status), channel, q);
-        return rows.stream().map(mapper::toListItem).toList();
+        return rows.stream().limit(ListLimit.of(limit, LeadService.LIST_LIMIT)).map(mapper::toListItem).toList();
     }
 
     @GetMapping("/count")

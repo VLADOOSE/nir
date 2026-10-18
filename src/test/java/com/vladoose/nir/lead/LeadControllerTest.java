@@ -71,7 +71,7 @@ class LeadControllerTest {
     void listItemPreviewsFirstTwoPositions() {
         Lead l = lead(null);
 
-        LeadListItemResponse item = controller.list("NEW", null, "ОБН-150").stream()
+        LeadListItemResponse item = controller.list("NEW", null, "ОБН-150", null).stream()
                 .filter(x -> x.getId().equals(l.getId())).findFirst().orElseThrow();
 
         assertThat(item.getItemsCount()).isEqualTo(3);

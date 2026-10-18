@@ -16,6 +16,7 @@ import com.vladoose.nir.service.ClientOfferMapper;
 import com.vladoose.nir.service.ClientOfferRegistryService;
 import com.vladoose.nir.service.ClientOfferRequestService;
 import com.vladoose.nir.service.ClientOfferService;
+import com.vladoose.nir.util.ListLimit;
 import jakarta.validation.Valid;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -49,10 +50,12 @@ public class ClientOfferController {
         this.registryOffers = registryOffers;
     }
 
+    /** limit — не больше стольких строк (глобальный поиск просит 5); без него — до {@link ClientOfferService#LIST_LIMIT}. */
     @GetMapping
     public List<ClientOfferListItemResponse> list(@RequestParam(defaultValue = "ALL") String status,
-                                                  @RequestParam(required = false) String q) {
-        return mapper.toListItems(service.list(parseStatuses(status), q));
+                                                  @RequestParam(required = false) String q,
+                                                  @RequestParam(required = false) Integer limit) {
+        return mapper.toListItems(service.list(parseStatuses(status), q, ListLimit.of(limit, ClientOfferService.LIST_LIMIT)));
     }
 
     @PostMapping
