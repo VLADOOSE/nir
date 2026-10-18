@@ -1,5 +1,6 @@
 package com.vladoose.nir.dto.response;
 
+import com.vladoose.nir.entity.TechSpecStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -23,4 +24,6 @@ public class TenderLotResponse {
     private ProposedEquipmentResponse proposedEquipment;
     /** Лота больше нет на площадке; остался, потому что на него есть запрос КП или позиция заявки (B5). */
     private OffsetDateTime sourceRemovedAt;
+    /** Разбор ТЗ импортного лота (пусто — ручной лот): чип «Есть ТЗ» и шаг «Лоты и ТЗ» читают один признак. */
+    private TechSpecStatus techSpecStatus;
 }

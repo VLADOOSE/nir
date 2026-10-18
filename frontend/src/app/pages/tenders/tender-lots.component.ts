@@ -430,7 +430,8 @@ export class TenderLotsComponent implements OnChanges {
       return { label: 'Отказы', tone: 'danger', filled: true };
     if (prStatuses.length) return { label: 'КП отправлено', tone: 'warn', filled: true };
     if (l.proposedEquipment) return { label: 'Модель выбрана', tone: 'accent', filled: true };
-    if (l.requiredSpec) return { label: 'Есть ТЗ', tone: 'accent', filled: true };
+    // импортный лот — по разбору ТЗ (как шаг «Лоты и ТЗ»: описание с площадки — ещё не ТЗ), ручной — по требованиям
+    if (l.techSpecStatus ? l.techSpecStatus === 'OK' : l.requiredSpec) return { label: 'Есть ТЗ', tone: 'accent', filled: true };
     return { label: 'Нужно ТЗ', tone: 'muted', filled: false };
   }
 

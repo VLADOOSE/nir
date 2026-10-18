@@ -2,6 +2,7 @@ package com.vladoose.nir.deal;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.controller.DealController;
+import com.vladoose.nir.controller.TenderController;
 import com.vladoose.nir.dto.request.DealEventRequest;
 import com.vladoose.nir.dto.response.DealTimelineItem;
 import com.vladoose.nir.entity.*;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TenderTimelineTest {
 
     @Autowired DealController controller;
+    @Autowired TenderController tenderController;
     @Autowired TenderRepository tenders;
     @Autowired ActivityApplyRepository applies;
     @Autowired PrivateRequestService requests;
@@ -88,6 +90,19 @@ class TenderTimelineTest {
                 .executeUpdate();
         em.clear();
         assertThat(controller.tenderTimeline(bare.getId(), null, 50).items()).isEmpty();
+    }
+
+    /** Чип лота «Есть ТЗ» и шаг «Лоты и ТЗ» читают один признак — статус разбора ТЗ доезжает до лота. */
+    @Test
+    @WithMockUser(roles = "USER")
+    void lotResponseCarriesTechSpecStatus() {
+        Tender t = tenders.save(Tender.builder().tenderNumber("ZZ-T-" + System.nanoTime()).status("ACTIVE")
+                .platform(TenderPlatform.GOSZAKUP).build());
+        t.getLots().add(TenderLot.builder().tender(t).lotNumber(1).equipName("Коробка").quantity(1)
+                .requiredSpec("Дезсредства").techSpecStatus(TechSpecStatus.PENDING).build());
+        em.flush();
+        assertThat(tenderController.getLots(t.getId())).singleElement()
+                .satisfies(l -> assertThat(l.getTechSpecStatus()).isEqualTo(TechSpecStatus.PENDING));
     }
 
     @Test

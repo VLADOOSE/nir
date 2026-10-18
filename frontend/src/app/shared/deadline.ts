@@ -53,5 +53,11 @@ export function daysUntil(t: Deadlined | null | undefined, market: Market, now =
 
 /** Сегодняшняя дата рынка «2026-10-13» — по его часам, не по поясу браузера (срок РУ «истекло», спека 2026-10-13 §2.1). */
 export function marketToday(market: Market, now = Date.now()): string {
-  return new Date(now + OFFSET_HOURS[market] * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return marketDate(now, market);
+}
+
+/** Дата момента по часам рынка «2026-10-08»: строка истории «только дата» — не по поясу браузера. */
+export function marketDate(at: string | number, market: Market): string {
+  const ms = typeof at === 'number' ? at : Date.parse(at);
+  return new Date(ms + OFFSET_HOURS[market] * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

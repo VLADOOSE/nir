@@ -7,6 +7,8 @@ import { ApiService } from '../services/api.service';
 import { NotificationService } from '../services/notification.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { errorText } from './error-text';
+import { marketDate } from './deadline';
+import { MarketService } from '../services/market.service';
 import { KIND_ICONS, timelineLink } from './deal';
 import type { DealKind, DealTimelineItem } from './deal';
 
@@ -100,7 +102,8 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
   private ro?: ResizeObserver;
   private readonly onVisible = () => { if (document.visibilityState === 'visible') this.refresh(); };
 
-  constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef) {}
+  constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef,
+              private market: MarketService) {}
 
   ngOnChanges(ch: SimpleChanges) {
     if (ch['dealId'] || ch['kind']) this.load();
@@ -217,10 +220,13 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
   }
 
   when(i: DealTimelineItem): string {
-    const d = new Date(i.at);
+    if (i.dateOnly) {   // дата из документа (договор, публикация) — по часам рынка, иначе у браузера западнее съедет на день
+      const [, m, d] = marketDate(i.at, this.market.value).split('-');
+      return d + '.' + m;
+    }
+    const t = new Date(i.at);
     const p = (n: number) => String(n).padStart(2, '0');
-    const day = p(d.getDate()) + '.' + p(d.getMonth() + 1);
-    return i.dateOnly ? day : day + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    return p(t.getDate()) + '.' + p(t.getMonth() + 1) + ' ' + p(t.getHours()) + ':' + p(t.getMinutes());
   }
 
   icon(kind: string) { return KIND_ICONS[kind] ?? '•'; }
