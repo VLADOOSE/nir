@@ -1,6 +1,7 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.service.deal.DealEventService;
 import com.vladoose.nir.dto.request.ClientOfferItemDto;
 import com.vladoose.nir.dto.request.ClientOfferUpdateRequest;
 import com.vladoose.nir.dto.response.PreviewPagesResponse;
@@ -46,6 +47,8 @@ import java.util.function.Supplier;
 @Service
 public class ClientOfferService {
 
+    private final DealEventService dealEvents;
+
     private static final Logger log = LoggerFactory.getLogger(ClientOfferService.class);
 
     public static final int LIST_LIMIT = 300;
@@ -81,7 +84,9 @@ public class ClientOfferService {
                               FacilityRepository facilities, ClientOfferCalculator calculator, KpDocumentBuilder builder,
                               KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer preview, KpDocxRenderer docx,
                               PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems,
-                              MedRegistryRepository registry, MedEquipmentRepository equipment) {
+                              MedRegistryRepository registry, MedEquipmentRepository equipment,
+                              DealEventService dealEvents) {
+        this.dealEvents = dealEvents;
         this.repository = repository;
         this.profiles = profiles;
         this.facilities = facilities;
@@ -238,10 +243,27 @@ public class ClientOfferService {
     @Transactional
     public ClientOffer setStatus(Long id, ClientOfferStatus status) {
         ClientOffer o = get(id);
+        ClientOfferStatus before = o.getStatus();
         o.setStatus(status);
         if (status == ClientOfferStatus.SENT && o.getSentAt() == null) o.setSentAt(OffsetDateTime.now());
         o.setUpdatedAt(OffsetDateTime.now());
-        return repository.saveAndFlush(o);
+        ClientOffer saved = repository.saveAndFlush(o);
+        // DRAFT → SENT в ленте и так видно (sent_at); у КП не из заявки ленты нет
+        if (o.getTenderId() != null && before != status
+                && !(before == ClientOfferStatus.DRAFT && status == ClientOfferStatus.SENT)) {
+            dealEvents.stage(o.getTenderId(), DealEventService.OFFER_STATUS, offerStatusText(o.getNumber(), status), o.getId());
+        }
+        return saved;
+    }
+
+    static String offerStatusText(Integer number, ClientOfferStatus status) {
+        String prefix = "КП № " + number + ": ";
+        return switch (status) {
+            case ACCEPTED -> prefix + "клиент согласился";
+            case REJECTED -> prefix + "клиент отказался";
+            case SENT -> prefix + "снова «отправлено»";
+            case DRAFT -> prefix + "снова черновик";
+        };
     }
 
     @Transactional

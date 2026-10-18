@@ -7,6 +7,8 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ActivityApplyRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
+import com.vladoose.nir.service.deal.DealEventService;
+import com.vladoose.nir.util.DocFormat;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +19,17 @@ import java.math.RoundingMode;
 @Service
 public class WinnerAssignmentService {
 
+    private final DealEventService dealEvents;
+
     private final TenderService tenderService;
     private final PriceRequestItemRepository priceRequestItemRepository;
     private final ActivityApplyRepository applyRepository;
 
     public WinnerAssignmentService(TenderService tenderService,
                                    PriceRequestItemRepository priceRequestItemRepository,
-                                   ActivityApplyRepository applyRepository) {
+                                   ActivityApplyRepository applyRepository,
+                                   DealEventService dealEvents) {
+        this.dealEvents = dealEvents;
         this.tenderService = tenderService;
         this.priceRequestItemRepository = priceRequestItemRepository;
         this.applyRepository = applyRepository;
@@ -82,6 +88,9 @@ public class WinnerAssignmentService {
         ApplyItem persisted = saved.getItems().stream()
                 .filter(ai -> ai.getTenderLot() != null && ai.getTenderLot().getId().equals(lotId))
                 .findFirst().orElse(target);
+
+        dealEvents.stage(tenderId, DealEventService.WINNER, "Победитель по лоту «" + lot.getEquipName() + "»: "
+                + item.getPriceRequest().getDistributor().getName() + ", " + DocFormat.money(offered), lotId);
 
         return new AssignWinnerResponse(saved.getId(), persisted.getId(), lotId,
                 item.getPriceRequest().getDistributor().getName(), offered);

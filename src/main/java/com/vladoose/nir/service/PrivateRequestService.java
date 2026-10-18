@@ -1,6 +1,7 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.service.deal.DealEventService;
 import com.vladoose.nir.dto.request.*;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
@@ -30,6 +31,8 @@ import java.util.regex.Pattern;
 @Service
 public class PrivateRequestService {
 
+    private final DealEventService dealEvents;
+
     private static final Pattern NUMBER_SUFFIX = Pattern.compile("^ЧЗ-\\d{4}-(\\d+)$");
     private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
 
@@ -49,7 +52,9 @@ public class PrivateRequestService {
                                  ClientOfferRepository clientOfferRepository,
                                  LeadRepository leadRepository,
                                  TenderLotRepository tenderLotRepository,
-                                 PrivateRequestRegistry registry) {
+                                 PrivateRequestRegistry registry,
+                                 DealEventService dealEvents) {
+        this.dealEvents = dealEvents;
         this.tenderRepository = tenderRepository;
         this.facilityRepository = facilityRepository;
         this.priceRequestItemRepository = priceRequestItemRepository;
@@ -145,15 +150,28 @@ public class PrivateRequestService {
             throw new BadRequestException("Укажите исход: купили у нас, не купили или отменена");
         }
         Tender t = findById(id);
+        boolean changed = !outcome.name().equals(t.getStatus());
         t.setStatus(outcome.name());
+        if (changed) dealEvents.stage(t.getId(), DealEventService.CLOSED, closeText(outcome), null);
         return t;
     }
 
     @Transactional
     public Tender reopen(Long id) {
         Tender t = findById(id);
+        boolean changed = PrivateRequestStatus.of(t.getStatus()).closed();
         t.setStatus(PrivateRequestStatus.NEW.name());
+        if (changed) dealEvents.stage(t.getId(), DealEventService.REOPENED, "Возвращена в работу", null);
         return t;
+    }
+
+    public static String closeText(PrivateRequestStatus outcome) {
+        return switch (outcome) {
+            case WON -> "Закрыта: купили у нас";
+            case LOST -> "Закрыта: не купили";
+            case CANCELLED -> "Закрыта: отменена";
+            case NEW -> "Возвращена в работу";
+        };
     }
 
     /** Только заявка без запросов цен и без КП клиенту. Обращение, из которого она создана, возвращается «В работу». */

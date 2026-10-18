@@ -75,11 +75,12 @@ public class ActivityApplyController {
     @PutMapping("/{id}")
     public ActivityApplyResponse update(@PathVariable Long id, @Valid @RequestBody ActivityApplyRequest request) {
         ActivityApply existing = service.findById(id);
+        String before = existing.getStatus();
         mapper.updateEntity(request, existing);
         if (request.getTenderId() != null) {
             existing.setTender(tenderService.findById(request.getTenderId()));
         }
-        return applyEnricher.toEnrichedResponse(service.save(existing));
+        return applyEnricher.toEnrichedResponse(service.saveWithStatusEvent(existing, before));
     }
 
     @DeleteMapping("/{id}")
