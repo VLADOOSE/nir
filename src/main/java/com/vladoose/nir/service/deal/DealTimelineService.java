@@ -199,6 +199,9 @@ public class DealTimelineService {
             if (dateOnly) {
                 if (pr.getResponseDate() == null) continue;
                 at = pr.getResponseDate().atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime();
+                // ответ не раньше запроса: цену вписали в день отправки, а запрос ушёл после полудня
+                OffsetDateTime asked = pr.getSentAt() != null ? pr.getSentAt() : pr.getCreatedAt();
+                if (asked != null && at.isBefore(asked)) at = asked;
             }
             all.add(new DealTimelineItem(at, dateOnly, "DECLINED".equals(pr.getStatus()) ? "DECLINED" : "REPLY",
                     replyText(pr), null, "PRICE_REQUEST", pr.getId(), null));

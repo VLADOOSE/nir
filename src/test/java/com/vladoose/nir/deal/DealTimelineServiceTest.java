@@ -310,4 +310,19 @@ class DealTimelineServiceTest {
         }
         assertThat(bodies).containsExactly("x", "y", "w", "e");
     }
+
+    /** Цену вписали руками в день запроса после полудня: ответ без письма — не раньше самого запроса (живая проверка). */
+    @Test
+    void replyWithoutLetterIsNotBeforeItsRequest() {
+        Tender t = withLines(1);
+        LocalDate day = LocalDate.now(Market.KZ.zone()).minusDays(1);
+        OffsetDateTime sent = day.atTime(18, 0).atZone(Market.KZ.zone()).toOffsetDateTime();
+        PriceRequest pr = ask(t, "ZZ Вечером", "RESPONDED", LetterStatus.SENT, sent, "100.00");
+        pr.setResponseDate(day);
+        List<DealTimelineItem> all = items(t);
+        DealTimelineItem reply = all.stream().filter(i -> "REPLY".equals(i.kind())).findFirst().orElseThrow();
+        assertThat(reply.dateOnly()).isTrue();
+        assertThat(reply.at().toInstant()).isEqualTo(sent.toInstant());
+        assertThat(all).extracting(DealTimelineItem::kind).containsSubsequence("RFQ_SENT", "REPLY");
+    }
 }
