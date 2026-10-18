@@ -45,4 +45,10 @@ public interface InboundEmailRepository extends JpaRepository<InboundEmail, Long
     @Query(value = "SELECT id, received_at, from_address, subject, excerpt FROM inbound_email "
             + "WHERE matched_price_request_id = :prId AND type = 'SUPPLIER_RESPONSE' ORDER BY received_at, id", nativeQuery = true)
     List<Object[]> findSupplierReplies(@Param("prId") Long prId);
+
+    /** Лента сделки: ответы, возвраты и задержки по запросам цен. Нативно — строка «Входящих» рынка ЯЩИКА (R17). */
+    @Query(value = "SELECT matched_price_request_id, type, received_at FROM inbound_email "
+            + "WHERE matched_price_request_id IN (:ids) AND type IN ('SUPPLIER_RESPONSE', 'BOUNCE', 'DELAYED')",
+            nativeQuery = true)
+    List<Object[]> findDealRows(@Param("ids") Collection<Long> ids);
 }

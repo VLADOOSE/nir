@@ -46,4 +46,9 @@ public interface SupplierReplyFileRepository extends JpaRepository<SupplierReply
     /** Имена файлов по письмам — колонка «Входящих» (одним запросом на страницу). */
     @Query("SELECT f.inboundEmailId, f.fileName FROM SupplierReplyFile f WHERE f.inboundEmailId IN :ids ORDER BY f.id")
     List<Object[]> findNamesByInboundIds(@Param("ids") Collection<Long> ids);
+
+    /** Лента сделки: файлы ответов поставщиков (без байтов). */
+    @Query(value = "SELECT price_request_id, file_name, created_at FROM supplier_reply_file WHERE price_request_id IN (:ids)",
+            nativeQuery = true)
+    List<Object[]> findDealRows(@Param("ids") Collection<Long> ids);
 }

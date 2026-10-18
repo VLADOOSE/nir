@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.time.OffsetDateTime;
 
 /** Все выборки — HQL, поэтому рыночный фильтр аспекта их режет (§6 CLAUDE.md). */
 public interface LeadRepository extends JpaRepository<Lead, Long> {
@@ -68,4 +69,7 @@ public interface LeadRepository extends JpaRepository<Lead, Long> {
     List<Lead> findByContactEmailIgnoreCaseAndStatusIn(String contactEmail, Collection<LeadStatus> statuses);
 
     List<Lead> findByPrivateRequestIdIn(Collection<Long> privateRequestIds);
+
+    /** Следующее обращение того же чата — граница переписки заявки. */
+    Optional<Lead> findFirstByChatIdAndReceivedAtAfterOrderByReceivedAtAsc(Long chatId, OffsetDateTime after);
 }

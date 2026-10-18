@@ -49,4 +49,11 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     /** Самое позднее сообщение номера — отметка догонки WAHA (спека whatsapp-waha §5.3). Зовётся в потоке приёма с его рынком. */
     @Query("select max(m.sentAt) from ChatMessage m where m.chat.channel = :channel and m.chat.account = :account")
     OffsetDateTime findLatestSentAt(@Param("channel") LeadChannel channel, @Param("account") String account);
+
+    /** Сообщения эпизода обращения [from, to) раньше курсора, новые первыми — лента сделки. */
+    @Query("""
+           select m from ChatMessage m where m.chat.id = :chatId and m.sentAt >= :from and m.sentAt < :to
+             and m.sentAt < :before order by m.sentAt desc, m.id desc""")
+    List<ChatMessage> findForDeal(@Param("chatId") Long chatId, @Param("from") OffsetDateTime from,
+                                  @Param("to") OffsetDateTime to, @Param("before") OffsetDateTime before, Pageable pageable);
 }

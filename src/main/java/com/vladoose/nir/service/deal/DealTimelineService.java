@@ -1,0 +1,271 @@
+package com.vladoose.nir.service.deal;
+
+import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.response.ChatMessageResponse;
+import com.vladoose.nir.dto.response.DealTimelineItem;
+import com.vladoose.nir.dto.response.DealTimelineResponse;
+import com.vladoose.nir.entity.*;
+import com.vladoose.nir.repository.*;
+import com.vladoose.nir.service.ChatService;
+import com.vladoose.nir.service.PrivateRequestService;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.sql.Timestamp;
+import java.time.*;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Лента «Переписка и история» (спека 2026-10-18 §3.2, §4.2): всё, у чего уже есть дата, — из существующих таблиц,
+ * заметки / звонки / смена этапа — из deal_event. Страница — limit самых поздних раньше курсора, по возрастанию.
+ * Строки с одним временем страница не делит: курсор — время, и половина такой группы потерялась бы (фото альбома
+ * WhatsApp приходят в одну секунду).
+ */
+@Service
+public class DealTimelineService {
+
+    public static final int DEFAULT_LIMIT = 50;
+    static final int MAX_LIMIT = 100;
+    /** Предел сообщений одной секунды на границе страницы — защита от вырожденных данных. */
+    static final int SAME_TIME_MAX = 500;
+    /** Запросы цен, отправленные с разрывом меньше минуты, — одно окно «Запросить цены», одна строка. */
+    static final Duration RFQ_WINDOW = Duration.ofMinutes(1);
+    /** «Без границы» — дальше любой настоящей даты, в пределах timestamptz. */
+    static final OffsetDateTime FAR = OffsetDateTime.of(9999, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+    /** При равном времени событие раньше сообщения (как лента обращения). Сортировка списка устойчивая. */
+    private static final Comparator<DealTimelineItem> ORDER = Comparator.comparing(DealTimelineItem::at)
+            .thenComparing(i -> "MESSAGE".equals(i.kind()) ? 1 : 0);
+    private static final Set<String> ANSWERED = Set.of("RESPONDED", "ACCEPTED", "DECLINED");
+
+    private final PrivateRequestService privateRequests;
+    private final LeadRepository leads;
+    private final ChatMessageRepository messages;
+    private final ChatService chats;
+    private final PriceRequestRepository priceRequests;
+    private final InboundEmailRepository inbound;
+    private final SupplierReplyFileRepository replyFiles;
+    private final ClientOfferRepository offers;
+    private final DealEventRepository events;
+
+    public DealTimelineService(PrivateRequestService privateRequests, LeadRepository leads,
+                               ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
+                               InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
+                               ClientOfferRepository offers, DealEventRepository events) {
+        this.privateRequests = privateRequests;
+        this.leads = leads;
+        this.messages = messages;
+        this.chats = chats;
+        this.priceRequests = priceRequests;
+        this.inbound = inbound;
+        this.replyFiles = replyFiles;
+        this.offers = offers;
+        this.events = events;
+    }
+
+    @Transactional(readOnly = true)
+    public DealTimelineResponse forPrivateRequest(Long id, OffsetDateTime before, int limit) {
+        Tender t = privateRequests.findById(id);
+        OffsetDateTime cursor = before == null ? FAR : before;
+        int n = clamp(limit);
+        List<DealTimelineItem> all = new ArrayList<>();
+        leads.findFirstByPrivateRequestId(t.getId()).ifPresent(lead -> addLead(all, lead, cursor, n));
+        all.add(item(t.getCreatedAt(), "CREATED", "Создана заявка " + t.getTenderNumber(), null, null, null));
+        addSupply(all, t, zone(t));
+        addOffers(all, t.getId());
+        addEvents(all, t.getId());
+        return page(all, cursor, n);
+    }
+
+    public DealTimelineItem toItem(DealEvent e) {
+        String link = e.getCode() == null ? null : switch (e.getCode()) {
+            case DealEventService.OFFER_STATUS -> "OFFER";
+            case DealEventService.APPLY_STATUS -> "APPLY";
+            default -> null;
+        };
+        return new DealTimelineItem(e.getOccurredAt(), false, e.getType().name(), e.getText(), e.getAuthor(), link,
+                link == null ? null : e.getRefId(), null);
+    }
+
+    /**
+     * Обращение, его события и переписка его эпизода — n + 1 последних сообщений раньше курсора и все сообщения
+     * самой ранней взятой секунды. Не взятые сообщения раньше её, а строка «Обращение» — не позже любого сообщения
+     * эпизода: она остаётся раньше страницы, и признак «есть раньше» выставляется сам.
+     */
+    private void addLead(List<DealTimelineItem> all, Lead lead, OffsetDateTime cursor, int n) {
+        OffsetDateTime start = lead.getReceivedAt() != null ? lead.getReceivedAt() : lead.getCreatedAt();
+        all.add(item(start, "LEAD", "Обращение (" + DealTexts.channel(lead.getChannel()) + ")"
+                + (blank(lead.getSubject()) ? "" : ": «" + lead.getSubject().strip() + "»"), null, "LEAD", lead.getId()));
+        for (LeadEvent e : lead.getEvents()) {
+            String kind = switch (e.getType()) {
+                case NOTE -> "LEAD_NOTE";
+                case CALL -> "LEAD_CALL";
+                case STATUS -> "LEAD_STATUS";
+                default -> null;   // RECEIVED — строка «Обращение» выше; MESSAGE и SYNC — служебные
+            };
+            if (kind != null) all.add(item(e.getOccurredAt(), kind, e.getBody(), e.getAuthor(), "LEAD", lead.getId()));
+        }
+        if (lead.getChat() == null || start == null) return;
+        Long chatId = lead.getChat().getId();
+        OffsetDateTime to = leads.findFirstByChatIdAndReceivedAtAfterOrderByReceivedAtAsc(chatId, start)
+                .map(Lead::getReceivedAt).orElse(FAR);
+        List<ChatMessage> newestFirst = new ArrayList<>(
+                messages.findForDeal(chatId, start, to, cursor, PageRequest.of(0, n + 1)));
+        if (newestFirst.size() > n) {
+            // все сообщения самой ранней взятой секунды: страница не делит одно время, а курсор их отрезал бы
+            OffsetDateTime oldest = newestFirst.get(newestFirst.size() - 1).getSentAt();
+            Set<Long> have = newestFirst.stream().map(ChatMessage::getId).collect(Collectors.toSet());
+            messages.findForDeal(chatId, oldest, oldest.plusNanos(1000), cursor, PageRequest.of(0, SAME_TIME_MAX))
+                    .stream().filter(m -> !have.contains(m.getId())).forEach(newestFirst::add);
+            newestFirst.sort(Comparator.comparing(ChatMessage::getSentAt).thenComparing(ChatMessage::getId).reversed());
+        }
+        for (ChatMessageResponse m : chats.toResponses(newestFirst)) {
+            all.add(new DealTimelineItem(m.getSentAt(), false, "MESSAGE", null, null, "CHAT", chatId, m));
+        }
+    }
+
+    private void addSupply(List<DealTimelineItem> all, Tender t, ZoneId zone) {
+        List<PriceRequest> prs = priceRequests.findByTenderId(t.getId());
+        if (prs.isEmpty()) return;
+        Map<Long, PriceRequest> byId = new HashMap<>();
+        prs.forEach(pr -> byId.put(pr.getId(), pr));
+
+        List<PriceRequest> sent = new ArrayList<>();
+        for (PriceRequest pr : prs) {
+            LetterStatus ls = pr.getLetterStatus();
+            if (pr.getSentAt() != null && (ls == null || ls == LetterStatus.SENT || ls == LetterStatus.MANUAL)) {
+                sent.add(pr);
+            }
+            if (ls == LetterStatus.NO_EMAIL || ls == LetterStatus.FAILED) {
+                all.add(item(pr.getSentAt() != null ? pr.getSentAt() : pr.getCreatedAt(), "LETTER_FAILED",
+                        name(pr) + ": письмо не ушло — " + (ls == LetterStatus.NO_EMAIL ? "нет почты" : "ошибка отправки"),
+                        null, "PRICE_REQUEST", pr.getId()));
+            }
+        }
+        for (List<PriceRequest> group : rfqWindows(sent)) {
+            String mail = group.stream().filter(pr -> pr.getLetterStatus() != LetterStatus.MANUAL)
+                    .map(DealTimelineService::name).collect(Collectors.joining(", "));
+            String manual = group.stream().filter(pr -> pr.getLetterStatus() == LetterStatus.MANUAL)
+                    .map(DealTimelineService::name).collect(Collectors.joining(", "));
+            String text = "Запрос цен: " + Stream.of(mail.isEmpty() ? null : "письмом — " + mail,
+                            manual.isEmpty() ? null : "передан вручную — " + manual)
+                    .filter(Objects::nonNull).collect(Collectors.joining("; "));
+            boolean one = group.size() == 1;
+            all.add(item(group.get(0).getSentAt(), "RFQ_SENT", text, null, one ? "PRICE_REQUEST" : null,
+                    one ? group.get(0).getId() : null));
+        }
+
+        Map<Long, OffsetDateTime> lastReply = new HashMap<>();
+        for (Object[] row : inbound.findDealRows(byId.keySet())) {
+            PriceRequest pr = byId.get(((Number) row[0]).longValue());
+            OffsetDateTime at = offset(row[2]);
+            if (pr == null || at == null) continue;
+            switch ((String) row[1]) {
+                case "SUPPLIER_RESPONSE" -> lastReply.merge(pr.getId(), at, (x, y) -> x.isAfter(y) ? x : y);
+                case "BOUNCE" -> all.add(item(at, "BOUNCED", name(pr) + ": письмо вернулось", null, "PRICE_REQUEST", pr.getId()));
+                case "DELAYED" -> all.add(item(at, "DELAYED", name(pr) + ": письмо задерживается", null, "PRICE_REQUEST", pr.getId()));
+                default -> { }
+            }
+        }
+        for (PriceRequest pr : prs) {
+            if (!ANSWERED.contains(pr.getStatus())) continue;
+            OffsetDateTime at = lastReply.get(pr.getId());
+            boolean dateOnly = at == null;
+            if (dateOnly) {
+                if (pr.getResponseDate() == null) continue;
+                at = pr.getResponseDate().atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime();
+            }
+            all.add(new DealTimelineItem(at, dateOnly, "DECLINED".equals(pr.getStatus()) ? "DECLINED" : "REPLY",
+                    replyText(pr), null, "PRICE_REQUEST", pr.getId(), null));
+        }
+        for (Object[] row : replyFiles.findDealRows(byId.keySet())) {
+            PriceRequest pr = byId.get(((Number) row[0]).longValue());
+            OffsetDateTime at = offset(row[2]);
+            if (pr == null || at == null) continue;
+            all.add(item(at, "REPLY_FILE", "Файл «" + row[1] + "» от " + name(pr), null, "PRICE_REQUEST", pr.getId()));
+        }
+    }
+
+    /**
+     * Окна «Запросить цены»: запросы по времени отправки, новое окно — после разрыва больше минуты. Не по началу
+     * минуты: окно на пять поставщиков идёт несколько секунд и может перейти через границу минуты.
+     */
+    static List<List<PriceRequest>> rfqWindows(List<PriceRequest> sent) {
+        List<PriceRequest> byTime = sent.stream()
+                .sorted(Comparator.comparing(PriceRequest::getSentAt).thenComparing(PriceRequest::getId)).toList();
+        List<List<PriceRequest>> windows = new ArrayList<>();
+        OffsetDateTime last = null;
+        for (PriceRequest pr : byTime) {
+            if (last == null || Duration.between(last, pr.getSentAt()).compareTo(RFQ_WINDOW) > 0) {
+                windows.add(new ArrayList<>());
+            }
+            windows.get(windows.size() - 1).add(pr);
+            last = pr.getSentAt();
+        }
+        return windows;
+    }
+
+    private void addOffers(List<DealTimelineItem> all, Long tenderId) {
+        for (ClientOffer o : offers.findByTenderIdOrderByIdDesc(tenderId)) {
+            all.add(item(o.getCreatedAt(), "OFFER_CREATED", "КП № " + o.getNumber() + " создано", o.getCreatedBy(),
+                    "OFFER", o.getId()));
+            if (o.getSentAt() != null) {
+                all.add(item(o.getSentAt(), "OFFER_SENT", "КП № " + o.getNumber() + " отправлено", null, "OFFER", o.getId()));
+            }
+        }
+    }
+
+    private void addEvents(List<DealTimelineItem> all, Long tenderId) {
+        for (DealEvent e : events.findByTenderIdOrderByOccurredAtAscIdAsc(tenderId)) all.add(toItem(e));
+    }
+
+    /**
+     * Самые поздние n строк раньше курсора, по возрастанию. Группу строк одного времени страница не делит — берёт
+     * целиком (следующая страница начнётся раньше этого времени).
+     */
+    static DealTimelineResponse page(List<DealTimelineItem> all, OffsetDateTime cursor, int n) {
+        List<DealTimelineItem> eligible = all.stream().filter(i -> i.at() != null && i.at().isBefore(cursor))
+                .sorted(ORDER).toList();
+        int from = Math.max(0, eligible.size() - n);
+        while (from > 0 && eligible.get(from - 1).at().isEqual(eligible.get(from).at())) from--;
+        return new DealTimelineResponse(new ArrayList<>(eligible.subList(from, eligible.size())), from > 0);
+    }
+
+    static int clamp(int limit) {
+        return limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+    }
+
+    static ZoneId zone(Tender t) {
+        return (t.getMarket() == null ? MarketContext.get() : t.getMarket()).zone();
+    }
+
+    static DealTimelineItem item(OffsetDateTime at, String kind, String text, String author, String linkType, Long linkId) {
+        return new DealTimelineItem(at, false, kind, text, author, linkType, linkId, null);
+    }
+
+    private static String replyText(PriceRequest pr) {
+        if ("DECLINED".equals(pr.getStatus())) return name(pr) + " отказался";
+        long asked = pr.getItems().size();
+        long priced = pr.getItems().stream().filter(i -> i.getResponsePrice() != null).count();
+        return priced > 0 ? name(pr) + " ответил: цены по " + priced + " из " + asked : name(pr) + " ответил — цен нет";
+    }
+
+    static String name(PriceRequest pr) {
+        return pr.getDistributor() == null ? "Поставщик" : pr.getDistributor().getName();
+    }
+
+    /** Время из нативного запроса: Hibernate 6 отдаёт timestamptz как OffsetDateTime или Instant, драйвер — Timestamp. */
+    static OffsetDateTime offset(Object v) {
+        if (v instanceof OffsetDateTime o) return o;
+        if (v instanceof Instant i) return i.atOffset(ZoneOffset.UTC);
+        if (v instanceof Timestamp ts) return ts.toInstant().atOffset(ZoneOffset.UTC);
+        if (v instanceof LocalDateTime l) return l.atOffset(ZoneOffset.UTC);
+        return null;
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
+    }
+}

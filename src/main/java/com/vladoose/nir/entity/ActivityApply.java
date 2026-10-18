@@ -63,4 +63,9 @@ public class ActivityApply implements MarketScoped {
     @OneToMany(mappedBy = "apply", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<ApplyItem> items = new ArrayList<>();
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) createdAt = OffsetDateTime.now();
+    }
 }

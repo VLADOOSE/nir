@@ -162,7 +162,7 @@ public class ChatService {
     }
 
     /** Сообщения (новые → старые) в ответ по времени + метаданные файлов одним запросом. */
-    List<ChatMessageResponse> toResponses(List<ChatMessage> newestFirst) {
+    public List<ChatMessageResponse> toResponses(List<ChatMessage> newestFirst) {
         List<ChatMessage> chrono = new ArrayList<>(newestFirst);
         Collections.reverse(chrono);
         Map<Long, List<ChatAttachmentMeta>> files = chrono.isEmpty() ? Map.of()

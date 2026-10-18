@@ -87,4 +87,9 @@ public class PriceRequest implements MarketScoped {
     @OneToMany(mappedBy = "priceRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<PriceRequestItem> items = new ArrayList<>();
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) createdAt = OffsetDateTime.now();
+    }
 }
