@@ -59,7 +59,7 @@ public class PrivateRequestPricesService {
             latest.put(key(i.getTenderLot().getId(), d.getId()), i);   // отсортировано по запросу — последний свежее
             prIds.add(pr.getId());
         }
-        Map<Long, Instant> bounced = lastBounces(prIds);
+        Map<Long, Instant> bounced = lastBounces(inboundRepository, prIds);
 
         List<TenderLot> lots = new ArrayList<>(t.getLots());
         lots.sort(Comparator.comparing((TenderLot l) -> l.getLotNumber() == null ? Integer.MAX_VALUE : l.getLotNumber()));
@@ -89,7 +89,7 @@ public class PrivateRequestPricesService {
     }
 
     /** Последний возврат по запросу; время возврата неизвестно (старые строки) — считаем «сейчас»: возврат свежий. */
-    private Map<Long, Instant> lastBounces(Collection<Long> prIds) {
+    static Map<Long, Instant> lastBounces(InboundEmailRepository inboundRepository, Collection<Long> prIds) {
         Map<Long, Instant> out = new HashMap<>();
         if (prIds.isEmpty()) return out;
         for (Object[] row : inboundRepository.findLastBounces(prIds)) {
@@ -112,7 +112,7 @@ public class PrivateRequestPricesService {
     static final Duration BOUNCE_SKEW = Duration.ofMinutes(1);
 
     /** Возврат — только если он пришёл после последней отправки письма (с запасом на часы): «↻ Переслать» его снимает. */
-    private static boolean bouncedAfterSend(PriceRequest pr, Map<Long, Instant> bounced) {
+    static boolean bouncedAfterSend(PriceRequest pr, Map<Long, Instant> bounced) {
         Instant at = bounced.get(pr.getId());
         return at != null && (pr.getSentAt() == null || !at.isBefore(pr.getSentAt().toInstant().minus(BOUNCE_SKEW)));
     }

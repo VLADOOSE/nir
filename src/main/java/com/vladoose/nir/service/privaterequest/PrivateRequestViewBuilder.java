@@ -29,16 +29,19 @@ public class PrivateRequestViewBuilder {
     private final LeadResponseMapper leadMapper;
     private final PrivateRequestStageCalculator stages;
     private final ClientOfferRepository clientOffers;
+    private final PrivateRequestProgressBuilder progress;
 
     public PrivateRequestViewBuilder(PriceRequestItemRepository itemRepository, MedRegistryRepository registryRepository,
                                      LeadRepository leadRepository, LeadResponseMapper leadMapper,
-                                     PrivateRequestStageCalculator stages, ClientOfferRepository clientOffers) {
+                                     PrivateRequestStageCalculator stages, ClientOfferRepository clientOffers,
+                                     PrivateRequestProgressBuilder progress) {
         this.itemRepository = itemRepository;
         this.registryRepository = registryRepository;
         this.leadRepository = leadRepository;
         this.leadMapper = leadMapper;
         this.stages = stages;
         this.clientOffers = clientOffers;
+        this.progress = progress;
     }
 
     public PrivateRequestViewResponse build(Tender t) {
@@ -49,6 +52,7 @@ public class PrivateRequestViewBuilder {
         PrivateRequestStageCalculator.Summary stage = stages.of(t);
         r.setStage(stage.code());
         r.setStageText(stage.text());
+        r.setProgress(progress.build(t, stage));
         if (t.getFacility() != null) {
             r.setFacilityId(t.getFacility().getId());
             r.setFacilityName(t.getFacility().getName());

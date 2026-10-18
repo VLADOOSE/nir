@@ -14,6 +14,8 @@ public class PrivateRequestViewResponse {
     private String status;
     private String stage;
     private String stageText;
+    /** Этапы всего цикла и «Дальше» (спека 2026-10-18 §3.1). */
+    private DealProgress progress;
     private Long facilityId;
     private String facilityName;
     private String customerName;
