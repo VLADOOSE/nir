@@ -1,5 +1,5 @@
 import { Component, HostListener, ChangeDetectorRef, OnInit, OnDestroy } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd, IsActiveMatchOptions } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { NgFor, NgIf, AsyncPipe } from '@angular/common';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -86,7 +86,8 @@ import { filter } from 'rxjs/operators';
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Тендеры</span>
-            <a routerLink="/tenders" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+            <!-- путь — точно (иначе горел бы и на «Поиске тендеров»), параметры — любые: открытая карточка ?openId= -->
+            <a routerLink="/tenders" routerLinkActive="active" [routerLinkActiveOptions]="tendersActive">
               <svg lucideIcon="file-text" [size]="16"></svg> Все тендеры
             </a>
             <a routerLink="/tenders/search" routerLinkActive="active">
@@ -299,6 +300,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   private navSub?: Subscription;
   private searchTimer: any = null;
   private searchSub?: Subscription;
+  /** «Все тендеры» горит и при открытой карточке (?openId=), но не на «Поиске тендеров» (/tenders/search). */
+  readonly tendersActive: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
 
   /** закрыть drawer при клике по пункту меню */
   onNavClick(e: Event) {
@@ -345,10 +348,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
    * перетирать выдачу по новому.
    */
   onSearch() {
-    clearTimeout(this.searchTimer);
-    this.searchSub?.unsubscribe();
+    this.cancelSearch();
     const query = this.searchQuery;
-    if (!query || query.length < 2) {
+    if (!query || query.trim().length < 2) {   // из одних пробелов — не запрос
       this.searchResults = [];
       this.showResults = false;
       return;
@@ -362,7 +364,17 @@ export class LayoutComponent implements OnInit, OnDestroy {
     }, 250);
   }
 
+  /** Прежний поиск больше не нужен: таймер и запрос — отменить (поздний ответ не раскроет выдачу снова). */
+  private cancelSearch() {
+    clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.searchSub?.unsubscribe();
+    this.searchSub = undefined;
+  }
+
   onSelectResult(r: SearchResult) {
+    this.cancelSearch();          // группы ещё в пути — их ответ на новой странице выдачу не раскроет
+    this.searchResults = [];
     this.showResults = false;
     this.searchQuery = '';
     this.sidebarOpen = false;   // выбор из drawer-поиска закрывает drawer
@@ -372,7 +384,15 @@ export class LayoutComponent implements OnInit, OnDestroy {
   onMarketChange(e: Event) {
     const m = (e.target as HTMLSelectElement).value as Market;
     this.market.setMarket(m);
-    // перезагружаем ТЕКУЩУЮ страницу (URL сохраняется) — данные перечитаются под новый рынок
+    // Перезагружаем ТЕКУЩУЮ страницу — данные перечитаются под новый рынок. Открытая карточка в адресе (?openId=,
+    // ?chatId=) — запись прежнего рынка: на новом её нет, поэтому страница откроется списком (иначе — красный тост
+    // «не найдено» на каждую смену рынка). Запись истории заменяем: «Назад» не вернёт карточку другого рынка.
+    const url = new URL(location.href);
+    const card = ['openId', 'chatId'].filter(k => url.searchParams.has(k));
+    if (card.length) {
+      card.forEach(k => url.searchParams.delete(k));
+      history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+    }
     location.reload();
   }
 

@@ -91,6 +91,9 @@ import { errorText } from '../../shared/error-text';
       .filters input { flex: 1; min-width: 0; font-size: 16px; }
       .card { padding: 12px; }
       .client { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* цель нажатия «из обращения» — 40 px без сдвига раскладки (поля погашены отрицательными отступами); kit даёт
+         10 px — для 12-px строки этого мало. Ниже — только строка клиента, она не нажимается */
+      .lead-mark { padding-block: 13px; margin-block: -13px; }
     }
   `],
 })

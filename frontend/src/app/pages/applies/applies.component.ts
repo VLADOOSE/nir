@@ -1,4 +1,5 @@
-import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
+import { Component, ChangeDetectorRef, DestroyRef, HostListener } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Location, NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
@@ -557,12 +558,13 @@ export class AppliesComponent {
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
               private route: ActivatedRoute, private router: Router, private location: Location,
-              public market: MarketService) {
+              public market: MarketService, private destroyRef: DestroyRef) {
     this.loadApplies();
     this.api.getTenders().subscribe({ next: data => { this.tenders = data; this.cdr.detectChanges(); } });
     // Открытая заявка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
     // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
-    this.route.queryParamMap.subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
   }
 
   /** Адрес → экран: ?openId= — карточка (уже открытую не открываем заново), нет — список. */
@@ -625,7 +627,8 @@ export class AppliesComponent {
   }
 
   loadApplies() {
-    this.api.getApplies().subscribe({
+    // ушли со страницы, пока грузился, — ответ отбрасывается: иначе «не найдена» и переход без ?openId= вернули бы сюда
+    this.api.getApplies().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: data => {
         this.applies = data;
         this.applyFilters();
@@ -644,7 +647,10 @@ export class AppliesComponent {
         this.openWanted();
         this.cdr.detectChanges();
       },
-      error: err => this.notify.error('Ошибка загрузки заявок: ' + (err.error?.message || err.message))
+      error: err => {
+        if (err?.status === 401) return;   // перехватчик уже ведёт на вход
+        this.notify.error('Ошибка загрузки заявок: ' + (err.error?.message || err.message));
+      }
     });
   }
 
@@ -700,8 +706,8 @@ export class AppliesComponent {
   }
 
   private showApply(a: any) {
+    this.resetCard();
     this.selectedApply = a;
-    this.showItemForm = false;
     this.contractEdit = {
       contractNumber: a.contractNumber || '',
       contractSignedAt: a.contractSignedAt || ''
@@ -711,15 +717,17 @@ export class AppliesComponent {
   }
 
   saveContract() {
+    const apply = this.selectedApply;
+    if (!apply) return;
     const body: any = {
-      status: this.selectedApply.status,
-      tenderId: this.selectedApply.tender?.id || null,
+      status: apply.status,
+      tenderId: apply.tender?.id || null,
       contractNumber: this.contractEdit.contractNumber || null,
       contractSignedAt: this.contractEdit.contractSignedAt || null
     };
-    this.api.update('applies', this.selectedApply.id, body).subscribe({
+    this.api.update('applies', apply.id, body).subscribe({
       next: (updated: any) => {
-        this.selectedApply = updated;
+        if (this.selectedApply?.id === apply.id) this.selectedApply = updated;   // пока шёл ответ, могли открыть другую
         this.notify.success('Договор сохранён');
         this.cdr.detectChanges();
       },
@@ -728,21 +736,24 @@ export class AppliesComponent {
   }
 
   setDeliveryStatus(status: 'ORDERED' | 'DELIVERED' | 'PAID') {
+    const apply = this.selectedApply;
+    if (!apply) return;
     const today = new Date().toISOString().slice(0, 10);
     const body: any = {
-      status: this.selectedApply.status,
-      tenderId: this.selectedApply.tender?.id || null,
+      status: apply.status,
+      tenderId: apply.tender?.id || null,
       deliveryStatus: status
     };
-    if (status === 'DELIVERED' && !this.selectedApply.deliveredAt) body.deliveredAt = today;
-    if (status === 'PAID' && !this.selectedApply.paidAt) body.paidAt = today;
+    if (status === 'DELIVERED' && !apply.deliveredAt) body.deliveredAt = today;
+    if (status === 'PAID' && !apply.paidAt) body.paidAt = today;
 
+    // вопрос закрывается при переходе (ConfirmComponent), а ответ сервера — только для этой карточки
     this.confirm.ask('Перевести поставку в статус «' + this.deliveryLabel(status) + '»?', undefined, { confirmLabel: 'Подтвердить' })
       .subscribe(ok => {
-        if (!ok) return;
-        this.api.update('applies', this.selectedApply.id, body).subscribe({
+        if (!ok || this.selectedApply?.id !== apply.id) return;
+        this.api.update('applies', apply.id, body).subscribe({
           next: (updated: any) => {
-            this.selectedApply = updated;
+            if (this.selectedApply?.id === apply.id) this.selectedApply = updated;
             this.notify.success('Статус поставки обновлён');
             this.cdr.detectChanges();
           },
@@ -766,25 +777,51 @@ export class AppliesComponent {
   }
 
   private showList() {
+    this.resetCard();
     this.selectedApply = null;
-    this.showItemForm = false;
     this.openedFromList = false;
     this.loadApplies();
   }
 
+  /**
+   * Всё, что относится к открытой карточке, — сбросить при её смене и закрытии. Карточка живёт в адресе, «Назад» /
+   * «Вперёд» меняют её без кнопок карточки: окно «Собрать из КП» прежней заявки всплывало на следующей и «Собрать»
+   * заполняло уже её, а позиции прежней заявки на миг были видны в новой карточке (ревью, 2026-10-18).
+   */
+  private resetCard() {
+    this.showAutoFillModal = false;
+    this.showItemForm = false;
+    this.editingItemId = null;
+    this.items = [];
+    this.itemsTotal = 0;
+    this.lots = [];
+  }
+
+  /** Ответ, пришедший после смены карточки (или ухода со страницы), отбрасывается. */
   loadItems() {
-    this.api.getApplyItems(this.selectedApply.id).subscribe({
+    const id = this.selectedApply?.id;
+    if (!id) return;
+    this.api.getApplyItems(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: data => {
+        if (this.selectedApply?.id !== id) return;
         this.items = data;
         this.itemsTotal = data.reduce((s: number, it: any) => s + ((it.offeredCost || 0) * (it.quantity || 1)), 0);
         this.cdr.detectChanges();
       },
-      error: err => this.notify.error('Ошибка загрузки позиций: ' + (err.error?.message || err.message))
+      error: err => {
+        if (this.selectedApply?.id !== id || err?.status === 401) return;
+        this.notify.error('Ошибка загрузки позиций: ' + (err.error?.message || err.message));
+      }
     });
   }
 
   loadReferenceData() {
-    if (this.selectedApply.tender?.id) { this.api.getTenderLots(this.selectedApply.tender.id).subscribe(data => this.lots = data); }
+    const id = this.selectedApply?.id;
+    const tenderId = this.selectedApply?.tender?.id;
+    if (tenderId) {
+      this.api.getTenderLots(tenderId).pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(data => { if (this.selectedApply?.id === id) this.lots = data; });
+    }
     this.api.getEquipment().subscribe(data => this.equipment = data);
     this.api.getDistributors().subscribe(data => this.distributors = data);
   }
@@ -798,18 +835,23 @@ export class AppliesComponent {
 
   confirmAutoFill() {
     this.showAutoFillModal = false;
+    const apply = this.selectedApply;
+    if (!apply) return;
     const markup = Math.max(0, Math.min(200, Number(this.autoFillMarkup) || 0));
-    this.api.autoFillApply(this.selectedApply.id, markup).subscribe({
+    this.api.autoFillApply(apply.id, markup).subscribe({
       next: (resp: any) => {
         this.notify.success(`Добавлено позиций: ${resp.addedItems} (наценка ${markup}%)`);
         if (resp.lotsWithoutResponse?.length) {
           this.notify.info('Нет КП с ответом по: ' + resp.lotsWithoutResponse.join(', '));
         }
-        this.loadItems();
-        this.api.getById('applies', this.selectedApply.id).subscribe((updated: any) => {
-          this.selectedApply = updated;
-          this.cdr.detectChanges();
-        });
+        if (this.selectedApply?.id === apply.id) {   // пока собиралось, могли открыть другую заявку
+          this.loadItems();
+          this.api.getById('applies', apply.id).subscribe((updated: any) => {
+            if (this.selectedApply?.id !== apply.id) return;
+            this.selectedApply = updated;
+            this.cdr.detectChanges();
+          });
+        }
         this.loadApplies();
       },
       error: err => this.notify.error(err.error?.message || 'Ошибка автосборки')
@@ -912,13 +954,15 @@ export class AppliesComponent {
   }
 
   private updateApplyStatus(status: string, successMsg: string) {
+    const apply = this.selectedApply;
+    if (!apply) return;   // карточку закрыли под открытым вопросом — сохранять нечего
     const body = {
       status,
-      tenderId: this.selectedApply.tender?.id || null
+      tenderId: apply.tender?.id || null
     };
-    this.api.update('applies', this.selectedApply.id, body).subscribe({
+    this.api.update('applies', apply.id, body).subscribe({
       next: (updated: any) => {
-        this.selectedApply = updated;
+        if (this.selectedApply?.id === apply.id) this.selectedApply = updated;
         this.notify.success(successMsg);
         this.cdr.detectChanges();
       },
@@ -927,11 +971,12 @@ export class AppliesComponent {
   }
 
   downloadPdf() {
-    this.api.downloadApplyReport(this.selectedApply.id).subscribe(blob => {
+    const id = this.selectedApply.id;   // файл приходит позже — карточку к тому времени могли закрыть
+    this.api.downloadApplyReport(id).subscribe(blob => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'apply_' + this.selectedApply.id + '.pdf';
+      a.download = 'apply_' + id + '.pdf';
       a.click();
       window.URL.revokeObjectURL(url);
     });

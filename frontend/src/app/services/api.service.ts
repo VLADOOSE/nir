@@ -366,10 +366,11 @@ export class ApiService {
   }
 
   // === Частные заявки (страница-рабочее место, спека 2026-10-12) ===
-  getPrivateRequests(params: { status?: string; q?: string } = {}): Observable<PrListItem[]> {
+  getPrivateRequests(params: { status?: string; q?: string; limit?: number } = {}): Observable<PrListItem[]> {
     const qs = new URLSearchParams();
     if (params.status) qs.set('status', params.status);
     if (params.q) qs.set('q', params.q);
+    if (params.limit) qs.set('limit', String(params.limit));
     const s = qs.toString();
     return this.http.get<PrListItem[]>(`${this.base}/private-requests${s ? '?' + s : ''}`);
   }
@@ -476,11 +477,12 @@ export class ApiService {
   }
 
   // === Обращения (заявки с сайтов, звонки, WhatsApp) ===
-  getLeads(params: { status?: string; channel?: string; q?: string } = {}): Observable<any[]> {
+  getLeads(params: { status?: string; channel?: string; q?: string; limit?: number } = {}): Observable<any[]> {
     const p: any = {};
     if (params.status) p.status = params.status;
     if (params.channel) p.channel = params.channel;
     if (params.q) p.q = params.q;
+    if (params.limit) p.limit = params.limit;
     return this.http.get<any[]>(`${this.base}/leads`, { params: p });
   }
   getLead(id: number): Observable<any> {
@@ -639,10 +641,11 @@ export class ApiService {
   }
 
   // === КП клиенту (спека §10) ===
-  getClientOffers(params: { status?: string; q?: string } = {}): Observable<any[]> {
+  getClientOffers(params: { status?: string; q?: string; limit?: number } = {}): Observable<any[]> {
     const p: any = {};
     if (params.status) p.status = params.status;
     if (params.q) p.q = params.q;
+    if (params.limit) p.limit = params.limit;
     return this.http.get<any[]>(`${this.base}/client-offers`, { params: p });
   }
   createClientOffer(): Observable<any> {

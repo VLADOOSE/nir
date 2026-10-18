@@ -109,7 +109,10 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
       .client { display: flex; }
       .client-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .from-pr { flex: none; white-space: pre; }
-      .btn-more { min-width: 40px; }
+      /* «⋯» — поверх цели нажатия «из заявки ЧЗ-…» (у .xref на телефоне поля 10 px вверх, а при длинном имени клиента
+         ссылка стоит прямо под кнопкой и накрывала её низ). z-index — у кнопки, не у .menu: на .menu он запер бы
+         выпадающее меню (z-index 20 из kit) под «⋯» соседней карточки, а меню — сосед кнопки, не её потомок */
+      .btn-more { min-width: 40px; position: relative; z-index: 1; }
     }
   `],
 })

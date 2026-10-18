@@ -1,4 +1,5 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Location, NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -582,7 +583,7 @@ export class TendersComponent {
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
               private router: Router, private location: Location,
               private notify: NotificationService, private confirm: ConfirmService, public market: MarketService,
-              public auth: AuthService) {
+              public auth: AuthService, private destroyRef: DestroyRef) {
     this.loadTenders();
     this.refreshImportStatus();
     this.api.getFacilities().subscribe({ next: data => { this.facilities = data; this.cdr.detectChanges(); } });
@@ -594,7 +595,8 @@ export class TendersComponent {
 
     // Открытая карточка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
     // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
-    this.route.queryParamMap.subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
   }
 
   /** Адрес → экран: есть ?openId= — карточка этого тендера (уже открытую не грузим заново), нет — список. */
@@ -605,11 +607,13 @@ export class TendersComponent {
     }
     if (this.selectedTender?.id === id) return;
     this.openedFromList = false;
-    this.api.getById('tenders', id).subscribe({
+    // ушли со страницы, пока грузился, — ответ отбрасывается: иначе 404 «вернул» бы на /tenders (адрес — от этой страницы)
+    this.api.getById('tenders', id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       // пока грузился, адрес мог смениться (другой тендер, «Назад») — устаревший ответ карточку не открывает
       next: (t: any) => { if (this.openIdInUrl() === id) this.showTender(t); },
       error: e => {
-        if (this.openIdInUrl() !== id) return;
+        // 401 — перехватчик уже ведёт на вход (с возвратом сюда); свой переход его перебил бы
+        if (e?.status === 401 || this.openIdInUrl() !== id) return;
         this.notify.error(e?.status === 404 ? 'Тендер не найден — возможно, он другого рынка или удалён'
           : 'Тендер не открылся: ' + (e.error?.message || e.message));
         this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -1084,27 +1088,39 @@ export class TendersComponent {
   }
 
   private showTender(t: any) {
+    this.resetCard();
     this.selectedTender = t;
-    this.matchLotId = null;
-    this.priceRequests = [];
-    this.tenderApplies = [];
     this.loadLots();
     this.loadTenderApplies();
   }
 
   private showList() {
+    this.resetCard();
     this.selectedTender = null;
-    this.matchLotId = null;
-    this.priceRequests = [];
-    this.tenderApplies = [];
     this.openedFromList = false;
     this.loadTenders();
+  }
+
+  /**
+   * Всё, что относится к открытой карточке, — сбросить при её смене и закрытии. Карточка живёт в адресе, «Назад» /
+   * «Вперёд» меняют её без кнопок карточки: окно «КП по всему тендеру» или «Сравнить предложения» прежнего тендера
+   * всплывало на следующем (с отправкой КП по его лотам, назначением победителя ему), а его лоты на миг были видны
+   * в новой карточке (ревью, 2026-10-18).
+   */
+  private resetCard() {
+    this.bulkPriceTenderId = null;
+    this.compareTenderId = null;
+    this.matchLotId = null;
+    this.matchLotNumber = null;
+    this.lots = [];
+    this.priceRequests = [];
+    this.tenderApplies = [];
   }
 
   private loadTenderApplies() {
     const id = this.selectedTender?.id;
     if (!id) return;
-    this.api.getTenderApplies(id).subscribe({
+    this.api.getTenderApplies(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: list => {
         if (this.selectedTender?.id !== id) return;
         this.tenderApplies = [...(list || [])].sort((a: any, b: any) => a.id - b.id);
@@ -1114,22 +1130,34 @@ export class TendersComponent {
     });
   }
 
+  /** Ответ, пришедший после смены карточки (или ухода со страницы), отбрасывается — как у «Заявок на участие». */
   loadLots() {
-    this.api.getTenderLots(this.selectedTender.id).subscribe({
+    const id = this.selectedTender?.id;
+    if (!id) return;
+    this.api.getTenderLots(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: data => {
+        if (this.selectedTender?.id !== id) return;
         this.lots = data;
         this.cdr.detectChanges();
         this.loadPriceRequests();
       },
-      error: err => this.notify.error('Ошибка загрузки лотов: ' + (err.error?.message || err.message))
+      error: err => {
+        if (this.selectedTender?.id !== id || err?.status === 401) return;
+        this.notify.error('Ошибка загрузки лотов: ' + (err.error?.message || err.message));
+      }
     });
   }
 
   loadPriceRequests() {
-    if (!this.selectedTender) return;
-    this.api.getPriceRequestsByTender(this.selectedTender.id).subscribe({
-      next: data => { this.priceRequests = data; this.cdr.detectChanges(); },
-      error: () => this.priceRequests = []
+    const id = this.selectedTender?.id;
+    if (!id) return;
+    this.api.getPriceRequestsByTender(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: data => {
+        if (this.selectedTender?.id !== id) return;
+        this.priceRequests = data;
+        this.cdr.detectChanges();
+      },
+      error: () => { if (this.selectedTender?.id === id) this.priceRequests = []; }
     });
   }
 

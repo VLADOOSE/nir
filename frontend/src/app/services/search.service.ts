@@ -29,14 +29,16 @@ export class SearchService {
    * клиенту (2026-10-16) — поиск сервера (`q`, все статусы): номер ЧЗ-…, клиент, телефон, позиции — как умеет каждый.
    */
   search(query: string): Observable<SearchResult[]> {
-    if (!query || query.length < 2) return of([]);
-    const q = query.toLowerCase();
-    const term = query.trim();
+    const term = (query || '').trim();
+    if (term.length < 2) return of([]);   // и запрос из одних пробелов — не запрос
+    const q = term.toLowerCase();
+    // limit — сервер отдаёт не больше пяти (без него — до 300 полных строк ради пяти показанных)
+    const deal = { status: 'ALL', q: term, limit: DEAL_GROUP_LIMIT };
     return forkJoin({
       tenders: this.api.getTenders().pipe(catchError(() => of([]))),
-      leads: this.api.getLeads({ status: 'ALL', q: term }).pipe(catchError(() => of([]))),
-      requests: this.api.getPrivateRequests({ status: 'ALL', q: term }).pipe(catchError(() => of([]))),
-      offers: this.api.getClientOffers({ status: 'ALL', q: term }).pipe(catchError(() => of([]))),
+      leads: this.api.getLeads(deal).pipe(catchError(() => of([]))),
+      requests: this.api.getPrivateRequests(deal).pipe(catchError(() => of([]))),
+      offers: this.api.getClientOffers(deal).pipe(catchError(() => of([]))),
       equipment: this.api.getEquipment().pipe(catchError(() => of([]))),
       facilities: this.api.getFacilities().pipe(catchError(() => of([]))),
       distributors: this.api.getDistributors().pipe(catchError(() => of([])))

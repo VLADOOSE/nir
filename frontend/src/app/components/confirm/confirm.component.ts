@@ -1,5 +1,7 @@
 import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
 import { NgIf } from '@angular/common';
+import { NavigationStart, Router } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { ConfirmService, ConfirmEvent } from '../../services/confirm.service';
 
 @Component({
@@ -51,10 +53,20 @@ import { ConfirmService, ConfirmEvent } from '../../services/confirm.service';
 export class ConfirmComponent {
   current: ConfirmEvent | null = null;
 
-  constructor(private confirmService: ConfirmService, private cdr: ChangeDetectorRef) {
+  constructor(private confirmService: ConfirmService, private cdr: ChangeDetectorRef, router: Router) {
     this.confirmService.events$.subscribe(event => {
       this.current = event;
       this.cdr.detectChanges();
+    });
+    // Переход по адресу — вопрос относился к прежнему экрану: «Отмена». Карточки тендера и заявки на участие живут
+    // в адресе (?openId=), и «Назад» браузера закрывал карточку под открытым вопросом — «Подтвердить» потом
+    // действовал уже без неё (TypeError, ничего не сохранялось) или над другой карточкой (ревью, 2026-10-18).
+    // Без detectChanges: событие бывает и посреди отрисовки (переход из конструктора страницы) — перерисует цикл роутера.
+    router.events.pipe(filter(e => e instanceof NavigationStart)).subscribe(() => {
+      if (!this.current) return;
+      this.current.resolve(false);
+      this.current = null;
+      this.cdr.markForCheck();
     });
   }
 
