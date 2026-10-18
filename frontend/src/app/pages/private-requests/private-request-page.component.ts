@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, DestroyRef, HostListener, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, HostListener, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgFor, NgIf } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -7,7 +7,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
-import { CLOSE_OUTCOMES, PrStatus, PrView, SaveState, stageTone, timeText } from '../../shared/private-request';
+import { CLOSE_OUTCOMES, PrStatus, PrView, SaveState, timeText } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
 import { fullDateTime } from '../../shared/relative-time';
 import { PrClientSectionComponent } from './pr-client-section.component';
@@ -17,22 +17,27 @@ import { PrOffersComponent } from './pr-offers.component';
 import { OFFER_STATUS_LABELS } from '../../shared/client-offer';
 import type { OfferStatus } from '../../shared/client-offer';
 import { MarketService } from '../../services/market.service';
+import { DealLayoutComponent } from '../../shared/deal-layout.component';
+import { DealProgressComponent } from '../../shared/deal-progress.component';
+import { DealTimelineComponent } from '../../shared/deal-timeline.component';
+import type { DealAction } from '../../shared/deal';
 
 /**
- * Страница частной заявки (спека 2026-10-12 §5): шапка с этапом и меню, разделы — клиент, позиции, поставщики и цены.
+ * Страница частной заявки (спека 2026-10-12 §5) — единая страница сделки (спека 2026-10-18 §3): шапка с меню, этапы и
+ * «Дальше», разделы — клиент, позиции, поставщики и цены, КП клиенту; справа — «Переписка и история».
  * Разделы сохраняют поля сами (по выходу из поля) и отдают странице новый вид заявки и состояние сохранения.
  */
 @Component({
   selector: 'app-private-request-page',
   standalone: true,
-  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent, PrOffersComponent],
+  imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent, PrOffersComponent,
+            DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
         <a routerLink="/private-requests" class="back">← Частные заявки</a>
         <div class="pr-title">
           <h2>{{ v.number }}</h2>
-          <span class="pr-stage" [attr.data-tone]="tone(v.stage)">{{ v.stageText }}</span>
           <span class="save-state" [class.err]="saveError" aria-live="polite">{{ saveText }}</span>
           <button type="button" class="retry" *ngIf="canRetry" (click)="retry()">Повторить</button>
         </div>
@@ -57,19 +62,26 @@ import { MarketService } from '../../services/market.service';
       <div class="from-lead" *ngIf="v.offers.length">
         КП клиенту: <a [routerLink]="['/client-offers', v.offers[0].id]">№ {{ v.offers[0].number }} · {{ offerStatus(v.offers[0].status) }}</a>
       </div>
-      <app-pr-client-section [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onView($event)"
-                             (saveState)="onSaveState($event)"></app-pr-client-section>
-      <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
-                    (saveState)="onSaveState($event)"></app-pr-lines>
-      <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
-      <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()"></app-pr-offers>
-      <div class="pr-bar" *ngIf="auth.isAdmin() && v.stage === 'NEW'">
-        <button type="button" class="btn btn-primary" (click)="supply?.openRfq()">Запросить цены</button>
-      </div>
-      <div class="pr-bar" *ngIf="auth.isAdmin() && v.stage === 'PRICED'">
-        <button type="button" class="btn btn-primary" [disabled]="offersPart?.busy" (click)="offersPart?.create()">КП клиенту</button>
-      </div>
-      <!-- sections -->
+      <app-deal-progress [progress]="v.progress" [canAct]="auth.isAdmin()" [busy]="busy"
+                         (act)="onAct($event)" (stepClick)="scrollToStep($event)"></app-deal-progress>
+      <app-deal-layout storageKey="ais.deal.timeline" mainLabel="Сделка" sideLabel="Переписка">
+        <div dealMain class="pr-main">
+          <app-pr-client-section [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onView($event)"
+                                 (saveState)="onSaveState($event)"></app-pr-client-section>
+          <div #linesAnchor class="anchor">
+            <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
+                          (saveState)="onSaveState($event)"></app-pr-lines>
+          </div>
+          <div #pricesAnchor class="anchor">
+            <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
+          </div>
+          <div #offersAnchor class="anchor">
+            <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()"></app-pr-offers>
+          </div>
+        </div>
+        <app-deal-timeline dealSide #timeline kind="private-request" [dealId]="v.id" [canWrite]="auth.isAdmin()"
+                           [phone]="v.contactPhone" [email]="v.contactEmail"></app-deal-timeline>
+      </app-deal-layout>
     </div>
     <ng-template #stateTpl>
       <div class="empty" *ngIf="loading">Загрузка…</div>
@@ -79,7 +91,7 @@ import { MarketService } from '../../services/market.service';
     </ng-template>
   `,
   styles: [`
-    :host { display: block; max-width: 1100px; }
+    :host { display: block; max-width: 1520px; }
     .pr-page { display: flex; flex-direction: column; gap: 12px; }
     .pr-top { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
     .back { color: var(--accent); text-decoration: none; font-size: 13px; padding-top: 4px; }
@@ -91,17 +103,12 @@ import { MarketService } from '../../services/market.service';
     .pr-menu { position: relative; }
     .from-lead { font-size: 13px; color: var(--text-muted); }
     .from-lead a { color: var(--accent); text-decoration: none; }
-    .pr-bar { display: none; }
+    .pr-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .anchor { scroll-margin-top: 12px; }
     @media (max-width: 900px) {
       .pr-top { gap: 8px; }
       .back { width: 100%; padding-top: 0; }
       .btn-more { min-width: 40px; }
-      /* липкая панель следующего шага (спека §5.6): «Запросить цены» — пока запросов нет (этап «Новая»); «КП клиенту» при
-         ценах — этап 3. Граница — край прокрутки: нижний отступ main.content на телефоне 12 px */
-      .pr-bar { display: flex; position: sticky; bottom: -12px; z-index: 5; justify-content: stretch;
-                padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface);
-                border-top: 1px solid var(--border); box-shadow: var(--shadow); }
-      .pr-bar .btn { flex: 1; min-height: 44px; font-size: 15px; }
     }
   `],
 })
@@ -124,6 +131,10 @@ export class PrivateRequestPageComponent {
   private loadSub?: Subscription;
   @ViewChild('supply') supply?: PrSupplyComponent;
   @ViewChild('offersPart') offersPart?: PrOffersComponent;
+  @ViewChild('timeline') timeline?: DealTimelineComponent;
+  @ViewChild('linesAnchor') linesAnchor?: ElementRef<HTMLElement>;
+  @ViewChild('pricesAnchor') pricesAnchor?: ElementRef<HTMLElement>;
+  @ViewChild('offersAnchor') offersAnchor?: ElementRef<HTMLElement>;
 
   constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public auth: AuthService,
               private notify: NotificationService, private confirm: ConfirmService, private cdr: ChangeDetectorRef,
@@ -144,10 +155,6 @@ export class PrivateRequestPageComponent {
   @HostListener('document:keydown.escape')
   closeMenu() {
     this.menuOpen = false;
-  }
-
-  tone(stage: string) {
-    return stageTone(stage);
   }
 
   offerStatus(s: string): string {
@@ -206,8 +213,42 @@ export class PrivateRequestPageComponent {
     const v = this.view;
     if (!v) return;
     this.api.getPrivateRequest(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: nv => { if (this.view?.id === nv.id) { this.view = nv; this.cdr.markForCheck(); } },
+      next: nv => { if (this.view?.id === nv.id) { this.view = nv; this.timeline?.refresh(); this.cdr.markForCheck(); } },
       error: () => {},
+    });
+  }
+
+  /** Шаг этапов → его раздел страницы. */
+  scrollToStep(key: string) {
+    const el = key === 'LINES' ? this.linesAnchor : key === 'PRICES' ? this.pricesAnchor
+      : key === 'OFFER' || key === 'RESULT' ? this.offersAnchor : null;
+    el?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Кнопка «Дальше». */
+  onAct(a: DealAction) {
+    switch (a.action) {
+      case 'ADD_LINES': this.scrollToStep('LINES'); break;
+      case 'REQUEST_PRICES': this.supply?.openRfq(); break;
+      case 'OPEN_PRICES': this.scrollToStep('PRICES'); break;
+      case 'CREATE_OFFER': this.offersPart?.create(); break;
+      case 'OPEN_OFFER': if (a.refId) this.router.navigate(['/client-offers', a.refId]); break;
+      case 'OFFER_DECISION': this.decide(a); break;
+      case 'CLOSE_WON': this.close('WON'); break;
+    }
+  }
+
+  /** «Согласился» / «Отказался» — статус КП (принято / отклонено), этап и лента пересчитываются. */
+  private decide(a: DealAction) {
+    if (!a.refId || !a.decision) return;
+    this.busy = true;
+    this.api.setClientOfferStatus(a.refId, a.decision).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.busy = false;
+        this.notify.success(a.decision === 'ACCEPTED' ? 'Отмечено: клиент согласился' : 'Отмечено: клиент отказался');
+        this.refresh();
+      },
+      error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
     });
   }
 
@@ -271,7 +312,7 @@ export class PrivateRequestPageComponent {
     this.menuOpen = false;
     this.busy = true;
     this.api.closePrivateRequest(v.id, outcome).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: nv => { this.busy = false; this.view = nv; this.notify.success('Заявка закрыта'); this.cdr.markForCheck(); },
+      next: nv => { this.busy = false; this.view = nv; this.timeline?.refresh(); this.notify.success('Заявка закрыта'); this.cdr.markForCheck(); },
       error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
     });
   }
@@ -282,7 +323,7 @@ export class PrivateRequestPageComponent {
     this.menuOpen = false;
     this.busy = true;
     this.api.reopenPrivateRequest(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: nv => { this.busy = false; this.view = nv; this.notify.success('Заявка снова в работе'); this.cdr.markForCheck(); },
+      next: nv => { this.busy = false; this.view = nv; this.timeline?.refresh(); this.notify.success('Заявка снова в работе'); this.cdr.markForCheck(); },
       error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
     });
   }
