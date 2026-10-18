@@ -3,6 +3,8 @@
  * Импортируют ленивые страницы; ApiService — только `import type` (начальный бандл у предела, CLAUDE.md §12).
  */
 
+import type { DealProgress } from './deal';
+
 export type PrStatus = 'NEW' | 'WON' | 'LOST' | 'CANCELLED';
 export type RegStatus = 'SUGGESTED' | 'CONFIRMED' | 'NOT_FOUND' | 'NOT_REQUIRED' | null;
 export type PrField = 'FACILITY' | 'CUSTOMER_NAME' | 'CONTACT_NAME' | 'CONTACT_PHONE' | 'CONTACT_EMAIL' | 'DELIVERY_ADDRESS' | 'NOTE';
@@ -44,6 +46,8 @@ export interface PrView {
   status: PrStatus;
   stage: string;
   stageText: string;
+  /** Этапы всего цикла и «Дальше» (спека 2026-10-18 §3.1). */
+  progress: DealProgress;
   facilityId: number | null;
   facilityName: string | null;
   customerName: string | null;

@@ -7,12 +7,29 @@ import type {
   DocFormat, LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
 } from '../shared/private-request';
+import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private base = '/api';
 
   constructor(private http: HttpClient) {}
+
+  /** Лента сделки; before — время первой строки; «Z», а не «+05:00»: HttpParams не кодирует «+». */
+  getDealTimeline(kind: DealKind, id: number, before?: string): Observable<DealTimeline> {
+    const params: Record<string, string | number> = { limit: 50 };
+    if (before) params['before'] = new Date(before).toISOString();
+    return this.http.get<DealTimeline>(`${this.base}/${kind === 'tender' ? 'tenders' : 'private-requests'}/${id}/timeline`, { params });
+  }
+
+  addDealEvent(kind: DealKind, id: number, type: 'NOTE' | 'CALL', text: string): Observable<DealTimelineItem> {
+    return this.http.post<DealTimelineItem>(`${this.base}/${kind === 'tender' ? 'tenders' : 'private-requests'}/${id}/events`,
+      { type, text });
+  }
+
+  getTenderProgress(id: number): Observable<DealProgress> {
+    return this.http.get<DealProgress>(`${this.base}/tenders/${id}/progress`);
+  }
 
   // === Generic CRUD ===
 
