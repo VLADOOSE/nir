@@ -65,7 +65,8 @@ import type { DealKind, DealTimelineItem } from './deal';
     .tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
     .tl li:not(.msg) { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 6px; align-items: baseline;
                        font-size: 13px; color: var(--text); }
-    .tl-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+    .tl-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums;
+               min-width: 6.2em; }   /* «18.10 22:48»: значки строк «только дата» — в той же колонке */
     .tl-text a { color: var(--accent); text-decoration: none; }
     .tl-author { color: var(--text-muted); }
     li[data-kind="LETTER_FAILED"] .tl-text, li[data-kind="BOUNCED"] .tl-text { color: var(--danger-text); }
