@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Location, NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -20,6 +20,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
 import { importToast } from '../../shared/import-toast';
 import { TendersFiltersComponent, TendersFilters } from './tenders-filters.component';
 import { TenderLotsComponent } from './tender-lots.component';
+import { applyStatusLabel } from '../../shared/apply-labels';
 
 @Component({
   selector: 'app-tenders',
@@ -203,6 +204,8 @@ import { TenderLotsComponent } from './tender-lots.component';
           <div class="info-item" *ngIf="hasContactPerson()"><span class="info-label">Контактное лицо</span><span>{{ formatContact(selectedTender) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.contactPhone"><span class="info-label">Телефон</span><span>{{ selectedTender.contactPhone }}</span></div>
           <div class="info-item" *ngIf="selectedTender.contactEmail"><span class="info-label">Эл. почта</span><span>{{ selectedTender.contactEmail }}</span></div>
+          <!-- заявки на участие по тендеру — переход к ним (2026-10-16); нет заявок — строки нет -->
+          <div class="info-item" *ngIf="tenderApplies.length"><span class="info-label">Заявки на участие</span><span><ng-container *ngFor="let a of tenderApplies; let last = last"><a class="xref" [routerLink]="['/applies']" [queryParams]="{ openId: a.id }">№ {{ a.id }} · {{ applyStatus(a.status) }}</a><ng-container *ngIf="!last">, </ng-container></ng-container></span></div>
         </div>
         <p *ngIf="selectedTender.description" class="info-desc"><strong>Описание:</strong> {{ selectedTender.description }}</p>
       </div>
@@ -567,8 +570,17 @@ export class TendersComponent {
     return withPrice.length >= 2;
   }
 
+  /** Заявки на участие по открытому тендеру — строка «Заявки на участие» в карточке. */
+  tenderApplies: any[] = [];
+  /**
+   * Карточка открыта кликом по списку этой страницы — запись истории с ?openId= поставили мы, и «← Назад к списку»
+   * это шаг назад по истории (вперёд — снова карточка). Открыта по ссылке (дашборд, поиск, Telegram) — список
+   * ЗАМЕНЯЕТ запись карточки: «Назад» браузера потом ведёт туда, откуда пришли.
+   */
+  private openedFromList = false;
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef, private route: ActivatedRoute,
-              private router: Router,
+              private router: Router, private location: Location,
               private notify: NotificationService, private confirm: ConfirmService, public market: MarketService,
               public auth: AuthService) {
     this.loadTenders();
@@ -580,16 +592,36 @@ export class TendersComponent {
       error: () => { this.allApplyItems = []; }
     });
 
-    // Поддержка перехода через ?openId=...
-    this.route.queryParams.subscribe(params => {
-      const openId = params['openId'];
-      if (openId) {
-        this.api.getById('tenders', +openId).subscribe((t: any) => {
-          this.onOpen(t);
-        });
-      }
+    // Открытая карточка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
+    // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
+    this.route.queryParamMap.subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
+  }
+
+  /** Адрес → экран: есть ?openId= — карточка этого тендера (уже открытую не грузим заново), нет — список. */
+  private syncOpen(id: number | null) {
+    if (id === null) {
+      if (this.selectedTender) this.showList();
+      return;
+    }
+    if (this.selectedTender?.id === id) return;
+    this.openedFromList = false;
+    this.api.getById('tenders', id).subscribe({
+      // пока грузился, адрес мог смениться (другой тендер, «Назад») — устаревший ответ карточку не открывает
+      next: (t: any) => { if (this.openIdInUrl() === id) this.showTender(t); },
+      error: e => {
+        if (this.openIdInUrl() !== id) return;
+        this.notify.error(e?.status === 404 ? 'Тендер не найден — возможно, он другого рынка или удалён'
+          : 'Тендер не открылся: ' + (e.error?.message || e.message));
+        this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      },
     });
   }
+
+  private openIdInUrl(): number | null {
+    return Number(this.route.snapshot.queryParamMap.get('openId')) || null;
+  }
+
+  applyStatus(s: string): string { return applyStatusLabel(s); }
 
   getStatusLabel(status: string): string {
     const labels: any = { DRAFT: 'Подготовка', ACTIVE: 'Приём заявок', COMPLETED: 'Завершён', CANCELLED: 'Отменён' };
@@ -1034,18 +1066,52 @@ export class TendersComponent {
       });
   }
 
+  /** Клик по карточке списка: карточка — сразу (тендер уже есть), адрес — ?openId= новой записью истории. */
   onOpen(t: any) {
+    this.showTender(t);
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: t.id }, queryParamsHandling: 'merge' })
+      .then(ok => { if (ok && this.selectedTender?.id === t.id) this.openedFromList = true; });
+  }
+
+  /** «← Назад к списку»: убрать ?openId= из адреса — список покажет подписка на адрес (syncOpen). */
+  onBack() {
+    if (this.openedFromList) {
+      this.openedFromList = false;
+      this.location.back();
+      return;
+    }
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  private showTender(t: any) {
     this.selectedTender = t;
     this.matchLotId = null;
     this.priceRequests = [];
+    this.tenderApplies = [];
     this.loadLots();
+    this.loadTenderApplies();
   }
 
-  onBack() {
+  private showList() {
     this.selectedTender = null;
     this.matchLotId = null;
     this.priceRequests = [];
+    this.tenderApplies = [];
+    this.openedFromList = false;
     this.loadTenders();
+  }
+
+  private loadTenderApplies() {
+    const id = this.selectedTender?.id;
+    if (!id) return;
+    this.api.getTenderApplies(id).subscribe({
+      next: list => {
+        if (this.selectedTender?.id !== id) return;
+        this.tenderApplies = [...(list || [])].sort((a: any, b: any) => a.id - b.id);
+        this.cdr.detectChanges();
+      },
+      error: () => { /* строка «Заявки на участие» не критична — карточка работает без неё */ },
+    });
   }
 
   loadLots() {

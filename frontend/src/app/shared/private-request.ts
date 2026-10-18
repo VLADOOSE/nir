@@ -35,7 +35,8 @@ export interface PrLine {
   requested: boolean;
 }
 
-export interface LeadRef { id: number; subject: string; source: string; status: string; receivedAt: string; }
+/** Обращение-источник заявки; chatId — его переписка (WhatsApp или почта), без переписки — null. */
+export interface LeadRef { id: number; subject: string; source: string; status: string; receivedAt: string; chatId: number | null; }
 
 export interface PrView {
   id: number;

@@ -44,9 +44,12 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
                   [class.b-auto]="r.type==='AUTO_REPLY'">
               {{ typeLabel(r.type) }}
             </span>
-            <span *ngIf="(r.type==='SUPPLIER_RESPONSE' || r.type==='BOUNCE' || r.type==='DELAYED' || r.type==='AUTO_REPLY')
-                         && r.matchedPriceRequestId"
+            <span *ngIf="r.type==='SUPPLIER_RESPONSE' && r.matchedPriceRequestId"
                   class="muted kp-ref"> · КП #{{ r.matchedPriceRequestId }}</span>
+            <!-- у возврата, задержки и автоответа «КП #…» — переход к запросу цен (у ответа поставщика — «Сверить ›») -->
+            <span *ngIf="(r.type==='BOUNCE' || r.type==='DELAYED' || r.type==='AUTO_REPLY') && r.matchedPriceRequestId"
+                  class="muted kp-ref"> · <a class="xref" [routerLink]="['/price-requests', r.matchedPriceRequestId]"
+                  [attr.aria-label]="'Открыть запрос цен КП #' + r.matchedPriceRequestId">КП #{{ r.matchedPriceRequestId }}</a></span>
             <span class="muted files" *ngIf="r.files?.length"> · 📎 {{ r.files.join(', ') }}</span>
             <span class="muted box-ref" *ngIf="r.mailbox"> · {{ boxLabel(r.mailbox) }}</span>
           </td>
@@ -246,6 +249,9 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
       /* имена файлов на карточке не помещаются (строка типа не переносится) — они на экране «Ответ поставщика» */
       .inbound-list .files { display: none; }
       .inbound-list a.reply-link { min-height: 40px; }
+      /* «КП #…» у возврата / задержки / автоответа — строчная ссылка: цель растят поля-невидимки .xref из kit,
+         ячейка типа обрезает их по своей высоте (~38 px — метка и так в две строки). Кнопкой в 40 px метку не
+         делаем: в узкой ячейке «·» отрывался от «КП #…», карточка росла на 21 px (живая проверка). */
       .inbound-list td:not([data-label]) { grid-area: act; justify-content: flex-end; }
     }
   `],

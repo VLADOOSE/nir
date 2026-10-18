@@ -50,7 +50,9 @@ import { MarketService } from '../../services/market.service';
       </header>
       <div class="from-lead" *ngIf="v.lead as ld">
         Из обращения:
-        <a [routerLink]="['/leads']" [queryParams]="{ openId: ld.id }">«{{ ld.subject }}» · {{ leadSource(ld.source) }} · {{ when(ld.receivedAt) }}</a>
+        <a class="xref" [routerLink]="['/leads']" [queryParams]="{ openId: ld.id }">«{{ ld.subject }}» · {{ leadSource(ld.source) }} · {{ when(ld.receivedAt) }}</a>
+        <!-- переписка обращения (WhatsApp или почта) — переход на «Чаты» (2026-10-16) -->
+        <ng-container *ngIf="ld.chatId"> · <a class="xref" [routerLink]="['/chats']" [queryParams]="{ chatId: ld.chatId }">Переписка</a></ng-container>
       </div>
       <div class="from-lead" *ngIf="v.offers.length">
         КП клиенту: <a [routerLink]="['/client-offers', v.offers[0].id]">№ {{ v.offers[0].number }} · {{ offerStatus(v.offers[0].status) }}</a>

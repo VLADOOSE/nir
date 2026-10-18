@@ -35,7 +35,7 @@ import { filter } from 'rxjs/operators';
           </select>
         </div>
         <div class="header-search">
-          <input type="text" placeholder="Поиск по тендерам, оборудованию, учреждениям..."
+          <input type="text" placeholder="Поиск: тендеры, обращения, заявки, КП, оборудование…"
                  [(ngModel)]="searchQuery" (input)="onSearch()" (focus)="showResults = searchResults.length > 0" />
           <div class="search-results" *ngIf="showResults && searchResults.length > 0">
             <div class="search-result" *ngFor="let r of searchResults" (click)="onSelectResult(r)">
@@ -67,7 +67,7 @@ import { filter } from 'rxjs/operators';
         <nav class="sidebar" [class.open]="sidebarOpen" (click)="onNavClick($event)">
           <!-- поиск на мобиле живёт в drawer (в узкой шапке ему нет места) -->
           <div class="drawer-search">
-            <input type="text" placeholder="Поиск: тендеры, оборудование…"
+            <input type="text" placeholder="Поиск: тендеры, заявки, КП…"
                    [(ngModel)]="searchQuery" (input)="onSearch()" />
             <div class="drawer-results" *ngIf="showResults && searchResults.length > 0">
               <div class="search-result" *ngFor="let r of searchResults" (click)="onSelectResult(r)">
@@ -208,6 +208,10 @@ import { filter } from 'rxjs/operators';
     .type-equipment { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success-text); }
     .type-facility { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn-text); }
     .type-distributor { background: color-mix(in srgb, var(--text-muted) 18%, transparent); color: var(--text-muted); }
+    /* сделка West-Med (2026-10-16): обращение → заявка → КП — цвета как у их статусов на своих экранах */
+    .type-lead { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .type-request { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .type-offer { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
     .result-content { flex: 1; min-width: 0; }
     .result-title { font-size: 14px; font-weight: 500; color: var(--text); }
     .result-subtitle { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -293,6 +297,8 @@ export class LayoutComponent implements OnInit, OnDestroy {
   pendingDevices = 0;             // запросы доступа с калитки ais.westmed.kz — счётчик в меню (только ADMIN)
   private leadsTimer: any = null;
   private navSub?: Subscription;
+  private searchTimer: any = null;
+  private searchSub?: Subscription;
 
   /** закрыть drawer при клике по пункту меню */
   onNavClick(e: Event) {
@@ -309,7 +315,9 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.leadsTimer);
+    clearTimeout(this.searchTimer);
     this.navSub?.unsubscribe();
+    this.searchSub?.unsubscribe();
   }
 
   /** Действие на странице (допуск, отказ, отзыв…) поменяло счётчики — не ждать минуты или навигации. */
@@ -331,23 +339,34 @@ export class LayoutComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Поиск — с паузой 250 мс после ввода, прежний запрос отменяется: на каждую букву уходит семь запросов
+   * (с 2026-10-16 — и обращения, частные заявки, КП клиенту), а поздний ответ на старый текст не должен
+   * перетирать выдачу по новому.
+   */
   onSearch() {
-    this.searchService.search(this.searchQuery).subscribe(results => {
-      this.searchResults = results;
-      this.showResults = results.length > 0;
-      this.cdr.detectChanges();
-    });
+    clearTimeout(this.searchTimer);
+    this.searchSub?.unsubscribe();
+    const query = this.searchQuery;
+    if (!query || query.length < 2) {
+      this.searchResults = [];
+      this.showResults = false;
+      return;
+    }
+    this.searchTimer = setTimeout(() => {
+      this.searchSub = this.searchService.search(query).subscribe(results => {
+        this.searchResults = results;
+        this.showResults = results.length > 0;
+        this.cdr.detectChanges();
+      });
+    }, 250);
   }
 
   onSelectResult(r: SearchResult) {
     this.showResults = false;
     this.searchQuery = '';
     this.sidebarOpen = false;   // выбор из drawer-поиска закрывает drawer
-    if (r.type === 'tender') {
-      this.router.navigate([r.route], { queryParams: { openId: r.id } });
-    } else {
-      this.router.navigate([r.route]);
-    }
+    this.router.navigate(r.commands, { queryParams: r.queryParams });
   }
 
   onMarketChange(e: Event) {

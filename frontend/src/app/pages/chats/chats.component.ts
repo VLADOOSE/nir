@@ -69,6 +69,8 @@ const PAGE = 50;
           <div class="th-actions" *ngIf="chat">
             <a class="btn btn-line btn-sm" *ngIf="waLink(chat)" [href]="waLink(chat)" target="_blank" rel="noopener">Написать в WhatsApp</a>
             <a class="btn btn-line btn-sm" *ngIf="chat.lead" [routerLink]="['/leads']" [queryParams]="{ openId: chat.lead.id }">Обращение · {{ statusLabel(chat.lead.status) }}</a>
+            <!-- обращение превращено в частную заявку — переход сразу к ней (2026-10-16) -->
+            <a class="btn btn-line btn-sm" *ngIf="chat.lead?.privateRequestId" [routerLink]="['/private-requests', chat.lead.privateRequestId]">Заявка {{ chat.lead.privateRequestNumber }}</a>
             <button type="button" class="btn btn-primary btn-sm" *ngIf="canCreateLead()" [disabled]="busy" (click)="createLead()">Создать обращение</button>
             <label class="nc" *ngIf="auth.isAdmin() && !chat.group">
               <input type="checkbox" [checked]="chat.notClient" [disabled]="busy" (change)="toggleNotClient($event)" /> не клиент

@@ -52,7 +52,9 @@ import { errorText } from '../../shared/error-text';
           <!-- вся карточка — эта ссылка (::after растянут на карточку): Enter, новая вкладка, «копировать ссылку» -->
           <a class="num" [routerLink]="['/private-requests', r.id]" [attr.aria-label]="'Открыть заявку ' + r.number">{{ r.number }}</a>
           <span class="pr-stage" [attr.data-tone]="tone(r.stage)">{{ r.stageText }}</span>
-          <span class="lead-mark" *ngIf="r.leadId">из обращения</span>
+          <!-- своя ссылка поверх растянутой ссылки карточки (.xref позиционирована): не вложенная <a> -->
+          <a class="lead-mark xref" *ngIf="r.leadId" [routerLink]="['/leads']" [queryParams]="{ openId: r.leadId }"
+             [attr.aria-label]="'Открыть обращение, из которого создана заявка ' + r.number">из обращения</a>
           <span class="date">{{ dateText(r.createdAt) }}</span>
         </div>
         <div class="client" [class.muted]="!r.clientLabel || r.clientLabel === 'Клиент не указан'">{{ r.clientLabel }}</div>
@@ -78,7 +80,8 @@ import { errorText } from '../../shared/error-text';
     .num::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }
     .num:focus-visible { outline: none; }
     .num:focus-visible::after { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .lead-mark { font-size: 12px; color: var(--text-muted); }
+    /* цвет — ссылки (.xref из kit) */
+    .lead-mark { font-size: 12px; }
     .date { margin-left: auto; color: var(--text-muted); font-size: 13px; }
     .client { margin-top: 6px; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
     .client.muted { color: var(--text-muted); }

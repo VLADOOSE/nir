@@ -58,7 +58,8 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
             </span>
           </span>
         </div>
-        <div class="client">{{ o.clientName || 'Клиент не указан' }}<span class="from-pr" *ngIf="o.tenderNumber"> · из заявки {{ o.tenderNumber }}</span></div>
+        <!-- «из заявки ЧЗ-…» — своя ссылка поверх растянутой ссылки карточки (.xref позиционирована), не вложенная <a> -->
+        <div class="client"><span class="client-name">{{ o.clientName || 'Клиент не указан' }}</span><span class="from-pr" *ngIf="o.tenderNumber"> · из заявки <a class="xref" [routerLink]="['/private-requests', o.tenderId]" [attr.aria-label]="'Открыть заявку ' + o.tenderNumber">{{ o.tenderNumber }}</a></span></div>
         <div class="bottom">
           <span>{{ o.itemCount }} поз.</span>
           <span class="sum">{{ money(o.totalAmount) }}&nbsp;{{ symbol }}</span>
@@ -103,7 +104,11 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
       .page-head > .btn { margin-bottom: 12px; }
       .filters input { flex: 1; min-width: 0; font-size: 16px; }
       .card { padding: 12px; }
-      .client { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* одна строка: многоточие — у имени клиента, «· из заявки ЧЗ-…» видна целиком (иначе длинное имя прятало
+         ссылку на заявку под многоточием) */
+      .client { display: flex; }
+      .client-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .from-pr { flex: none; white-space: pre; }
       .btn-more { min-width: 40px; }
     }
   `],

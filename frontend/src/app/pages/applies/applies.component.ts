@@ -1,6 +1,6 @@
 import { Component, ChangeDetectorRef, HostListener } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { NgFor, NgIf } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Location, NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormGroup, FormControl, FormsModule, Validators } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { ApiService } from '../../services/api.service';
@@ -10,11 +10,12 @@ import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { deadlinePassed } from '../../shared/deadline';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
+import { applyStatusLabel } from '../../shared/apply-labels';
 
 @Component({
   selector: 'app-applies',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, SearchableSelectComponent, LucideDynamicIcon, MarketMoneyPipe],
+  imports: [NgFor, NgIf, RouterLink, ReactiveFormsModule, FormsModule, SearchableSelectComponent, LucideDynamicIcon, MarketMoneyPipe],
   template: `
     <!-- ========== СПИСОК ЗАЯВОК ========== -->
     <ng-container *ngIf="!selectedApply">
@@ -76,7 +77,10 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
         <tbody>
           <tr *ngFor="let a of filteredApplies">
             <td data-label="ID">{{ a.id }}</td>
-            <td data-label="Номер тендера">{{ a.tender?.tenderNumber || '—' }}</td>
+            <!-- номер — переход к тендеру (2026-10-16); stopPropagation — на случай клика по строке -->
+            <td data-label="Номер тендера"><a *ngIf="a.tender?.id && a.tender?.tenderNumber; else noTender" class="xref"
+                   [routerLink]="['/tenders']" [queryParams]="{ openId: a.tender.id }" (click)="$event.stopPropagation()"
+                   [attr.aria-label]="'Открыть тендер № ' + a.tender.tenderNumber">{{ a.tender.tenderNumber }}</a><ng-template #noTender>—</ng-template></td>
             <td data-label="Заказчик">{{ a.tender?.facility?.name || '—' }}</td>
             <td data-label="Статус"><span class="badge" [class]="'badge-' + a.status">{{ getStatusLabel(a.status) }}</span></td>
             <td data-label="Поставка">
@@ -127,7 +131,8 @@ import { SearchableSelectComponent } from '../../components/searchable-select/se
       <div class="apply-info">
         <h2>Заявка #{{ selectedApply.id }}</h2>
         <div class="info-grid">
-          <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; {{ selectedApply.tender?.tenderNumber || '—' }}
+          <div class="info-item"><span class="info-label">Тендер</span><span>&#8470; <a *ngIf="selectedApply.tender?.id && selectedApply.tender?.tenderNumber; else noCardTender" class="xref"
+              [routerLink]="['/tenders']" [queryParams]="{ openId: selectedApply.tender.id }">{{ selectedApply.tender.tenderNumber }}</a><ng-template #noCardTender>—</ng-template>
             <a *ngIf="selectedApply.tender?.tenderNumber && !isDemoTender(selectedApply.tender.tenderNumber)" class="eis-link-inline" [href]="eisLink(selectedApply.tender)" target="_blank" rel="noopener" [title]="'Открыть в ' + market.portalLabel(selectedApply.tender?.platform)">
               <svg lucideIcon="external-link" [size]="11"></svg> {{ market.portalLabel(selectedApply.tender?.platform) }}
             </a>
@@ -543,11 +548,46 @@ export class AppliesComponent {
     quantity: new FormControl<number | null>(null, [Validators.min(1)])
   });
 
+  /** ?openId= из адреса: какую заявку показать; null — список. Заявка берётся из списка рынка (он и есть гард рынка). */
+  private wantedOpenId: number | null = null;
+  private listLoaded = false;
+  /** Карточка открыта кликом «Открыть» этой страницы — «← Назад к списку» = шаг назад по истории (как у тендеров). */
+  private openedFromList = false;
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
-              private route: ActivatedRoute, public market: MarketService) {
+              private route: ActivatedRoute, private router: Router, private location: Location,
+              public market: MarketService) {
     this.loadApplies();
     this.api.getTenders().subscribe({ next: data => { this.tenders = data; this.cdr.detectChanges(); } });
+    // Открытая заявка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
+    // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
+    this.route.queryParamMap.subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
+  }
+
+  /** Адрес → экран: ?openId= — карточка (уже открытую не открываем заново), нет — список. */
+  private syncOpen(id: number | null) {
+    this.wantedOpenId = id;
+    if (id === null) {
+      if (this.selectedApply) this.showList();
+      return;
+    }
+    if (this.selectedApply?.id === id) return;
+    this.openedFromList = false;
+    this.openWanted();
+  }
+
+  /** Открыть заявку из адреса, как только есть список; в списке рынка её нет — сказать и убрать ?openId=. */
+  private openWanted() {
+    const id = this.wantedOpenId;
+    if (id === null || !this.listLoaded || this.selectedApply?.id === id) return;
+    const apply = this.applies.find((a: any) => a.id === id);
+    if (apply) {
+      this.showApply(apply);
+      return;
+    }
+    this.notify.error('Заявка на участие не найдена — возможно, она другого рынка или удалена');
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   applyFilters() {
@@ -568,7 +608,7 @@ export class AppliesComponent {
   }
 
   getStatusLabel(s: string): string {
-    return ({ DRAFT: 'Черновик', SUBMITTED: 'Подана', UNDER_REVIEW: 'На рассмотрении', WON: 'Выиграна', LOST: 'Проиграна', CANCELLED: 'Отменена', REJECTED: 'Отклонена' } as any)[s] || s;
+    return applyStatusLabel(s);   // те же подписи — в строке «Заявки на участие» карточки тендера
   }
 
   formatDate(d: string): string {
@@ -599,12 +639,9 @@ export class AppliesComponent {
             this.cdr.detectChanges();
           });
         }
-        // Авто-открытие заявки через ?openId=N (бридж КП → Заявка)
-        const openId = Number(this.route.snapshot.queryParamMap.get('openId'));
-        if (openId && !this.selectedApply) {
-          const apply = this.applies.find((a: any) => a.id === openId);
-          if (apply) this.onOpen(apply);
-        }
+        // ?openId= пришёл раньше списка (переход из КП, тендера, по ссылке) — открыть теперь
+        this.listLoaded = true;
+        this.openWanted();
         this.cdr.detectChanges();
       },
       error: err => this.notify.error('Ошибка загрузки заявок: ' + (err.error?.message || err.message))
@@ -655,8 +692,16 @@ export class AppliesComponent {
       });
   }
 
+  /** «Открыть» в списке: карточка — сразу, адрес — ?openId= новой записью истории. */
   onOpen(a: any) {
+    this.showApply(a);
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: a.id }, queryParamsHandling: 'merge' })
+      .then(ok => { if (ok && this.selectedApply?.id === a.id) this.openedFromList = true; });
+  }
+
+  private showApply(a: any) {
     this.selectedApply = a;
+    this.showItemForm = false;
     this.contractEdit = {
       contractNumber: a.contractNumber || '',
       contractSignedAt: a.contractSignedAt || ''
@@ -710,7 +755,22 @@ export class AppliesComponent {
     return ({ NONE: 'Не начата', ORDERED: 'Заказано', DELIVERED: 'Поставлено', PAID: 'Оплачено' } as any)[s] || s;
   }
 
-  onBack() { this.selectedApply = null; this.showItemForm = false; this.loadApplies(); }
+  /** «← Назад к списку»: убрать ?openId= из адреса — список покажет подписка на адрес (syncOpen). */
+  onBack() {
+    if (this.openedFromList) {
+      this.openedFromList = false;
+      this.location.back();
+      return;
+    }
+    this.router.navigate([], { relativeTo: this.route, queryParams: { openId: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  private showList() {
+    this.selectedApply = null;
+    this.showItemForm = false;
+    this.openedFromList = false;
+    this.loadApplies();
+  }
 
   loadItems() {
     this.api.getApplyItems(this.selectedApply.id).subscribe({

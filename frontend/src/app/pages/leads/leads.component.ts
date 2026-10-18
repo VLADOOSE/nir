@@ -136,13 +136,14 @@ export class LeadsComponent implements OnDestroy {
   sync: any = null;
   waStatus: WhatsappStatus | null = null;
   syncing = false;
-  statusKey = 'NEW,IN_WORK';
+  /** «Активные» — «Новое», «В работе» и «Заявка создана», пока частная заявка в работе (сервер, status=ACTIVE). */
+  statusKey = 'ACTIVE';
   channel = '';
   q = '';
   cardId: number | null = null;
   formOpen = false;
   readonly statusFilters = [
-    { key: 'NEW,IN_WORK', label: 'Активные' },
+    { key: 'ACTIVE', label: 'Активные' },
     { key: 'NEW', label: 'Новые' },
     { key: 'IN_WORK', label: 'В работе' },
     { key: 'CONVERTED', label: 'Заявка создана' },
