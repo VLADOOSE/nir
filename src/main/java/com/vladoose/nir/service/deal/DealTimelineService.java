@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -21,15 +22,16 @@ import java.util.stream.Stream;
 /**
  * Лента «Переписка и история» (спека 2026-10-18 §3.2, §4.2): всё, у чего уже есть дата, — из существующих таблиц,
  * заметки / звонки / смена этапа — из deal_event. Страница — limit самых поздних раньше курсора, по возрастанию.
- * Строки с одним временем страница не делит: курсор — время, и половина такой группы потерялась бы (фото альбома
- * WhatsApp приходят в одну секунду).
+ * Строки одной миллисекунды страница не делит: курсор — время с точностью до миллисекунды (фронт шлёт
+ * toISOString, в базе — микросекунды), и половина такой группы потерялась бы (фото альбома WhatsApp приходят в одну
+ * секунду, события одного запроса — в одну миллисекунду).
  */
 @Service
 public class DealTimelineService {
 
     public static final int DEFAULT_LIMIT = 50;
     static final int MAX_LIMIT = 100;
-    /** Предел сообщений одной секунды на границе страницы — защита от вырожденных данных. */
+    /** Предел сообщений одной миллисекунды на границе страницы — защита от вырожденных данных. */
     static final int SAME_TIME_MAX = 500;
     /** Запросы цен, отправленные с разрывом меньше минуты, — одно окно «Запросить цены», одна строка. */
     static final Duration RFQ_WINDOW = Duration.ofMinutes(1);
@@ -91,8 +93,8 @@ public class DealTimelineService {
 
     /**
      * Обращение, его события и переписка его эпизода — n + 1 последних сообщений раньше курсора и все сообщения
-     * самой ранней взятой секунды. Не взятые сообщения раньше её, а строка «Обращение» — не позже любого сообщения
-     * эпизода: она остаётся раньше страницы, и признак «есть раньше» выставляется сам.
+     * самой ранней взятой миллисекунды. Не взятые сообщения раньше её, а строка «Обращение» — не позже любого
+     * сообщения эпизода: она остаётся раньше страницы, и признак «есть раньше» выставляется сам.
      */
     private void addLead(List<DealTimelineItem> all, Lead lead, OffsetDateTime cursor, int n) {
         OffsetDateTime start = lead.getReceivedAt() != null ? lead.getReceivedAt() : lead.getCreatedAt();
@@ -114,10 +116,12 @@ public class DealTimelineService {
         List<ChatMessage> newestFirst = new ArrayList<>(
                 messages.findForDeal(chatId, start, to, cursor, PageRequest.of(0, n + 1)));
         if (newestFirst.size() > n) {
-            // все сообщения самой ранней взятой секунды: страница не делит одно время, а курсор их отрезал бы
-            OffsetDateTime oldest = newestFirst.get(newestFirst.size() - 1).getSentAt();
+            // все сообщения самой ранней взятой миллисекунды: страница не делит её, а курсор отрезал бы
+            OffsetDateTime oldest = ms(newestFirst.get(newestFirst.size() - 1).getSentAt());
+            OffsetDateTime next = oldest.plus(1, ChronoUnit.MILLIS);
             Set<Long> have = newestFirst.stream().map(ChatMessage::getId).collect(Collectors.toSet());
-            messages.findForDeal(chatId, oldest, oldest.plusNanos(1000), cursor, PageRequest.of(0, SAME_TIME_MAX))
+            messages.findForDeal(chatId, oldest.isBefore(start) ? start : oldest, next.isAfter(to) ? to : next, cursor,
+                            PageRequest.of(0, SAME_TIME_MAX))
                     .stream().filter(m -> !have.contains(m.getId())).forEach(newestFirst::add);
             newestFirst.sort(Comparator.comparing(ChatMessage::getSentAt).thenComparing(ChatMessage::getId).reversed());
         }
@@ -222,15 +226,19 @@ public class DealTimelineService {
     }
 
     /**
-     * Самые поздние n строк раньше курсора, по возрастанию. Группу строк одного времени страница не делит — берёт
-     * целиком (следующая страница начнётся раньше этого времени).
+     * Самые поздние n строк раньше курсора, по возрастанию. Группу строк одной миллисекунды страница не делит — берёт
+     * целиком: курсор следующей страницы — время её первой строки (фронт — до миллисекунды), раньше всей группы.
      */
     static DealTimelineResponse page(List<DealTimelineItem> all, OffsetDateTime cursor, int n) {
         List<DealTimelineItem> eligible = all.stream().filter(i -> i.at() != null && i.at().isBefore(cursor))
                 .sorted(ORDER).toList();
         int from = Math.max(0, eligible.size() - n);
-        while (from > 0 && eligible.get(from - 1).at().isEqual(eligible.get(from).at())) from--;
+        while (from > 0 && ms(eligible.get(from - 1).at()).isEqual(ms(eligible.get(from).at()))) from--;
         return new DealTimelineResponse(new ArrayList<>(eligible.subList(from, eligible.size())), from > 0);
+    }
+
+    static OffsetDateTime ms(OffsetDateTime t) {
+        return t.truncatedTo(ChronoUnit.MILLIS);
     }
 
     static int clamp(int limit) {

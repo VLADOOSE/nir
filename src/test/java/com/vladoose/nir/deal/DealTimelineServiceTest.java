@@ -255,4 +255,59 @@ class DealTimelineServiceTest {
                 .containsExactly("Запрос цен: письмом — " + a.getDistributor().getName() + ", " + b.getDistributor().getName(),
                         "Запрос цен: письмом — " + c.getDistributor().getName());
     }
+
+    /**
+     * Фронт шлёт курсор с точностью до миллисекунды (toISOString), а время в базе — с микросекундами: строки одной
+     * миллисекунды на границе страницы не теряются.
+     */
+    @Test
+    void millisecondCursorDoesNotLoseItems() {
+        Tender t = requests.createEmpty();
+        OffsetDateTime ms = OffsetDateTime.now().plusMinutes(5).truncatedTo(ChronoUnit.MILLIS);
+        eventRepository.save(DealEvent.builder().tenderId(t.getId()).type(DealEventType.NOTE).text("раньше")
+                .occurredAt(ms.plusNanos(100_000)).build());
+        eventRepository.save(DealEvent.builder().tenderId(t.getId()).type(DealEventType.NOTE).text("позже")
+                .occurredAt(ms.plusNanos(400_000)).build());
+        em.flush();
+
+        List<String> texts = new ArrayList<>();
+        OffsetDateTime before = null;
+        boolean more = true;
+        for (int guard = 0; more && guard < 10; guard++) {
+            DealTimelineResponse p = timeline.forPrivateRequest(t.getId(), before, 1);
+            texts.addAll(0, p.items().stream().map(DealTimelineItem::text).toList());
+            more = p.hasMore();
+            before = p.items().get(0).at().truncatedTo(ChronoUnit.MILLIS);   // как new Date(at).toISOString()
+        }
+        assertThat(texts).containsExactly("Создана заявка " + t.getTenderNumber(), "раньше", "позже");
+    }
+
+    /** Сообщения одной миллисекунды, разрезанные выборкой n + 1, докачиваются целиком — курсор до миллисекунды их не теряет. */
+    @Test
+    void sameMillisecondMessagesAreFetchedWhole() {
+        Tender t = requests.createEmpty();
+        Chat c = chat();
+        OffsetDateTime base = OffsetDateTime.now().minusDays(3).truncatedTo(ChronoUnit.SECONDS);
+        leads.save(Lead.builder().market(Market.KZ).channel(LeadChannel.WHATSAPP).source("whatsapp")
+                .externalId("ZZ" + System.nanoTime()).subject("WhatsApp").contactName("Клиент")
+                .status(LeadStatus.CONVERTED).chat(c).receivedAt(base).privateRequest(t).build());
+        OffsetDateTime ms = base.plusMinutes(1);
+        msg(c, ms.plusNanos(100_000), "x");
+        msg(c, ms.plusNanos(400_000), "y");
+        msg(c, ms.plusNanos(700_000), "w");
+        msg(c, base.plusMinutes(2), "e");
+        em.flush();
+
+        List<String> bodies = new ArrayList<>();
+        OffsetDateTime before = null;
+        boolean more = true;
+        for (int guard = 0; more && guard < 10; guard++) {
+            DealTimelineResponse p = timeline.forPrivateRequest(t.getId(), before, 1);
+            bodies.addAll(0, p.items().stream().filter(i -> "MESSAGE".equals(i.kind()))
+                    .map(i -> i.message().getBody()).toList());
+            more = p.hasMore();
+            before = p.items().get(0).at().truncatedTo(ChronoUnit.MILLIS);
+        }
+        assertThat(bodies).containsExactly("x", "y", "w", "e");
+    }
 }
