@@ -163,6 +163,21 @@ class TenderProgressTest {
         assertThat(pc.next()).isEqualTo(new Next("Тендер отменён на площадке", null, null));
     }
 
+    /** Отменённый площадкой тендер без заявки: «✓» — только у сделанного, несделанное до итога — «–», а не «✓ не запрашивали». */
+    @Test
+    void cancelledWithoutApplyTicksOnlyWhatWasDone() {
+        Tender idle = tender(false);
+        idle.setStatus("CANCELLED");
+        assertThat(states(p(idle, NOW)))
+                .isEqualTo("LOTS:SKIPPED PRICES:SKIPPED APPLY:SKIPPED RESULT:DONE CONTRACT:SKIPPED DELIVERY:SKIPPED PAYMENT:SKIPPED");
+
+        Tender priced = tender(false);
+        priced.setStatus("CANCELLED");
+        ask(priced, "RESPONDED", "500.00");
+        assertThat(states(p(priced, NOW)))
+                .isEqualTo("LOTS:DONE PRICES:DONE APPLY:SKIPPED RESULT:DONE CONTRACT:SKIPPED DELIVERY:SKIPPED PAYMENT:SKIPPED");
+    }
+
     /** Оплата без отметки поставки: оплаченное поставлено — сделка закрыта, а не «ждём поставку». */
     @Test
     void paidWithoutDeliveryDateIsClosed() {

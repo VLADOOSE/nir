@@ -43,7 +43,7 @@ public class PrivateRequestProgressBuilder {
         long lines = stage.lineCount();
 
         Lead lead = leads.findFirstByPrivateRequestId(t.getId()).orElse(null);
-        List<PriceRequest> prs = priceRequests.findByTenderId(t.getId());
+        List<PriceRequest> prs = priceRequests.findForDealByTenderId(t.getId());
         Map<Long, Boolean> asked = new HashMap<>();
         for (PriceRequest pr : prs) {
             asked.merge(pr.getDistributor().getId(), ANSWERED.contains(pr.getStatus()), Boolean::logicalOr);

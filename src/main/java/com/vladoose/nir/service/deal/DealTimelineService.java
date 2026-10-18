@@ -156,7 +156,7 @@ public class DealTimelineService {
     }
 
     private void addSupply(List<DealTimelineItem> all, Tender t, ZoneId zone) {
-        List<PriceRequest> prs = priceRequests.findByTenderId(t.getId());
+        List<PriceRequest> prs = priceRequests.findForDealByTenderId(t.getId());
         if (prs.isEmpty()) return;
         Map<Long, PriceRequest> byId = new HashMap<>();
         prs.forEach(pr -> byId.put(pr.getId(), pr));

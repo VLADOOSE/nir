@@ -38,7 +38,7 @@ public class TenderProgressBuilder {
         List<TenderLot> lots = t.getLots();
         boolean imported = t.getPlatform() != null;
         long withTz = lots.stream().filter(l -> l.getTechSpecStatus() == TechSpecStatus.OK).count();
-        List<PriceRequest> prs = priceRequests.findByTenderId(t.getId());
+        List<PriceRequest> prs = priceRequests.findForDealByTenderId(t.getId());
         Map<Long, Boolean> asked = new HashMap<>();
         for (PriceRequest pr : prs) {
             Long key = pr.getDistributor() == null ? -pr.getId() : pr.getDistributor().getId();
@@ -109,9 +109,12 @@ public class TenderProgressBuilder {
                 delivery(apply),
                 payment(apply)};
         boolean lostRun = ended && phase == 3;
+        // отменён площадкой без заявки: «✓» — только у сделанного (цены запросили, цены есть), остальное до итога — «–»
+        int reached = cancelled && apply == null ? (prs.isEmpty() ? 0 : priced == 0 ? 1 : 2) : phase;
         List<Step> steps = new ArrayList<>();
         for (int i = 0; i < KEYS.length; i++) {
-            String state = i < phase ? "DONE"
+            String state = i < reached ? "DONE"
+                    : i < phase ? "SKIPPED"
                     : i == phase ? (lostRun ? "DONE" : "CURRENT")
                     : ended ? "SKIPPED" : "TODO";
             steps.add(new Step(KEYS[i], state, LABELS[i], details[i]));

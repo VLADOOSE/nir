@@ -15,6 +15,9 @@ import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.deal.DealEventService;
 import com.vladoose.nir.service.deal.DealTimelineService;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +59,7 @@ class DealTimelineServiceTest {
     @Autowired DealEventRepository eventRepository;
     @Autowired TenderRepository tenders;
     @Autowired EntityManager em;
+    @Autowired EntityManagerFactory emf;
 
     @BeforeEach void kz() { MarketContext.set(Market.KZ); }
     @AfterEach void clear() { MarketContext.clear(); }
@@ -99,6 +103,32 @@ class DealTimelineServiceTest {
                     .responsePrice(p == null ? null : new BigDecimal(p)).build());
         }
         return priceRequests.save(pr);
+    }
+
+    /** Запросов к базе на ленту — столько же при 6 поставщиках, сколько при 2: поставщик и строки — одним запросом. */
+    @Test
+    void queriesDoNotGrowWithPriceRequests() {
+        assertThat(timelineStatements(6)).isEqualTo(timelineStatements(2));
+    }
+
+    private long timelineStatements(int suppliers) {
+        Tender t = withLines(2);
+        OffsetDateTime at = OffsetDateTime.now().minusHours(2).truncatedTo(ChronoUnit.SECONDS);
+        for (int i = 0; i < suppliers; i++) {
+            ask(t, "ZZ Запросы " + i, "RESPONDED", LetterStatus.SENT, at.plusMinutes(5L * i), "100.00");
+        }
+        em.flush();
+        em.clear();
+        Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
+        boolean was = stats.isStatisticsEnabled();
+        stats.setStatisticsEnabled(true);
+        stats.clear();
+        try {
+            timeline.forPrivateRequest(t.getId(), null, 50);
+            return stats.getPrepareStatementCount();
+        } finally {
+            stats.setStatisticsEnabled(was);
+        }
     }
 
     @Test

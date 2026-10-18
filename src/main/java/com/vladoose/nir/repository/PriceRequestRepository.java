@@ -2,6 +2,7 @@ package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.PriceRequest;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,6 +13,11 @@ import java.util.List;
 public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long> {
 
     List<PriceRequest> findByTenderId(Long tenderId);
+
+    /** Лента и этапы сделки: поставщик и строки — одним запросом (findByTenderId тянет их выборкой на каждый запрос). */
+    @EntityGraph(attributePaths = {"distributor", "items", "items.tenderLot", "items.medEquipment"})
+    @Query("SELECT pr FROM PriceRequest pr WHERE pr.tender.id = :tenderId")
+    List<PriceRequest> findForDealByTenderId(@Param("tenderId") Long tenderId);
 
     List<PriceRequest> findByDistributorId(Long distributorId);
 
