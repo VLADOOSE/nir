@@ -3,6 +3,7 @@ package com.vladoose.nir.service.deal;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.ChatMessageResponse;
 import com.vladoose.nir.dto.response.ClientOfferFileMeta;
+import com.vladoose.nir.dto.response.DealFileMeta;
 import com.vladoose.nir.dto.response.DealTimelineItem;
 import com.vladoose.nir.dto.response.DealTimelineResponse;
 import com.vladoose.nir.entity.*;
@@ -10,6 +11,9 @@ import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.ChatService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.execution.DealExecutionData;
+import com.vladoose.nir.service.execution.DealExecutionLoader;
+import com.vladoose.nir.service.execution.ExecutionTexts;
 import com.vladoose.nir.service.offer.OfferLabels;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -57,12 +61,15 @@ public class DealTimelineService {
     private final ActivityApplyRepository applies;
     private final DealEventRepository events;
     private final ClientOfferFileRepository offerFiles;
+    private final DealExecutionLoader execution;
+    private final DealFileRepository execFiles;
 
     public DealTimelineService(PrivateRequestService privateRequests, TenderService tenders, LeadRepository leads,
                                ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
                                InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
                                ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events,
-                               ClientOfferFileRepository offerFiles) {
+                               ClientOfferFileRepository offerFiles, DealExecutionLoader execution,
+                               DealFileRepository execFiles) {
         this.privateRequests = privateRequests;
         this.tenders = tenders;
         this.leads = leads;
@@ -75,6 +82,8 @@ public class DealTimelineService {
         this.applies = applies;
         this.events = events;
         this.offerFiles = offerFiles;
+        this.execution = execution;
+        this.execFiles = execFiles;
     }
 
     @Transactional(readOnly = true)
@@ -87,6 +96,7 @@ public class DealTimelineService {
         all.add(item(t.getCreatedAt(), "CREATED", "Создана заявка " + t.getTenderNumber(), null, null, null));
         addSupply(all, t, zone(t));
         addOffers(all, t.getId());
+        addExecution(all, t, zone(t));
         addEvents(all, t.getId());
         return page(all, cursor, n);
     }
@@ -312,6 +322,86 @@ public class DealTimelineService {
 
     static int clamp(int limit) {
         return limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+    }
+
+    /** Исполнение сделки (спека 2026-10-19-deal-execution §10): даты — «только дата», файлы — время, когда приложили. */
+    private void addExecution(List<DealTimelineItem> all, Tender t, ZoneId zone) {
+        DealExecutionData d = execution.load(t);
+        DealExecution e = d.row();
+        if (e != null) {
+            if (e.getContractDate() != null && e.getContractKind() != ContractKind.NONE) {
+                all.add(execDate(e.getContractDate(), zone, "EXEC_CONTRACT", contractText(e), null, "EXEC_CONTRACT"));
+            }
+            if (e.getDeliveredOn() != null) {
+                all.add(execDate(e.getDeliveredOn(), zone, "EXEC_DELIVERED", withNote("Поставлено клиенту", e.getDeliveryNote()),
+                        null, "EXEC_DELIVERY"));
+            }
+            if (e.getDocsOn() != null) {
+                all.add(execDate(e.getDocsOn(), zone, "EXEC_DOCS", withNote("Закрывающие документы подписаны", e.getDocsNote()),
+                        null, "EXEC_DOCS"));
+            }
+        }
+        for (DealPayment p : d.clientPayments()) {
+            all.add(execDate(p.getPaidOn(), zone, "EXEC_PAY_CLIENT",
+                    withNote("Оплата клиента: " + ExecutionTexts.money(p.getAmount(), d.currency()), p.getNote()),
+                    p.getCreatedBy(), "EXEC_PAYMENT"));
+        }
+        Map<Long, String> supplierNames = new HashMap<>();
+        for (DealExecutionData.SupplierLine s : d.supplierLines()) {
+            if (s.rowId() != null) supplierNames.put(s.rowId(), s.name());
+            if (s.orderedOn() != null) {
+                all.add(execDate(s.orderedOn(), zone, "EXEC_ORDER", withNote("Заказ у " + s.name(), s.orderNote()), null, "EXEC_SUPPLIERS"));
+            }
+            for (DealPayment p : s.payments()) {
+                all.add(execDate(p.getPaidOn(), zone, "EXEC_PAY_SUPPLIER",
+                        withNote("Оплата " + s.name() + ": " + ExecutionTexts.money(p.getAmount(), s.currency()), p.getNote()),
+                        p.getCreatedBy(), "EXEC_SUPPLIERS"));
+            }
+            if (s.shippedOn() != null) {
+                all.add(execDate(s.shippedOn(), zone, "EXEC_SHIPPED", withNote(s.name() + " отгрузил", s.shipNote()), null, "EXEC_SUPPLIERS"));
+            }
+        }
+        for (DealFileMeta f : execFiles.findMetaByTenderId(t.getId())) {
+            all.add(new DealTimelineItem(f.uploadedAt(), false, "EXEC_FILE", "«" + f.name() + "» — " + filePlace(f, supplierNames),
+                    f.uploadedBy(), fileBlock(f.stage()), null, null));
+        }
+    }
+
+    private static DealTimelineItem execDate(LocalDate d, ZoneId zone, String kind, String text, String author, String block) {
+        return new DealTimelineItem(d.atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime(), true, kind, text, author, block,
+                null, null);
+    }
+
+    static String contractText(DealExecution e) {
+        boolean invoice = e.getContractKind() == ContractKind.INVOICE;
+        String no = blank(e.getContractNumber()) ? "" : " № " + e.getContractNumber().strip();
+        return (invoice ? "Счёт" : "Договор") + no + " от " + DealTexts.ddMM(e.getContractDate())
+                + (invoice ? " выставлен" : " подписан");
+    }
+
+    private static String withNote(String text, String note) {
+        return blank(note) ? text : text + " — " + note.strip();
+    }
+
+    private static String filePlace(DealFileMeta f, Map<Long, String> names) {
+        String name = f.dealSupplierId() == null ? "" : names.getOrDefault(f.dealSupplierId(), "поставщику");
+        return switch (f.stage()) {
+            case CONTRACT -> "к договору";
+            case CLIENT_PAYMENT -> "к оплате клиента";
+            case SUPPLIER -> f.paymentId() != null ? "к оплате " + name : "к поставщику " + name;
+            case DELIVERY -> "к поставке";
+            case DOCS -> "к документам";
+        };
+    }
+
+    private static String fileBlock(DealFileStage stage) {
+        return switch (stage) {
+            case CONTRACT -> "EXEC_CONTRACT";
+            case CLIENT_PAYMENT -> "EXEC_PAYMENT";
+            case SUPPLIER -> "EXEC_SUPPLIERS";
+            case DELIVERY -> "EXEC_DELIVERY";
+            case DOCS -> "EXEC_DOCS";
+        };
     }
 
     static ZoneId zone(Tender t) {
