@@ -25,10 +25,16 @@ import type { DealAction, DealNext, DealProgress, StepState } from './deal';
       <div class="dp-next" *ngIf="progress.next as n">
         <span class="dp-next-text"><b>Дальше:</b> {{ n.text }}</span>
         <span class="dp-actions" *ngIf="canAct && n.action">
-          <ng-container *ngIf="n.action === 'OFFER_DECISION'; else one">
+          <ng-container *ngIf="n.action === 'OFFER_DECISION'; else hintTpl">
             <button type="button" class="btn btn-primary btn-sm" [disabled]="busy" (click)="emit(n, 'ACCEPTED')">Согласился</button>
             <button type="button" class="btn btn-line btn-sm" [disabled]="busy" (click)="emit(n, 'REJECTED')">Отказался</button>
           </ng-container>
+          <ng-template #hintTpl>
+            <ng-container *ngIf="isHint(n); else one">
+              <button type="button" class="btn btn-primary btn-sm" [disabled]="busy" (click)="emit(n)">{{ label(n.action) }}</button>
+              <button type="button" class="btn btn-line btn-sm" [disabled]="busy" (click)="dismissHint(n)">{{ n.action === 'MARK_OFFER_SENT' ? 'Нет' : 'Не КП' }}</button>
+            </ng-container>
+          </ng-template>
           <ng-template #one>
             <button type="button" class="btn btn-primary btn-sm" [disabled]="busy" (click)="emit(n)">{{ label(n.action) }}</button>
           </ng-template>
@@ -81,7 +87,14 @@ export class DealProgressComponent {
   mark(s: StepState) { return s === 'DONE' ? '✓' : s === 'CURRENT' ? '●' : s === 'SKIPPED' ? '–' : '○'; }
   label(a: string | null) { return (a && ACTION_LABELS[a]) || 'Открыть'; }
 
+  isHint(n: DealNext) { return n.action === 'ATTACH_OFFER_FILE' || n.action === 'MARK_OFFER_SENT'; }
+
   emit(n: DealNext, decision?: 'ACCEPTED' | 'REJECTED') {
-    if (n.action) this.act.emit({ action: n.action, refId: n.refId, decision });
+    if (n.action) this.act.emit({ action: n.action, refId: n.refId, hintId: n.hintId ?? null, decision });
+  }
+
+  /** «Не КП» / «Нет» — подсказка про этот файл больше не показывается. */
+  dismissHint(n: DealNext) {
+    this.act.emit({ action: 'DISMISS_HINT', refId: null, hintId: n.hintId ?? null });
   }
 }

@@ -8,13 +8,14 @@ import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { CLOSE_OUTCOMES, PrStatus, PrView, SaveState, timeText } from '../../shared/private-request';
+import type { PrOfferRef } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
 import { fullDateTime } from '../../shared/relative-time';
 import { PrClientSectionComponent } from './pr-client-section.component';
 import { PrLinesComponent } from './pr-lines.component';
 import { PrSupplyComponent } from './pr-supply.component';
 import { PrOffersComponent } from './pr-offers.component';
-import { OFFER_STATUS_LABELS } from '../../shared/client-offer';
+import { OFFER_STATUS_LABELS, dateText } from '../../shared/client-offer';
 import type { OfferStatus } from '../../shared/client-offer';
 import { MarketService } from '../../services/market.service';
 import { DealLayoutComponent } from '../../shared/deal-layout.component';
@@ -60,7 +61,7 @@ import type { DealAction } from '../../shared/deal';
         <ng-container *ngIf="ld.chatId"> · <a class="xref" [routerLink]="['/chats']" [queryParams]="{ chatId: ld.chatId }">Переписка</a></ng-container>
       </div>
       <div class="from-lead" *ngIf="v.offers.length">
-        КП клиенту: <a [routerLink]="['/client-offers', v.offers[0].id]">№ {{ v.offers[0].number }} · {{ offerStatus(v.offers[0].status) }}</a>
+        КП клиенту: <a [routerLink]="['/client-offers', v.offers[0].id]">{{ offerNo(v.offers[0]) }} · {{ offerStatus(v.offers[0].status) }}</a>
       </div>
       <app-deal-progress [progress]="v.progress" [canAct]="auth.isAdmin()" [busy]="busy"
                          (act)="onAct($event)" (stepClick)="scrollToStep($event)"></app-deal-progress>
@@ -76,7 +77,7 @@ import type { DealAction } from '../../shared/deal';
             <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
           </div>
           <div #offersAnchor class="anchor">
-            <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()"></app-pr-offers>
+            <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-offers>
           </div>
         </div>
         <app-deal-timeline dealSide #timeline kind="private-request" [dealId]="v.id" [canWrite]="auth.isAdmin()"
@@ -235,7 +236,36 @@ export class PrivateRequestPageComponent {
       case 'OPEN_OFFER': if (a.refId) this.router.navigate(['/client-offers', a.refId]); break;
       case 'OFFER_DECISION': this.decide(a); break;
       case 'CLOSE_WON': this.close('WON'); break;
+      case 'ATTACH_OFFER_FILE': this.offersPart?.openFile(a.hintId ?? null); break;
+      case 'MARK_OFFER_SENT': this.markSent(a); break;
+      case 'DISMISS_HINT': this.dismissHint(a); break;
     }
+  }
+
+  /** «№ 24» или «от 24.09.2026» — у КП из файла номера может не быть. */
+  offerNo(o: PrOfferRef): string {
+    return o.number != null ? '№ ' + o.number : 'от ' + dateText(o.offerDate);
+  }
+
+  /** «Отметить отправленным» (подсказка «Дальше»): черновик конструктора — «Отправлено» временем письма. */
+  private markSent(a: DealAction) {
+    const v = this.view;
+    if (!v || a.hintId == null) return;
+    this.busy = true;
+    this.api.markOfferHintSent(v.id, a.hintId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => { this.busy = false; this.notify.success('КП отмечено отправленным'); this.refresh(); },
+      error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
+    });
+  }
+
+  private dismissHint(a: DealAction) {
+    const v = this.view;
+    if (!v || a.hintId == null) return;
+    this.busy = true;
+    this.api.dismissOfferHint(v.id, a.hintId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => { this.busy = false; this.refresh(); },
+      error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
+    });
   }
 
   /** «Согласился» / «Отказался» — статус КП (принято / отклонено), этап и лента пересчитываются. */

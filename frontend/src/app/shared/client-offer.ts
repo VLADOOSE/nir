@@ -85,7 +85,9 @@ export interface OfferTotals {
 }
 
 export interface ClientOffer {
-  id: number; number: number; offerDate: string; status: OfferStatus;
+  id: number; number: number | null; offerDate: string; status: OfferStatus;
+  /** BUILDER — конструктор; FILE — готовое КП из файла (спека 2026-10-19), file — его файл */
+  origin: OfferOrigin; file: OfferFileMeta | null;
   facilityId: number | null; facilityName: string | null; recipient: string | null; tenderId: number | null;
   /** номер заявки-источника — «из заявки ЧЗ-…» */
   tenderNumber: string | null;
@@ -96,6 +98,59 @@ export interface ClientOffer {
   signoff: Signoff; signoffContacts: boolean; withStamp: boolean; internalNote: string | null;
   version: number; currency: string; items: OfferItem[]; totals: OfferTotals; fileBaseName: string;
   createdBy: string | null; createdAt: string; updatedAt: string; sentAt: string | null;
+}
+
+export type OfferOrigin = 'BUILDER' | 'FILE';
+export type OfferFileKind = 'EXCEL' | 'WORD' | 'PDF' | 'IMAGE' | 'OTHER';
+
+/** Файл готового КП (спека 2026-10-19 §6): без байтов и таблиц — таблицы отдаёт /file/view. */
+export interface OfferFileMeta {
+  name: string; kind: OfferFileKind; sizeBytes: number; parseStatus: string; parseNote: string | null;
+  pages: number | null; fileTotal: number | null;
+}
+export interface OfferFileTable {
+  source: string; headerRow: number; columns: { index: number; header: string; role: string }[];
+  rows: { fileRow: number; cells: string[] }[];
+}
+export interface OfferFileView { kind: OfferFileKind; pages: number | null; tables: OfferFileTable[]; }
+
+/** Файл переписки сделки для окна «Готовое КП» (спека §3.2): sentOn — дата отправки по часам рынка. */
+export interface OfferFileCandidate {
+  attachmentId: number; fileName: string; sizeBytes: number | null; kind: OfferFileKind; sentAt: string; sentOn: string;
+  channel: string | null; subject: string | null; text: string | null; looksLikeOffer: boolean;
+  usedByOfferId: number | null; usedByOfferLabel: string | null; aisOfferId: number | null; aisOfferLabel: string | null;
+  aisOfferDraft: boolean;
+}
+
+/** «КП № 24» или «КП от 24.09.2026» — у КП из файла номера может не быть. */
+export function offerLabel(o: { number: number | null; offerDate: string }): string {
+  return o.number != null ? 'КП № ' + o.number : 'КП от ' + dateText(o.offerDate);
+}
+
+function positionsWord(n: number): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'позиция';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'позиции';
+  return 'позиций';
+}
+
+/** Строка сверки КП из файла (спека §3.3): итог по строкам против «ИТОГО» файла; не из файла — null. */
+export function offerFileCheck(o: ClientOffer): { tone: 'ok' | 'warn' | 'info'; text: string } | null {
+  const f = o.file;
+  if (o.origin !== 'FILE' || !f) return null;
+  const cur = o.currency === 'RUB' ? 'руб.' : 'тг';
+  const head = `Из файла «${f.name}»`;
+  if (f.kind === 'PDF' || f.kind === 'IMAGE') return { tone: 'info', text: `${head} — цены впишите по документу справа` };
+  if (f.parseStatus !== 'PARSED') return { tone: 'warn', text: `${head}: ${f.parseNote || 'файл не разобран — впишите цены по документу'}` };
+  if (f.parseNote) return { tone: 'warn', text: `${head}: ${f.parseNote}` };
+  const n = o.totals.itemCount;
+  const lines = `${head} · ${n} ${positionsWord(n)}`;
+  if (f.fileTotal == null) {
+    return { tone: 'info', text: `${lines} · итога в файле нет — итог по строкам ${money(o.totals.sum)} ${cur}; если это варианты на выбор, удалите лишние строки, когда клиент выберет` };
+  }
+  return Math.abs(f.fileTotal - o.totals.sum) < 0.005
+    ? { tone: 'ok', text: `${lines} · итог ${money(o.totals.sum)} ${cur} = «ИТОГО» в файле ✓` }
+    : { tone: 'warn', text: `${lines} · итог по строкам ${money(o.totals.sum)} ≠ ${money(f.fileTotal)} ${cur} в файле — проверьте строки` };
 }
 
 export interface ColumnInfo { key: string; label: string; labelNoVat?: string; vatOnly?: boolean; }

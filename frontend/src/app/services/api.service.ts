@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import type { EquipmentHit, NewPriceLine, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
+import type { EquipmentHit, NewPriceLine, OfferFileCandidate, OfferFileView, PreviewPages, RegistrySuggestion, SuggestionRow, SupplierOffer } from '../shared/client-offer';
 import type { SupplierReply, SupplierReplyRateResult } from '../shared/supplier-reply';
 import type {
   DocFormat, LineInput, LinesMode, ParsedLine, PrField, PrLine, PrLineField, PrListItem, PrView, Prices, RegAction,
@@ -715,5 +715,33 @@ export class ApiService {
   }
   applyClientOfferNewPrices(offerId: number): Observable<any> {
     return this.http.post<any>(`${this.base}/client-offers/${offerId}/apply-new-prices`, {});
+  }
+
+  // === Готовое КП (спека 2026-10-19) ===
+  getOfferFileCandidates(requestId: number): Observable<OfferFileCandidate[]> {
+    return this.http.get<OfferFileCandidate[]>(`${this.base}/private-requests/${requestId}/offer-file/candidates`);
+  }
+  attachOfferFile(requestId: number, body: { file?: File; attachmentId?: number; status: 'SENT' | 'ACCEPTED'; sentOn: string }): Observable<any> {
+    const fd = new FormData();
+    if (body.file) fd.append('file', body.file, body.file.name);
+    if (body.attachmentId != null) fd.append('attachmentId', String(body.attachmentId));
+    fd.append('status', body.status);
+    fd.append('sentOn', body.sentOn);
+    return this.http.post<any>(`${this.base}/private-requests/${requestId}/offer-file`, fd);
+  }
+  dismissOfferHint(requestId: number, attachmentId: number): Observable<void> {
+    return this.http.post<void>(`${this.base}/private-requests/${requestId}/offer-hints/${attachmentId}/dismiss`, {});
+  }
+  markOfferHintSent(requestId: number, attachmentId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/private-requests/${requestId}/offer-hints/${attachmentId}/mark-sent`, {});
+  }
+  downloadClientOfferFile(id: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.base}/client-offers/${id}/file`, { responseType: 'blob', observe: 'response' });
+  }
+  getClientOfferFileView(id: number): Observable<OfferFileView> {
+    return this.http.get<OfferFileView>(`${this.base}/client-offers/${id}/file/view`);
+  }
+  clientOfferFilePage(id: number, page: number): Observable<Blob> {
+    return this.http.get(`${this.base}/client-offers/${id}/file/pages/${page}`, { responseType: 'blob' });
   }
 }

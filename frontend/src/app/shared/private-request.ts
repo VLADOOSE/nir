@@ -66,7 +66,9 @@ export interface PrView {
 
 /** КП клиенту по заявке — раздел «КП клиенту» (спека §8). */
 export interface PrOfferRef {
-  id: number; number: number; offerDate: string; status: string; itemCount: number; totalAmount: number | null; currency: string;
+  id: number; number: number | null; offerDate: string; status: string; itemCount: number; totalAmount: number | null; currency: string;
+  /** FILE — готовое КП из файла (спека 2026-10-19) */
+  origin: 'BUILDER' | 'FILE';
 }
 
 export interface PrListItem {
