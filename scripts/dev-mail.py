@@ -9,6 +9,7 @@
   python3 scripts/dev-mail.py client <адрес>        — письмо клиента на info@: текст, Excel и PDF, картинка подписи
   python3 scripts/dev-mail.py client-plain <адрес>  — продолжение переписки клиента (с цитатой)
   python3 scripts/dev-mail.py answer <адрес>        — наш ответ клиенту «из веб-почты»: в «Отправленные» info@ (IMAP APPEND)
+  python3 scripts/dev-mail.py kp <адрес> <файл>     — наш ответ клиенту с КП во вложении: в «Отправленные» info@ (IMAP APPEND)
   python3 scripts/dev-mail.py newsletter|service|site|colleague — рассылка / служебное / уведомление сайта / свой домен на info@
 """
 import base64
@@ -176,6 +177,25 @@ def answer(address):
     print("в «Отправленные»:", m["Subject"])
 
 
+def kp(address, path):
+    """Наше письмо клиенту с готовым КП из веб-почты: копия в «Отправленные» info@ (как answer, но с файлом)."""
+    m = EmailMessage()
+    m["From"] = f"West-Med <{INFO}>"
+    m["To"] = address
+    m["Subject"] = "Коммерческое предложение West-Med"
+    m["Message-ID"] = make_msgid(domain="westmed.kz")
+    m["Date"] = formatdate(localtime=True)
+    m.set_content("Добрый день!\nВысылаем КП во вложении.\n\nС уважением, West-Med")
+    name = os.path.basename(path)
+    with open(path, "rb") as f:
+        m.add_attachment(f.read(), maintype="application", subtype="octet-stream", filename=name)
+    imap = imaplib.IMAP4("127.0.0.1", 3143)
+    imap.login(INFO, "secret")
+    imap.append("Sent", None, None, m.as_bytes())
+    imap.logout()
+    print("в «Отправленные»:", m["Subject"], "—", name)
+
+
 def info_letter(sender, subject, text, **headers):
     m = EmailMessage()
     m["From"] = sender
@@ -197,6 +217,8 @@ if __name__ == "__main__":
         {"bounce": bounce, "delayed": delayed, "auto": auto}[cmd](sys.argv[2])
     elif cmd in ("client", "client-plain", "answer") and len(sys.argv) > 2:
         {"client": client, "client-plain": client_plain, "answer": answer}[cmd](sys.argv[2])
+    elif cmd == "kp" and len(sys.argv) > 3:
+        kp(sys.argv[2], sys.argv[3])
     elif cmd == "newsletter":
         info_letter("Медтехника <news@medshop.kz>", "Скидки недели", "Скидки до 30%", List_Unsubscribe="<mailto:unsubscribe@medshop.kz>")
     elif cmd == "service":
