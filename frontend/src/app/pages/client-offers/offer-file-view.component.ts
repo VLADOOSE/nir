@@ -32,7 +32,13 @@ const MAX_PAGES = 30;
       <div class="t-scroll">
         <table>
           <thead><tr><th *ngFor="let c of t.columns">{{ c.header || '—' }}</th></tr></thead>
-          <tbody><tr *ngFor="let r of t.rows"><td *ngFor="let cell of r.cells">{{ cell }}</td></tr></tbody>
+          <tbody>
+            <tr *ngFor="let r of t.rows">
+              <!-- объединённая во всю ширину строка («1 этаж», «Основные комплектующие:») разобрана в одинаковые ячейки -->
+              <td *ngIf="wide(r.cells); else cellsTpl" class="wide" [attr.colspan]="r.cells.length">{{ r.cells[0] }}</td>
+              <ng-template #cellsTpl><td *ngFor="let cell of r.cells">{{ cell }}</td></ng-template>
+            </tr>
+          </tbody>
         </table>
       </div>
     </div>
@@ -58,6 +64,7 @@ const MAX_PAGES = 30;
     table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
     th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
     th { background: var(--surface-2); position: sticky; top: 0; font-weight: 600; }
+    td.wide { font-weight: 600; background: color-mix(in srgb, var(--surface-2) 50%, var(--surface)); }
     .ofv-pages { display: flex; flex-direction: column; gap: 8px; }
     .ofv-pages img, .ofv-pic { width: 100%; border: 1px solid var(--border); border-radius: 6px; cursor: zoom-in; background: #fff; }
     .ofv-zoom { position: fixed; inset: 0; background: rgba(17, 24, 39, .8); z-index: 1200; display: flex; align-items: flex-start;
@@ -94,6 +101,11 @@ export class OfferFileViewComponent implements OnChanges, OnDestroy {
   }
 
   ngOnDestroy() { this.reset(); }
+
+  /** Все ячейки строки — один и тот же текст: так разбирается объединённая во всю ширину ячейка файла. */
+  wide(cells: string[]): boolean {
+    return cells.length > 1 && !!cells[0]?.trim() && cells.every(c => c === cells[0]);
+  }
 
   private loadTables() {
     const id = this.offerId;
