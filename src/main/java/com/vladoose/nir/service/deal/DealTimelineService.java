@@ -37,7 +37,7 @@ public class DealTimelineService {
     /** Запросы цен, отправленные с разрывом меньше минуты, — одно окно «Запросить цены», одна строка. */
     static final Duration RFQ_WINDOW = Duration.ofMinutes(1);
     /** «Без границы» — дальше любой настоящей даты, в пределах timestamptz. */
-    static final OffsetDateTime FAR = OffsetDateTime.of(9999, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+    public static final OffsetDateTime FAR = OffsetDateTime.of(9999, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
     /** При равном времени событие раньше сообщения (как лента обращения). Сортировка списка устойчивая. */
     private static final Comparator<DealTimelineItem> ORDER = Comparator.comparing(DealTimelineItem::at)
             .thenComparing(i -> "MESSAGE".equals(i.kind()) ? 1 : 0);
