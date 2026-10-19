@@ -32,13 +32,13 @@ import java.util.zip.ZipOutputStream;
  * До распаковки архив проверяется ({@link #checkArchive}): число частей, повторы имён, перекрытия. Не zip (.xls, .doc —
  * контейнер OLE2) — как есть. Битый архив — исключение (его ловит SupplierReplyFiles: «не открылся»).
  */
-final class OoxmlSlim {
+public final class OoxmlSlim {
 
     private static final Pattern DROPPED = Pattern.compile("(^|/)(media|embeddings)/[^/]");
 
     private OoxmlSlim() {}
 
-    static byte[] forParsing(byte[] b, long limit) throws IOException {
+    public static byte[] forParsing(byte[] b, long limit) throws IOException {
         if (b.length < 2 || b[0] != 'P' || b[1] != 'K') return b;
         try (ZipFile zip = new ZipFile(new SeekableInMemoryByteChannel(b))) {
             List<ZipArchiveEntry> entries = Collections.list(zip.getEntriesInPhysicalOrder());

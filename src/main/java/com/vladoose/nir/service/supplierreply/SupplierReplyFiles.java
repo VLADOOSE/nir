@@ -32,7 +32,7 @@ public class SupplierReplyFiles {
      * Распакованные части книги / документа, кроме картинок и вложенных объектов (OoxmlSlim): 15 МБ — это десятки тысяч
      * ячеек, КП на 40 позиций занимает сотни КБ.
      */
-    static final long PARTS_MAX = 15L * 1024 * 1024;
+    public static final long PARTS_MAX = 15L * 1024 * 1024;
     private static final Logger log = LoggerFactory.getLogger(SupplierReplyFiles.class);
 
     private final HeaderDictionary dictionary;
@@ -104,12 +104,12 @@ public class SupplierReplyFiles {
     }
 
     /** Имя файла для хранения: без пути (старые браузеры шлют «C:\…\КП.xlsx»), без U+0000 (PostgreSQL его не хранит). */
-    static String fileName(String name) {
+    public static String fileName(String name) {
         String n = name == null ? "" : name.replace("\0", "").replaceAll(".*[/\\\\]", "").trim();
         return n.isEmpty() ? "файл" : cut(n, 255);
     }
 
-    static ReplyFileKind kind(String name, String mime, byte[] b) {
+    public static ReplyFileKind kind(String name, String mime, byte[] b) {
         String n = name.toLowerCase(Locale.ROOT), m = mime == null ? "" : mime.toLowerCase(Locale.ROOT);
         if (n.endsWith(".xlsx") || n.endsWith(".xls") || m.contains("spreadsheet") || m.equals("application/vnd.ms-excel")) return ReplyFileKind.EXCEL;
         if (n.endsWith(".docx") || n.endsWith(".doc") || m.contains("wordprocessing") || m.equals("application/msword")) return ReplyFileKind.WORD;
@@ -118,7 +118,7 @@ public class SupplierReplyFiles {
         return ReplyFileKind.OTHER;
     }
 
-    static String sha256(byte[] b) {
+    public static String sha256(byte[] b) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));
         } catch (NoSuchAlgorithmException e) {

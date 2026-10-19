@@ -20,4 +20,18 @@ public final class PdfTextExtractor {
             return null;
         }
     }
+
+    /** Текст первой страницы (номер и дата КП — в бланке); нечитаемый или пустой — null. */
+    public static String firstPage(byte[] pdf) {
+        if (pdf == null || pdf.length == 0) return null;
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            PDFTextStripper s = new PDFTextStripper();
+            s.setStartPage(1);
+            s.setEndPage(1);
+            String text = s.getText(doc);
+            return (text == null || text.isBlank()) ? null : text;
+        } catch (IOException e) {
+            return null;
+        }
+    }
 }
