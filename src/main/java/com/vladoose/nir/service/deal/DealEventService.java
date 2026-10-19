@@ -8,6 +8,8 @@ import com.vladoose.nir.util.CurrentUser;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+
 /** Запись событий сделки (спека 2026-10-18 §5). Гард рынка — у вызывающего (заявка / тендер уже проверены). */
 @Service
 public class DealEventService {
@@ -41,6 +43,19 @@ public class DealEventService {
     @Transactional
     public void forgetOffer(Long tenderId, Long offerId) {
         repository.deleteRefEvents(tenderId, OFFER_STATUS, offerId);
+    }
+
+    /**
+     * Письмо клиенту из сделки (спека 2026-10-19-client-mail-reply §3.3 п. 3): ref — переписка, время — время письма: лента
+     * берёт переписку с первого письма сделки включительно, а запись события на миллисекунды позже спрятала бы само письмо.
+     */
+    @Transactional
+    public DealEvent email(Long tenderId, Long chatId, String subject, OffsetDateTime at, String author) {
+        String s = subject == null || subject.isBlank() ? "без темы" : subject.strip();
+        String text = "Письмо клиенту «" + s + "»";
+        if (text.length() > MAX_TEXT) text = text.substring(0, MAX_TEXT);
+        return repository.save(DealEvent.builder().tenderId(tenderId).type(DealEventType.EMAIL).text(text).refId(chatId)
+                .author(author).occurredAt(at).build());
     }
 
     /** Смена этапа — в транзакции действия: откатилось действие — откатилось и событие. */

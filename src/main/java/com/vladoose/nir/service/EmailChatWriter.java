@@ -52,29 +52,41 @@ public class EmailChatWriter {
         this.leadService = leadService;
     }
 
+    /** Кто и как отправил наше письмо (спека 2026-10-19-client-mail-reply §3.3): имя в переписке, текст и автор «В работу». */
+    public record Outgoing(String senderName, String takeNote, String author) {}
+
+    /** Наше письмо из «Отправленных» почты: без имени, «ответ клиенту письмом из почты», без автора. */
+    static final Outgoing FROM_MAILBOX = new Outgoing(null, AUTO_TAKE_NOTE, null);
+
     /** duplicate — письмо уже в переписке; createdLeadId — заведено новое обращение. */
     public record Outcome(boolean duplicate, Long chatId, Long messageId, Long createdLeadId) {}
 
     /** Письмо собеседника из «Входящих» ящика mailbox. */
     @Transactional
     public Outcome writeIncoming(String mailbox, EmailLetter letter) {
-        return write(mailbox, letter.fromAddress(), letter.fromName(), LeadDirection.IN, letter);
+        return write(mailbox, letter.fromAddress(), letter.fromName(), LeadDirection.IN, letter, FROM_MAILBOX);
     }
 
     /** Наше письмо из «Отправленных» — в переписку с адресатом to (адрес нижним регистром). */
     @Transactional
     public Outcome writeOutgoing(String mailbox, String to, EmailLetter letter) {
-        return write(mailbox, to, null, LeadDirection.OUT, letter);
+        return writeOutgoing(mailbox, to, letter, FROM_MAILBOX);
     }
 
-    private Outcome write(String mailbox, String address, String name, LeadDirection dir, EmailLetter letter) {
+    /** Наше письмо — из «Отправленных» или из АИС (who — отправитель и текст события «В работу»). */
+    @Transactional
+    public Outcome writeOutgoing(String mailbox, String to, EmailLetter letter, Outgoing who) {
+        return write(mailbox, to, null, LeadDirection.OUT, letter, who);
+    }
+
+    private Outcome write(String mailbox, String address, String name, LeadDirection dir, EmailLetter letter, Outgoing who) {
         Chat chat = upsertChat(mailbox, address, name);
         if (messageRepository.existsByChatIdAndExternalId(chat.getId(), letter.key())) {
             return new Outcome(true, chat.getId(), null, null);
         }
         ChatMessage msg = messageRepository.save(ChatMessage.builder()
                 .chat(chat).externalId(letter.key()).direction(dir)
-                .senderName(dir == LeadDirection.IN ? trunc(name != null ? name : address, 255) : null)
+                .senderName(dir == LeadDirection.IN ? trunc(name != null ? name : address, 255) : trunc(who.senderName(), 255))
                 .type(ChatMessageType.EMAIL).subject(blankToNull(letter.subject())).body(blankToNull(letter.body()))
                 .sentAt(letter.sentAt()).build());
         for (MailFile f : letter.files()) {
@@ -84,7 +96,7 @@ public class EmailChatWriter {
                     .notStoredReason(f.content() == null ? AttachmentNotStoredReason.TOO_LARGE : null).build());
         }
         // правила — ДО сдвига lastMessageAt: активность обращения меряется по ПРОШЛЫМ письмам (как у WhatsApp)
-        Long createdLeadId = applyLeadRules(chat, msg, dir, letter);
+        Long createdLeadId = applyLeadRules(chat, msg, dir, letter, who);
         if (chat.getLastMessageAt() == null || !letter.sentAt().isBefore(chat.getLastMessageAt())) {
             chat.setLastMessageAt(letter.sentAt());
             chat.setLastMessagePreview(trunc(preview(letter), PREVIEW_MAX));
@@ -107,7 +119,7 @@ public class EmailChatWriter {
         return chat;
     }
 
-    private Long applyLeadRules(Chat chat, ChatMessage msg, LeadDirection dir, EmailLetter letter) {
+    private Long applyLeadRules(Chat chat, ChatMessage msg, LeadDirection dir, EmailLetter letter, Outgoing who) {
         if (chat.isNotClient()) return null;
         Optional<Lead> open = rules.findOpenLead(chat, letter.sentAt());
         if (open.isPresent()) {
@@ -116,7 +128,7 @@ public class EmailChatWriter {
             // наше письмо, написанное РАНЬШЕ обращения (первый запуск читает «Отправленные» после «Входящих»),
             // работу по нему не означает
             if (dir == LeadDirection.OUT && !letter.sentAt().isBefore(lead.getReceivedAt())) {
-                leadService.takeAutomatically(lead, AUTO_TAKE_NOTE);
+                leadService.takeAutomatically(lead, who.takeNote(), who.author());
             }
             return null;
         }

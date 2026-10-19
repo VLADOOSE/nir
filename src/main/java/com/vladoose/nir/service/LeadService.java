@@ -143,13 +143,19 @@ public class LeadService {
     }
 
     /**
-     * «Взять в работу» без человека — ответ клиенту в WhatsApp с телефона (спека whatsapp-chats §5.2 п.3).
-     * Тот же переход, что у кнопки: событие STATUS и запись статуса на сайт для заявок westmed.kz.
+     * «Взять в работу» без кнопки — ответ клиенту в WhatsApp с телефона, письмом из почты или из АИС (спека whatsapp-chats
+     * §5.2 п.3, client-mail-reply §3.3). Тот же переход, что у кнопки: событие STATUS и статус на сайт для заявок westmed.kz.
      */
     @Transactional
     public void takeAutomatically(Lead lead, String note) {
+        takeAutomatically(lead, note, null);
+    }
+
+    /** author — кто отправил письмо из АИС; null — система (ответ с телефона или из почты). */
+    @Transactional
+    public void takeAutomatically(Lead lead, String note, String author) {
         if (lead.getStatus() != LeadStatus.NEW) return;
-        transition(lead, LeadStatus.IN_WORK, null, note);
+        transition(lead, LeadStatus.IN_WORK, author, note);
     }
 
     @Transactional
