@@ -145,6 +145,9 @@ import { filter } from 'rxjs/operators';
             <a *ngIf="auth.isAdmin()" routerLink="/email-template" routerLinkActive="active">
               <svg lucideIcon="mail" [size]="16"></svg> Шаблон письма КП
             </a>
+            <a *ngIf="auth.isAdmin()" routerLink="/reply-templates" routerLinkActive="active">
+              <svg lucideIcon="reply" [size]="16"></svg> Шаблоны ответов
+            </a>
             <a *ngIf="auth.isAdmin()" routerLink="/company-profile" routerLinkActive="active">
               <svg lucideIcon="stamp" [size]="16"></svg> Реквизиты и печать
             </a>
