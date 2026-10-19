@@ -11,6 +11,8 @@ import { LEAD_CLOSE_REASONS, LEAD_STATUS_LABELS, leadChannelLabel } from '../../
 import { ChatMessageComponent } from '../../shared/chat-message.component';
 import { LeadItemsImportComponent } from '../../shared/lead-items-import.component';
 import { errorText } from '../../shared/error-text';
+import { EmailComposerComponent } from '../../shared/email-composer.component';
+import { MarketService } from '../../services/market.service';
 
 type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 
@@ -18,7 +20,7 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
 @Component({
   selector: 'app-lead-card',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RouterLink, ChatMessageComponent, LeadItemsImportComponent],
+  imports: [NgIf, NgFor, FormsModule, RouterLink, ChatMessageComponent, LeadItemsImportComponent, EmailComposerComponent],
   template: `
     <div *ngIf="leadId !== null" class="overlay" (click)="close.emit()">
       <aside class="drawer" (click)="$event.stopPropagation()" aria-label="Карточка обращения">
@@ -155,6 +157,8 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
               <div class="section-head">
                 <h3 class="section-title">{{ lead.chatId ? 'Лента и переписка' : 'Лента' }}</h3>
                 <a class="btn btn-line btn-sm" *ngIf="lead.chatId" [routerLink]="['/chats']" [queryParams]="{ chatId: lead.chatId }">{{ lead.chatChannel === 'EMAIL' ? 'Открыть всю переписку' : 'Открыть весь чат' }}</a>
+                <button type="button" class="btn btn-primary btn-sm" *ngIf="canMail()" (click)="mailOpen = true">
+                  {{ lead.chatChannel === 'EMAIL' ? 'Ответить письмом' : 'Написать письмо' }}</button>
               </div>
               <ol class="timeline">
                 <ng-container *ngFor="let t of timeline; trackBy: trackTimeline">
@@ -177,6 +181,10 @@ type Panel = 'none' | 'note' | 'call' | 'close' | 'items';
         </div>
       </aside>
     </div>
+    @defer (when mailOpen) {
+      <app-email-composer *ngIf="mailOpen && lead" [target]="{ leadId: lead.id }"
+                          (sent)="onMailSent()" (closed)="mailOpen = false"></app-email-composer>
+    }
   `,
   styles: [`
     /* rgba-вуаль НЕ токенизируется: затемнение под дровером уместно в обеих темах (самое частое значение в приложении) */
@@ -268,10 +276,11 @@ export class LeadCardComponent implements OnChanges {
   @ViewChild(LeadItemsImportComponent, { read: ElementRef }) importRef?: ElementRef<HTMLElement>;
 
   constructor(private api: ApiService, public auth: AuthService, private notify: NotificationService,
-              private cdr: ChangeDetectorRef, private router: Router) {}
+              private cdr: ChangeDetectorRef, private router: Router, private market: MarketService) {}
 
   ngOnChanges(ch: SimpleChanges) {
     if (ch['leadId']) {
+      this.mailOpen = false;
       this.panel = 'none';
       this.parseAttachment = null;
       this.chatMessages = [];
@@ -283,6 +292,7 @@ export class LeadCardComponent implements OnChanges {
 
   @HostListener('document:keydown.escape')
   onEscape() {
+    if (this.mailOpen) return;   // Esc закрывает окно письма, а не карточку
     if (this.leadId !== null) this.close.emit();
   }
 
@@ -304,6 +314,20 @@ export class LeadCardComponent implements OnChanges {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  /** Окно письма (спека 2026-10-19-client-mail-reply §5 п. 2). */
+  mailOpen = false;
+
+  canMail(): boolean {
+    return this.auth.isAdmin() && this.market.value === 'KZ' && !!this.lead
+      && (this.lead.chatChannel === 'EMAIL' || !!this.lead.contactEmail);
+  }
+
+  onMailSent() {
+    this.mailOpen = false;
+    if (this.lead) this.load(this.lead.id);
+    this.changed.emit();
   }
 
   /** Любое действие возвращает свежую карточку целиком — ею и заменяем текущую. */

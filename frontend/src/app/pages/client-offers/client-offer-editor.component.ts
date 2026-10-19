@@ -23,6 +23,7 @@ import { canShareFiles, openShareSheet, responseFile } from '../../shared/share'
 import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
 import { OfferFileViewComponent } from './offer-file-view.component';
+import { EmailComposerComponent } from '../../shared/email-composer.component';
 
 /** Пределы общей наценки — те же, что проверяет сервер (ClientOfferUpdateRequest). */
 /** Закупка и ссылка строки на ответ — по ним «Подставить» отличает свои правки строк от набранного во время запроса. */
@@ -46,7 +47,7 @@ const MAX_MARKUP = 1000;
   selector: 'app-client-offer-editor',
   standalone: true,
   imports: [NgIf, NgFor, FormsModule, RouterLink, LucideDynamicIcon, ClientOfferItemsComponent, ClientOfferPreviewComponent,
-            OfferTermsEditorComponent, OfferColumnsEditorComponent, OfferFileViewComponent],
+            OfferTermsEditorComponent, OfferColumnsEditorComponent, OfferFileViewComponent, EmailComposerComponent],
   template: `
     <div class="editor" *ngIf="offer as o; else stateTpl">
       <!-- место под плашку конфликта есть всегда, нулевой высоты: плашка ложится поверх шапки, а не сдвигает форму под курсором
@@ -205,12 +206,14 @@ const MAX_MARKUP = 1000;
         <ng-container *ngIf="!isFile(); else fileBar">
           <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict || exportQueued"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
           <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict || exportQueued">Word</button>
+          <button type="button" class="btn btn-line" *ngIf="canMail()" (click)="mailOffer()" [disabled]="busy || conflict || exportQueued">Отправить письмом</button>
           <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShare()" [disabled]="busy || conflict || exportQueued">
             <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю PDF…' : 'Поделиться' }}</button>
           <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить PDF</button>
         </ng-container>
         <ng-template #fileBar>
           <button type="button" class="btn btn-primary" (click)="downloadFile()" [disabled]="busy || conflict"><svg lucideIcon="file-down" [size]="16"></svg> Скачать файл</button>
+          <button type="button" class="btn btn-line" *ngIf="canMail()" (click)="mailOffer()" [disabled]="busy || conflict || exportQueued">Отправить письмом</button>
           <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShareFile()" [disabled]="busy || conflict">
             <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю файл…' : 'Поделиться' }}</button>
           <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить файл</button>
@@ -222,6 +225,9 @@ const MAX_MARKUP = 1000;
       </footer>
     </div>
     <ng-template #stateTpl><p class="empty">{{ loadError || 'Загрузка…' }}</p></ng-template>
+    @defer (when mailOpen) {
+      <app-email-composer *ngIf="mailOpen && offer" [target]="{ offerId: offer.id }" (sent)="onMailSent()" (closed)="mailOpen = false"></app-email-composer>
+    }
   `,
   styles: [`
     .editor { display: flex; flex-direction: column; gap: 12px; }
@@ -446,6 +452,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
 
   load(id: number) {
     const gen = ++this.gen;
+    this.mailOpen = false;
     this.id = id;
     this.offer = null;
     this.loadError = '';
@@ -775,6 +782,49 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
           this.render();
         },
       });
+    });
+  }
+
+  /** Окно письма с КП (спека 2026-10-19-client-mail-reply §5 п. 4): сперва дописать правки — PDF собирается с сервера. */
+  mailOpen = false;
+
+  canMail(): boolean {
+    const o = this.offer;
+    return !!o && this.auth.isAdmin() && this.isKz() && (this.isFile() || o.totals.itemCount > 0);
+  }
+
+  mailOffer() {
+    if (this.busy || this.exportQueued || !this.offer) return;
+    this.exportQueued = true;
+    this.render();
+    this.flushThen(() => {
+      this.exportQueued = false;
+      this.mailOpen = true;
+      this.render();
+    });
+  }
+
+  onMailSent() {
+    this.mailOpen = false;
+    this.refreshStatus();
+    this.render();
+  }
+
+  /** Письмо поставило «Отправлено» (у черновика) — статус, время и версия с сервера; правок за время окна не было. */
+  private refreshStatus() {
+    const o = this.offer;
+    if (!o) return;
+    const gen = this.gen;
+    this.api.getClientOffer(o.id).subscribe({
+      next: (r: ClientOffer) => {
+        if (gen !== this.gen) return;
+        o.status = r.status;
+        o.sentAt = r.sentAt;
+        o.version = r.version;
+        this.statusSel = r.status;
+        this.render();
+      },
+      error: () => { /* статус обновится при следующем открытии */ },
     });
   }
 

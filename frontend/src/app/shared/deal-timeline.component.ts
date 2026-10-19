@@ -6,6 +6,7 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../services/api.service';
 import { NotificationService } from '../services/notification.service';
 import { ChatMessageComponent } from './chat-message.component';
+import { EmailComposerComponent } from './email-composer.component';
 import { errorText } from './error-text';
 import { marketDate } from './deadline';
 import { MarketService } from '../services/market.service';
@@ -16,7 +17,7 @@ import type { DealKind, DealTimelineItem } from './deal';
 @Component({
   selector: 'app-deal-timeline',
   standalone: true,
-  imports: [NgFor, NgIf, RouterLink, FormsModule, ChatMessageComponent],
+  imports: [NgFor, NgIf, RouterLink, FormsModule, ChatMessageComponent, EmailComposerComponent],
   template: `
     <div class="tl-scroll" #scroll (scroll)="onScroll()">
       <button type="button" class="tl-older" *ngIf="hasMore" [disabled]="loadingOlder" (click)="loadOlder()">
@@ -57,10 +58,14 @@ import type { DealKind, DealTimelineItem } from './deal';
         <ng-container *ngIf="canWrite">
           <button type="button" class="btn btn-line btn-sm" (click)="open('NOTE')">+ Заметка</button>
           <button type="button" class="btn btn-line btn-sm" (click)="open('CALL')">+ Звонок</button>
+          <button type="button" class="btn btn-line btn-sm" *ngIf="canMail && kind === 'private-request'" (click)="mailOpen = true">+ Письмо</button>
         </ng-container>
         <a class="btn btn-line btn-sm" *ngIf="writeLink() as w" [href]="w.href" target="_blank" rel="noopener">{{ w.label }} ↗</a>
       </div>
     </div>
+    @defer (when mailOpen) {
+      <app-email-composer *ngIf="mailOpen" [target]="{ tenderId: dealId }" (sent)="onMailSent()" (closed)="mailOpen = false"></app-email-composer>
+    }
   `,
   styles: [`
     :host { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -91,6 +96,10 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
   @Input() email: string | null = null;
   /** Строка исполнения — ключ блока раздела на этой же странице (спека 2026-10-19-deal-execution §10). */
   @Output() localLink = new EventEmitter<string>();
+  /** Письмо клиенту из сделки — только у частной заявки рынка ящика клиентов (спека 2026-10-19-client-mail-reply §5 п. 3). */
+  @Input() canMail = false;
+  @Output() mailSent = new EventEmitter<void>();
+  mailOpen = false;
   @ViewChild('scroll') scrollRef?: ElementRef<HTMLElement>;
   @ViewChild('list') listRef?: ElementRef<HTMLElement>;
 
@@ -112,7 +121,7 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
               private market: MarketService) {}
 
   ngOnChanges(ch: SimpleChanges) {
-    if (ch['dealId'] || ch['kind']) this.load();
+    if (ch['dealId'] || ch['kind']) { this.mailOpen = false; this.load(); }
   }
 
   ngAfterViewInit() {
@@ -217,11 +226,17 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
     if (el) el.scrollTop = el.scrollHeight;
   }
 
+  onMailSent() {
+    this.mailOpen = false;
+    this.refresh();
+    this.mailSent.emit();
+  }
+
   writeLink(): { href: string; label: string } | null {
     let digits = (this.phone || '').replace(/\D/g, '');
     if (digits.length === 11 && digits.startsWith('8')) digits = '7' + digits.slice(1);
     if (digits.length >= 10) return { href: 'https://wa.me/' + digits, label: 'Написать в WhatsApp' };
-    if (this.email) return { href: 'mailto:' + this.email, label: 'Написать письмо' };
+    if (this.email && !this.canMail) return { href: 'mailto:' + this.email, label: 'Написать письмо' };
     return null;
   }
 
