@@ -3,8 +3,11 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.dto.request.PrivateRequestLineInput;
+import com.vladoose.nir.dto.response.ChatFileRow;
+import com.vladoose.nir.dto.response.OfferFileCandidate;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.repository.ChatAttachmentRepository;
 import com.vladoose.nir.repository.ClientOfferFileRepository;
 import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
@@ -54,11 +57,12 @@ public class ReadyOfferService {
     private final ReadyOfferReader reader;
     private final ReadyOfferHints hints;
     private final DealEventService dealEvents;
+    private final ChatAttachmentRepository attachments;
 
     public ReadyOfferService(PrivateRequestService privateRequests, ClientOfferService offers, ClientOfferRequestService requestOffers,
                              ClientOfferRepository repository, ClientOfferFileRepository files, CompanyProfileService profiles,
                              MedRegistryRepository registry, ReadyOfferReader reader, ReadyOfferHints hints,
-                             DealEventService dealEvents) {
+                             DealEventService dealEvents, ChatAttachmentRepository attachments) {
         this.privateRequests = privateRequests;
         this.offers = offers;
         this.requestOffers = requestOffers;
@@ -69,6 +73,7 @@ public class ReadyOfferService {
         this.reader = reader;
         this.hints = hints;
         this.dealEvents = dealEvents;
+        this.attachments = attachments;
     }
 
     @Transactional
@@ -120,6 +125,52 @@ public class ReadyOfferService {
             dealEvents.stage(t.getId(), DealEventService.OFFER_STATUS, OfferLabels.of(saved) + ": клиент согласился", saved.getId());
         }
         return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<OfferFileCandidate> candidates(Long tenderId) {
+        Tender t = privateRequests.findById(tenderId);
+        ZoneId zone = (t.getMarket() == null ? MarketContext.get() : t.getMarket()).zone();
+        List<ClientOffer> list = repository.findByTenderIdOrderByIdDesc(t.getId());
+        Map<Long, ClientOffer> used = hints.usedBy(list);
+        List<OfferFileCandidate> out = new ArrayList<>();
+        for (ChatFileRow f : hints.ourFiles(t)) {
+            ClientOffer u = used.get(f.attachmentId());
+            ClientOffer ais = ReadyOfferHints.aisOffer(ReadyOfferHints.nameHeader(f.fileName()), list).orElse(null);
+            out.add(new OfferFileCandidate(f.attachmentId(), f.fileName(), f.sizeBytes(),
+                    SupplierReplyFiles.kind(f.fileName() == null ? "" : f.fileName(), f.mimeType(), new byte[0]).name(),
+                    f.sentAt(), f.sentAt().atZoneSameInstant(zone).toLocalDate(), f.channel() == null ? null : f.channel().name(),
+                    f.subject(), snippet(f.body()), ReadyOfferHints.looksLikeOffer(f),
+                    u == null ? null : u.getId(), u == null ? null : OfferLabels.of(u),
+                    ais == null ? null : ais.getId(), ais == null ? null : OfferLabels.of(ais),
+                    ais != null && ais.getStatus() == ClientOfferStatus.DRAFT));
+        }
+        return out;
+    }
+
+    /** «Не КП» / «Нет»: подсказка про этот файл больше не показывается. */
+    @Transactional
+    public void dismiss(Long tenderId, Long attachmentId) {
+        Tender t = privateRequests.findById(tenderId);
+        hints.requireOurFile(t, attachmentId);
+        attachments.markOfferHintDismissed(attachmentId);
+    }
+
+    /** «Отметить отправленным»: черновик конструктора, чей PDF / Word ушёл этим сообщением, — «Отправлено» его временем. */
+    @Transactional
+    public ClientOffer markSent(Long tenderId, Long attachmentId) {
+        Tender t = privateRequests.findById(tenderId);
+        ChatFileRow f = hints.requireOurFile(t, attachmentId);
+        ClientOffer o = ReadyOfferHints.aisOffer(ReadyOfferHints.nameHeader(f.fileName()), repository.findByTenderIdOrderByIdDesc(t.getId()))
+                .orElseThrow(() -> new BadRequestException("Это не файл КП из конструктора этой сделки"));
+        if (o.getStatus() != ClientOfferStatus.DRAFT) throw new BadRequestException(OfferLabels.of(o) + " уже не черновик");
+        return offers.setStatus(o.getId(), ClientOfferStatus.SENT, f.sentAt());
+    }
+
+    private static String snippet(String body) {
+        if (body == null) return null;
+        String s = body.replaceAll("\\s+", " ").strip();
+        return s.length() <= 200 ? s : s.substring(0, 200) + "…";
     }
 
     private Source source(Tender t, Upload upload, Long attachmentId) {

@@ -1,17 +1,21 @@
 package com.vladoose.nir.service.readyoffer;
 
 import com.vladoose.nir.dto.response.ChatFileRow;
+import com.vladoose.nir.dto.response.DealProgress;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ChatAttachmentRepository;
 import com.vladoose.nir.repository.ClientOfferFileRepository;
 import com.vladoose.nir.repository.LeadRepository;
+import com.vladoose.nir.service.deal.DealTexts;
 import com.vladoose.nir.service.deal.DealTimelineService;
+import com.vladoose.nir.service.offer.OfferLabels;
 import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -27,6 +31,9 @@ public class ReadyOfferHints {
     /** «КП» / «KP» отдельным словом, «коммерческое предложение», «ценовое предложение». */
     static final Pattern OFFER_WORDS = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}])(?:кп|kp)(?!\\p{L})|коммерческ\\p{L}*\\s+предложени|ценов\\p{L}*\\s+предложени");
+
+    /** Этапы, когда у сделки нет отправленного или принятого КП (спека §3.4). */
+    private static final Set<String> HINT_STAGES = Set.of("EMPTY", "NEW", "REQUESTED", "PRICED", "KP_DRAFT", "KP_REJECTED");
 
     /** Переписка сделки: чат обращения заявки и границы эпизода. */
     public record Episode(Long chatId, OffsetDateTime from, OffsetDateTime to) {}
@@ -68,6 +75,34 @@ public class ReadyOfferHints {
     public ChatAttachment ourAttachment(Tender t, Long attachmentId) {
         requireOurFile(t, attachmentId);
         return attachments.findById(attachmentId).orElseThrow(() -> new NotFoundException("Файл переписки не найден"));
+    }
+
+    /**
+     * Подсказка «Дальше» (спека §3.4): самый поздний наш файл, ещё не занесённый и не отмеченный «Не КП»: PDF самой АИС с
+     * черновиком этой сделки — «Отметить отправленным»; файл, похожий на КП, — «Занести КП». PDF самой АИС с КП в другом
+     * статусе пропускается.
+     */
+    public Optional<DealProgress.Next> hint(Tender t, String stageCode, List<ClientOffer> offersNewestFirst) {
+        if (!HINT_STAGES.contains(stageCode)) return Optional.empty();
+        List<ChatFileRow> ours = ourFiles(t);
+        if (ours.isEmpty()) return Optional.empty();
+        Set<Long> used = usedBy(offersNewestFirst).keySet();
+        ZoneId zone = (t.getMarket() == null ? Market.KZ : t.getMarket()).zone();
+        for (ChatFileRow f : ours) {
+            if (f.hintDismissed() || used.contains(f.attachmentId())) continue;
+            String when = DealTexts.ddMM(f.sentAt(), zone) + channelWord(f.channel());
+            Optional<ClientOffer> ais = aisOffer(nameHeader(f.fileName()), offersNewestFirst);
+            if (ais.isPresent()) {
+                if (ais.get().getStatus() != ClientOfferStatus.DRAFT) continue;
+                return Optional.of(new DealProgress.Next(OfferLabels.of(ais.get()) + " ушло клиенту " + when
+                        + " — отметить отправленным?", "MARK_OFFER_SENT", ais.get().getId(), f.attachmentId()));
+            }
+            if (looksLikeOffer(f)) {
+                return Optional.of(new DealProgress.Next("Похоже, КП ушло клиенту " + when + " — «" + nz(f.fileName()) + "»",
+                        "ATTACH_OFFER_FILE", null, f.attachmentId()));
+            }
+        }
+        return Optional.empty();
     }
 
     /** PDF, Word или Excel, а в теме, тексте или имени файла — признак КП. */

@@ -6,6 +6,7 @@ import com.vladoose.nir.entity.ChatAttachment;
 import com.vladoose.nir.entity.LeadDirection;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -31,4 +32,8 @@ public interface ChatAttachmentRepository extends JpaRepository<ChatAttachment, 
            order by m.sentAt desc, a.id desc""")
     List<ChatFileRow> findOurFiles(@Param("chatId") Long chatId, @Param("direction") LeadDirection direction,
                                    @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, Pageable page);
+
+    @Modifying
+    @Query("update ChatAttachment a set a.offerHintDismissed = true where a.id = :id")
+    int markOfferHintDismissed(@Param("id") Long id);
 }
