@@ -3,6 +3,8 @@ package com.vladoose.nir.service.execution;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.ExecutionField;
 import com.vladoose.nir.dto.request.ExecutionMark;
+import com.vladoose.nir.dto.request.SupplierField;
+import com.vladoose.nir.dto.request.SupplierMark;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
@@ -154,6 +156,86 @@ public class DealExecutionService {
     public Tender deletePayment(Long id, Long paymentId) {
         Tender t = privateRequests.findById(id);
         payments.delete(payment(t, paymentId));
+        return t;
+    }
+
+    /** «+ Поставщик» — из справочника своего рынка; к оплате необязательна (решение при планировании 5). */
+    @Transactional
+    public Tender addSupplier(Long id, Long distributorId, BigDecimal amount, String currency) {
+        Tender t = privateRequests.findById(id);
+        if (distributorId == null) throw new BadRequestException("Выберите поставщика");
+        // findById = em.find: фильтр рынка его не режет — рынок поставщика сверяется явно (CLAUDE.md §14)
+        Distributor d = distributors.findById(distributorId).filter(x -> x.getMarket() == market(t))
+                .orElseThrow(() -> new NotFoundException("Поставщик не найден"));
+        BigDecimal a = amount == null ? null : ExecutionInput.amount(amount, "Сумма к оплате");
+        String cur = blank(currency) ? market(t).currencyCode() : ExecutionInput.currency(currency);
+        if (suppliers.findByTenderIdAndDistributorId(t.getId(), d.getId()).isPresent() || loader.load(t).inOffer(d.getId())) {
+            throw new BadRequestException("«" + d.getName() + "» уже есть в сделке");
+        }
+        suppliers.save(DealSupplier.builder().tenderId(t.getId()).distributorId(d.getId()).amount(a).currency(cur)
+                .manual(true).build());
+        return t;
+    }
+
+    /** Сумма к оплате (пусто — по КП), валюта (не при платежах в прежней), «Не заказываем» (не при платежах). */
+    @Transactional
+    public Tender updateSupplier(Long id, Long distributorId, SupplierField field, String value) {
+        if (field == null) throw new BadRequestException("Не указано поле");
+        Tender t = privateRequests.findById(id);
+        if (distributorId == null) throw new BadRequestException("Не указан поставщик");
+        String v = PrivateRequestService.blankToNull(value);
+        DealSupplier row = suppliers.findByTenderIdAndDistributorId(t.getId(), distributorId).orElse(null);
+        boolean paid = row != null && payments.existsByDealSupplierId(row.getId());
+        Consumer<DealSupplier> apply = switch (field) {
+            case AMOUNT -> {
+                BigDecimal a = v == null ? null : ExecutionInput.amount(v, "Сумма к оплате");
+                yield s -> s.setAmount(a);
+            }
+            case CURRENCY -> {
+                String c = ExecutionInput.currency(v);
+                if (paid && !c.equals(row.getCurrency())) {
+                    throw new BadRequestException("Сначала удалите платежи поставщику — они в прежней валюте");
+                }
+                yield s -> s.setCurrency(c);
+            }
+            case EXCLUDED -> {
+                boolean on = ExecutionInput.bool(v);
+                if (on && paid) throw new BadRequestException("У поставщика есть платежи — сначала удалите их");
+                yield s -> s.setExcluded(on);
+            }
+        };
+        apply.accept(row != null ? row : ensureSupplier(t, distributorId));
+        return t;
+    }
+
+    /** Заказ или отгрузка: дата и заметка; дата пуста — отметка снимается вместе с заметкой. */
+    @Transactional
+    public Tender setSupplierMark(Long id, Long distributorId, SupplierMark mark, String on, String note) {
+        if (mark == null) throw new BadRequestException("Неизвестная отметка");
+        Tender t = privateRequests.findById(id);
+        LocalDate date = blank(on) ? null
+                : ExecutionInput.date(on, mark == SupplierMark.ORDER ? "Дата заказа" : "Дата отгрузки", today(t));
+        String n = date == null ? null : ExecutionInput.text(note, ExecutionInput.NOTE_MAX, "Заметка");
+        DealSupplier s = ensureSupplier(t, distributorId);
+        if (mark == SupplierMark.ORDER) {
+            s.setOrderedOn(date);
+            s.setOrderNote(n);
+        } else {
+            s.setShippedOn(date);
+            s.setShipNote(n);
+        }
+        return t;
+    }
+
+    /** Только добавленный вручную; его платежи и файлы уходят каскадом. Поставщик из КП — «Не заказываем». */
+    @Transactional
+    public Tender deleteSupplier(Long id, Long distributorId) {
+        Tender t = privateRequests.findById(id);
+        DealSupplier s = distributorId == null ? null
+                : suppliers.findByTenderIdAndDistributorId(t.getId(), distributorId).orElse(null);
+        if (s == null) throw new NotFoundException("Поставщика нет в сделке");
+        if (!s.isManual()) throw new BadRequestException("Поставщик из КП — отметьте «Не заказываем»");
+        suppliers.delete(s);
         return t;
     }
 
