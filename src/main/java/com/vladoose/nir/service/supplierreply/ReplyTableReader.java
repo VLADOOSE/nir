@@ -66,12 +66,28 @@ public final class ReplyTableReader {
      */
     record Grid(String source, List<List<String>> rows, int firstRow, boolean word, List<String> text) {}
 
-    public static Optional<ReplyTable> read(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
-        List<Grid> grids = switch (kind) {
-            case EXCEL -> excel(content);
+    /** Документ: сетки (таблицы Word, листы Excel) и абзацы вне таблиц (у Excel — пусто). */
+    record Document(List<Grid> grids, List<String> text) {}
+
+    /** Таблица файла и число её строки «Итого» (null — строки «Итого» нет или числа в ней нет). */
+    public record ReadTable(ReplyTable table, BigDecimal total) {}
+
+    /** Таблица из сетки и её итог — общая основа read и readAll. */
+    record Parsed(ReplyTable table, BigDecimal total) {}
+
+    /** Сколько первых строк каждой таблицы / листа идёт в текст документа (бланк бывает таблицей). */
+    static final int TEXT_ROWS = 10;
+
+    static Document document(byte[] content, ReplyFileKind kind) throws IOException {
+        return switch (kind) {
+            case EXCEL -> new Document(excel(content), List.of());
             case WORD -> ole2(content) ? doc(content) : docx(content);
-            default -> List.of();
+            default -> new Document(List.of(), List.of());
         };
+    }
+
+    public static Optional<ReplyTable> read(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
+        List<Grid> grids = document(content, kind).grids();
         List<Grid> candidates = new ArrayList<>(grids);
         if (kind == ReplyFileKind.WORD) {
             // таблица на нескольких страницах: следующая таблица той же ширины без своей шапки — её продолжение
@@ -86,6 +102,43 @@ public final class ReplyTableReader {
         }
         return candidates.stream().map(g -> table(g, learned)).flatMap(Optional::stream)
                 .max(Comparator.comparingInt(ReplyTable::score).thenComparingInt(t -> t.rows().size()));
+    }
+
+    /**
+     * Все таблицы документа с наименованием и ценой (готовое КП, спека 2026-10-19 §4.1) — в порядке документа. Таблица
+     * Word той же ширины без своей шапки — продолжение предыдущей (как в read) и отдельной таблицей не считается.
+     */
+    public static List<ReadTable> readAll(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
+        List<Grid> grids = document(content, kind).grids();
+        List<ReadTable> out = new ArrayList<>();
+        for (int i = 0; i < grids.size(); i++) {
+            Grid acc = grids.get(i);
+            int j = i + 1;
+            if (kind == ReplyFileKind.WORD) {
+                for (; j < grids.size() && width(grids.get(j)) == width(grids.get(i))
+                        && !startsWithHeader(grids.get(j), learned); j++) {
+                    acc = glue(acc, grids.get(j));
+                }
+            }
+            Optional<Parsed> p = parse(acc, learned);
+            if (p.isEmpty()) continue;
+            out.add(new ReadTable(p.get().table(), p.get().total()));
+            i = j - 1;   // продолжения — строки этой таблицы
+        }
+        return out;
+    }
+
+    /** Текст документа для номера и даты КП: абзацы Word, затем первые строки каждой таблицы / листа (бланк в таблице). */
+    public static List<String> documentLines(byte[] content, ReplyFileKind kind) throws IOException {
+        Document d = document(content, kind);
+        List<String> out = new ArrayList<>(d.text());
+        for (Grid g : d.grids()) {
+            for (int r = 0; r < Math.min(g.rows().size(), TEXT_ROWS); r++) {
+                String line = joined(g.rows().get(r));
+                if (!line.isEmpty()) out.add(line);
+            }
+        }
+        return out;
     }
 
     // ---- Excel ----------------------------------------------------------------------------------------------------
@@ -140,7 +193,7 @@ public final class ReplyTableReader {
         return b.length >= 4 && (b[0] & 0xff) == 0xD0 && (b[1] & 0xff) == 0xCF && (b[2] & 0xff) == 0x11 && (b[3] & 0xff) == 0xE0;
     }
 
-    static List<Grid> docx(byte[] content) throws IOException {
+    static Document docx(byte[] content) throws IOException {
         List<Grid> out = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(content))) {
             List<String> text = new ArrayList<>();
@@ -161,8 +214,8 @@ public final class ReplyTableReader {
                 }
                 out.add(new Grid("таблица " + n, rows, 1, true, text));
             }
+            return new Document(out, text);
         }
-        return out;
     }
 
     /** Абзац — строками (мягкий перенос и разрыв строки внутри абзаца — новая строка): реквизиты и курс вырезаются построчно. */
@@ -180,7 +233,7 @@ public final class ReplyTableReader {
         return Math.max(1, Math.min(MAX_COLS, pr.getGridSpan().getVal().intValue()));
     }
 
-    static List<Grid> doc(byte[] content) throws IOException {
+    static Document doc(byte[] content) throws IOException {
         List<Grid> out = new ArrayList<>();
         try (HWPFDocument doc = new HWPFDocument(new ByteArrayInputStream(content))) {
             Range range = doc.getRange();
@@ -203,8 +256,8 @@ public final class ReplyTableReader {
                 }
                 out.add(new Grid("таблица " + n, rows, 1, true, text));
             }
+            return new Document(out, text);
         }
-        return out;
     }
 
     private static int width(Grid g) {
@@ -220,6 +273,25 @@ public final class ReplyTableReader {
     // ---- Таблица из сетки -----------------------------------------------------------------------------------------
 
     static Optional<ReplyTable> table(Grid g, Map<String, LineField> learned) {
+        return parse(g, learned).map(Parsed::table);
+    }
+
+    /** Число строки «Итого»: в колонке суммы, а нет его там — наибольшее число строки («Итого (в т. ч. НДС 5 %…) | 1 360 000»). */
+    static BigDecimal total(List<String> cells, List<ReplyTable.Column> columns) {
+        for (ReplyTable.Column c : columns) {
+            if (c.role() != LineField.SUM || c.index() >= cells.size()) continue;
+            BigDecimal v = MoneyText.amount(cells.get(c.index()));
+            if (v != null && v.signum() > 0) return v;
+        }
+        BigDecimal max = null;
+        for (String cell : cells) {
+            BigDecimal v = MoneyText.amount(cell);
+            if (v != null && v.signum() > 0 && (max == null || v.compareTo(max) > 0)) max = v;
+        }
+        return max;
+    }
+
+    static Optional<Parsed> parse(Grid g, Map<String, LineField> learned) {
         List<List<String>> rows = g.rows();
         int scan = Math.min(rows.size(), g.word() ? WORD_HEADER_SCAN : HEADER_SCAN);
         int best = -1, bestScore = 0;
@@ -261,12 +333,14 @@ public final class ReplyTableReader {
         // строка «Итого» — конец данных: она и всё под ней — текст вне таблицы; оборвались на пределе строк — остаток
         // тоже строки данных (в наименованиях бывает «… 1 500 руб.»), в текст не идёт
         int end = rows.size();
+        List<String> totalRow = null;
         for (int r = data; r < rows.size() && out.size() < MAX_ROWS; r++) {
             List<String> cells = pad(rows.get(r), width);
             String first = cells.stream().filter(s -> !s.isBlank()).findFirst().orElse("");
             if (first.isEmpty()) continue;
             if (TOTAL.matcher(first).find()) {
                 end = r;
+                totalRow = cells;
                 break;
             }
             out.add(new ReplyTable.Row(g.firstRow() + r, cells));
@@ -290,7 +364,8 @@ public final class ReplyTableReader {
                 from = new ReplyTable.CurrencyFrom(kind, tc.fragments(), null, null);
             }
         }
-        return Optional.of(new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out, from));
+        ReplyTable table = new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out, from);
+        return Optional.of(new Parsed(table, totalRow == null ? null : total(totalRow, columns)));
     }
 
     private static List<LineField> roles(List<String> row, Map<String, LineField> learned) {
