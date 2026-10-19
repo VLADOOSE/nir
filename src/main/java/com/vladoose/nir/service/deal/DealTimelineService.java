@@ -63,13 +63,14 @@ public class DealTimelineService {
     private final ClientOfferFileRepository offerFiles;
     private final DealExecutionLoader execution;
     private final DealFileRepository execFiles;
+    private final ChatRepository chatRepository;
 
     public DealTimelineService(PrivateRequestService privateRequests, TenderService tenders, LeadRepository leads,
                                ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
                                InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
                                ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events,
                                ClientOfferFileRepository offerFiles, DealExecutionLoader execution,
-                               DealFileRepository execFiles) {
+                               DealFileRepository execFiles, ChatRepository chatRepository) {
         this.privateRequests = privateRequests;
         this.tenders = tenders;
         this.leads = leads;
@@ -84,6 +85,7 @@ public class DealTimelineService {
         this.offerFiles = offerFiles;
         this.execution = execution;
         this.execFiles = execFiles;
+        this.chatRepository = chatRepository;
     }
 
     @Transactional(readOnly = true)
@@ -92,12 +94,14 @@ public class DealTimelineService {
         OffsetDateTime cursor = before == null ? FAR : before;
         int n = clamp(limit);
         List<DealTimelineItem> all = new ArrayList<>();
-        leads.findFirstByPrivateRequestId(t.getId()).ifPresent(lead -> addLead(all, lead, cursor, n));
+        Set<Long> seen = new HashSet<>();
+        leads.findFirstByPrivateRequestId(t.getId()).ifPresent(lead -> addLead(all, lead, cursor, n, seen));
         all.add(item(t.getCreatedAt(), "CREATED", "Создана заявка " + t.getTenderNumber(), null, null, null));
         addSupply(all, t, zone(t));
         addOffers(all, t.getId());
         addExecution(all, t, zone(t));
         addEvents(all, t.getId());
+        addEmailChats(all, t.getId(), cursor, n, seen);
         return page(all, cursor, n);
     }
 
@@ -136,7 +140,7 @@ public class DealTimelineService {
      * самой ранней взятой миллисекунды. Не взятые сообщения раньше её, а строка «Обращение» — не позже любого
      * сообщения эпизода: она остаётся раньше страницы, и признак «есть раньше» выставляется сам.
      */
-    private void addLead(List<DealTimelineItem> all, Lead lead, OffsetDateTime cursor, int n) {
+    private void addLead(List<DealTimelineItem> all, Lead lead, OffsetDateTime cursor, int n, Set<Long> seen) {
         OffsetDateTime start = lead.getReceivedAt() != null ? lead.getReceivedAt() : lead.getCreatedAt();
         all.add(item(start, "LEAD", "Обращение (" + DealTexts.channel(lead.getChannel()) + ")"
                 + (blank(lead.getSubject()) ? "" : ": «" + lead.getSubject().strip() + "»"), null, "LEAD", lead.getId()));
@@ -153,20 +157,42 @@ public class DealTimelineService {
         Long chatId = lead.getChat().getId();
         OffsetDateTime to = leads.findFirstByChatIdAndReceivedAtAfterOrderByReceivedAtAsc(chatId, start)
                 .map(Lead::getReceivedAt).orElse(FAR);
-        List<ChatMessage> newestFirst = new ArrayList<>(
-                messages.findForDeal(chatId, start, to, cursor, PageRequest.of(0, n + 1)));
+        addChatMessages(all, chatId, start, to, cursor, n, seen);
+    }
+
+    /**
+     * Сообщения переписки [from, to) раньше курсора: n + 1 последних и все сообщения самой ранней взятой миллисекунды
+     * (страница её не делит, а курсор отрезал бы). Уже взятые — не повторяются: переписка обращения и переписка письма
+     * сделки бывают одной (спека 2026-10-19-client-mail-reply §7.1).
+     */
+    private void addChatMessages(List<DealTimelineItem> all, Long chatId, OffsetDateTime from, OffsetDateTime to,
+                                 OffsetDateTime cursor, int n, Set<Long> seen) {
+        List<ChatMessage> newestFirst = new ArrayList<>(messages.findForDeal(chatId, from, to, cursor, PageRequest.of(0, n + 1)));
         if (newestFirst.size() > n) {
-            // все сообщения самой ранней взятой миллисекунды: страница не делит её, а курсор отрезал бы
             OffsetDateTime oldest = ms(newestFirst.get(newestFirst.size() - 1).getSentAt());
             OffsetDateTime next = oldest.plus(1, ChronoUnit.MILLIS);
             Set<Long> have = newestFirst.stream().map(ChatMessage::getId).collect(Collectors.toSet());
-            messages.findForDeal(chatId, oldest.isBefore(start) ? start : oldest, next.isAfter(to) ? to : next, cursor,
+            messages.findForDeal(chatId, oldest.isBefore(from) ? from : oldest, next.isAfter(to) ? to : next, cursor,
                             PageRequest.of(0, SAME_TIME_MAX))
                     .stream().filter(m -> !have.contains(m.getId())).forEach(newestFirst::add);
             newestFirst.sort(Comparator.comparing(ChatMessage::getSentAt).thenComparing(ChatMessage::getId).reversed());
         }
+        newestFirst.removeIf(m -> !seen.add(m.getId()));
         for (ChatMessageResponse m : chats.toResponses(newestFirst)) {
             all.add(new DealTimelineItem(m.getSentAt(), false, "MESSAGE", null, null, "CHAT", chatId, m));
+        }
+    }
+
+    /** Переписки писем сделки (события EMAIL) — с первого письма сделки в каждую; удалённую переписку пропускаем. */
+    private void addEmailChats(List<DealTimelineItem> all, Long tenderId, OffsetDateTime cursor, int n, Set<Long> seen) {
+        Map<Long, OffsetDateTime> firstByChat = new LinkedHashMap<>();
+        for (DealEvent e : events.findByTenderIdAndTypeOrderByOccurredAtAscIdAsc(tenderId, DealEventType.EMAIL)) {
+            if (e.getRefId() != null) firstByChat.putIfAbsent(e.getRefId(), e.getOccurredAt());
+        }
+        for (Map.Entry<Long, OffsetDateTime> c : firstByChat.entrySet()) {
+            Chat chat = chatRepository.findById(c.getKey()).orElse(null);
+            if (chat == null || (chat.getMarket() != null && chat.getMarket() != MarketContext.get())) continue;
+            addChatMessages(all, chat.getId(), c.getValue(), FAR, cursor, n, seen);
         }
     }
 
@@ -301,7 +327,10 @@ public class DealTimelineService {
     }
 
     private void addEvents(List<DealTimelineItem> all, Long tenderId) {
-        for (DealEvent e : events.findByTenderIdOrderByOccurredAtAscIdAsc(tenderId)) all.add(toItem(e));
+        for (DealEvent e : events.findByTenderIdOrderByOccurredAtAscIdAsc(tenderId)) {
+            if (e.getType() == DealEventType.EMAIL) continue;   // письмо показывается самим сообщением переписки (addEmailChats)
+            all.add(toItem(e));
+        }
     }
 
     /**
