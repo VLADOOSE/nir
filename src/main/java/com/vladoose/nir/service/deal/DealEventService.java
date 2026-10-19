@@ -37,6 +37,12 @@ public class DealEventService {
         return repository.save(DealEvent.builder().tenderId(tenderId).type(type).text(t).author(CurrentUser.name()).build());
     }
 
+    /** КП удалено — его события смены статуса не нужны: ссылка вела бы на «КП не найдено» (решение при планировании 10). */
+    @Transactional
+    public void forgetOffer(Long tenderId, Long offerId) {
+        repository.deleteRefEvents(tenderId, OFFER_STATUS, offerId);
+    }
+
     /** Смена этапа — в транзакции действия: откатилось действие — откатилось и событие. */
     @Transactional
     public DealEvent stage(Long tenderId, String code, String text, Long refId) {

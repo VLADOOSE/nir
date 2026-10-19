@@ -445,4 +445,23 @@ class ClientOfferCalculatorTest {
         assertThat(t.profit()).isEqualByComparingTo("176.36");
         assertThat(t.profit()).isEqualByComparingTo(t.revenueNet().subtract(t.purchase()));
     }
+
+    // Готовое КП (спека 2026-10-19 §4.5): цена — только из файла (ручная), от наценки не считается
+    @Test
+    void fileOffer_priceOnlyFromFile() {
+        ClientOffer o = ClientOfferTestData.newOffer(1);
+        o.setOrigin(ClientOfferOrigin.FILE);
+        ClientOfferItem withPrice = add(o, "100", "5");
+        withPrice.setPriceOverride(new BigDecimal("150"));
+        add(o, "100", "5");                                     // цены в файле нет — закупка есть
+        OfferCalculation c = calculator.calculate(o);
+        assertThat(c.items().get(0).price()).isEqualByComparingTo("150");
+        assertThat(c.items().get(0).markupPct()).isEqualByComparingTo("50");
+        assertThat(c.items().get(1).price()).isNull();
+        assertThat(c.items().get(1).sum()).isNull();
+        assertThat(c.totals().sum()).isEqualByComparingTo("150");
+
+        o.setOrigin(ClientOfferOrigin.BUILDER);                 // у конструктора та же строка считается от наценки 20 %
+        assertThat(calculator.calculate(o).items().get(1).price()).isEqualByComparingTo("120");
+    }
 }

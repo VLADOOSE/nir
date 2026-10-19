@@ -17,6 +17,7 @@ import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.document.*;
 import com.vladoose.nir.service.offer.ClientOfferCalculator;
 import com.vladoose.nir.service.offer.OfferCalculation;
+import com.vladoose.nir.service.offer.OfferLabels;
 import com.vladoose.nir.service.offer.OfferSettingsValidator;
 import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.RegistrationText;
@@ -158,10 +159,39 @@ public class ClientOfferService {
         return repository.saveAndFlush(o);
     }
 
+    /**
+     * Основа готового КП (спека 2026-10-19 §5.1, решение при планировании 7): умолчания «Реквизитов», как у нового КП,
+     * но без номера из счётчика — номер берётся из документа.
+     */
+    ClientOffer fileBase(Market market, String author) {
+        CompanyProfile p = profiles.forMarket(market);
+        return ClientOffer.builder()
+                .market(market)
+                .origin(ClientOfferOrigin.FILE)
+                .offerDate(today(market))
+                .status(ClientOfferStatus.SENT)
+                .title(DEFAULT_TITLE)
+                .intro(p.getDefaultIntro())
+                .vatEnabled(true)
+                .defaultMarkupPct(p.getDefaultMarkupPct())
+                .rounding(OfferRounding.NONE)
+                .tableColumns(copyColumns(p.getDefaultColumns()))
+                .detailsInName(true)
+                .terms(copyTerms(p.getDefaultTerms()))
+                .termsStyle(p.getDefaultTermsStyle())
+                .showAmountInWords(true)
+                .showVatBreakdown(true)
+                .signoff(OfferSignoff.DIRECTOR)
+                .totalAmount(BigDecimal.ZERO.setScale(2))
+                .createdBy(author)
+                .build();
+    }
+
     @Transactional
     public ClientOffer update(Long id, ClientOfferUpdateRequest r) {
         ClientOffer o = get(id);
         if (r.getVersion() != o.getVersion()) throw new ConflictException("КП изменено в другой вкладке — обновите страницу");
+        if (r.getNumber() == null && o.getOrigin() != ClientOfferOrigin.FILE) throw new BadRequestException("Укажите номер КП");
         // всё проверяется до первого изменения: отказ (400) не оставляет КП изменённым наполовину
         OfferSettingsValidator.columns(r.getColumns());
         OfferSettingsValidator.terms(r.getTerms());
@@ -242,22 +272,30 @@ public class ClientOfferService {
 
     @Transactional
     public ClientOffer setStatus(Long id, ClientOfferStatus status) {
+        return setStatus(id, status, null);
+    }
+
+    /** sentAt — время отправки («Отметить отправленным» по письму); null — «сейчас», если отправки ещё не было. */
+    @Transactional
+    public ClientOffer setStatus(Long id, ClientOfferStatus status, OffsetDateTime sentAt) {
         ClientOffer o = get(id);
         ClientOfferStatus before = o.getStatus();
         o.setStatus(status);
-        if (status == ClientOfferStatus.SENT && o.getSentAt() == null) o.setSentAt(OffsetDateTime.now());
+        if (status == ClientOfferStatus.SENT && (sentAt != null || o.getSentAt() == null)) {
+            o.setSentAt(sentAt != null ? sentAt : OffsetDateTime.now());
+        }
         o.setUpdatedAt(OffsetDateTime.now());
         ClientOffer saved = repository.saveAndFlush(o);
         // DRAFT → SENT в ленте и так видно (sent_at); у КП не из заявки ленты нет
         if (o.getTenderId() != null && before != status
                 && !(before == ClientOfferStatus.DRAFT && status == ClientOfferStatus.SENT)) {
-            dealEvents.stage(o.getTenderId(), DealEventService.OFFER_STATUS, offerStatusText(o.getNumber(), status), o.getId());
+            dealEvents.stage(o.getTenderId(), DealEventService.OFFER_STATUS, offerStatusText(o, status), o.getId());
         }
         return saved;
     }
 
-    static String offerStatusText(Integer number, ClientOfferStatus status) {
-        String prefix = "КП № " + number + ": ";
+    static String offerStatusText(ClientOffer o, ClientOfferStatus status) {
+        String prefix = OfferLabels.of(o) + ": ";
         return switch (status) {
             case ACCEPTED -> prefix + "клиент согласился";
             case REJECTED -> prefix + "клиент отказался";
@@ -269,9 +307,11 @@ public class ClientOfferService {
     @Transactional
     public void delete(Long id) {
         ClientOffer o = get(id);
-        if (o.getStatus() != ClientOfferStatus.DRAFT) {
+        // КП из файла занесли не тем файлом — удаляется в любом статусе; у конструктора — только черновик
+        if (o.getOrigin() != ClientOfferOrigin.FILE && o.getStatus() != ClientOfferStatus.DRAFT) {
             throw new BadRequestException("Удалить можно только черновик — отправленное КП отметьте «Отклонено»");
         }
+        if (o.getTenderId() != null) dealEvents.forgetOffer(o.getTenderId(), o.getId());
         repository.delete(o);
     }
 
@@ -307,7 +347,10 @@ public class ClientOfferService {
     /** «КП № 443 от 14.09.2026 — ГКП …»: без символов, недопустимых в именах файлов. */
     public String fileBaseName(ClientOffer o) {
         String client = clientName(o);
-        String base = "КП № " + o.getNumber() + " от " + DocFormat.date(o.getOfferDate()) + (client == null ? "" : " " + DocFormat.DASH + " " + client);
+        String head = o.getNumber() != null
+                ? "КП № " + o.getNumber() + " от " + DocFormat.date(o.getOfferDate())
+                : "КП от " + DocFormat.date(o.getOfferDate());
+        String base = head + (client == null ? "" : " " + DocFormat.DASH + " " + client);
         base = base.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]+", " ").replaceAll("\\s+", " ").trim();
         return base.length() > 150 ? base.substring(0, 150).trim() : base;
     }
@@ -326,6 +369,7 @@ public class ClientOfferService {
     private Snapshot snapshot(Long id) {
         return readOnly.execute(status -> {
             ClientOffer o = get(id);
+            if (o.getOrigin() == ClientOfferOrigin.FILE) throw new BadRequestException("КП из файла — скачайте файл");
             return new Snapshot(document(o, profiles.forMarket(o.getMarket())), fileBaseName(o));
         });
     }

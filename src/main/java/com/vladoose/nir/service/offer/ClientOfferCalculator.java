@@ -3,6 +3,7 @@ package com.vladoose.nir.service.offer;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferItem;
 import com.vladoose.nir.entity.ClientOfferItemKind;
+import com.vladoose.nir.entity.ClientOfferOrigin;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.entity.OfferRounding;
 import org.springframework.stereotype.Component;
@@ -91,7 +92,7 @@ public class ClientOfferCalculator {
         if (item.getPriceOverride() != null) {
             price = item.getPriceOverride().setScale(2, RoundingMode.HALF_UP);
             markup = p != null && p.signum() > 0 ? manualMarkup(price, p) : null;
-        } else if (p != null) {
+        } else if (p != null && offer.getOrigin() != ClientOfferOrigin.FILE) {
             BigDecimal m = item.getMarkupPct() != null ? item.getMarkupPct() : offer.getDefaultMarkupPct();
             // цена = закупка × (100 + m) / 100 — наш НДС уже внутри (наценка его закладывает), сверху не начисляется
             price = round(p.multiply(HUNDRED.add(m)), HUNDRED, offer.getRounding());

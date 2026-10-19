@@ -17,7 +17,7 @@ import java.util.List;
 @Data
 public class ClientOfferUpdateRequest {
     @NotNull private Integer version;
-    @NotNull @Min(value = 1, message = "Номер — от 1") private Integer number;
+    @Min(value = 1, message = "Номер — от 1") private Integer number;
     @NotNull(message = "Дата КП обязательна") private LocalDate offerDate;
     private Long facilityId;
     @Size(max = 2000) private String recipient;
