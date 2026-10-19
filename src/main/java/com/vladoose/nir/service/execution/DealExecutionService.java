@@ -5,19 +5,24 @@ import com.vladoose.nir.dto.request.ExecutionField;
 import com.vladoose.nir.dto.request.ExecutionMark;
 import com.vladoose.nir.dto.request.SupplierField;
 import com.vladoose.nir.dto.request.SupplierMark;
+import com.vladoose.nir.dto.response.ExecutionFileCandidate;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.readyoffer.ReadyOfferHints;
+import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import com.vladoose.nir.util.CurrentUser;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
@@ -32,6 +37,10 @@ public class DealExecutionService {
     public record PaymentInput(Long distributorId, BigDecimal amount, LocalDate paidOn, String note) {}
 
     private record Checked(BigDecimal amount, LocalDate paidOn, String note) {}
+
+    public record Upload(String fileName, String mimeType, byte[] bytes) {}
+
+    private record Source(String fileName, String mimeType, byte[] bytes, Long attachmentId) {}
 
     private final PrivateRequestService privateRequests;
     private final DealExecutionRepository executions;
@@ -237,6 +246,100 @@ public class DealExecutionService {
         if (!s.isManual()) throw new BadRequestException("Поставщик из КП — отметьте «Не заказываем»");
         suppliers.delete(s);
         return t;
+    }
+
+    /** Файлы переписки сделки (эпизод обращения, как лента) в обе стороны, новые сверху, до 50. */
+    @Transactional(readOnly = true)
+    public List<ExecutionFileCandidate> candidates(Long id) {
+        Tender t = privateRequests.findById(id);
+        return hints.episode(t)
+                .map(e -> attachments.findEpisodeFiles(e.chatId(), e.from(), e.to(), PageRequest.of(0, ReadyOfferHints.FILES_LIMIT)))
+                .orElse(List.of()).stream()
+                .map(f -> new ExecutionFileCandidate(f.attachmentId(), f.fileName(), f.sizeBytes(), f.sentAt(),
+                        f.channel() == null ? null : f.channel().name(), f.subject(),
+                        f.direction() == null ? null : f.direction().name()))
+                .toList();
+    }
+
+    /**
+     * Файл к месту: договор / поставка / документы — без платежа и поставщика; платёж клиента — его платёж; поставщик —
+     * поставщик сделки (из КП заводится строкой), с платежом — его платёж. Тот же файл (SHA-256) к тому же месту второй
+     * раз не прикладывается. Любой файл заводит строку исполнения — раздел не пропадёт (решение при планировании 7).
+     */
+    @Transactional
+    public Tender attach(Long id, Upload upload, Long attachmentId, DealFileStage stage, Long paymentId, Long distributorId,
+                         String author) {
+        Tender t = privateRequests.findById(id);
+        if (stage == null) throw new BadRequestException("Не указано, к чему файл");
+        Source src = source(t, upload, attachmentId);
+        Long supplierRow = null;
+        Long pid = null;
+        switch (stage) {
+            case CLIENT_PAYMENT -> {
+                if (distributorId != null) throw new BadRequestException("У платежа клиента нет поставщика");
+                DealPayment p = payment(t, paymentId);
+                if (p.getDealSupplierId() != null) throw new BadRequestException("Это платёж поставщику");
+                pid = p.getId();
+            }
+            case SUPPLIER -> {
+                DealSupplier s = ensureSupplier(t, distributorId);
+                if (paymentId != null) {
+                    DealPayment p = payment(t, paymentId);
+                    if (!s.getId().equals(p.getDealSupplierId())) throw new BadRequestException("Это платёж другого поставщика");
+                    pid = p.getId();
+                }
+                supplierRow = s.getId();
+            }
+            default -> {
+                if (paymentId != null || distributorId != null) {
+                    throw new BadRequestException("У договора, поставки и документов нет платежа и поставщика");
+                }
+            }
+        }
+        String sha = SupplierReplyFiles.sha256(src.bytes());
+        Long sid = supplierRow, payment = pid;
+        boolean same = files.findMetaByTenderId(t.getId()).stream().anyMatch(m -> m.stage() == stage
+                && Objects.equals(m.paymentId(), payment) && Objects.equals(m.dealSupplierId(), sid) && m.sha256().equals(sha));
+        if (!same) {
+            files.save(DealFile.builder().tenderId(t.getId()).stage(stage).paymentId(payment).dealSupplierId(sid)
+                    .fileName(src.fileName()).mimeType(src.mimeType() == null ? null : cut(src.mimeType(), 100))
+                    .sizeBytes(src.bytes().length).sha256(sha).content(src.bytes()).chatAttachmentId(src.attachmentId())
+                    .uploadedBy(author).build());
+        }
+        ensureRow(t);
+        return t;
+    }
+
+    /** Файл этой сделки, иначе 404 (гард рынка — через заявку). */
+    @Transactional(readOnly = true)
+    public DealFile file(Long id, Long fileId) {
+        Tender t = privateRequests.findById(id);
+        return files.findByIdAndTenderId(fileId, t.getId()).orElseThrow(() -> new NotFoundException("Файл не найден"));
+    }
+
+    @Transactional
+    public Tender deleteFile(Long id, Long fileId) {
+        Tender t = privateRequests.findById(id);
+        files.delete(files.findByIdAndTenderId(fileId, t.getId()).orElseThrow(() -> new NotFoundException("Файл не найден")));
+        return t;
+    }
+
+    private Source source(Tender t, Upload upload, Long attachmentId) {
+        if ((upload == null) == (attachmentId == null)) throw new BadRequestException("Выберите файл: с компьютера или из переписки");
+        if (upload != null) {
+            if (upload.bytes() == null || upload.bytes().length == 0) throw new BadRequestException("Файл пустой");
+            return new Source(SupplierReplyFiles.fileName(upload.fileName()), upload.mimeType(), upload.bytes(), null);
+        }
+        ReadyOfferHints.Episode e = hints.episode(t).orElseThrow(() -> new NotFoundException("Файл переписки не найден"));
+        if (attachments.countEpisodeFile(attachmentId, e.chatId(), e.from(), e.to()) == 0) {
+            throw new NotFoundException("Файл переписки не найден");
+        }
+        ChatAttachment a = attachments.findById(attachmentId).orElseThrow(() -> new NotFoundException("Файл переписки не найден"));
+        return new Source(SupplierReplyFiles.fileName(a.getFileName()), a.getMimeType(), a.getContent(), a.getId());
+    }
+
+    private static String cut(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
     }
 
     private Checked check(Tender t, PaymentInput in) {

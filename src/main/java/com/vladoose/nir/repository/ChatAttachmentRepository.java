@@ -1,6 +1,7 @@
 package com.vladoose.nir.repository;
 
 import com.vladoose.nir.dto.response.ChatAttachmentMeta;
+import com.vladoose.nir.dto.response.ChatEpisodeFile;
 import com.vladoose.nir.dto.response.ChatFileRow;
 import com.vladoose.nir.entity.ChatAttachment;
 import com.vladoose.nir.entity.LeadDirection;
@@ -32,6 +33,24 @@ public interface ChatAttachmentRepository extends JpaRepository<ChatAttachment, 
            order by m.sentAt desc, a.id desc""")
     List<ChatFileRow> findOurFiles(@Param("chatId") Long chatId, @Param("direction") LeadDirection direction,
                                    @Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to, Pageable page);
+
+    /** Файлы сообщений чата в обе стороны в окне [from, to) с сохранёнными байтами — новые сверху, без байтов. */
+    @Query("""
+           select new com.vladoose.nir.dto.response.ChatEpisodeFile(a.id, a.fileName, a.mimeType, a.sizeBytes, m.sentAt,
+               m.subject, c.channel, m.direction)
+           from ChatAttachment a join a.message m join m.chat c
+           where c.id = :chatId and m.sentAt >= :from and m.sentAt < :to and a.content is not null and m.deleted = false
+           order by m.sentAt desc, a.id desc""")
+    List<ChatEpisodeFile> findEpisodeFiles(@Param("chatId") Long chatId, @Param("from") OffsetDateTime from,
+                                           @Param("to") OffsetDateTime to, Pageable page);
+
+    /** Тот же отбор по id файла — проверка «файл переписки этой сделки» (решение при планировании 8). */
+    @Query("""
+           select count(a) from ChatAttachment a join a.message m
+           where a.id = :id and m.chat.id = :chatId and m.sentAt >= :from and m.sentAt < :to
+             and a.content is not null and m.deleted = false""")
+    long countEpisodeFile(@Param("id") Long id, @Param("chatId") Long chatId, @Param("from") OffsetDateTime from,
+                          @Param("to") OffsetDateTime to);
 
     @Modifying
     @Query("update ChatAttachment a set a.offerHintDismissed = true where a.id = :id")
