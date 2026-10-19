@@ -1,5 +1,6 @@
 package com.vladoose.nir.dto.response;
 
+import com.vladoose.nir.entity.ClientOfferOrigin;
 import com.vladoose.nir.entity.ClientOfferStatus;
 import lombok.Data;
 
@@ -11,6 +12,7 @@ import java.time.OffsetDateTime;
 public class ClientOfferListItemResponse {
     private Long id;
     private Integer number;
+    private ClientOfferOrigin origin;
     private LocalDate offerDate;
     private ClientOfferStatus status;
     private String clientName;

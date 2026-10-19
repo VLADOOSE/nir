@@ -14,6 +14,9 @@ import java.util.List;
 public class ClientOfferResponse {
     private Long id;
     private Integer number;
+    private ClientOfferOrigin origin;
+    /** Файл готового КП (без байтов и таблиц) — только у origin = FILE. */
+    private ClientOfferFileMeta file;
     private LocalDate offerDate;
     private ClientOfferStatus status;
     private Long facilityId;

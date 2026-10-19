@@ -2,6 +2,7 @@ package com.vladoose.nir.service.deal;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.ChatMessageResponse;
+import com.vladoose.nir.dto.response.ClientOfferFileMeta;
 import com.vladoose.nir.dto.response.DealTimelineItem;
 import com.vladoose.nir.dto.response.DealTimelineResponse;
 import com.vladoose.nir.entity.*;
@@ -9,6 +10,7 @@ import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.ChatService;
 import com.vladoose.nir.service.PrivateRequestService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.offer.OfferLabels;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,11 +56,13 @@ public class DealTimelineService {
     private final ClientOfferRepository offers;
     private final ActivityApplyRepository applies;
     private final DealEventRepository events;
+    private final ClientOfferFileRepository offerFiles;
 
     public DealTimelineService(PrivateRequestService privateRequests, TenderService tenders, LeadRepository leads,
                                ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
                                InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
-                               ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events) {
+                               ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events,
+                               ClientOfferFileRepository offerFiles) {
         this.privateRequests = privateRequests;
         this.tenders = tenders;
         this.leads = leads;
@@ -70,6 +74,7 @@ public class DealTimelineService {
         this.offers = offers;
         this.applies = applies;
         this.events = events;
+        this.offerFiles = offerFiles;
     }
 
     @Transactional(readOnly = true)
@@ -270,11 +275,17 @@ public class DealTimelineService {
     }
 
     private void addOffers(List<DealTimelineItem> all, Long tenderId) {
-        for (ClientOffer o : offers.findByTenderIdOrderByIdDesc(tenderId)) {
-            all.add(item(o.getCreatedAt(), "OFFER_CREATED", "КП № " + o.getNumber() + " создано", o.getCreatedBy(),
-                    "OFFER", o.getId()));
+        List<ClientOffer> list = offers.findByTenderIdOrderByIdDesc(tenderId);
+        Map<Long, String> fileNames = new HashMap<>();
+        List<Long> fileIds = list.stream().filter(o -> o.getOrigin() == ClientOfferOrigin.FILE).map(ClientOffer::getId).toList();
+        if (!fileIds.isEmpty()) for (ClientOfferFileMeta m : offerFiles.findMetaByOfferIds(fileIds)) fileNames.put(m.offerId(), m.name());
+        for (ClientOffer o : list) {
+            String created = o.getOrigin() == ClientOfferOrigin.FILE
+                    ? OfferLabels.of(o) + " занесено из файла" + (fileNames.containsKey(o.getId()) ? " «" + fileNames.get(o.getId()) + "»" : "")
+                    : OfferLabels.of(o) + " создано";
+            all.add(item(o.getCreatedAt(), "OFFER_CREATED", created, o.getCreatedBy(), "OFFER", o.getId()));
             if (o.getSentAt() != null) {
-                all.add(item(o.getSentAt(), "OFFER_SENT", "КП № " + o.getNumber() + " отправлено", null, "OFFER", o.getId()));
+                all.add(item(o.getSentAt(), "OFFER_SENT", OfferLabels.of(o) + " отправлено", null, "OFFER", o.getId()));
             }
         }
     }

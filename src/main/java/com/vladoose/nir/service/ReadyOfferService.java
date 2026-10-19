@@ -7,6 +7,7 @@ import com.vladoose.nir.dto.response.ChatFileRow;
 import com.vladoose.nir.dto.response.OfferFileCandidate;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.ChatAttachmentRepository;
 import com.vladoose.nir.repository.ClientOfferFileRepository;
 import com.vladoose.nir.repository.ClientOfferRepository;
@@ -125,6 +126,13 @@ public class ReadyOfferService {
             dealEvents.stage(t.getId(), DealEventService.OFFER_STATUS, OfferLabels.of(saved) + ": клиент согласился", saved.getId());
         }
         return saved;
+    }
+
+    /** Файл готового КП: гард рынка — через КП (404 чужому), у КП без файла — 404. */
+    @Transactional(readOnly = true)
+    public ClientOfferFile file(Long offerId) {
+        ClientOffer o = offers.get(offerId);
+        return files.findByOfferId(o.getId()).orElseThrow(() -> new NotFoundException("У КП нет файла"));
     }
 
     @Transactional(readOnly = true)

@@ -68,7 +68,7 @@ public class PrivateRequestViewBuilder {
         leadRepository.findFirstByPrivateRequestId(t.getId()).map(leadMapper::toRef).ifPresent(r::setLead);
         r.setOffers(clientOffers.findByTenderIdOrderByIdDesc(t.getId()).stream()
                 .map(o -> new PrivateRequestOfferRef(o.getId(), o.getNumber(), o.getOfferDate(), o.getStatus().name(),
-                        o.getItemCount(), o.getTotalAmount(), o.getMarket().currencyCode()))
+                        o.getItemCount(), o.getTotalAmount(), o.getMarket().currencyCode(), o.getOrigin().name()))
                 .toList());
 
         Set<Long> requested = new HashSet<>();

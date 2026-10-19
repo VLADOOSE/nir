@@ -5,10 +5,12 @@ import com.vladoose.nir.dto.response.ClientOfferListItemResponse;
 import com.vladoose.nir.dto.response.ClientOfferResponse;
 import com.vladoose.nir.entity.ClientOffer;
 import com.vladoose.nir.entity.ClientOfferItem;
+import com.vladoose.nir.entity.ClientOfferOrigin;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.repository.ClientOfferFileRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.TenderRepository;
@@ -26,17 +28,24 @@ public class ClientOfferMapper {
     private final TenderRepository tenders;
     private final MedRegistryRepository registry;
     private final PriceRequestItemRepository priceItems;
+    private final ClientOfferFileRepository files;
 
-    public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry, PriceRequestItemRepository priceItems) {
+    public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry, PriceRequestItemRepository priceItems,
+                             ClientOfferFileRepository files) {
         this.tenders = tenders;
         this.registry = registry;
         this.priceItems = priceItems;
+        this.files = files;
     }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
         ClientOfferResponse r = new ClientOfferResponse();
         r.setId(o.getId());
         r.setNumber(o.getNumber());
+        r.setOrigin(o.getOrigin());
+        if (o.getOrigin() == ClientOfferOrigin.FILE && o.getId() != null) {
+            r.setFile(files.findMetaByOfferIds(List.of(o.getId())).stream().findFirst().orElse(null));
+        }
         r.setOfferDate(o.getOfferDate());
         r.setStatus(o.getStatus());
         r.setFacilityId(o.getFacility() == null ? null : o.getFacility().getId());
@@ -145,6 +154,7 @@ public class ClientOfferMapper {
         ClientOfferListItemResponse r = new ClientOfferListItemResponse();
         r.setId(o.getId());
         r.setNumber(o.getNumber());
+        r.setOrigin(o.getOrigin());
         r.setOfferDate(o.getOfferDate());
         r.setStatus(o.getStatus());
         r.setClientName(ClientOfferService.clientName(o));
