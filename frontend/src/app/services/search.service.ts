@@ -72,7 +72,7 @@ export class SearchService {
       }));
       data.offers.slice(0, DEAL_GROUP_LIMIT).forEach((o: any) => results.push({
         type: 'offer', typeLabel: 'КП клиенту', id: o.id,
-        title: `КП № ${o.number}`,
+        title: o.number != null ? `КП № ${o.number}` : `КП от ${String(o.offerDate || '').split('-').reverse().join('.')}`,
         subtitle: [o.clientName || 'Клиент не указан', OFFER_STATUS[o.status] || o.status,
                    o.tenderNumber ? 'из заявки ' + o.tenderNumber : ''].filter(Boolean).join(' · '),
         commands: ['/client-offers', o.id]

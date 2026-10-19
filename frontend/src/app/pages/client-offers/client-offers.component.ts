@@ -9,7 +9,7 @@ import { AuthService } from '../../services/auth.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
-import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/client-offer';
+import { OFFER_STATUS_LABELS, OfferStatus, dateText, money, offerLabel } from '../../shared/client-offer';
 
 /** «КП клиентам» — журнал (спека §8.1): поиск по клиенту, номеру и позициям, фильтр статуса, дублирование. */
 @Component({
@@ -46,15 +46,16 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
         <div class="top">
           <!-- Вся карточка — эта ссылка (::after растянут на карточку): Enter, новая вкладка, «копировать ссылку».
                «⋯» стоит в разметке позже и поэтому рисуется поверх неё. -->
-          <a class="num" [routerLink]="['/client-offers', o.id]" [attr.aria-label]="'Открыть КП № ' + o.number">№ {{ o.number }}</a>
+          <a class="num" [routerLink]="['/client-offers', o.id]" [attr.aria-label]="'Открыть ' + label(o)">{{ o.number != null ? '№ ' + o.number : 'без №' }}</a>
           <span class="date">{{ dateText(o.offerDate) }}</span>
           <span class="st" [attr.data-status]="o.status">{{ statusLabel(o.status) }}</span>
+          <span class="from-file" *ngIf="o.origin === 'FILE'">из файла</span>
           <span class="menu" *ngIf="auth.isAdmin()" (click)="$event.stopPropagation()">
             <button type="button" class="btn btn-more" (click)="toggleMenu(o.id)"
-                    [attr.aria-expanded]="menuId === o.id" [attr.aria-label]="'Действия с КП № ' + o.number">⋯</button>
+                    [attr.aria-expanded]="menuId === o.id" [attr.aria-label]="'Действия с ' + label(o)">⋯</button>
             <span class="row-menu" *ngIf="menuId === o.id">
               <button type="button" (click)="duplicate(o)">Дублировать</button>
-              <button type="button" class="danger" *ngIf="o.status === 'DRAFT'" (click)="remove(o)">Удалить</button>
+              <button type="button" class="danger" *ngIf="o.status === 'DRAFT' || o.origin === 'FILE'" (click)="remove(o)">Удалить</button>
             </span>
           </span>
         </div>
@@ -89,6 +90,7 @@ import { OFFER_STATUS_LABELS, OfferStatus, dateText, money } from '../../shared/
     /* чипы статуса: 15% тинта + текстовый токен (правило kit); черновик — как .badge-DRAFT
        (--text-muted на --surface-2 даёт 4,39:1 — ниже 4,5:1 для 12px) */
     .st { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 10px; background: var(--surface-2); color: var(--text); }
+    .from-file { font-size: 12px; padding: 2px 10px; border-radius: 10px; background: var(--surface-2); color: var(--text); }
     .from-pr { color: var(--text-muted); font-weight: 400; }
     .st[data-status="SENT"] { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .st[data-status="ACCEPTED"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
@@ -208,12 +210,12 @@ export class ClientOffersComponent implements OnDestroy {
 
   remove(o: any) {
     this.menuId = null;
-    this.confirm.ask(`Удалить черновик КП № ${o.number}?`, 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
+    this.confirm.ask(`Удалить ${o.origin === 'FILE' ? '' : 'черновик '}${this.label(o)}?`, 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(ok => {
         if (!ok) return;
         this.api.deleteClientOffer(o.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: () => { this.notify.success('Черновик удалён'); this.load(); },
+          next: () => { this.notify.success(o.origin === 'FILE' ? 'КП удалено' : 'Черновик удалён'); this.load(); },
           // сервер сам объясняет отказ («Удалить можно только черновик…» — статус сменили в другой вкладке)
           error: e => this.notify.error(e?.error?.message || 'Не удалось удалить: ' + errorText(e)),
         });
@@ -225,6 +227,8 @@ export class ClientOffersComponent implements OnDestroy {
     if (this.shownStatus !== 'ALL') return 'КП в этом статусе нет';
     return this.auth.isAdmin() ? 'КП пока нет — нажмите «+ Новое КП»' : 'КП пока нет';
   }
+
+  label = offerLabel;
 
   statusLabel(s: OfferStatus) {
     return OFFER_STATUS_LABELS[s] || s;

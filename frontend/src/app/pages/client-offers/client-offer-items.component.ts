@@ -69,11 +69,13 @@ function rowKey(it: OfferItem): string {
 
     <div class="bulk" *ngIf="!readonly && selectedCount() > 0" role="group" aria-label="Действия с выбранными строками">
       <span class="bulk-count">Выбрано: {{ selectedCount() }}</span>
-      <span class="bulk-field">
-        <input class="bulk-input" inputmode="decimal" placeholder="Наценка, %" [(ngModel)]="bulkMarkup" (keydown.enter)="applyBulkMarkup()"
-               aria-label="Наценка для выбранных, %" />
-        <button type="button" class="btn btn-line" (click)="applyBulkMarkup()" title="Ручные цены выбранных строк сбросятся">Наценку</button>
-      </span>
+      <ng-container *ngIf="!fileMode">
+        <span class="bulk-field">
+          <input class="bulk-input" inputmode="decimal" placeholder="Наценка, %" [(ngModel)]="bulkMarkup" (keydown.enter)="applyBulkMarkup()"
+                 aria-label="Наценка для выбранных, %" />
+          <button type="button" class="btn btn-line" (click)="applyBulkMarkup()" title="Ручные цены выбранных строк сбросятся">Наценку</button>
+        </span>
+      </ng-container>
       <span class="bulk-field">
         <select [(ngModel)]="bulkVat" aria-label="НДС для выбранных" [disabled]="!offer.vatEnabled">
           <option [ngValue]="undefined" disabled>Ставка НДС</option>
@@ -137,8 +139,8 @@ function rowKey(it: OfferItem): string {
                        [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1) + (it.purchaseUnverified ? ', не сверена' : '')" />
                   <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span></span></label>
               <label class="c-mk"><span class="cap">Наценка, %</span>
-                <input inputmode="decimal" [value]="markupText(it)" [placeholder]="it.priceOverride != null ? '—' : numText(offer.defaultMarkupPct)"
-                       [disabled]="readonly || it.priceOverride != null" (change)="setMarkup(it, $event)"
+                <input inputmode="decimal" [value]="markupText(it)" [placeholder]="it.priceOverride != null || fileMode ? '—' : numText(offer.defaultMarkupPct)"
+                       [disabled]="readonly || fileMode || it.priceOverride != null" (change)="setMarkup(it, $event)"
                        [attr.title]="it.priceOverride != null ? 'Цена задана вручную — наценка выведена из неё; «↺» у цены вернёт расчёт' : null"
                        [attr.aria-label]="'Наценка, %, строка ' + (i + 1)" /></label>
               <label class="c-price"><span class="cap">Цена клиенту</span>
@@ -146,7 +148,7 @@ function rowKey(it: OfferItem): string {
                   <input inputmode="decimal" [class.manual]="it.priceOverride != null" [value]="priceText(it)"
                          (focus)="startPriceEdit(it, $event)" (blur)="endPriceEdit(it)" (change)="setPrice(it, $event)" [disabled]="readonly"
                          [attr.aria-label]="'Цена клиенту за единицу, строка ' + (i + 1)" />
-                  <button type="button" class="reset" *ngIf="it.priceOverride != null && !readonly" (click)="resetPrice(it)"
+                  <button type="button" class="reset" *ngIf="it.priceOverride != null && !readonly && !fileMode" (click)="resetPrice(it)"
                           title="Вернуть расчёт по наценке" [attr.aria-label]="'Вернуть расчёт по наценке, строка ' + (i + 1)">↺</button>
                 </span></label>
               <label class="c-vat"><span class="cap">НДС</span>
@@ -396,6 +398,8 @@ export class ClientOfferItemsComponent {
   @Input({ required: true }) offer!: ClientOffer;
   @Input({ required: true }) profile: any;
   @Input() readonly = false;
+  /** КП из файла (спека 2026-10-19 §3.3): цена — только из файла или вписанная, наценки нет. */
+  @Input() fileMode = false;
   @Output() changed = new EventEmitter<void>();
 
   bulkMarkup = '';
@@ -823,7 +827,9 @@ export class ClientOfferItemsComponent {
     }
     if (v === undefined || v < 0) {
       input.value = numText(this.clientPrice(it));
-      this.notify.error(v === undefined ? 'Цена клиенту — числом (пусто — расчёт по наценке)' : 'Цена клиенту не может быть отрицательной');
+      this.notify.error(v === undefined
+        ? (this.fileMode ? 'Цена клиенту — числом (пусто — без цены)' : 'Цена клиенту — числом (пусто — расчёт по наценке)')
+        : 'Цена клиенту не может быть отрицательной');
       return;
     }
     if (it.priceOverride == null && it.calc?.price != null && Math.abs(v - it.calc.price) < 0.005) {

@@ -15,13 +15,14 @@ import { OfferTermsEditorComponent } from '../../shared/offer-terms-editor.compo
 import { OfferColumnsEditorComponent } from '../../shared/offer-columns-editor.component';
 import {
   ClientOffer, NewPriceLine, OFFER_STATUS_LABELS, OfferItem, OfferStatus, ROUNDING_OPTIONS, TermsStyle,
-  dateText, money, numText, parseNum, saveBlob, toRequest, vatLabel,
+  dateText, money, numText, offerFileCheck, offerLabel, parseNum, saveBlob, toRequest, vatLabel,
 } from '../../shared/client-offer';
 import { unregistered } from '../../shared/registry';
 import { marketToday } from '../../shared/deadline';
-import { canShareFiles, openShareSheet } from '../../shared/share';
+import { canShareFiles, openShareSheet, responseFile } from '../../shared/share';
 import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
+import { OfferFileViewComponent } from './offer-file-view.component';
 
 /** Пределы общей наценки — те же, что проверяет сервер (ClientOfferUpdateRequest). */
 /** Закупка и ссылка строки на ответ — по ним «Подставить» отличает свои правки строк от набранного во время запроса. */
@@ -45,7 +46,7 @@ const MAX_MARKUP = 1000;
   selector: 'app-client-offer-editor',
   standalone: true,
   imports: [NgIf, NgFor, FormsModule, RouterLink, LucideDynamicIcon, ClientOfferItemsComponent, ClientOfferPreviewComponent,
-            OfferTermsEditorComponent, OfferColumnsEditorComponent],
+            OfferTermsEditorComponent, OfferColumnsEditorComponent, OfferFileViewComponent],
   template: `
     <div class="editor" *ngIf="offer as o; else stateTpl">
       <!-- место под плашку конфликта есть всегда, нулевой высоты: плашка ложится поверх шапки, а не сдвигает форму под курсором
@@ -58,8 +59,9 @@ const MAX_MARKUP = 1000;
       <header class="ed-top">
         <a routerLink="/client-offers" class="back">← КП клиентам</a>
         <div class="ed-title">
-          <h2>КП № {{ o.number }} от {{ dateText(o.offerDate) }}</h2>
+          <h2>{{ title(o) }}</h2>
           <span class="st" [attr.data-status]="o.status">{{ statusLabel(o.status) }}</span>
+          <span class="from-file" *ngIf="isFile()">из файла</span>
           <a class="from-pr" *ngIf="o.tenderId" [routerLink]="['/private-requests', o.tenderId]">из заявки {{ o.tenderNumber || ('№ ' + o.tenderId) }}</a>
           <span class="save-state" [class.err]="!!saveError || conflict" [class.wrap]="!!saveError && !conflict" [attr.title]="saveText()"
                 aria-live="polite">{{ saveText() }}</span>
@@ -70,18 +72,19 @@ const MAX_MARKUP = 1000;
                   [disabled]="conflict" aria-label="Ещё действия">⋯</button>
           <span class="row-menu" *ngIf="menuOpen">
             <button type="button" [disabled]="busy" (click)="duplicate()">Дублировать</button>
-            <button type="button" class="danger" *ngIf="o.status === 'DRAFT'" (click)="remove()">Удалить черновик</button>
+            <button type="button" class="danger" *ngIf="o.status === 'DRAFT' || isFile()" (click)="remove()">{{ isFile() ? 'Удалить КП' : 'Удалить черновик' }}</button>
           </span>
         </span>
       </header>
 
       <div class="tabs" role="tablist">
         <button type="button" role="tab" [class.on]="tab === 'edit'" [attr.aria-selected]="tab === 'edit'" (click)="tab = 'edit'">Редактор</button>
-        <button type="button" role="tab" [class.on]="tab === 'preview'" [attr.aria-selected]="tab === 'preview'" (click)="tab = 'preview'">Просмотр</button>
+        <button type="button" role="tab" [class.on]="tab === 'preview'" [attr.aria-selected]="tab === 'preview'" (click)="tab = 'preview'">{{ isFile() ? 'Документ' : 'Просмотр' }}</button>
       </div>
 
       <div class="ed-body">
         <section class="pane-edit" [class.off]="tab !== 'edit'">
+          <div class="file-check" *ngIf="offerFileCheck(o) as c" [attr.data-tone]="c.tone" role="status">{{ c.text }}</div>
           <div class="new-prices" *ngIf="auth.isAdmin() && o.status === 'DRAFT' && newPrices.length && !conflict" role="status">
             <span>Пришли новые цены по {{ newPrices.length }} {{ newPrices.length === 1 ? 'позиции' : 'позициям' }}</span>
             <button type="button" class="btn btn-line" [disabled]="busy || conflict || applying" (click)="applyNewPrices()">{{ applying ? 'Подставляю…' : 'Подставить' }}</button>
@@ -90,7 +93,7 @@ const MAX_MARKUP = 1000;
             <div class="card">
               <h3>Шапка</h3>
               <div class="grid2">
-                <label>Исх. № <input type="number" min="1" step="1" [(ngModel)]="o.number" (ngModelChange)="changed()" /></label>
+                <label>Исх. № <input type="number" min="1" step="1" placeholder="нет" [(ngModel)]="o.number" (ngModelChange)="changed()" /></label>
                 <label>Дата <input type="date" [(ngModel)]="o.offerDate" (ngModelChange)="changed()" /></label>
                 <label class="wide">Клиент
                   <select [ngModel]="o.facilityId" (ngModelChange)="onFacility($event)">
@@ -98,9 +101,9 @@ const MAX_MARKUP = 1000;
                     <option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option>
                   </select></label>
                 <label class="wide">Кому <textarea rows="2" maxlength="2000" [(ngModel)]="o.recipient" (ngModelChange)="changed()" placeholder="Главному врачу&#10;ГКП на ПХВ «…»"></textarea></label>
-                <label class="wide">Заголовок <input maxlength="200" [(ngModel)]="o.title" (ngModelChange)="changed()" /></label>
+                <label class="wide" *ngIf="!isFile()">Заголовок <input maxlength="200" [(ngModel)]="o.title" (ngModelChange)="changed()" /></label>
                 <label class="wide">Предмет <input maxlength="1000" [(ngModel)]="o.subject" (ngModelChange)="changed()" placeholder="Например: Аппарат ИВЛ для экстренной помощи А-ИВЛ-Э-03" /></label>
-                <label class="wide">Вводная фраза <textarea rows="2" maxlength="4000" [(ngModel)]="o.intro" (ngModelChange)="changed()"></textarea></label>
+                <label class="wide" *ngIf="!isFile()">Вводная фраза <textarea rows="2" maxlength="4000" [(ngModel)]="o.intro" (ngModelChange)="changed()"></textarea></label>
               </div>
             </div>
           </fieldset>
@@ -109,7 +112,7 @@ const MAX_MARKUP = 1000;
                («⋯ → Подробнее», раскрытие карточки на телефоне) -->
           <div class="card">
             <h3>Позиции</h3>
-            <app-client-offer-items [offer]="o" [profile]="profile" [readonly]="!auth.isAdmin() || conflict" (changed)="changed()"></app-client-offer-items>
+            <app-client-offer-items [offer]="o" [profile]="profile" [readonly]="!auth.isAdmin() || conflict" [fileMode]="isFile()" (changed)="changed()"></app-client-offer-items>
             <div class="mini-total">
               Итого: <b>{{ money(o.totals.sum) }} {{ currencyShort }}</b>
               <span *ngFor="let v of o.totals.vat"> · в т.ч. НДС {{ vatLabel(v.rate) }}: {{ money(v.amount) }}</span>
@@ -117,6 +120,7 @@ const MAX_MARKUP = 1000;
           </div>
 
           <fieldset [disabled]="!auth.isAdmin() || conflict">
+            <ng-container *ngIf="!isFile()">
             <div class="card">
               <h3>Цены</h3>
               <div class="grid3">
@@ -164,6 +168,7 @@ const MAX_MARKUP = 1000;
                 </label>
               </div>
             </div>
+            </ng-container>
 
             <div class="card">
               <h3>Маржа <span class="hint">только для вас — в документ не попадает</span></h3>
@@ -181,8 +186,11 @@ const MAX_MARKUP = 1000;
         </section>
 
         <aside class="pane-preview" [class.off]="tab !== 'preview'" [class.zoomed]="zoomed">
-          <app-client-offer-preview [offerId]="o.id" [tick]="previewTick" [active]="previewActive()" (crowded)="onCrowded($event)"
-                                    (zoomChange)="zoomed = $event"></app-client-offer-preview>
+          <app-offer-file-view *ngIf="isFile() && o.file; else builderPreview" [offerId]="o.id" [meta]="o.file"></app-offer-file-view>
+          <ng-template #builderPreview>
+            <app-client-offer-preview [offerId]="o.id" [tick]="previewTick" [active]="previewActive()" (crowded)="onCrowded($event)"
+                                      (zoomChange)="zoomed = $event"></app-client-offer-preview>
+          </ng-template>
         </aside>
       </div>
 
@@ -194,11 +202,19 @@ const MAX_MARKUP = 1000;
           <span class="reg-danger" *ngIf="isKz() && unregisteredCount()">не зарегистрировано: {{ unregisteredCount() }}</span>
           <span *ngIf="!isKz() && regWarnings()">без регистрации: {{ regWarnings() }}</span>
         </span>
-        <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict || exportQueued"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
-        <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict || exportQueued">Word</button>
-        <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShare()" [disabled]="busy || conflict || exportQueued">
-          <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю PDF…' : 'Поделиться' }}</button>
-        <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить PDF</button>
+        <ng-container *ngIf="!isFile(); else fileBar">
+          <button type="button" class="btn btn-primary" (click)="download('pdf')" [disabled]="busy || conflict || exportQueued"><svg lucideIcon="file-down" [size]="16"></svg> PDF</button>
+          <button type="button" class="btn btn-line" (click)="download('docx')" [disabled]="busy || conflict || exportQueued">Word</button>
+          <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShare()" [disabled]="busy || conflict || exportQueued">
+            <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю PDF…' : 'Поделиться' }}</button>
+          <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить PDF</button>
+        </ng-container>
+        <ng-template #fileBar>
+          <button type="button" class="btn btn-primary" (click)="downloadFile()" [disabled]="busy || conflict"><svg lucideIcon="file-down" [size]="16"></svg> Скачать файл</button>
+          <button type="button" class="btn btn-line" *ngIf="canShare && !shareFile" (click)="prepareShareFile()" [disabled]="busy || conflict">
+            <svg lucideIcon="share-2" [size]="16"></svg> {{ sharePreparing ? 'Готовлю файл…' : 'Поделиться' }}</button>
+          <button type="button" class="btn btn-primary" *ngIf="shareFile" (click)="sendShare()">Отправить файл</button>
+        </ng-template>
         <select *ngIf="auth.isAdmin()" class="status" [ngModel]="statusSel" (ngModelChange)="setStatus($event)"
                 [disabled]="conflict || statusBusy" aria-label="Статус КП">
           <option *ngFor="let s of statuses" [ngValue]="s">{{ statusLabel(s) }}</option>
@@ -219,6 +235,10 @@ const MAX_MARKUP = 1000;
     .st[data-status="ACCEPTED"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .st[data-status="REJECTED"] { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger-text); }
     .from-pr { font-size: 13px; color: var(--accent); }
+    .from-file { font-size: 12px; padding: 2px 10px; border-radius: 10px; background: var(--surface-2); color: var(--text); }
+    .file-check { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
+    .file-check[data-tone="ok"] { border-color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
+    .file-check[data-tone="warn"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .save-state { font-size: 12px; color: var(--text-muted); }
     .save-state.err { color: var(--danger-text); }
     .ed-menu { position: relative; }
@@ -845,6 +865,47 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     this.render();
   }
 
+  offerFileCheck = offerFileCheck;
+
+  isFile(): boolean {
+    return this.offer?.origin === 'FILE';
+  }
+
+  title(o: ClientOffer): string {
+    return o.number != null ? `КП № ${o.number} от ${dateText(o.offerDate)}` : offerLabel(o);
+  }
+
+  /** «Скачать файл» — исходный документ готового КП. */
+  downloadFile() {
+    const o = this.offer!;
+    this.api.downloadClientOfferFile(o.id).subscribe({
+      next: r => { const f = responseFile(r, o.file?.name || 'КП'); if (f) saveBlob(f, f.name); },
+      error: e => this.fileError(e, 'Файл не скачался'),
+    });
+  }
+
+  /** «Поделиться» в два нажатия (как у PDF конструктора): сперва файл, затем окно отправки прямо из нажатия. */
+  prepareShareFile() {
+    const o = this.offer!;
+    const gen = this.gen;
+    this.sharePreparing = true;
+    this.render();
+    this.api.downloadClientOfferFile(o.id).subscribe({
+      next: r => {
+        if (gen !== this.gen) return;
+        this.sharePreparing = false;
+        this.shareFile = responseFile(r, o.file?.name || 'КП');
+        this.render();
+      },
+      error: e => {
+        if (gen !== this.gen) return;
+        this.sharePreparing = false;
+        this.fileError(e, 'Файл не скачался');
+        this.render();
+      },
+    });
+  }
+
   duplicate() {
     this.menuOpen = false;
     this.flushThen(() => {
@@ -856,7 +917,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         next: r => {
           if (gen !== this.gen) return;
           this.busy = false;
-          this.notify.success(`Создана копия — КП № ${r.number}`);
+          this.notify.success(this.isFile() ? `Создана копия в конструкторе — КП № ${r.number}` : `Создана копия — КП № ${r.number}`);
           // тот же компонент: правки, сделанные за время запроса, допишет leave() при смене id
           this.router.navigate(['/client-offers', r.id]);
         },
@@ -873,7 +934,7 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   remove() {
     this.menuOpen = false;
     const o = this.offer!;
-    this.confirm.ask(`Удалить черновик КП № ${o.number}?`, 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
+    this.confirm.ask(`Удалить ${this.isFile() ? '' : 'черновик '}${offerLabel(o)}?`, 'Это действие нельзя отменить.', { danger: true, confirmLabel: 'Удалить' })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(ok => {
         if (!ok || o !== this.offer || this.conflict) return;
@@ -882,8 +943,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
           next: () => {
             if (o !== this.offer) return;
             this.dirty = false;   // КП больше нет — дописывать при уходе нечего
-            this.notify.success('Черновик удалён');
-            this.router.navigate(['/client-offers']);
+            this.notify.success(o.origin === 'FILE' ? 'КП удалено' : 'Черновик удалён');
+            this.router.navigate(o.tenderId ? ['/private-requests', o.tenderId] : ['/client-offers']);
           },
           error: e => {
             if (o !== this.offer) return;
