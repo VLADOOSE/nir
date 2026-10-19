@@ -68,7 +68,7 @@ class PrivateRequestStage3Test {
         ClientOffer second = requestOffers.createFromPrivateRequest(t.getId(), "test");
         second.setStatus(ClientOfferStatus.ACCEPTED);
         em.flush();
-        assertThat(stages.of(t).code()).isEqualTo("KP_ACCEPTED");
+        assertThat(stages.of(t).code()).isEqualTo("EXEC_CONTRACT");
 
         first.setStatus(ClientOfferStatus.REJECTED);
         second.setStatus(ClientOfferStatus.REJECTED);

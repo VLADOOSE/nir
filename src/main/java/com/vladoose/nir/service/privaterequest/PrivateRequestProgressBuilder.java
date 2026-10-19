@@ -7,6 +7,9 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.deal.DealEventService;
 import com.vladoose.nir.service.deal.DealTexts;
+import com.vladoose.nir.service.execution.DealExecutionCalculator;
+import com.vladoose.nir.service.execution.DealExecutionData;
+import com.vladoose.nir.service.execution.DealExecutionLoader;
 import com.vladoose.nir.service.offer.OfferLabels;
 import com.vladoose.nir.service.readyoffer.ReadyOfferHints;
 import org.springframework.stereotype.Component;
@@ -15,7 +18,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.*;
 
-/** Этапы и «Дальше» страницы частной заявки (спека 2026-10-18 §3.1) — поверх этапа PrivateRequestStageCalculator. */
+/**
+ * Этапы и «Дальше» страницы частной заявки (спека 2026-10-18 §3.1) и исполнение сделки (спека 2026-10-19-deal-execution §3)
+ * — поверх этапа PrivateRequestStageCalculator.
+ */
 @Component
 public class PrivateRequestProgressBuilder {
 
@@ -28,10 +34,12 @@ public class PrivateRequestProgressBuilder {
     private final ClientOfferRepository offers;
     private final DealEventRepository events;
     private final ReadyOfferHints hints;
+    private final DealExecutionLoader execution;
 
     public PrivateRequestProgressBuilder(LeadRepository leads, PriceRequestRepository priceRequests,
                                          PriceRequestItemRepository items, InboundEmailRepository inbound,
-                                         ClientOfferRepository offers, DealEventRepository events, ReadyOfferHints hints) {
+                                         ClientOfferRepository offers, DealEventRepository events, ReadyOfferHints hints,
+                                         DealExecutionLoader execution) {
         this.leads = leads;
         this.priceRequests = priceRequests;
         this.items = items;
@@ -39,12 +47,15 @@ public class PrivateRequestProgressBuilder {
         this.offers = offers;
         this.events = events;
         this.hints = hints;
+        this.execution = execution;
     }
 
     public DealProgress build(Tender t, PrivateRequestStageCalculator.Summary stage) {
         ZoneId zone = (t.getMarket() == null ? Market.KZ : t.getMarket()).zone();
         String code = stage.code();
         long lines = stage.lineCount();
+        DealExecutionData exec = stage.exec() != null ? stage.exec() : execution.load(t);
+        boolean executing = code.startsWith("EXEC_");
 
         Lead lead = leads.findFirstByPrivateRequestId(t.getId()).orElse(null);
         List<PriceRequest> prs = priceRequests.findForDealByTenderId(t.getId());
@@ -68,23 +79,26 @@ public class PrivateRequestProgressBuilder {
             case "EMPTY" -> 1;
             case "NEW", "REQUESTED" -> 2;
             case "PRICED", "KP_DRAFT", "KP_SENT", "KP_REJECTED" -> 3;
-            case "KP_ACCEPTED" -> 4;
-            default -> 5;   // WON / LOST / CANCELLED — всё сделано
+            default -> 4;   // исполнение (EXEC_*) и закрытая сделка: Обращение … КП — сделаны
         };
+        DealExecutionCalculator.Mode mode = executing ? DealExecutionCalculator.Mode.ACTIVE
+                : status.closed() ? DealExecutionCalculator.Mode.CLOSED : DealExecutionCalculator.Mode.PASSIVE;
+        DealExecutionCalculator.Result ex = DealExecutionCalculator.evaluate(exec.snapshot(), mode);
         String pricesDetail = prs.isEmpty() ? "не запрашивали"
                 : priced > 0 ? "цены по " + priced + " из " + lines
                 : answered == 0 ? "ответов пока нет"
                 : DealTexts.answered(answered, asked.size(), false);
-        List<Step> steps = List.of(
+        List<Step> steps = new ArrayList<>(List.of(
                 step("SOURCE", 0, phase, lead != null ? "Обращение" : "Создана",
                         lead != null ? DealTexts.channel(lead.getChannel()) + " " + DealTexts.ddMM(lead.getReceivedAt(), zone)
                                 : DealTexts.ddMM(t.getCreatedAt(), zone)),
                 step("LINES", 1, phase, "Позиции", lines == 0 ? "нет позиций" : DealTexts.positions(lines)),
                 step("PRICES", 2, phase, "Цены", pricesDetail),
-                step("OFFER", 3, phase, "КП", main == null ? null : OfferLabels.numberOrDate(main) + " · " + offerState(main, zone)),
-                step("RESULT", 4, phase, "Итог", outcome(status, closedAt)));
+                step("OFFER", 3, phase, "КП", main == null ? null : OfferLabels.numberOrDate(main) + " · " + offerState(main, zone))));
+        steps.addAll(ex.steps());
+        steps.add(new Step("RESULT", status.closed() ? "DONE" : ex.allDone() ? "CURRENT" : "TODO", "Итог", outcome(status, closedAt)));
 
-        Next next = switch (code) {
+        Next next = executing ? ex.next() : switch (code) {
             case "EMPTY" -> new Next("Добавьте позиции", "ADD_LINES", null);
             case "NEW" -> new Next("Запросите цены у поставщиков", "REQUEST_PRICES", null);
             case "REQUESTED" -> new Next(DealTexts.answered(answered, asked.size(), true)
@@ -97,7 +111,6 @@ public class PrivateRequestProgressBuilder {
                     + " — что ответил клиент?", "OFFER_DECISION", main.getId());
             case "KP_REJECTED" -> new Next("Клиент отказался от " + OfferLabels.of(main)
                     + " — новое КП или закройте сделку", "CREATE_OFFER", null);
-            case "KP_ACCEPTED" -> new Next("Клиент согласился — закройте сделку", "CLOSE_WON", null);
             default -> new Next("Закрыта: " + outcome(status, null) + (closedAt == null ? "" : ", " + closedAt), null, null);
         };
         // подсказка «КП ушло клиенту» (спека 2026-10-19 §3.4) важнее обычного «Дальше»

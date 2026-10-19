@@ -49,6 +49,8 @@ class PrivateRequestProgressTest {
     @Autowired EntityManager em;
 
     private static final DateTimeFormatter DD_MM = DateTimeFormatter.ofPattern("dd.MM");
+    /** Шаги исполнения до принятого КП (спека 2026-10-19-deal-execution §3.1). */
+    private static final String EXEC_TODO = " CONTRACT:TODO PAYMENT:TODO SUPPLIERS:TODO DELIVERY:TODO DOCS:TODO";
 
     @BeforeEach void kz() { MarketContext.set(Market.KZ); }
     @AfterEach void clear() { MarketContext.clear(); }
@@ -83,7 +85,7 @@ class PrivateRequestProgressTest {
     @Test
     void emptyRequest() {
         DealProgress p = progress(requests.createEmpty());
-        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:CURRENT PRICES:TODO OFFER:TODO RESULT:TODO");
+        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:CURRENT PRICES:TODO OFFER:TODO" + EXEC_TODO + " RESULT:TODO");
         assertThat(p.steps().get(0).label()).isEqualTo("Создана");
         assertThat(p.steps().get(1).detail()).isEqualTo("нет позиций");
         assertThat(p.next()).isEqualTo(new Next("Добавьте позиции", "ADD_LINES", null));
@@ -92,7 +94,7 @@ class PrivateRequestProgressTest {
     @Test
     void newRequestAsksForPrices() {
         DealProgress p = progress(withLines(2));
-        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:CURRENT OFFER:TODO RESULT:TODO");
+        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:CURRENT OFFER:TODO" + EXEC_TODO + " RESULT:TODO");
         assertThat(p.steps().get(1).detail()).isEqualTo("2 позиции");
         assertThat(p.steps().get(2).detail()).isEqualTo("не запрашивали");
         assertThat(p.next()).isEqualTo(new Next("Запросите цены у поставщиков", "REQUEST_PRICES", null));
@@ -128,7 +130,7 @@ class PrivateRequestProgressTest {
         Tender t = withLines(2);
         ask(t, "RESPONDED", LetterStatus.SENT, "1000.00");
         DealProgress p = progress(t);
-        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:CURRENT RESULT:TODO");
+        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:CURRENT" + EXEC_TODO + " RESULT:TODO");
         assertThat(p.steps().get(2).detail()).isEqualTo("цены по 1 из 2");
         assertThat(p.next()).isEqualTo(new Next("Цены есть по 1 из 2 позиций — можно делать КП", "CREATE_OFFER", null));
     }
@@ -154,8 +156,10 @@ class PrivateRequestProgressTest {
 
         offers.setStatus(o.getId(), ClientOfferStatus.ACCEPTED);
         p = progress(t);
-        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:DONE RESULT:CURRENT");
-        assertThat(p.next()).isEqualTo(new Next("Клиент согласился — закройте сделку", "CLOSE_WON", null));
+        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:DONE "
+                + "CONTRACT:CURRENT PAYMENT:TODO SUPPLIERS:TODO DELIVERY:TODO DOCS:TODO RESULT:TODO");
+        assertThat(p.next()).isEqualTo(new Next("Клиент согласился на КП № " + o.getNumber() + " — договор или счёт",
+                "EXEC_CONTRACT", null));
     }
 
     @Test
@@ -177,8 +181,9 @@ class PrivateRequestProgressTest {
         requests.close(t.getId(), PrivateRequestStatus.WON);
         String day = DD_MM.format(OffsetDateTime.now().atZoneSameInstant(Market.KZ.zone()));
         DealProgress p = progress(t);
-        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:DONE RESULT:DONE");
-        assertThat(p.steps().get(4).detail()).isEqualTo("купили у нас " + day);
+        assertThat(states(p)).isEqualTo("SOURCE:DONE LINES:DONE PRICES:DONE OFFER:DONE CONTRACT:SKIPPED PAYMENT:SKIPPED "
+                + "SUPPLIERS:SKIPPED DELIVERY:SKIPPED DOCS:SKIPPED RESULT:DONE");
+        assertThat(p.steps().get(9).detail()).isEqualTo("купили у нас " + day);
         assertThat(p.next()).isEqualTo(new Next("Закрыта: купили у нас, " + day, null, null));
     }
 

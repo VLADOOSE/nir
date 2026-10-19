@@ -7,18 +7,27 @@ import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
+import com.vladoose.nir.service.execution.DealExecutionCalculator;
+import com.vladoose.nir.service.execution.DealExecutionData;
+import com.vladoose.nir.service.execution.DealExecutionLoader;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 
 /**
  * Этап частной заявки — считается из данных при каждом чтении (спека §5.4), сверху вниз: закрыта → КП клиенту (по лучшему
- * статусу) → есть цены → запрошены цены → новая → пустая. Четыре запроса на весь список — без N+1.
+ * статусу; принятое — этап исполнения {@code EXEC_*}, спека 2026-10-19-deal-execution §3.3) → есть цены → запрошены цены →
+ * новая → пустая. Четыре запроса на весь список — без N+1; шесть запросов исполнения — {@link DealExecutionLoader}.
  */
 @Component
 public class PrivateRequestStageCalculator {
 
-    public record Summary(String code, String text, long lineCount) {}
+    /** exec — исполнение сделки (тот же снимок дальше строит шаги, вид раздела и ленту — одна загрузка на страницу). */
+    public record Summary(String code, String text, long lineCount, DealExecutionData exec) {
+        public Summary(String code, String text, long lineCount) {
+            this(code, text, lineCount, null);
+        }
+    }
 
     /** Поставщик «ответил», если хоть один его запрос по заявке получил ответ или отказ. */
     private static final Set<String> ANSWERED = Set.of("RESPONDED", "ACCEPTED", "DECLINED");
@@ -27,13 +36,16 @@ public class PrivateRequestStageCalculator {
     private final PriceRequestRepository priceRequestRepository;
     private final PriceRequestItemRepository itemRepository;
     private final ClientOfferRepository clientOffers;
+    private final DealExecutionLoader execution;
 
     public PrivateRequestStageCalculator(TenderLotRepository lotRepository, PriceRequestRepository priceRequestRepository,
-                                         PriceRequestItemRepository itemRepository, ClientOfferRepository clientOffers) {
+                                         PriceRequestItemRepository itemRepository, ClientOfferRepository clientOffers,
+                                         DealExecutionLoader execution) {
         this.lotRepository = lotRepository;
         this.priceRequestRepository = priceRequestRepository;
         this.itemRepository = itemRepository;
         this.clientOffers = clientOffers;
+        this.execution = execution;
     }
 
     public Summary of(Tender t) {
@@ -64,11 +76,21 @@ public class PrivateRequestStageCalculator {
             kp.computeIfAbsent((Long) row[0], k -> EnumSet.noneOf(ClientOfferStatus.class)).add((ClientOfferStatus) row[1]);
         }
 
+        Map<Long, DealExecutionData> exec = execution.load(requests);
         for (Tender t : requests) {
             long lineCount = lines.getOrDefault(t.getId(), 0L);
-            out.put(t.getId(), summary(PrivateRequestStatus.of(t.getStatus()), lineCount,
+            Summary s = summary(PrivateRequestStatus.of(t.getStatus()), lineCount,
                     asked.getOrDefault(t.getId(), Map.of()), priced.getOrDefault(t.getId(), Set.of()).size(),
-                    kp.getOrDefault(t.getId(), Set.of())));
+                    kp.getOrDefault(t.getId(), Set.of()));
+            DealExecutionData d = exec.get(t.getId());
+            if ("KP_ACCEPTED".equals(s.code())) {
+                // клиент согласился, заявка в работе — этап исполнения (спека 2026-10-19-deal-execution §3.3)
+                DealExecutionCalculator.Result r = DealExecutionCalculator.evaluate(d.snapshot(), DealExecutionCalculator.Mode.ACTIVE);
+                s = new Summary(r.stageCode(), r.stageText(), lineCount, d);
+            } else {
+                s = new Summary(s.code(), s.text(), s.lineCount(), d);
+            }
+            out.put(t.getId(), s);
         }
         return out;
     }
