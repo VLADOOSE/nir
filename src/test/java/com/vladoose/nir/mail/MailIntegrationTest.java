@@ -15,6 +15,8 @@ import java.lang.annotation.*;
  * нужна настоящая отправка, берёт свой экземпляр отправителя (см. telegramEndToEnd_sendsToThread_marksSent).
  * Копия писем в «Отправленные» (SentCopy) здесь выключена: ящик приёма = ящик отправки, и письмо любого теста этого
  * контекста легло бы асинхронной копией в GreenMail соседнего теста.
+ * Копия писем клиентам (ClientSentCopy) выключена по той же причине; тест копии собирает свой экземпляр с синхронным
+ * исполнителем. SMTP ящика клиентов — GreenMail :3025 (отправка писем клиентам «настроена»).
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -38,6 +40,10 @@ import java.lang.annotation.*;
         "mail.clients.protocol=imap",
         "mail.clients.market=KZ",
         "mail.clients.initial-delay-ms=86400000",
+        "mail.clients.smtp.host=127.0.0.1",
+        "mail.clients.smtp.port=3025",
+        "mail.clients.smtp.ssl=false",
+        "mail.clients.sent-copy.enabled=false",
         "spring.mail.username=zakup@westmed.kz",
         "mail.sent-copy.enabled=false",
         "notify.telegram.enabled=true",
