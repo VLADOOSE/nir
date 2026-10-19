@@ -46,7 +46,7 @@ function isLongText(body: string | null | undefined): boolean {
           </ng-container>
           <ng-template #gone><span class="muted">📎 {{ a.fileName || 'файл' }} — {{ notStored(a.notStoredReason) }}</span></ng-template>
         </div>
-        <div class="meta">письмо · <time [attr.title]="full(m.sentAt)">{{ time(m.sentAt) }}</time></div>
+        <div class="meta">письмо<ng-container *ngIf="m.direction === 'OUT' && m.senderName"> · {{ m.senderName }}</ng-container> · <time [attr.title]="full(m.sentAt)">{{ time(m.sentAt) }}</time></div>
       </div>
     </div>
     <div class="row" *ngIf="m.type !== 'CALL' && m.type !== 'EMAIL'" [class.out]="m.direction === 'OUT'">

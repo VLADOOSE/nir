@@ -11,6 +11,8 @@ import { ChatMessageComponent } from '../../shared/chat-message.component';
 import { WhatsappStatusLineComponent } from '../../shared/whatsapp-status-line.component';
 import { LeadItemsImportComponent } from '../../shared/lead-items-import.component';
 import { formatPhone, WhatsappStatus } from '../../shared/whatsapp-status';
+import { EmailComposerComponent } from '../../shared/email-composer.component';
+import { MarketService } from '../../services/market.service';
 
 const PAGE = 50;
 
@@ -21,7 +23,8 @@ const PAGE = 50;
 @Component({
   selector: 'app-chats',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, RouterLink, ChatMessageComponent, WhatsappStatusLineComponent, LeadItemsImportComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, ChatMessageComponent, WhatsappStatusLineComponent, LeadItemsImportComponent,
+    EmailComposerComponent],
   template: `
     <div class="page-head">
       <div>
@@ -91,9 +94,16 @@ const PAGE = 50;
             <div class="empty" *ngIf="!loadingThread && !messages.length">Сообщений нет</div>
           </div>
         </div>
+        <footer class="thread-foot" *ngIf="canMail()">
+          <button type="button" class="btn btn-primary btn-sm" (click)="mailOpen = true">Ответить письмом</button>
+        </footer>
       </section>
       <ng-template #pick><div class="thread-empty">Выберите чат слева</div></ng-template>
     </div>
+    @defer (when mailOpen) {
+      <app-email-composer *ngIf="mailOpen && openId !== null" [target]="{ chatId: openId! }"
+                          (sent)="onMailSent()" (closed)="mailOpen = false"></app-email-composer>
+    }
   `,
   styles: [`
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
@@ -128,6 +138,7 @@ const PAGE = 50;
     .th-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .th-phone { font-size: 12px; color: var(--text-muted); }
     .th-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .thread-foot { border-top: 1px solid var(--border); padding: 8px 12px; display: flex; justify-content: flex-end; }
     a.btn { display: inline-flex; align-items: center; text-decoration: none; }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
     .nc { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
@@ -174,6 +185,8 @@ export class ChatsComponent implements OnDestroy {
   filter = 'ALL';
   q = '';
   openId: number | null = null;
+  /** Окно письма (спека 2026-10-19-client-mail-reply §5 п. 1). */
+  mailOpen = false;
   chat: any = null;
   messages: any[] = [];
   hasMore = false;
@@ -199,11 +212,12 @@ export class ChatsComponent implements OnDestroy {
   private resizeObserver?: ResizeObserver;
 
   constructor(private api: ApiService, public auth: AuthService, private notify: NotificationService,
-              private route: ActivatedRoute, private router: Router, private cdr: ChangeDetectorRef) {
+              private route: ActivatedRoute, private router: Router, private cdr: ChangeDetectorRef,
+              private market: MarketService) {
     // Без detectChanges: первое значение приходит синхронно ещё в конструкторе, до создания вида (урок §14)
     this.route.queryParams.subscribe(p => {
       const id = p['chatId'] ? +p['chatId'] : null;
-      if (id !== this.openId) { this.openId = id; this.onOpenChanged(); }
+      if (id !== this.openId) { this.openId = id; this.mailOpen = false; this.onOpenChanged(); }
     });
     this.loadList();
     this.loadStatus();
@@ -337,6 +351,17 @@ export class ChatsComponent implements OnDestroy {
   }
 
   onThreadScroll() { this.pinned = this.isNearBottom(); }
+
+  canMail(): boolean {
+    return this.auth.isAdmin() && this.market.value === 'KZ' && this.chat?.channel === 'EMAIL';
+  }
+
+  onMailSent() {
+    this.mailOpen = false;
+    this.refreshThread();
+    this.loadList(true);
+    this.cdr.detectChanges();
+  }
 
   canCreateLead(): boolean { return this.auth.isAdmin() && !!this.chat && !this.chat.group && !this.chat.leadOpen; }
 

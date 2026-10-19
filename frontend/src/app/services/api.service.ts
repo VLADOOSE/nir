@@ -9,6 +9,7 @@ import type {
 } from '../shared/private-request';
 import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
 import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
+import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -720,6 +721,25 @@ export class ApiService {
   }
   applyClientOfferNewPrices(offerId: number): Observable<any> {
     return this.http.post<any>(`${this.base}/client-offers/${offerId}/apply-new-prices`, {});
+  }
+
+  // === Письма клиентам из АИС (спека 2026-10-19-client-mail-reply) ===
+  getClientMailCompose(t: ComposeTarget): Observable<ComposeContext> {
+    const params: Record<string, number> = {};
+    for (const k of ['chatId', 'leadId', 'tenderId', 'offerId'] as const) if (t[k] != null) params[k] = t[k]!;
+    return this.http.get<ComposeContext>(`${this.base}/client-mail/compose`, { params });
+  }
+  sendClientMail(body: ClientMailSendBody, files: File[]): Observable<ClientMailSendResult> {
+    const fd = new FormData();
+    fd.append('letter', new Blob([JSON.stringify(body)], { type: 'application/json' }));
+    for (const f of files) fd.append('files', f, f.name);
+    return this.http.post<ClientMailSendResult>(`${this.base}/client-mail/send`, fd);
+  }
+  getReplyTemplates(): Observable<ReplyTemplatesState> {
+    return this.http.get<ReplyTemplatesState>(`${this.base}/reply-templates`);
+  }
+  saveReplyTemplates(body: { templates: ReplyTemplate[]; signature: string }): Observable<ReplyTemplatesState> {
+    return this.http.put<ReplyTemplatesState>(`${this.base}/reply-templates`, body);
   }
 
   // === Готовое КП (спека 2026-10-19) ===
