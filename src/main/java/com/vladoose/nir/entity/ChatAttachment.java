@@ -36,4 +36,8 @@ public class ChatAttachment {
     @Enumerated(EnumType.STRING)
     @Column(name = "not_stored_reason", length = 20)
     private AttachmentNotStoredReason notStoredReason;
+
+    /** «Не КП» (V33): подсказка «КП ушло клиенту» про этот файл больше не показывается. */
+    @Column(name = "offer_hint_dismissed", nullable = false)
+    private boolean offerHintDismissed;
 }

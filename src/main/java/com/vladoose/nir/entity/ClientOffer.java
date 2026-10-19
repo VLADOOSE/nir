@@ -32,8 +32,15 @@ public class ClientOffer implements MarketScoped {
     @Column(nullable = false, length = 2)
     private Market market;
 
-    @Column(nullable = false)
+    /** «Исх. №»; у КП из файла бывает пустым — в документе его нет (V33), у конструктора обязателен (сервис). */
+    @Column
     private Integer number;
+
+    /** Конструктор или готовый файл (V33, спека 2026-10-19). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    @Builder.Default
+    private ClientOfferOrigin origin = ClientOfferOrigin.BUILDER;
 
     @Column(name = "offer_date", nullable = false)
     private LocalDate offerDate;
