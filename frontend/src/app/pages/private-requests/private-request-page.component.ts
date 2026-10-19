@@ -15,6 +15,7 @@ import { PrClientSectionComponent } from './pr-client-section.component';
 import { PrLinesComponent } from './pr-lines.component';
 import { PrSupplyComponent } from './pr-supply.component';
 import { PrOffersComponent } from './pr-offers.component';
+import { PrExecutionComponent } from './pr-execution.component';
 import { OFFER_STATUS_LABELS, dateText } from '../../shared/client-offer';
 import type { OfferStatus } from '../../shared/client-offer';
 import { MarketService } from '../../services/market.service';
@@ -32,7 +33,7 @@ import type { DealAction } from '../../shared/deal';
   selector: 'app-private-request-page',
   standalone: true,
   imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent, PrOffersComponent,
-            DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
+            PrExecutionComponent, DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -79,9 +80,13 @@ import type { DealAction } from '../../shared/deal';
           <div #offersAnchor class="anchor">
             <app-pr-offers #offersPart [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-offers>
           </div>
+          <div #execAnchor class="anchor" *ngIf="v.execution">
+            <app-pr-execution #exec [view]="v" [readonly]="!auth.isAdmin()" (viewChange)="onExecView($event)"
+                              (saveState)="onSaveState($event)"></app-pr-execution>
+          </div>
         </div>
         <app-deal-timeline dealSide #timeline kind="private-request" [dealId]="v.id" [canWrite]="auth.isAdmin()"
-                           [phone]="v.contactPhone" [email]="v.contactEmail"></app-deal-timeline>
+                           [phone]="v.contactPhone" [email]="v.contactEmail" (localLink)="scrollToStep($event)"></app-deal-timeline>
       </app-deal-layout>
     </div>
     <ng-template #stateTpl>
@@ -136,6 +141,7 @@ export class PrivateRequestPageComponent {
   @ViewChild('linesAnchor') linesAnchor?: ElementRef<HTMLElement>;
   @ViewChild('pricesAnchor') pricesAnchor?: ElementRef<HTMLElement>;
   @ViewChild('offersAnchor') offersAnchor?: ElementRef<HTMLElement>;
+  @ViewChild('exec') exec?: PrExecutionComponent;
 
   constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public auth: AuthService,
               private notify: NotificationService, private confirm: ConfirmService, private cdr: ChangeDetectorRef,
@@ -221,6 +227,10 @@ export class PrivateRequestPageComponent {
 
   /** Шаг этапов → его раздел страницы. */
   scrollToStep(key: string) {
+    if (['CONTRACT', 'PAYMENT', 'SUPPLIERS', 'DELIVERY', 'DOCS'].includes(key)) {
+      this.exec?.scrollTo(key);
+      return;
+    }
     const el = key === 'LINES' ? this.linesAnchor : key === 'PRICES' ? this.pricesAnchor
       : key === 'OFFER' || key === 'RESULT' ? this.offersAnchor : null;
     el?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -239,6 +249,7 @@ export class PrivateRequestPageComponent {
       case 'ATTACH_OFFER_FILE': this.offersPart?.openFile(a.hintId ?? null); break;
       case 'MARK_OFFER_SENT': this.markSent(a); break;
       case 'DISMISS_HINT': this.dismissHint(a); break;
+      default: if (a.action.startsWith('EXEC_')) this.exec?.act(a);
     }
   }
 
@@ -290,6 +301,12 @@ export class PrivateRequestPageComponent {
     gone.forEach(k => this.fieldErrors.delete(k));
     if (gone.length) this.renderSave();
     this.cdr.markForCheck();
+  }
+
+  /** Правка исполнения меняет и ленту (договор, платежи, отметки, файлы) — перечитать её сразу. */
+  onExecView(v: PrView) {
+    this.onView(v);
+    this.timeline?.refresh();
   }
 
   onSaveState(s: SaveState) {

@@ -8,6 +8,7 @@ import type {
   RegistryRecord, RfqPreviewBody, RfqSendBody, SendResult, SiteProduct, Sourcing,
 } from '../shared/private-request';
 import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
+import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -743,5 +744,54 @@ export class ApiService {
   }
   clientOfferFilePage(id: number, page: number): Observable<Blob> {
     return this.http.get(`${this.base}/client-offers/${id}/file/pages/${page}`, { responseType: 'blob' });
+  }
+
+  // === Исполнение сделки (спека 2026-10-19-deal-execution) ===
+  updateExecutionField(id: number, field: ExecField, value: string | null): Observable<PrView> {
+    return this.http.patch<PrView>(`${this.base}/private-requests/${id}/execution`, { field, value });
+  }
+  setExecutionMark(id: number, mark: ExecMark, on: string | null, note: string | null): Observable<PrView> {
+    return this.http.put<PrView>(`${this.base}/private-requests/${id}/execution/marks/${mark}`, { on, note });
+  }
+  addExecutionPayment(id: number, body: { distributorId: number | null; amount: number; paidOn: string; note: string | null }): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/execution/payments`, body);
+  }
+  updateExecutionPayment(id: number, paymentId: number, body: { amount: number; paidOn: string; note: string | null }): Observable<PrView> {
+    return this.http.put<PrView>(`${this.base}/private-requests/${id}/execution/payments/${paymentId}`, body);
+  }
+  deleteExecutionPayment(id: number, paymentId: number): Observable<PrView> {
+    return this.http.delete<PrView>(`${this.base}/private-requests/${id}/execution/payments/${paymentId}`);
+  }
+  addExecutionSupplier(id: number, body: { distributorId: number; amount: number | null; currency: string }): Observable<PrView> {
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/execution/suppliers`, body);
+  }
+  updateExecutionSupplier(id: number, distributorId: number, field: SupplierField, value: string | null): Observable<PrView> {
+    return this.http.patch<PrView>(`${this.base}/private-requests/${id}/execution/suppliers/${distributorId}`, { field, value });
+  }
+  setExecutionSupplierMark(id: number, distributorId: number, mark: SupplierMark, on: string | null, note: string | null): Observable<PrView> {
+    return this.http.put<PrView>(`${this.base}/private-requests/${id}/execution/suppliers/${distributorId}/marks/${mark}`, { on, note });
+  }
+  deleteExecutionSupplier(id: number, distributorId: number): Observable<PrView> {
+    return this.http.delete<PrView>(`${this.base}/private-requests/${id}/execution/suppliers/${distributorId}`);
+  }
+  getExecutionFileCandidates(id: number): Observable<ExecFileCandidate[]> {
+    return this.http.get<ExecFileCandidate[]>(`${this.base}/private-requests/${id}/execution/file-candidates`);
+  }
+  attachExecutionFile(id: number, body: { file?: File; attachmentId?: number; stage: ExecStage; paymentId?: number | null;
+                                          distributorId?: number | null }): Observable<PrView> {
+    const fd = new FormData();
+    if (body.file) fd.append('file', body.file, body.file.name);
+    if (body.attachmentId != null) fd.append('attachmentId', String(body.attachmentId));
+    fd.append('stage', body.stage);
+    if (body.paymentId != null) fd.append('paymentId', String(body.paymentId));
+    if (body.distributorId != null) fd.append('distributorId', String(body.distributorId));
+    return this.http.post<PrView>(`${this.base}/private-requests/${id}/execution/files`, fd);
+  }
+  /** Файл исполнения — только blob (§14); имя — в Content-Disposition. */
+  downloadExecutionFile(id: number, fileId: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.base}/private-requests/${id}/execution/files/${fileId}`, { responseType: 'blob', observe: 'response' });
+  }
+  deleteExecutionFile(id: number, fileId: number): Observable<PrView> {
+    return this.http.delete<PrView>(`${this.base}/private-requests/${id}/execution/files/${fileId}`);
   }
 }

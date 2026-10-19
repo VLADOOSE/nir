@@ -15,12 +15,18 @@ export const ACTION_LABELS: Record<string, string> = {
   ADD_LINES: 'К позициям', REQUEST_PRICES: 'Запросить цены…', OPEN_PRICES: 'Таблица цен', CREATE_OFFER: 'Создать КП клиенту',
   OPEN_OFFER: 'Открыть КП', CLOSE_WON: 'Закрыть: купили у нас', TO_LOTS: 'К лотам', OPEN_REQUESTS: 'Запросы КП',
   OPEN_APPLY: 'Открыть заявку', ATTACH_OFFER_FILE: 'Занести КП', MARK_OFFER_SENT: 'Отметить отправленным',
+  EXEC_CONTRACT: 'Договор или счёт…', EXEC_AMOUNT: 'Сумма сделки…', EXEC_PAY_CLIENT: '+ Платёж клиента',
+  EXEC_SUPPLIERS: 'К поставщикам', EXEC_ORDER: 'Отметить заказ…', EXEC_SUPPLIER_AMOUNT: 'Сумма…',
+  EXEC_PAY_SUPPLIER: '+ Платёж поставщику', EXEC_SHIP: 'Отгрузил…', EXEC_DELIVERY: 'Отметить поставку…',
+  EXEC_DOCS: 'Документы подписаны…',
 };
 
 export const KIND_ICONS: Record<string, string> = {
   LEAD: '📥', LEAD_NOTE: '📝', LEAD_CALL: '📞', LEAD_STATUS: '↻', CREATED: '＋', TENDER_FOUND: '🔎', RFQ_SENT: '✉',
   LETTER_FAILED: '⚠', BOUNCED: '⚠', DELAYED: '⏳', REPLY: '📩', DECLINED: '⛔', REPLY_FILE: '📎', OFFER_CREATED: '📄',
   OFFER_SENT: '📄', NOTE: '📝', CALL: '📞', STAGE: '✓', APPLY_CREATED: '📋', CONTRACT: '✍', DELIVERED: '🚚', PAID: '💳',
+  EXEC_CONTRACT: '✍', EXEC_PAY_CLIENT: '💳', EXEC_ORDER: '🛒', EXEC_PAY_SUPPLIER: '💸', EXEC_SHIPPED: '📦',
+  EXEC_DELIVERED: '🚚', EXEC_DOCS: '📑', EXEC_FILE: '📎',
 };
 
 /** Куда ведёт строка ленты. */

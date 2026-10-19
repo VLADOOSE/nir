@@ -4,6 +4,7 @@
  */
 
 import type { DealProgress } from './deal';
+import type { DealExecution } from './deal-execution';
 
 export type PrStatus = 'NEW' | 'WON' | 'LOST' | 'CANCELLED';
 export type RegStatus = 'SUGGESTED' | 'CONFIRMED' | 'NOT_FOUND' | 'NOT_REQUIRED' | null;
@@ -62,6 +63,8 @@ export interface PrView {
   lines: PrLine[];
   /** КП клиенту по заявке, новые сверху (спека §8) */
   offers: PrOfferRef[];
+  /** Исполнение сделки — после «Клиент согласился» (спека 2026-10-19-deal-execution). */
+  execution: DealExecution | null;
 }
 
 /** КП клиенту по заявке — раздел «КП клиенту» (спека §8). */
@@ -187,13 +190,22 @@ export function stageTone(stage: string | null | undefined): string {
   switch (stage) {
     case 'REQUESTED': return 'accent';
     case 'PRICED': return 'warn';
-    case 'WON':
-    case 'KP_ACCEPTED': return 'success';
+    case 'WON': return 'success';
     case 'KP_SENT': return 'accent';
     case 'KP_REJECTED': return 'danger';
     case 'LOST': return 'danger';
     case 'CANCELLED':
     case 'EMPTY': return 'muted';
+    case 'EXEC_PREPAY':
+    case 'EXEC_FINAL_PAY':
+    case 'EXEC_AMOUNT': return 'warn';
+    case 'EXEC_DONE': return 'success';
+    case 'EXEC_CONTRACT':
+    case 'EXEC_ORDER':
+    case 'EXEC_PAY_SUPPLIERS':
+    case 'EXEC_SHIPPING':
+    case 'EXEC_DELIVERY':
+    case 'EXEC_DOCS': return 'accent';
     default: return 'neutral';
   }
 }

@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -33,7 +33,10 @@ import type { DealKind, DealTimelineItem } from './deal';
             <span class="tl-icon" aria-hidden="true">{{ icon(i.kind) }}</span>
             <span class="tl-text">
               <b *ngIf="prefix(i.kind) as p">{{ p }} </b>
-              <a *ngIf="link(i) as l; else plain" [routerLink]="l.path" [queryParams]="l.query">{{ i.text }}</a>
+              <a *ngIf="link(i) as l; else local" [routerLink]="l.path" [queryParams]="l.query">{{ i.text }}</a>
+              <ng-template #local>
+                <button type="button" class="tl-link" *ngIf="block(i) as b; else plain" (click)="localLink.emit(b)">{{ i.text }}</button>
+              </ng-template>
               <ng-template #plain>{{ i.text }}</ng-template>
               <span class="tl-author" *ngIf="i.author"> · {{ i.author }}</span>
             </span>
@@ -74,7 +77,7 @@ import type { DealKind, DealTimelineItem } from './deal';
     .tl-older { display: block; margin: 0 auto 8px; background: none; border: none; color: var(--accent); cursor: pointer; }
     .tl-note { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
     .tl-err { color: var(--danger-text); }
-    .tl-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; }
+    .tl-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; text-align: left; }
     .tl-foot { border-top: 1px solid var(--border); padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
     .tl-buttons, .tl-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .tl-form textarea { width: 100%; box-sizing: border-box; resize: vertical; }
@@ -86,6 +89,8 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
   @Input() canWrite = false;
   @Input() phone: string | null = null;
   @Input() email: string | null = null;
+  /** Строка исполнения — ключ блока раздела на этой же странице (спека 2026-10-19-deal-execution §10). */
+  @Output() localLink = new EventEmitter<string>();
   @ViewChild('scroll') scrollRef?: ElementRef<HTMLElement>;
   @ViewChild('list') listRef?: ElementRef<HTMLElement>;
 
@@ -233,5 +238,6 @@ export class DealTimelineComponent implements OnChanges, AfterViewInit, OnDestro
   icon(kind: string) { return KIND_ICONS[kind] ?? '•'; }
   prefix(kind: string) { return kind === 'NOTE' || kind === 'LEAD_NOTE' ? 'Заметка:' : kind === 'CALL' || kind === 'LEAD_CALL' ? 'Звонок:' : null; }
   link(i: DealTimelineItem) { return timelineLink(i); }
+  block(i: DealTimelineItem): string | null { return i.linkType?.startsWith('EXEC_') ? i.linkType.slice(5) : null; }
   track(_: number, i: DealTimelineItem) { return i.kind + ':' + i.at + ':' + (i.message?.id ?? i.linkId ?? '') + ':' + (i.text ?? ''); }
 }
