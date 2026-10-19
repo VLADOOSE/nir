@@ -324,22 +324,16 @@ public class DealTimelineService {
         return limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
     }
 
-    /** Исполнение сделки (спека 2026-10-19-deal-execution §10): даты — «только дата», файлы — время, когда приложили. */
+    /**
+     * Исполнение сделки (спека 2026-10-19-deal-execution §10): даты — «только дата», файлы — время, когда приложили. Строки
+     * одного дня стоят на одном полудне, сортировка устойчива — поэтому добавляются в порядке процесса: договор → оплата
+     * клиента → поставщики (заказ, оплата, отгрузка) → поставка → документы.
+     */
     private void addExecution(List<DealTimelineItem> all, Tender t, ZoneId zone) {
         DealExecutionData d = execution.load(t);
         DealExecution e = d.row();
-        if (e != null) {
-            if (e.getContractDate() != null && e.getContractKind() != ContractKind.NONE) {
-                all.add(execDate(e.getContractDate(), zone, "EXEC_CONTRACT", contractText(e), null, "EXEC_CONTRACT"));
-            }
-            if (e.getDeliveredOn() != null) {
-                all.add(execDate(e.getDeliveredOn(), zone, "EXEC_DELIVERED", withNote("Поставлено клиенту", e.getDeliveryNote()),
-                        null, "EXEC_DELIVERY"));
-            }
-            if (e.getDocsOn() != null) {
-                all.add(execDate(e.getDocsOn(), zone, "EXEC_DOCS", withNote("Закрывающие документы подписаны", e.getDocsNote()),
-                        null, "EXEC_DOCS"));
-            }
+        if (e != null && e.getContractDate() != null && e.getContractKind() != ContractKind.NONE) {
+            all.add(execDate(e.getContractDate(), zone, "EXEC_CONTRACT", contractText(e), null, "EXEC_CONTRACT"));
         }
         for (DealPayment p : d.clientPayments()) {
             all.add(execDate(p.getPaidOn(), zone, "EXEC_PAY_CLIENT",
@@ -360,6 +354,14 @@ public class DealTimelineService {
             if (s.shippedOn() != null) {
                 all.add(execDate(s.shippedOn(), zone, "EXEC_SHIPPED", withNote(s.name() + " отгрузил", s.shipNote()), null, "EXEC_SUPPLIERS"));
             }
+        }
+        if (e != null && e.getDeliveredOn() != null) {
+            all.add(execDate(e.getDeliveredOn(), zone, "EXEC_DELIVERED", withNote("Поставлено клиенту", e.getDeliveryNote()),
+                    null, "EXEC_DELIVERY"));
+        }
+        if (e != null && e.getDocsOn() != null) {
+            all.add(execDate(e.getDocsOn(), zone, "EXEC_DOCS", withNote("Закрывающие документы подписаны", e.getDocsNote()),
+                    null, "EXEC_DOCS"));
         }
         for (DealFileMeta f : execFiles.findMetaByTenderId(t.getId())) {
             all.add(new DealTimelineItem(f.uploadedAt(), false, "EXEC_FILE", "«" + f.name() + "» — " + filePlace(f, supplierNames),

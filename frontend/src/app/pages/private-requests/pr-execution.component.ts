@@ -183,7 +183,7 @@ import { PrExecSuppliersComponent } from './pr-exec-suppliers.component';
     .icon, .link { background: none; border: none; padding: 0 4px; color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; }
     .link.danger { color: var(--danger-text); }
     .link:disabled { opacity: .5; cursor: not-allowed; }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; align-items: end; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; align-items: start; }
     .grid .wide { grid-column: 1 / -1; }
     label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
     label small { font-size: 11px; }

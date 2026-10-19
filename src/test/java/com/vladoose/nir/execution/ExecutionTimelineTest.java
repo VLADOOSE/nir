@@ -98,6 +98,25 @@ class ExecutionTimelineTest {
         assertThat(items).allMatch(i -> i.linkId() == null);
     }
 
+    /** Всё в один день (полдень по часам рынка) — строки в порядке процесса, а не таблиц: договор → оплата → заказ → отгрузка → поставка. */
+    @Test
+    void sameDay_processOrder() {
+        Tender t = requests.createEmpty();
+        Distributor fotek = distributors.save(Distributor.builder().name("ФОТЕК ZZ " + System.nanoTime()).build());
+        offers.save(line(offer(t, ClientOfferStatus.ACCEPTED, "1000", 1), fotek.getId(), "100", "1"));
+        Long id = t.getId(), f = fotek.getId();
+        String day = "2026-10-10";
+        service.setMark(id, ExecutionMark.DOCS, day, null);
+        service.setMark(id, ExecutionMark.DELIVERY, day, null);
+        service.setSupplierMark(id, f, SupplierMark.SHIP, day, null);
+        service.addPayment(id, new PaymentInput(f, new BigDecimal("100"), LocalDate.of(2026, 10, 10), null));
+        service.setSupplierMark(id, f, SupplierMark.ORDER, day, null);
+        service.addPayment(id, new PaymentInput(null, new BigDecimal("1000"), LocalDate.of(2026, 10, 10), null));
+        service.updateField(id, ExecutionField.CONTRACT_DATE, day);
+        assertThat(execItems(t)).extracting(DealTimelineItem::kind).containsExactly(
+                "EXEC_CONTRACT", "EXEC_PAY_CLIENT", "EXEC_ORDER", "EXEC_PAY_SUPPLIER", "EXEC_SHIPPED", "EXEC_DELIVERED", "EXEC_DOCS");
+    }
+
     @Test
     void invoiceAndWithoutContract() {
         Tender t = requests.createEmpty();
