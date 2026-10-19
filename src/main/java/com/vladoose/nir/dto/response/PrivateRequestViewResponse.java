@@ -16,6 +16,8 @@ public class PrivateRequestViewResponse {
     private String stageText;
     /** Этапы всего цикла и «Дальше» (спека 2026-10-18 §3.1). */
     private DealProgress progress;
+    /** Исполнение сделки — раздел после «КП клиенту»; пусто, пока нет принятого КП и данных (спека 2026-10-19-deal-execution §4.1). */
+    private DealExecutionView execution;
     private Long facilityId;
     private String facilityName;
     private String customerName;

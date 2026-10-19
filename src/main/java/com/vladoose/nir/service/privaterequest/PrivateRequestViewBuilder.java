@@ -8,9 +8,12 @@ import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.mapper.LeadResponseMapper;
 import com.vladoose.nir.repository.ClientOfferRepository;
+import com.vladoose.nir.repository.DealFileRepository;
 import com.vladoose.nir.repository.LeadRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
+import com.vladoose.nir.service.execution.DealExecutionData;
+import com.vladoose.nir.service.execution.DealExecutionViews;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -30,11 +33,12 @@ public class PrivateRequestViewBuilder {
     private final PrivateRequestStageCalculator stages;
     private final ClientOfferRepository clientOffers;
     private final PrivateRequestProgressBuilder progress;
+    private final DealFileRepository dealFiles;
 
     public PrivateRequestViewBuilder(PriceRequestItemRepository itemRepository, MedRegistryRepository registryRepository,
                                      LeadRepository leadRepository, LeadResponseMapper leadMapper,
                                      PrivateRequestStageCalculator stages, ClientOfferRepository clientOffers,
-                                     PrivateRequestProgressBuilder progress) {
+                                     PrivateRequestProgressBuilder progress, DealFileRepository dealFiles) {
         this.itemRepository = itemRepository;
         this.registryRepository = registryRepository;
         this.leadRepository = leadRepository;
@@ -42,6 +46,7 @@ public class PrivateRequestViewBuilder {
         this.stages = stages;
         this.clientOffers = clientOffers;
         this.progress = progress;
+        this.dealFiles = dealFiles;
     }
 
     public PrivateRequestViewResponse build(Tender t) {
@@ -53,6 +58,10 @@ public class PrivateRequestViewBuilder {
         r.setStage(stage.code());
         r.setStageText(stage.text());
         r.setProgress(progress.build(t, stage));
+        DealExecutionData exec = stage.exec();
+        if (exec != null && exec.visible()) {
+            r.setExecution(DealExecutionViews.toView(exec, dealFiles.findMetaByTenderId(t.getId())));
+        }
         if (t.getFacility() != null) {
             r.setFacilityId(t.getFacility().getId());
             r.setFacilityName(t.getFacility().getName());
