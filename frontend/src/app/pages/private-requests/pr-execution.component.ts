@@ -17,6 +17,7 @@ import type { DealExecution, ExecEntry, ExecField, ExecFileTarget, ExecMark, Exe
 import { PrExecEntryFormComponent } from './pr-exec-entry-form.component';
 import { PrExecFilesComponent } from './pr-exec-files.component';
 import { PrExecFileDialogComponent } from './pr-exec-file-dialog.component';
+import { PrExecSuppliersComponent } from './pr-exec-suppliers.component';
 
 /**
  * «Исполнение сделки» на странице заявки (спека 2026-10-19-deal-execution §4): сумма сделки, договор с предоплатой,
@@ -26,7 +27,7 @@ import { PrExecFileDialogComponent } from './pr-exec-file-dialog.component';
 @Component({
   selector: 'app-pr-execution',
   standalone: true,
-  imports: [NgIf, NgFor, PrExecEntryFormComponent, PrExecFilesComponent, PrExecFileDialogComponent],
+  imports: [NgIf, NgFor, PrExecEntryFormComponent, PrExecFilesComponent, PrExecFileDialogComponent, PrExecSuppliersComponent],
   template: `
     <section class="card" *ngIf="view.execution as e">
       <div class="sec-head">
@@ -116,7 +117,8 @@ import { PrExecFileDialogComponent } from './pr-exec-file-dialog.component';
         <span class="muted" *ngIf="readonly && !e.clientPayments.length">платежей нет</span>
       </div>
 
-      <!-- поставщики: задача 11 -->
+      <app-pr-exec-suppliers #suppliersPart [view]="view" [readonly]="readonly"
+                             (viewChange)="viewChange.emit($event)" (attach)="attach($event)"></app-pr-exec-suppliers>
 
       <div class="blk" #deliveryBlk>
         <div class="blk-head">
@@ -214,6 +216,7 @@ export class PrExecutionComponent {
   @ViewChild('paymentBlk') paymentBlk?: ElementRef<HTMLElement>;
   @ViewChild('deliveryBlk') deliveryBlk?: ElementRef<HTMLElement>;
   @ViewChild('docsBlk') docsBlk?: ElementRef<HTMLElement>;
+  @ViewChild('suppliersPart') suppliersPart?: PrExecSuppliersComponent;
 
   readonly today: string;
   busy = false;
@@ -237,6 +240,7 @@ export class PrExecutionComponent {
 
   /** Шаг этапов → блок раздела; неизвестный ключ — начало раздела. */
   scrollTo(key: string) {
+    if (key === 'SUPPLIERS') { this.suppliersPart?.scroll(); return; }
     const el = key === 'CONTRACT' ? this.contractBlk : key === 'PAYMENT' ? this.paymentBlk
       : key === 'DELIVERY' ? this.deliveryBlk : key === 'DOCS' ? this.docsBlk : null;
     (el?.nativeElement ?? this.host.nativeElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -250,6 +254,7 @@ export class PrExecutionComponent {
       case 'EXEC_PAY_CLIENT': this.addPayment = true; this.scrollTo('PAYMENT'); break;
       case 'EXEC_DELIVERY': this.deliveryEdit = true; this.scrollTo('DELIVERY'); break;
       case 'EXEC_DOCS': this.docsEdit = true; this.scrollTo('DOCS'); break;
+      default: this.suppliersPart?.act(a); this.suppliersPart?.scroll();
     }
     this.cdr.markForCheck();
   }
