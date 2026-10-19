@@ -327,16 +327,21 @@ public class DealTimelineService {
     /**
      * Исполнение сделки (спека 2026-10-19-deal-execution §10): даты — «только дата», файлы — время, когда приложили. Строки
      * одного дня стоят на одном полудне, сортировка устойчива — поэтому добавляются в порядке процесса: договор → оплата
-     * клиента → поставщики (заказ, оплата, отгрузка) → поставка → документы.
+     * клиента → поставщики (заказ, оплата, отгрузка) → поставка → документы. Факт, датированный днём принятия КП, — сразу
+     * после строки «клиент согласился», а не на полудне: иначе счёт, выставленный после согласия в 16:20, вставал бы раньше
+     * него (как ответ поставщика без письма — «не раньше своего запроса»).
      */
     private void addExecution(List<DealTimelineItem> all, Tender t, ZoneId zone) {
         DealExecutionData d = execution.load(t);
         DealExecution e = d.row();
+        OffsetDateTime accepted = d.mainOffer() == null ? null
+                : events.findFirstByTenderIdAndCodeAndRefIdOrderByOccurredAtDescIdDesc(t.getId(), DealEventService.OFFER_STATUS,
+                        d.mainOffer().id()).map(DealEvent::getOccurredAt).orElse(null);
         if (e != null && e.getContractDate() != null && e.getContractKind() != ContractKind.NONE) {
-            all.add(execDate(e.getContractDate(), zone, "EXEC_CONTRACT", contractText(e), null, "EXEC_CONTRACT"));
+            all.add(execDate(e.getContractDate(), zone, accepted, "EXEC_CONTRACT", contractText(e), null, "EXEC_CONTRACT"));
         }
         for (DealPayment p : d.clientPayments()) {
-            all.add(execDate(p.getPaidOn(), zone, "EXEC_PAY_CLIENT",
+            all.add(execDate(p.getPaidOn(), zone, accepted, "EXEC_PAY_CLIENT",
                     withNote("Оплата клиента: " + ExecutionTexts.money(p.getAmount(), d.currency()), p.getNote()),
                     p.getCreatedBy(), "EXEC_PAYMENT"));
         }
@@ -344,23 +349,23 @@ public class DealTimelineService {
         for (DealExecutionData.SupplierLine s : d.supplierLines()) {
             if (s.rowId() != null) supplierNames.put(s.rowId(), s.name());
             if (s.orderedOn() != null) {
-                all.add(execDate(s.orderedOn(), zone, "EXEC_ORDER", withNote("Заказ у " + s.name(), s.orderNote()), null, "EXEC_SUPPLIERS"));
+                all.add(execDate(s.orderedOn(), zone, accepted, "EXEC_ORDER", withNote("Заказ у " + s.name(), s.orderNote()), null, "EXEC_SUPPLIERS"));
             }
             for (DealPayment p : s.payments()) {
-                all.add(execDate(p.getPaidOn(), zone, "EXEC_PAY_SUPPLIER",
+                all.add(execDate(p.getPaidOn(), zone, accepted, "EXEC_PAY_SUPPLIER",
                         withNote("Оплата " + s.name() + ": " + ExecutionTexts.money(p.getAmount(), s.currency()), p.getNote()),
                         p.getCreatedBy(), "EXEC_SUPPLIERS"));
             }
             if (s.shippedOn() != null) {
-                all.add(execDate(s.shippedOn(), zone, "EXEC_SHIPPED", withNote(s.name() + " отгрузил", s.shipNote()), null, "EXEC_SUPPLIERS"));
+                all.add(execDate(s.shippedOn(), zone, accepted, "EXEC_SHIPPED", withNote(s.name() + " отгрузил", s.shipNote()), null, "EXEC_SUPPLIERS"));
             }
         }
         if (e != null && e.getDeliveredOn() != null) {
-            all.add(execDate(e.getDeliveredOn(), zone, "EXEC_DELIVERED", withNote("Поставлено клиенту", e.getDeliveryNote()),
+            all.add(execDate(e.getDeliveredOn(), zone, accepted, "EXEC_DELIVERED", withNote("Поставлено клиенту", e.getDeliveryNote()),
                     null, "EXEC_DELIVERY"));
         }
         if (e != null && e.getDocsOn() != null) {
-            all.add(execDate(e.getDocsOn(), zone, "EXEC_DOCS", withNote("Закрывающие документы подписаны", e.getDocsNote()),
+            all.add(execDate(e.getDocsOn(), zone, accepted, "EXEC_DOCS", withNote("Закрывающие документы подписаны", e.getDocsNote()),
                     null, "EXEC_DOCS"));
         }
         for (DealFileMeta f : execFiles.findMetaByTenderId(t.getId())) {
@@ -369,9 +374,13 @@ public class DealTimelineService {
         }
     }
 
-    private static DealTimelineItem execDate(LocalDate d, ZoneId zone, String kind, String text, String author, String block) {
-        return new DealTimelineItem(d.atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime(), true, kind, text, author, block,
-                null, null);
+    private static DealTimelineItem execDate(LocalDate d, ZoneId zone, OffsetDateTime accepted, String kind, String text,
+                                             String author, String block) {
+        OffsetDateTime at = d.atTime(LocalTime.NOON).atZone(zone).toOffsetDateTime();
+        if (accepted != null && !at.isAfter(accepted) && accepted.atZoneSameInstant(zone).toLocalDate().equals(d)) {
+            at = accepted.plus(1, ChronoUnit.MILLIS);
+        }
+        return new DealTimelineItem(at, true, kind, text, author, block, null, null);
     }
 
     static String contractText(DealExecution e) {

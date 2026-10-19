@@ -13,6 +13,9 @@ public interface DealEventRepository extends JpaRepository<DealEvent, Long> {
     List<DealEvent> findByTenderIdOrderByOccurredAtAscIdAsc(Long tenderId);
     Optional<DealEvent> findFirstByTenderIdAndCodeOrderByOccurredAtDescIdDesc(Long tenderId, String code);
 
+    /** Последняя смена статуса этого КП — у принятого сейчас КП это само принятие. */
+    Optional<DealEvent> findFirstByTenderIdAndCodeAndRefIdOrderByOccurredAtDescIdDesc(Long tenderId, String code, Long refId);
+
     /** События одного КП (смена статуса) — одним запросом: КП удалено (DealEventService.forgetOffer). */
     @Modifying
     @Query("delete from DealEvent e where e.tenderId = :tenderId and e.code = :code and e.refId = :refId")

@@ -8,8 +8,10 @@ import com.vladoose.nir.dto.request.SupplierMark;
 import com.vladoose.nir.dto.response.DealTimelineItem;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.ClientOfferRepository;
+import com.vladoose.nir.repository.DealEventRepository;
 import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.deal.DealEventService;
 import com.vladoose.nir.service.deal.DealTimelineService;
 import com.vladoose.nir.service.execution.DealExecutionService;
 import com.vladoose.nir.service.execution.DealExecutionService.PaymentInput;
@@ -26,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static com.vladoose.nir.execution.ExecutionTestData.line;
@@ -44,6 +48,7 @@ class ExecutionTimelineTest {
     @Autowired PrivateRequestService requests;
     @Autowired DistributorRepository distributors;
     @Autowired ClientOfferRepository offers;
+    @Autowired DealEventRepository dealEvents;
     @Autowired EntityManager em;
 
     @BeforeEach void kz() { MarketContext.set(Market.KZ); }
@@ -115,6 +120,31 @@ class ExecutionTimelineTest {
         service.updateField(id, ExecutionField.CONTRACT_DATE, day);
         assertThat(execItems(t)).extracting(DealTimelineItem::kind).containsExactly(
                 "EXEC_CONTRACT", "EXEC_PAY_CLIENT", "EXEC_ORDER", "EXEC_PAY_SUPPLIER", "EXEC_SHIPPED", "EXEC_DELIVERED", "EXEC_DOCS");
+    }
+
+    /**
+     * Факт, датированный днём принятия КП, — не выше строки «клиент согласился»: на полудне счёт, выставленный в тот же
+     * день после принятия в 16:20, вставал бы раньше самого согласия. Другие дни — полдень, как было.
+     */
+    @Test
+    void sameDayAsAcceptance_belowAcceptance() {
+        Tender t = requests.createEmpty();
+        ClientOffer o = offers.save(offer(t, ClientOfferStatus.ACCEPTED, "1000", 1));
+        OffsetDateTime acceptedAt = LocalDateTime.of(2026, 10, 10, 16, 20).atZone(Market.KZ.zone()).toOffsetDateTime();
+        dealEvents.save(DealEvent.builder().tenderId(t.getId()).type(DealEventType.STAGE).code(DealEventService.OFFER_STATUS)
+                .text("КП № 1: клиент согласился").refId(o.getId()).occurredAt(acceptedAt).build());
+        service.updateField(t.getId(), ExecutionField.CONTRACT_KIND, "INVOICE");
+        service.updateField(t.getId(), ExecutionField.CONTRACT_DATE, "2026-10-10");
+        service.addPayment(t.getId(), new PaymentInput(null, new BigDecimal("1000"), LocalDate.of(2026, 10, 12), null));
+        service.addPayment(t.getId(), new PaymentInput(null, new BigDecimal("1"), LocalDate.of(2026, 10, 9), null));   // день раньше — свой полдень
+        em.flush();
+        em.clear();
+        List<DealTimelineItem> items = timeline.forPrivateRequest(t.getId(), null, 50).items().stream()
+                .filter(i -> i.kind().startsWith("EXEC_") || "STAGE".equals(i.kind())).toList();
+        assertThat(items).extracting(DealTimelineItem::kind).containsExactly("EXEC_PAY_CLIENT", "STAGE", "EXEC_CONTRACT", "EXEC_PAY_CLIENT");
+        assertThat(items.get(0).at()).isEqualTo(LocalDate.of(2026, 10, 9).atTime(12, 0).atZone(Market.KZ.zone()).toOffsetDateTime());
+        assertThat(items.get(2).at().atZoneSameInstant(Market.KZ.zone()).toLocalDate()).isEqualTo(LocalDate.of(2026, 10, 10));
+        assertThat(items.get(3).at()).isEqualTo(LocalDate.of(2026, 10, 12).atTime(12, 0).atZone(Market.KZ.zone()).toOffsetDateTime());
     }
 
     @Test

@@ -34,7 +34,7 @@ interface DirEntry { id: number; name: string; }
         <span class="muted">{{ summary(e) }}</span>
       </div>
       <label class="check" *ngIf="!readonly || e.fromStock">
-        <input type="checkbox" [checked]="e.fromStock" [disabled]="readonly || busy" (change)="setStock($any($event.target).checked)" />
+        <input type="checkbox" [checked]="e.fromStock" [disabled]="readonly || busy" (change)="setStock($any($event.target))" />
         Со склада — заказывать не нужно
       </label>
       <ng-container *ngIf="!e.fromStock">
@@ -263,17 +263,19 @@ export class PrExecSuppliersComponent {
     return rest > 0 ? rest : null;
   }
 
-  private run(req: Observable<PrView>, done: () => void, ok?: string) {
+  private run(req: Observable<PrView>, done: () => void, ok?: string, failed?: () => void) {
     if (this.busy) return;
     this.busy = true;
     req.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: v => { this.busy = false; done(); if (ok) this.notify.success(ok); this.viewChange.emit(v); },
-      error: e => { this.busy = false; this.notify.error(errorText(e)); this.cdr.markForCheck(); },
+      error: e => { this.busy = false; failed?.(); this.notify.error(errorText(e)); this.cdr.markForCheck(); },
     });
   }
 
-  setStock(on: boolean) {
-    this.run(this.api.updateExecutionField(this.view.id, 'FROM_STOCK', String(on)), () => {});
+  /** Отказ сервера — флажок назад: привязка [checked] не изменилась, сама она DOM не вернёт. */
+  setStock(box: HTMLInputElement) {
+    const on = box.checked;
+    this.run(this.api.updateExecutionField(this.view.id, 'FROM_STOCK', String(on)), () => {}, undefined, () => box.checked = !on);
   }
 
   exclude(s: ExecSupplier, on: boolean) {
