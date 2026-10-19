@@ -107,6 +107,16 @@ mail:
     max-file-mb: ${MAIL_CLIENTS_MAX_FILE_MB:25}
     # служебные домены: «2gis.ru» — сам домен и поддомены, «*.mail.ru» — только поддомены (сам mail.ru — личные ящики)
     service-domains: ${MAIL_CLIENTS_SERVICE_DOMAINS:*.mail.ru,2gis.ru,2gis.com,ecc.kz,goszakup.gov.kz}
+    # Письма клиентам из АИС (спека 2026-10-19-client-mail-reply §3.1): свой SMTP info@, вход — username / password выше.
+    # Пустой хост — отправка выключена. Булевы ключи в .env пустыми не оставлять (пустое значение роняет старт).
+    smtp:
+      host: ${MAIL_CLIENTS_SMTP_HOST:}
+      port: ${MAIL_CLIENTS_SMTP_PORT:465}
+      ssl: ${MAIL_CLIENTS_SMTP_SSL:true}
+    from-name: ${MAIL_CLIENTS_FROM_NAME:West-Med}
+    # копия письма клиенту — в «Отправленные» info@ (IMAP APPEND, как у zakup@): Mail.ru кладёт туда только письма веб-почты
+    sent-copy:
+      enabled: ${MAIL_CLIENTS_SENT_COPY_ENABLED:true}
 
 # Уведомления о письмах ящика в Telegram: бот @West_Med_bot сайта, группа «Заявки», тема «Почта zakup@»
 # (спека docs/superpowers/specs/2026-10-05-zakup-mail-telegram-design.md §5). Токен стоит в ПУТИ адреса Bot API —
