@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.RfqPreviewRequest;
 import com.vladoose.nir.dto.request.RfqSendRequest;
 import com.vladoose.nir.dto.response.KpPreviewResponse;
+import com.vladoose.nir.dto.response.PreviewPagesResponse;
 import com.vladoose.nir.entity.Distributor;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.PriceRequest;
@@ -59,14 +60,24 @@ public class PrivateRequestRfqService {
 
     /** Документ на бланке до отправки — Word или PDF: «№ —», номер появится при отправке. */
     public RfqDocumentService.RfqFile document(Long requestId, RfqPreviewRequest req, RfqDocumentService.Format format) {
-        PriceRequest draft = draft(requestId, req, true);
-        if (draft.isWithStamp()) sendService.requireStamp(draft.getMarket() != null ? draft.getMarket() : MarketContext.get());
-        return documents.render(draft, format);
+        return documents.render(documentDraft(requestId, req), format);
+    }
+
+    /** Тот же документ страницами-картинками — предпросмотр прямо в окне, без скачивания. */
+    public PreviewPagesResponse documentPreview(Long requestId, RfqPreviewRequest req) {
+        return documents.preview(documentDraft(requestId, req));
     }
 
     /** Word до отправки. */
     public RfqDocumentService.RfqFile document(Long requestId, RfqPreviewRequest req) {
         return document(requestId, req, RfqDocumentService.Format.DOCX);
+    }
+
+    /** Черновик с документом; «Печать» без загруженной печати — 400, как при отправке. */
+    private PriceRequest documentDraft(Long requestId, RfqPreviewRequest req) {
+        PriceRequest draft = draft(requestId, req, true);
+        if (draft.isWithStamp()) sendService.requireStamp(draft.getMarket() != null ? draft.getMarket() : MarketContext.get());
+        return draft;
     }
 
     private PriceRequest draft(Long requestId, RfqPreviewRequest req, boolean withDocument) {

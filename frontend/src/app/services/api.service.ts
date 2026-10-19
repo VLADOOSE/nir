@@ -452,6 +452,10 @@ export class ApiService {
     return this.http.post(`${this.base}/private-requests/${id}/rfq/document?format=${format}`, body,
       { responseType: 'blob', observe: 'response' });
   }
+  /** Тот же документ до отправки страницами PNG (base64 в JSON) — предпросмотр в окне «Запросить цены». */
+  previewRfqDocument(id: number, body: RfqPreviewBody): Observable<PreviewPages> {
+    return this.http.post<PreviewPages>(`${this.base}/private-requests/${id}/rfq/document/preview`, body);
+  }
   /** Документ записанного запроса, с его номером: PDF (переслать в WhatsApp) или Word. */
   downloadPriceRequestDocument(priceRequestId: number, format: DocFormat): Observable<HttpResponse<Blob>> {
     return this.http.get(`${this.base}/price-requests/${priceRequestId}/document?format=${format}`,

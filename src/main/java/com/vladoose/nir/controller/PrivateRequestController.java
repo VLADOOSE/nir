@@ -198,6 +198,13 @@ public class PrivateRequestController {
         return download(rfqService.document(id, req, RfqDocumentService.Format.parse(format)));
     }
 
+    /** Тот же документ до отправки страницами PNG (base64) — предпросмотр в окне «Запросить цены». */
+    @PostMapping("/{id}/rfq/document/preview")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PreviewPagesResponse rfqDocumentPreview(@PathVariable Long id, @Valid @RequestBody RfqPreviewRequest req) {
+        return rfqService.documentPreview(id, req);
+    }
+
     /** Файл документа запроса: attachment с именем в RFC 5987, без угадывания типа и без кеша. */
     static ResponseEntity<byte[]> download(RfqDocumentService.RfqFile f) {
         return ResponseEntity.ok()

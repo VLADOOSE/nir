@@ -1,5 +1,6 @@
 package com.vladoose.nir.service;
 
+import com.vladoose.nir.dto.response.PreviewPagesResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.repository.EmailTemplateRepository;
@@ -7,6 +8,7 @@ import com.vladoose.nir.service.document.KpDocument;
 import com.vladoose.nir.service.document.KpDocxRenderer;
 import com.vladoose.nir.service.document.KpHtmlRenderer;
 import com.vladoose.nir.service.document.KpPdfRenderer;
+import com.vladoose.nir.service.document.KpPreviewRenderer;
 import com.vladoose.nir.service.document.RfqDocumentBuilder;
 import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.LotDescriptiveText;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -51,16 +54,20 @@ public class RfqDocumentService {
 
     public record RfqFile(String fileName, byte[] bytes, String contentType) {}
 
+    /** Страниц в предпросмотре — как у КП клиенту; запрос длиннее 20 страниц оператор дочитает в скачанном PDF. */
+    public static final int PREVIEW_MAX_PAGES = 20;
+
     private final CompanyProfileService profiles;
     private final EmailTemplateRepository templates;
     private final RfqDocumentBuilder builder;
     private final KpDocxRenderer renderer;
     private final KpHtmlRenderer html;
     private final KpPdfRenderer pdf;
+    private final KpPreviewRenderer previews;
     private final String replyTo;
 
     public RfqDocumentService(CompanyProfileService profiles, EmailTemplateRepository templates, RfqDocumentBuilder builder,
-                              KpDocxRenderer renderer, KpHtmlRenderer html, KpPdfRenderer pdf,
+                              KpDocxRenderer renderer, KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer previews,
                               @Value("${mail.kp.reply-to:}") String replyTo, @Value("${spring.mail.username:}") String from) {
         this.profiles = profiles;
         this.templates = templates;
@@ -68,6 +75,7 @@ public class RfqDocumentService {
         this.renderer = renderer;
         this.html = html;
         this.pdf = pdf;
+        this.previews = previews;
         this.replyTo = replyTo != null && !replyTo.isBlank() ? replyTo.trim() : (from == null ? "" : from.trim());
     }
 
@@ -92,6 +100,17 @@ public class RfqDocumentService {
                 client, lines, replyTo, pr.getReplyBy(), pr.isWithStamp()));
         byte[] bytes = format == Format.PDF ? pdf.render(html.render(doc)) : renderer.render(doc);
         return new RfqFile(fileName(pr.getId(), date, profile, format), bytes, format.contentType);
+    }
+
+    /**
+     * Страницы того же PDF картинками — предпросмотр в окне «Запросить цены»: оператор видит ровно то, что скачается
+     * или уйдёт во вложении (у Word та же модель документа). Подсказки «таблица тесная» у запроса нет — ориентацию
+     * в нём не выбирают.
+     */
+    public PreviewPagesResponse preview(PriceRequest pr) {
+        List<String> pages = previews.pages(render(pr, Format.PDF).bytes(), PREVIEW_MAX_PAGES).stream()
+                .map(b -> Base64.getEncoder().encodeToString(b)).toList();
+        return new PreviewPagesResponse(pages, false);
     }
 
     /** Строка документа — по правилам строки письма (KpEmailComposer.buildPositions). */

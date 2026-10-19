@@ -1,5 +1,6 @@
 package com.vladoose.nir.privaterequest;
 
+import com.jayway.jsonpath.JsonPath;
 import com.vladoose.nir.clientoffer.KpTestSupportAccess;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.LinesMode;
@@ -8,6 +9,8 @@ import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.RfqDocumentService;
+import com.vladoose.nir.service.document.KpPreviewRenderer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +27,7 @@ import org.springframework.web.context.WebApplicationContext;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.Base64;
 import java.util.List;
 
 import static com.vladoose.nir.service.PrivateRequestService.input;
@@ -47,6 +51,7 @@ class PriceRequestDocumentApiTest {
     @Autowired DistributorRepository distributorRepository;
     @Autowired PriceRequestRepository priceRequestRepository;
     @Autowired PriceRequestItemRepository itemRepository;
+    @Autowired KpPreviewRenderer previews;
     MockMvc mvc;
     Tender t;
     PriceRequest pr;
@@ -150,5 +155,38 @@ class PriceRequestDocumentApiTest {
 
         assertThat(fileName(r)).startsWith("Запрос КП № – от ").endsWith(".pdf");
         assertThat(KpTestSupportAccess.pdfText(r.getContentAsByteArray())).contains("ZZ Новый PDF");
+    }
+
+    /** Предпросмотр в окне — страницы ровно того PDF, что скачается до отправки, картинками; только администратор. */
+    @Test
+    void draftPreviewIsTheDownloadedPdfAsPages_adminOnly() throws Exception {
+        String body = "{\"newSupplierName\":\"ZZ Новый предпросмотр\",\"lotIds\":[" + t.getLots().get(0).getId() + "]}";
+
+        mvc.perform(post("/api/private-requests/" + t.getId() + "/rfq/document/preview").header("X-Market", "KZ")
+                        .contentType("application/json").content(body).with(user("op").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
+        String json = mvc.perform(post("/api/private-requests/" + t.getId() + "/rfq/document/preview")
+                        .header("X-Market", "KZ").contentType("application/json").content(body)
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        byte[] pdf = mvc.perform(post("/api/private-requests/" + t.getId() + "/rfq/document?format=pdf")
+                        .header("X-Market", "KZ").contentType("application/json").content(body)
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        List<String> pages = JsonPath.read(json, "$.pages");
+        List<String> expected = previews.pages(pdf, RfqDocumentService.PREVIEW_MAX_PAGES).stream()
+                .map(b -> Base64.getEncoder().encodeToString(b)).toList();
+        assertThat(pages).isNotEmpty().isEqualTo(expected);
+    }
+
+    @Test
+    void draftPreviewOfOtherMarketRequestIs404() throws Exception {
+        String body = "{\"newSupplierName\":\"ZZ Чужой рынок\",\"lotIds\":[" + t.getLots().get(0).getId() + "]}";
+        mvc.perform(post("/api/private-requests/" + t.getId() + "/rfq/document/preview").header("X-Market", "RF")
+                        .contentType("application/json").content(body).with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound());
     }
 }

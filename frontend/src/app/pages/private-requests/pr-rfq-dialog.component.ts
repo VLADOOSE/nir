@@ -50,11 +50,22 @@ interface DoneFile { result: SendResult; file: File | null; loading: boolean; er
 
 interface DirEntry { id: number; name: string; email: string | null; trusted: boolean; manufacturer: boolean; }
 
+/** Предпросмотр письма или документа — в карточке своего поставщика. */
+interface DlgPreview {
+  key: string;
+  /** Тело запроса предпросмотра: не совпадает с нынешними отметками — показ устарел («обновить»). */
+  sig: string;
+  letter: { subject: string; body: string } | null;
+  /** Страницы документа — data:-адреса PNG. */
+  pages: string[] | null;
+}
+
 /**
  * «Запросить цены» (спека 2026-10-12 §6.2): поставщики с причинами подбора и отметками по умолчанию (у бренда с
  * производителем — производитель), почта каждого — полем (пустая карточка — сохранится, другая — только для письма),
  * «Указать клиента» (по умолчанию — у доверенных), новый поставщик, «Ответить до», запрос на бланке (Word) с подписью и
- * печатью, предпросмотр письма и документа (PDF или Word) — ровно того, что уйдёт. «Передам сам» — письма нет: запрос
+ * печатью, предпросмотр письма и документа — в карточке поставщика (документ страницами, как скачается PDF; крупно — по
+ * нажатию) — ровно того, что уйдёт; скачать PDF или Word. «Передам сам» — письма нет: запрос
  * записывается, и окно показывает его PDF — скачать или «Поделиться» (WhatsApp) — с номером записанного запроса.
  */
 @Component({
@@ -132,9 +143,28 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
           <div class="sup-actions">
             <button type="button" class="link" *ngIf="!s.manual" [disabled]="!isOn(s) || busy" (click)="showPreview(s)">Посмотреть письмо</button>
             <ng-container *ngIf="withDocument || s.manual">
+              <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="showDocument(s)">Посмотреть документ</button>
               <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="downloadDocument(s, 'pdf')">Скачать PDF</button>
               <button type="button" class="link" [disabled]="!isOn(s) || busy" (click)="downloadDocument(s, 'docx')">Скачать Word</button>
             </ng-container>
+          </div>
+          <p class="hint" *ngIf="docLoading === s.key">Собираю документ…</p>
+          <div class="preview" *ngIf="previewOf(s) as p">
+            <div class="pv-head">
+              <span>{{ p.pages ? 'Документ' : 'Письмо' }} для {{ s.name }}</span>
+              <span class="pv-stale" *ngIf="p.sig !== sig(s)">отметки изменились —
+                <button type="button" class="link" [disabled]="busy" (click)="refreshPreview(s)">обновить</button></span>
+              <button type="button" class="link pv-hide" (click)="preview = null">Скрыть</button>
+            </div>
+            <ng-container *ngIf="p.letter as l">
+              <div class="pv-subject">Тема: {{ l.subject }}</div>
+              <pre class="pv-body">{{ l.body }}</pre>
+            </ng-container>
+            <div class="pv-pages" *ngIf="p.pages as pages" [class.stale]="p.sig !== sig(s)">
+              <button type="button" class="pv-page" *ngFor="let pg of pages; let i = index" (click)="zoom = pg"
+                      [attr.aria-label]="'Страница ' + (i + 1) + ' крупно'"><img [src]="pg" [alt]="'Страница ' + (i + 1)" /></button>
+              <p class="hint" *ngIf="pages.length >= maxPages">Показаны первые {{ maxPages }} страниц — весь документ в скачанном PDF.</p>
+            </div>
           </div>
         </div>
 
@@ -169,12 +199,6 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
           </label>
         </div>
 
-        <div class="preview" *ngIf="preview">
-          <div class="pv-head">Письмо для «{{ previewFor }}»</div>
-          <div class="pv-subject">Тема: {{ preview.subject }}</div>
-          <pre class="pv-body">{{ preview.body }}</pre>
-        </div>
-
         <!-- плашка — над кнопками: при 3+ поставщиках оператор внизу, у «Отправить», и верх окна ему не виден -->
         <div class="error-banner" *ngIf="error" role="alert">{{ error }}</div>
         <div class="form-actions" #actions>
@@ -183,6 +207,9 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
         </div>
         </ng-container>
       </div>
+    </div>
+    <div class="pv-zoom" *ngIf="zoom" (click)="zoom = null" role="dialog" aria-label="Страница крупно">
+      <img [src]="zoom" alt="Страница крупно" />
     </div>
   `,
   styles: [`
@@ -225,7 +252,7 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
     .done-actions .link { align-self: center; }
     .done-err { margin: 0; font-size: 12px; color: var(--danger-text); }
     .remember { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-    .sup-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+    .sup-actions { display: flex; gap: 4px 16px; flex-wrap: wrap; }
     .link { align-self: flex-start; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
     .link:disabled { color: var(--text-muted); cursor: default; }
     .hint { margin: 0; font-size: 12px; color: var(--text-muted); }
@@ -240,9 +267,23 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
     .opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
     .reply, .opt { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .opt { cursor: pointer; }
-    .preview { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
-    .pv-head { font-size: 12px; color: var(--text-muted); }
-    .pv-subject { font-size: 13px; font-weight: 600; margin: 4px 0; }
+    .preview { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-2);
+               display: flex; flex-direction: column; gap: 6px; }
+    .pv-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-muted); }
+    .pv-stale { color: var(--warn-text); }
+    .pv-stale .link { font-size: 12px; }
+    .pv-hide { margin-left: auto; font-size: 12px; }
+    .pv-pages { display: flex; flex-direction: column; gap: 10px; transition: opacity .2s; }
+    .pv-pages.stale { opacity: .55; }
+    .pv-page { display: block; width: 100%; padding: 0; border: 1px solid var(--border); background: var(--surface);
+               box-shadow: var(--shadow); cursor: zoom-in; }
+    .pv-page img { display: block; width: 100%; height: auto; }
+    /* выше окна (1100); вуаль — та же, что у окна */
+    .pv-zoom { position: fixed; inset: 0; z-index: 1200; overflow: auto; background: rgba(17, 24, 39, 0.5); display: flex;
+               justify-content: center; align-items: flex-start; cursor: zoom-out;
+               padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .pv-zoom img { width: 100%; max-width: 1100px; height: auto; box-shadow: var(--shadow-lg); }
+    .pv-subject { font-size: 13px; font-weight: 600; }
     .pv-body { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 13px; color: var(--text); }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0; }
     @media (max-width: 900px) {
@@ -252,6 +293,9 @@ interface DirEntry { id: number; name: string; email: string | null; trusted: bo
       .check, .disclose, .opt, .remember { min-height: 40px; }
       .mail, .add-box input, .reply input { font-size: 16px; min-height: 40px; }
       .form-actions .btn, .add .btn, .link, .done-actions .btn { min-height: 40px; }
+      /* крупно на телефоне — в натуральную ширину страницы (909 px) с прокруткой: вписанная в экран не крупнее, чем в окне */
+      .pv-zoom { justify-content: flex-start; }
+      .pv-zoom img { width: auto; max-width: none; }
     }
   `],
 })
@@ -277,8 +321,12 @@ export class PrRfqDialogComponent implements OnInit {
   withDocument = readWithDocument();
   withStamp = false;
   hasStamp = false;
-  preview: { subject: string; body: string } | null = null;
-  previewFor = '';
+  preview: DlgPreview | null = null;
+  /** Документ какого поставщика собирается (ключ) — «Собираю документ…» в его карточке. */
+  docLoading: string | null = null;
+  /** Страница документа крупно — поверх окна; Esc и нажатие закрывают. */
+  zoom: string | null = null;
+  readonly maxPages = 20;
   /** Записано с «передам сам» — окно показывает их PDF; итог отправки уходит странице по «Готово». */
   done: { results: SendResult[]; files: DoneFile[] } | null = null;
   /** Итог уже отдан странице: «Готово» и Esc в одном кадре не дают два тоста. */
@@ -320,6 +368,7 @@ export class PrRfqDialogComponent implements OnInit {
   /** Закрыть окно (фон, Esc, «Отмена»), но не во время отправки: ответ отписался бы, итога пользователь не увидел бы. */
   @HostListener('document:keydown.escape')
   dismiss() {
+    if (this.zoom) { this.zoom = null; return; }
     if (this.sending) return;
     if (this.done) { this.finish(); return; }   // запросы уже записаны — странице нужен итог, а не «отмена»
     this.close.emit();
@@ -457,14 +506,55 @@ export class PrRfqDialogComponent implements OnInit {
     };
   }
 
+  /** Отметки, по которым собран предпросмотр: письмо и документ зависят от позиций, клиента, срока, бланка и печати. */
+  sig(s: DlgSupplier): string {
+    return JSON.stringify(this.previewBody(s));
+  }
+
+  /** Предпросмотр этого поставщика; письма у «передам сам» и документа без «Приложить запрос» нет — нечего показывать. */
+  previewOf(s: DlgSupplier): DlgPreview | null {
+    const p = this.preview;
+    if (!p || p.key !== s.key) return null;
+    if (p.letter && s.manual) return null;
+    if (p.pages && !this.withDocument && !s.manual) return null;
+    return p;
+  }
+
   showPreview(s: DlgSupplier) {
     const body = this.previewBody(s);
     if (!body.lotIds.length) return;
     this.busy = true;
     this.api.previewRfq(this.requestId, body).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: p => { this.busy = false; this.preview = p; this.previewFor = s.name; this.cdr.markForCheck(); },
+      next: p => {
+        this.busy = false;
+        this.preview = { key: s.key, sig: JSON.stringify(body), letter: p, pages: null };
+        this.cdr.markForCheck();
+      },
       error: e => { this.busy = false; this.fail(errorText(e)); },
     });
+  }
+
+  /** Документ ровно для этого поставщика — страницами того PDF, что скачается («№ –»: номер появится при записи). */
+  showDocument(s: DlgSupplier) {
+    const body = this.previewBody(s);
+    if (!body.lotIds.length) return;
+    this.busy = true;
+    this.docLoading = s.key;
+    this.api.previewRfqDocument(this.requestId, body).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        this.busy = false;
+        this.docLoading = null;
+        this.preview = { key: s.key, sig: JSON.stringify(body), letter: null,
+                         pages: r.pages.map(pg => 'data:image/png;base64,' + pg) };
+        this.cdr.markForCheck();
+      },
+      error: e => { this.busy = false; this.docLoading = null; this.fail(errorText(e)); },
+    });
+  }
+
+  refreshPreview(s: DlgSupplier) {
+    if (this.preview?.pages) this.showDocument(s);
+    else this.showPreview(s);
   }
 
   /** Документ ровно для этого поставщика — PDF или Word; «№ —» — номер появится при записи запроса. */
