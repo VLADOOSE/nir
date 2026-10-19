@@ -1,6 +1,7 @@
 package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.ClientOffer;
+import com.vladoose.nir.entity.ClientOfferItemKind;
 import com.vladoose.nir.entity.ClientOfferStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -38,4 +39,14 @@ public interface ClientOfferRepository extends JpaRepository<ClientOffer, Long> 
     /** Статусы КП по заявкам — этап заявки (спека §5.4 правило 2): заявка → статус. */
     @Query("select o.tenderId, o.status from ClientOffer o where o.tenderId in :ids")
     List<Object[]> findStatusesByTenderIds(@Param("ids") Collection<Long> ids);
+
+    /** Принятые КП сделок, новые сверху: id сделки, id КП, итог, номер, дата (исполнение: главное — первое). */
+    @Query("select o.tenderId, o.id, o.totalAmount, o.number, o.offerDate from ClientOffer o "
+           + "where o.tenderId in :ids and o.status = :status order by o.id desc")
+    List<Object[]> findAcceptedByTenderIds(@Param("ids") Collection<Long> ids, @Param("status") ClientOfferStatus status);
+
+    /** Строки КП вида kind: id КП, поставщик, закупка, количество, № строки — суммы закупки по поставщикам. */
+    @Query("select i.offer.id, i.distributorId, i.purchasePrice, i.quantity, i.lineNo from ClientOfferItem i "
+           + "where i.offer.id in :ids and i.kind = :kind")
+    List<Object[]> findPurchaseRows(@Param("ids") Collection<Long> ids, @Param("kind") ClientOfferItemKind kind);
 }
