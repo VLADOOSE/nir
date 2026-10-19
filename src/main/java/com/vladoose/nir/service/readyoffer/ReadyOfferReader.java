@@ -66,8 +66,11 @@ public class ReadyOfferReader {
                                 header, null);
                     }
                     OfferFileLines.Lines lines = OfferFileLines.of(all, marketCurrency);
+                    // строки «ИТОГО» в таблице нет — итог бывает абзацем под ней («Итого: …» в старом бланке)
+                    BigDecimal total = lines.fileTotal() != null ? lines.fileTotal()
+                            : OfferFileLines.textTotal(ReplyTableReader.paragraphs(parse, kind));
                     return new Result(kind, ReplyParseStatus.PARSED, null, all.stream().map(ReplyTableReader.ReadTable::table).toList(),
-                            lines.lines(), lines.fileTotal(), lines.foreignCurrency(), header, null);
+                            lines.lines(), total, lines.foreignCurrency(), header, null);
                 }
                 case PDF -> {
                     int pages = pdf.pageCount(bytes);

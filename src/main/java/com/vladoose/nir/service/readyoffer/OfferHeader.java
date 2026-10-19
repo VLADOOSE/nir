@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 
 /**
  * Номер и дата КП из текста документа или имени файла (спека 2026-10-19 §4.4): номер — только после «Исх», «КП» или
- * «Коммерческое предложение» (не «ГКП … № 5»), дата — после номера («от …») или после «Дата:»; ДД.ММ.ГГГГ и
+ * «Коммерческое предложение» (не «ГКП … № 5»), дата — после номера («от …», в старом бланке «от.14.09.2026») или после «Дата:»; ДД.ММ.ГГГГ и
  * «17 апреля 2026». Несуществующая дата (31.02) — нет даты.
  */
 public record OfferHeader(Integer number, LocalDate date) {
@@ -21,7 +21,7 @@ public record OfferHeader(Integer number, LocalDate date) {
     private static final String MONTH = String.join("|", MONTHS);
     private static final String DATE = "(?:\\d{1,2}\\.\\d{1,2}\\.\\d{4}|«?\\d{1,2}»?\\s+(?:" + MONTH + ")\\s+\\d{4})";
     private static final Pattern NUMBERED = Pattern.compile("(?iu)(?:(?<!\\p{L})исх(?:одящий)?\\.?\\s*(?:№|n(?!\\p{L})|номер)?"
-            + "|(?<!\\p{L})(?:кп|коммерческое\\s+предложение)\\s*№)\\s*(?<n>\\d{1,7})(?:\\s*г?\\.?\\s*от\\s*(?<d>" + DATE + "))?");
+            + "|(?<!\\p{L})(?:кп|коммерческое\\s+предложение)\\s*№)\\s*(?<n>\\d{1,7})(?:\\s*г?\\.?\\s*от\\.?\\s*(?<d>" + DATE + "))?");
     private static final Pattern DATED = Pattern.compile("(?iu)(?<!\\p{L})дата\\s*:?\\s*(?<d>" + DATE + ")");
     private static final Pattern NUMERIC = Pattern.compile("(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})");
     private static final Pattern WORDS = Pattern.compile("(?iu)(\\d{1,2})»?\\s+(" + MONTH + ")\\s+(\\d{4})");

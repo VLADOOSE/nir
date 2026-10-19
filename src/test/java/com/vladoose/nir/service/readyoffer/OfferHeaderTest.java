@@ -24,6 +24,11 @@ class OfferHeaderTest {
     }
 
     @Test
+    void dotAfterOt_fatherOldTemplate() {   // бланк отца в КП на ВитаЛайн 200 и А-ИВЛ-Э-03
+        assertThat(of("исх 443 от.14.09.2026 г.")).isEqualTo(new OfferHeader(443, LocalDate.of(2026, 9, 14)));
+    }
+
+    @Test
     void numberOnlyAfterIskhOrKp_badDateIsNone() {
         assertThat(of("ГКП на ПХВ «Городская поликлиника № 5»", "ГКП № 5 от 01.01.2026")).isEqualTo(OfferHeader.NONE);
         assertThat(of("Исх № 3 от 31.02.2026")).isEqualTo(new OfferHeader(3, null));

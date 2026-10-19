@@ -3,6 +3,7 @@ package com.vladoose.nir.service.readyoffer;
 import com.vladoose.nir.entity.ClientOfferItemKind;
 import com.vladoose.nir.entity.ReplyTable;
 import com.vladoose.nir.service.offer.OfferSettingsValidator;
+import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.service.supplierreply.ReplyRowValues;
 import com.vladoose.nir.service.supplierreply.ReplyTableReader;
 
@@ -30,6 +31,9 @@ public final class OfferFileLines {
     static final BigDecimal QTY_MAX = new BigDecimal("999999999.999");
     private static final Pattern PERCENT = Pattern.compile("(\\d{1,2}(?:[.,]\\d{1,2})?)\\s*%");
     private static final Pattern BARE = Pattern.compile("^\\s*(\\d{1,2}(?:[.,]\\d{1,2})?)\\s*$");
+    /** «Итого: 9 902 248,23» абзацем под таблицей — только итог целиком («Итого без НДС» — нет). */
+    private static final Pattern TOTAL_LINE = Pattern.compile(
+            "(?iu)^\\s*(?:итого|всего)(?:\\s+(?:к\\s+оплате|с\\s+ндс|с\\s+уч[её]том\\s+ндс))?\\s*:?\\s*(?<sum>\\d.*)$");
 
     public record Lines(List<OfferFileLine> lines, BigDecimal fileTotal, String foreignCurrency) {}
 
@@ -90,6 +94,24 @@ public final class OfferFileLines {
         String unit = v.unit() == null || v.unit().isBlank() ? "шт" : cut(v.unit().strip(), UNIT_MAX);
         return new OfferFileLine(ClientOfferItemKind.ITEM, cut(v.name(), NAME_MAX), cut(v.article(), 255), cut(v.brand(), 500),
                 q.setScale(3, RoundingMode.HALF_UP), unit, pricesOk ? v.price() : null, v.vat());
+    }
+
+    /**
+     * Итог КП из текста под таблицей, когда в таблице строки «ИТОГО» нет (бланк отца в КП на ВитаЛайн 200): строка
+     * «Итого: …» / «Всего к оплате: …». Разные суммы в таких строках — не угадываем (null).
+     */
+    public static BigDecimal textTotal(List<String> paragraphs) {
+        BigDecimal found = null;
+        for (String p : paragraphs) {
+            if (p == null) continue;
+            Matcher m = TOTAL_LINE.matcher(p.replace('\u00a0', ' ').strip());
+            if (!m.find()) continue;
+            BigDecimal v = MoneyText.amount(m.group("sum"));
+            if (v == null) continue;
+            if (found != null && found.compareTo(v) != 0) return null;
+            found = v;
+        }
+        return found;
     }
 
     public static VatPick vat(String text, List<BigDecimal> rates) {

@@ -89,4 +89,28 @@ class ReadyOfferReaderTest {
             assertThat(r.lines()).isNotEmpty().allSatisfy(l -> assertThat(l.kind()).isEqualTo(ClientOfferItemKind.ITEM));
         }
     }
+
+    @Test
+    void totalAsParagraphUnderTable() throws Exception {   // КП на ВитаЛайн 200: «Итого: …» абзацем, а не строкой таблицы
+        XWPFDocument d = new XWPFDocument();
+        ReadyOfferFixtures.paragraph(d, "исх 443 от.14.09.2026 г.");
+        ReadyOfferFixtures.table(d, List.of(ReadyOfferFixtures.FATHER_HEADER,
+                List.of("1", "Анализатор ВитаЛайн 200", "шт", "1", "7 650 000,00", "5%", "7 650 000,00"),
+                List.of("2", "Установка ПРОДЕИОН", "шт", "1", "1 950 000,00", "5%", "1 950 000,00")));
+        ReadyOfferFixtures.paragraph(d, "Итого без НДС: 9 142 857,14");
+        ReadyOfferFixtures.paragraph(d, "Итого: 9 600 000,00 тенге");
+        ReadyOfferReader.Result r = read("КП 14.09.2026 ВитаЛайн 200.docx", ReadyOfferFixtures.bytes(d));
+        assertThat(r.fileTotal()).isEqualByComparingTo("9600000");
+        assertThat(r.header()).isEqualTo(new OfferHeader(443, LocalDate.of(2026, 9, 14)));
+    }
+
+    @Test
+    void twoDifferentTotalsInText_notGuessed() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        ReadyOfferFixtures.table(d, List.of(ReadyOfferFixtures.FATHER_HEADER,
+                List.of("1", "Анализатор ВитаЛайн 200", "шт", "1", "7 650 000,00", "5%", "7 650 000,00")));
+        ReadyOfferFixtures.paragraph(d, "Итого: 7 650 000,00");
+        ReadyOfferFixtures.paragraph(d, "Всего к оплате: 7 700 000,00");
+        assertThat(read("КП.docx", ReadyOfferFixtures.bytes(d)).fileTotal()).isNull();
+    }
 }

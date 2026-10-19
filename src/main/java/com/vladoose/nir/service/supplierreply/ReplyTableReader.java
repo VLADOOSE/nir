@@ -128,6 +128,11 @@ public final class ReplyTableReader {
         return out;
     }
 
+    /** Абзацы документа вне таблиц (Word; у Excel — пусто): «Итого: …» под таблицей готового КП. */
+    public static List<String> paragraphs(byte[] content, ReplyFileKind kind) throws IOException {
+        return document(content, kind).text();
+    }
+
     /** Текст документа для номера и даты КП: абзацы Word, затем первые строки каждой таблицы / листа (бланк в таблице). */
     public static List<String> documentLines(byte[] content, ReplyFileKind kind) throws IOException {
         Document d = document(content, kind);
