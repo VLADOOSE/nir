@@ -87,7 +87,7 @@ import type { DealAction } from '../../shared/deal';
         </div>
         <app-deal-timeline dealSide #timeline kind="private-request" [dealId]="v.id" [canWrite]="auth.isAdmin()"
                            [phone]="v.contactPhone" [email]="v.contactEmail" (localLink)="scrollToStep($event)"
-                           [canMail]="isKz" (mailSent)="refresh()"></app-deal-timeline>
+                           [canMail]="isKz && auth.isAdmin()" (mailSent)="refresh()"></app-deal-timeline>
       </app-deal-layout>
     </div>
     <ng-template #stateTpl>
