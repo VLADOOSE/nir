@@ -188,6 +188,23 @@ interface ParsedRow extends ParsedLine { on: boolean; }
     .mode { display: flex; flex-direction: column; gap: 6px; }
     .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0; }
+    /* Раскладка строки — по ширине самого списка: на странице сделки с открытой «Перепиской» (1280 px) списку достаётся
+       ~550 px, и в одну строку наименованию оставалось ~45 px («Кушеті»). Узко — наименование на всю строку, бренд,
+       количество и РУ — второй строкой. Контейнер — только на десктопе: на телефоне своя раскладка (ниже), а окошко метки
+       РУ там position: fixed — внутри container-type его не проверяли на iPhone. */
+    @media (min-width: 901px) {
+      .lines { container: pr-lines / inline-size; }
+    }
+    @container pr-lines (max-width: 760px) {
+      .row { grid-template-columns: 28px minmax(0, 1fr) auto auto 40px; grid-template-areas: "no name name name more" ". brand qty reg reg";
+             row-gap: 4px; }
+      .no { grid-area: no; }
+      .f-name { grid-area: name; }
+      .f-brand { grid-area: brand; }
+      .f-qty { grid-area: qty; }
+      .f-reg { grid-area: reg; }
+      .btn-more { grid-area: more; }
+    }
     @media (max-width: 900px) {
       .row { grid-template-columns: 22px minmax(0, 1fr) 40px; grid-template-areas: "no name more" ". brand brand" ". qty reg"; row-gap: 4px; }
       .no { grid-area: no; }
