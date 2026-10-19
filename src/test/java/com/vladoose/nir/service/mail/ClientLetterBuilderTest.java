@@ -10,6 +10,8 @@ import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeUtility;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -104,6 +106,36 @@ class ClientLetterBuilderTest {
         assertThat(m.getHeader("References")).isNull();
         assertThat(m.isMimeType("text/plain")).isTrue();
         assertThat(((String) m.getContent())).isEqualTo("Текст");
+    }
+
+    /**
+     * Message-ID и тема прежнего письма берутся из базы как пришли (тема — после декодирования RFC 2047, в ней бывает перевод
+     * строки): перевод строки в них дописал бы письму на проводе свой заголовок. Ключ с пробелом или переводом строки — не
+     * Message-ID (заголовков цепочки нет), тема — в одну строку. Проверка — по письму, записанному в байты и прочитанному заново.
+     */
+    @Test
+    void headerInjectionFromStoredMail_neutralized() throws Exception {
+        assertThat(ClientLetterBuilder.isMessageId("<a@b.kz>\r\nBcc: <evil@x.kz>")).isFalse();
+        assertThat(ClientLetterBuilder.isMessageId("<a b@c.kz>")).isFalse();
+        assertThat(ClientLetterBuilder.isMessageId("<CAF=x_Y+z.1@mail.gmail.com>")).isTrue();
+        // тема прежнего письма (из базы, после RFC 2047) — в одну строку и в переписке АИС, и в письме
+        assertThat(ClientLetterBuilder.replySubject("Запрос\r\nцены", AT, ORAL)).isEqualTo("Re: Запрос цены");
+        ClientLetter l = new ClientLetter("West-Med", "info@westmed.kz", List.of("a@clinic.kz"),
+                "Re: Order\r\nBcc: evil@x.kz", "Текст", "", null, "<a@b.kz>\r\nX-Evil: 1",
+                ClientLetterBuilder.messageId("info@westmed.kz"), List.of());
+
+        MimeMessage back = wire(ClientLetterBuilder.build(session, l, ORAL));
+
+        assertThat(back.getRecipients(Message.RecipientType.BCC)).isNull();
+        assertThat(back.getHeader("X-Evil")).isNull();
+        assertThat(back.getHeader("In-Reply-To")).isNull();
+        assertThat(back.getSubject()).isEqualTo("Re: Order Bcc: evil@x.kz");
+    }
+
+    MimeMessage wire(MimeMessage m) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        m.writeTo(out);
+        return new MimeMessage(session, new ByteArrayInputStream(out.toByteArray()));
     }
 
     static List<String> fileNames(Part p) throws Exception {

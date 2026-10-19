@@ -27,12 +27,14 @@ public final class ClientLetterBuilder {
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final Pattern REPLY_PREFIX = Pattern.compile("(?iu)^\\s*(re|ответ)\\s*:");
+    private static final Pattern MESSAGE_ID = Pattern.compile("<[^<>\\s\\p{Cntrl}]+@[^<>\\s\\p{Cntrl}]+>");
+    private static final Pattern LINE_BREAKS = Pattern.compile("[\\p{Cntrl}\\u0085\\u2028\\u2029]+");
 
     private ClientLetterBuilder() {}
 
     /** «Re: тема» без второго «Re:»; без темы — «Re: письмо от ДД.ММ.ГГГГ» (дата письма по часам рынка). */
     public static String replySubject(String parentSubject, OffsetDateTime parentSentAt, ZoneId zone) {
-        String s = parentSubject == null ? "" : parentSubject.strip();
+        String s = parentSubject == null ? "" : oneLine(parentSubject).strip();
         if (s.isEmpty()) return "Re: письмо от " + DAY.format(parentSentAt.atZoneSameInstant(zone));
         return REPLY_PREFIX.matcher(s).find() ? s : "Re: " + s;
     }
@@ -64,9 +66,12 @@ public final class ClientLetterBuilder {
         return "<ais." + UUID.randomUUID() + "@" + domain + ">";
     }
 
-    /** Ключ сообщения переписки — Message-ID (не «sha256:…» длинного и не «uid:…» письма без него). */
+    /**
+     * Ключ сообщения переписки — Message-ID (не «sha256:…» длинного и не «uid:…» письма без него). Без пробелов и управляющих
+     * символов: ключ берётся из базы как пришёл, и перевод строки в заголовке цепочки дописал бы письму свой заголовок.
+     */
     public static boolean isMessageId(String key) {
-        return key != null && key.startsWith("<") && key.endsWith(">") && key.indexOf('@') > 0;
+        return key != null && MESSAGE_ID.matcher(key).matches();
     }
 
     /** MIME: простой текст UTF-8, вложения — multipart, имена кодируются; saveChanges наш Message-ID не меняет. */
@@ -84,7 +89,7 @@ public final class ClientLetterBuilder {
         h.setSubject(l.subject());
         h.setSentDate(new Date());
         h.setText(body(l.text(), l.signature(), l.quote(), zone), false);
-        if (l.inReplyTo() != null) {
+        if (isMessageId(l.inReplyTo())) {   // ключ не Message-ID (или с переводом строки) — без цепочки
             m.setHeader("In-Reply-To", l.inReplyTo());
             m.setHeader("References", l.inReplyTo());
         }
@@ -95,6 +100,11 @@ public final class ClientLetterBuilder {
         }
         m.saveChanges();
         return m;
+    }
+
+    /** В одну строку: тема прежнего письма приходит из базы после RFC 2047 и бывает с переводом строки. */
+    static String oneLine(String s) {
+        return s == null ? null : LINE_BREAKS.matcher(s).replaceAll(" ");
     }
 
     private static String normalize(String s) {
