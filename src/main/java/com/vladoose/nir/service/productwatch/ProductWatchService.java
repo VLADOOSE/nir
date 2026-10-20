@@ -33,6 +33,8 @@ public class ProductWatchService {
     static final int WINDOW_DAYS = 60;
     static final int MAX_PAGES = 5;
     static final long PAUSE_MS = 300;
+    /** Столько слов подряд упало не стоп-кодом — площадка не отвечает, прогон останавливается (не жжём время и токен). */
+    static final int DOWN_STOP = 3;
 
     private final GoszakupSearchClient search;
     private final GoszakupClient client;
@@ -95,16 +97,27 @@ public class ProductWatchService {
         LocalDate today = now.toLocalDate();
         Map<String, FoundAnnouncement> candidates = new LinkedHashMap<>();
         List<String> notes = new ArrayList<>();
-        try {
-            for (String w : words) {
+        int downInRow = 0;
+        for (String w : words) {
+            try {
                 collectLots(w, today, now, candidates, sum, notes);
                 collectAnnouncements(w, today, now, candidates, sum, notes);
+                downInRow = 0;
+            } catch (RuntimeException e) {
+                if (stopping(e)) {
+                    sum.addError("поиск остановлен: " + ErrorText.of(e));
+                    finish(sum, notes);
+                    return;
+                }
+                // ошибка — в итог прогона: по ней «⚠️ Поиск нашей продукции не работает» (§7.5); остальные слова — ищем
+                sum.addError("«" + w + "»: " + ErrorText.of(e));
+                log.warn("Поиск нашей продукции: слово «{}»: {}", w, ErrorText.of(e));
+                if (++downInRow >= DOWN_STOP) {
+                    notes.add("площадка не отвечает — прогон остановлен после " + DOWN_STOP + " слов подряд");
+                    finish(sum, notes);
+                    return;
+                }
             }
-        } catch (RuntimeException e) {
-            if (!stopping(e)) throw e;
-            sum.addError("поиск остановлен: " + ErrorText.of(e));
-            finish(sum, notes);
-            return;
         }
         Map<String, Optional<SubjectDto>> subjects = new HashMap<>();
         List<FoundAnnouncement> ordered = candidates.values().stream()

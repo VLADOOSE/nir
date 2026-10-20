@@ -20,6 +20,14 @@ public class FakeGoszakupSearchClient implements GoszakupSearchClient {
     public final List<String> calls = new ArrayList<>();
     /** С какого по счёту вызова отвечать 403 (0 — никогда). */
     public int forbidFromCall = 0;
+    /** Слова, на поиске которых площадка «не отвечает» (не стоп-код, без повторов); «*» — все слова. */
+    public final Set<String> failWords = new HashSet<>();
+
+    private void down(String w) {
+        if (failWords.contains("*") || failWords.contains(w)) {
+            throw new GoszakupCallException("goszakup API недоступно: ConnectException", false, null);
+        }
+    }
 
     private void call(String what) {
         calls.add(what);
@@ -30,10 +38,10 @@ public class FakeGoszakupSearchClient implements GoszakupSearchClient {
 
     @Override public boolean isConfigured() { return configured; }
     @Override public SearchPage<FoundLot> searchLots(String w, List<Integer> s, LocalDate f, LocalDate t, Long a) {
-        call("lots:" + w); return new SearchPage<>(lotsByWord.getOrDefault(w, List.of()), null);
+        call("lots:" + w); down(w); return new SearchPage<>(lotsByWord.getOrDefault(w, List.of()), null);
     }
     @Override public SearchPage<FoundAnnouncement> searchAnnouncements(String w, List<Integer> s, LocalDate f, LocalDate t, Long a) {
-        call("buys:" + w); return new SearchPage<>(buysByWord.getOrDefault(w, List.of()), null);
+        call("buys:" + w); down(w); return new SearchPage<>(buysByWord.getOrDefault(w, List.of()), null);
     }
     @Override public FoundAnnouncement announcement(String n) { call("anno:" + n); return byNumber.get(n); }
     @Override public List<FoundLot> lotsOfAnnouncement(String n) { call("annoLots:" + n); return lotsByAnno.getOrDefault(n, List.of()); }

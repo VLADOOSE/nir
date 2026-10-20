@@ -157,6 +157,33 @@ class ProductWatchServiceTest {
         assertThat(client.lotsCalls).doesNotContainKey("17000002-1");
     }
 
+    /**
+     * Площадка не отвечает (не стоп-код): ошибка — в итог прогона, по слову; три слова подряд — прогон останавливается.
+     * Прежде исключение уходило мимо итога, и «⚠️ Поиск нашей продукции не работает» (спека §7.5) не срабатывало никогда.
+     */
+    @Test
+    void platformDown_errorsInSummary_stopsAfterThreeWords() {
+        search.failWords.add("*");
+        ImportSummary sum = new ImportSummary();
+        service.run(sum);
+        assertThat(sum.getErrors()).isEqualTo(3);
+        assertThat(sum.getLastError()).contains("ConnectException");
+        assertThat(sum.getMessage()).contains("площадка не отвечает");
+        assertThat(search.calls).hasSize(3);
+    }
+
+    /** Одно слово упало — остальные ищутся, найденное записывается, ошибка — в итоге. */
+    @Test
+    void oneWordFails_othersStillSearched() {
+        astanaOnPlatform();
+        search.failWords.add("облучатель");
+        ImportSummary sum = new ImportSummary();
+        service.run(sum);
+        assertThat(tenders.findBySourceExtId("17802320-1")).isPresent();
+        assertThat(sum.getErrors()).isEqualTo(1);
+        assertThat(sum.getLastError()).contains("«облучатель»");
+    }
+
     @Test
     void vanishedFoundTender_refreshedByNumber() {
         astanaOnPlatform();
