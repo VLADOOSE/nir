@@ -58,4 +58,23 @@ class ProductCardsModelTest {
             assertThat(f.source()).isEqualTo(ProductCards.DESCRIPTION);
         });
     }
+
+    /** Признак у модели реестра нашёлся в карточке РУ, у позиции каталога — в её описании: не «на сайте» (живая проверка). */
+    @Test
+    void featureRow_sourceByCardKind() {
+        MedRegistry r = reg(true, null);
+        r.setPurpose("Режим кардиоверсии и дефибрилляции");
+        FitCandidate reg = SpecFit.compare(SpecRequirements.extract("наличие режима кардиоверсии"), ProductCards.ofRegistry(r, TODAY));
+        assertThat(reg.rows()).singleElement().satisfies(row -> {
+            assertThat(row.mark()).isEqualTo(FitMark.OK);
+            assertThat(row.ours()).isEqualTo("есть в карточке РУ");
+            assertThat(row.source()).isEqualTo(ProductCards.REG);
+        });
+        FitCandidate eq = SpecFit.compare(SpecRequirements.extract("наличие режима кардиоверсии"), ProductCards.ofEquipment(
+                MedEquipment.builder().name("Дефибриллятор").manufact("Завод").spec("Режим кардиоверсии").build()));
+        assertThat(eq.rows()).singleElement().satisfies(row -> {
+            assertThat(row.ours()).isEqualTo("есть в описании модели");
+            assertThat(row.source()).isEqualTo(ProductCards.DESCRIPTION);
+        });
+    }
 }

@@ -60,6 +60,15 @@ public final class SpecFit {
         return new LotFit(all.get(0).verdict(), List.copyOf(out), foreignBrand);
     }
 
+    /** Где нашёлся признак: товар сайта — его описание; модель реестра «в работе» — карточка РУ; позиция каталога — её описание. */
+    private static String featureText(ProductCard card) {
+        return card.productId() > 0 ? "есть в описании товара" : card.regNumber() != null ? "есть в карточке РУ" : "есть в описании модели";
+    }
+
+    private static String featureSource(ProductCard card) {
+        return card.productId() > 0 ? ProductCards.SITE : card.regNumber() != null ? ProductCards.REG : ProductCards.DESCRIPTION;
+    }
+
     public static FitCandidate compare(List<SpecRequirement> reqs, ProductCard card) {
         List<FitRow> rows = new ArrayList<>();
         String reason = null, reasonShort = null;
@@ -67,7 +76,7 @@ public final class SpecFit {
             FitRow row;
             if (r.kind() == SpecRequirement.Kind.FEATURE) {
                 boolean ok = FitText.overlap(FitText.stems(r.name()), card.stems()) >= FEATURE_SHARE;
-                row = new FitRow(ok ? FitMark.OK : FitMark.UNKNOWN, r.text(), ok ? "есть в описании товара" : null, ok ? ProductCards.SITE : null);
+                row = new FitRow(ok ? FitMark.OK : FitMark.UNKNOWN, r.text(), ok ? featureText(card) : null, ok ? featureSource(card) : null);
             } else {
                 ProductFact f = factFor(r, card.facts());
                 FitMark m = f == null ? FitMark.UNKNOWN : check(r, f);

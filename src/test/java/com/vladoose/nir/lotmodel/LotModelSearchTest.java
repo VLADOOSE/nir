@@ -86,4 +86,16 @@ class LotModelSearchTest {
         assertThatThrownBy(() -> search.search(rf.getId(), "дки"))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("Только для Казахстана");
     }
+
+    /** Слово запроса — начало слова товара, а не кусок где угодно (живая проверка: «ОГ-10» находил «мнОГорозеточный» и «кардиОГраф»). */
+    @Test
+    void ours_wordIsWordStart_notAnySubstring() {
+        products.saveAndFlush(product("ZZQ Отсасыватель ОГ-10/90-01", "Аксион", "ZZQ-019", null));
+        products.saveAndFlush(product("ZZQ Держатель многорозеточный", "Фотек", "ZZQ-100", null));
+        products.saveAndFlush(product("ZZQ Электрокардиограф ЭК1Т", "Аксион", "ZZQ-010", null));
+        assertThat(search.search(lot.getId(), "zzq ог-10").ours()).extracting(LotModelSearchResponse.Our::name)
+                .containsExactly("ZZQ Отсасыватель ОГ-10/90-01");
+        assertThat(search.search(lot.getId(), "zzq дефиб").ours()).extracting(LotModelSearchResponse.Our::name)
+                .containsExactly("ZZQ Дефибриллятор ДКИ-Н-12");                // начало слова — как при наборе
+    }
 }

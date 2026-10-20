@@ -61,15 +61,18 @@ public class LotModelSearch {
         return new LotModelSearchResponse(ours(query), registry(query));
     }
 
-    /** Наши товары: каждое слово запроса — в названии, бренде или артикуле; снятые с сайта не ищутся. */
+    /**
+     * Наши товары: каждое слово запроса — начало слова в названии, бренде или артикуле («дефиб», «ог» + «10» у «ОГ-10/90»;
+     * не кусок где угодно — «ог» не находит «многорозеточный»); снятые с сайта не ищутся.
+     */
     private List<LotModelSearchResponse.Our> ours(String q) {
         List<String> words = ProductText.words(ProductText.normalize(q));
         if (words.isEmpty()) return List.of();
         CatalogSnapshot snap = catalog.get();
         return siteProducts.findByMarketAndRemovedAtIsNull(Market.KZ).stream()
                 .filter(p -> {
-                    String hay = ProductText.normalize(String.join(" ", nz(p.getName()), nz(p.getBrand()), nz(p.getSku())));
-                    return words.stream().allMatch(hay::contains);
+                    List<String> hay = ProductText.words(ProductText.normalize(String.join(" ", nz(p.getName()), nz(p.getBrand()), nz(p.getSku()))));
+                    return words.stream().allMatch(w -> hay.stream().anyMatch(h -> h.startsWith(w)));
                 })
                 .sorted(Comparator.comparing((SiteProduct p) -> nz(p.getName()), String.CASE_INSENSITIVE_ORDER))
                 .limit(LIMIT)
