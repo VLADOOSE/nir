@@ -93,6 +93,9 @@ import { filter } from 'rxjs/operators';
             <a routerLink="/tenders/search" routerLinkActive="active">
               <svg lucideIcon="search" [size]="16"></svg> Поиск тендеров
             </a>
+            <a *ngIf="market.value === 'KZ'" routerLink="/product-groups" routerLinkActive="active">
+              <svg lucideIcon="tag" [size]="16"></svg> Наша продукция
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Каталог</span>

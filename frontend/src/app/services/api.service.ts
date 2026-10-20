@@ -10,6 +10,7 @@ import type {
 import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
 import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
 import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
+import type { ProbeResult, ProductGroup, ProductGroupsState, WatchStatus } from '../shared/product-watch';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -817,5 +818,25 @@ export class ApiService {
   }
   deleteExecutionFile(id: number, fileId: number): Observable<PrView> {
     return this.http.delete<PrView>(`${this.base}/private-requests/${id}/execution/files/${fileId}`);
+  }
+
+  // === Наша продукция в тендерах (спека 2026-10-19-product-watch) ===
+  getProductGroups(): Observable<ProductGroupsState> {
+    return this.http.get<ProductGroupsState>(`${this.base}/product-groups`);
+  }
+  saveProductGroups(groups: ProductGroup[]): Observable<ProductGroupsState> {
+    return this.http.put<ProductGroupsState>(`${this.base}/product-groups`, { groups });
+  }
+  probeProductGroup(group: ProductGroup): Observable<ProbeResult> {
+    return this.http.post<ProbeResult>(`${this.base}/product-groups/probe`, group);
+  }
+  runProductWatch(): Observable<WatchStatus> {
+    return this.http.post<WatchStatus>(`${this.base}/product-watch/run`, {});
+  }
+  getProductWatchStatus(): Observable<WatchStatus> {
+    return this.http.get<WatchStatus>(`${this.base}/product-watch/status`);
+  }
+  syncSiteCatalog(): Observable<WatchStatus> {
+    return this.http.post<WatchStatus>(`${this.base}/site-catalog/sync`, {});
   }
 }

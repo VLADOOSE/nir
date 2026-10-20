@@ -36,6 +36,19 @@ public record GroupRule(long id, String name, boolean brandGroup, List<String> s
         return hit;
     }
 
+    /**
+     * Почему лот не прошёл группу — для «Проверить» (спека §12.1); null — прошёл. Тексты — уже нормализованы.
+     * Исключение называется раньше уточнения: «Электрод сварочный» — исключён, а не «нет уточнения».
+     */
+    public String rejectReason(String lotText, String announcement, boolean singleLot) {
+        if (typeWord(lotText, announcement, singleLot) != null) return null;
+        String hit = firstStem(lotText);
+        if (hit == null && singleLot) hit = firstStem(announcement);
+        if (hit == null) return "нет слова поиска в лоте";
+        for (String e : exclude) if (MedicalGoodsVocabulary.matchesAny(lotText, List.of(e))) return "исключение «" + e + "»";
+        return "нет уточнения (" + String.join(", ", require) + ")";
+    }
+
     private String firstStem(String text) {
         if (text == null || text.isEmpty()) return null;
         for (int i = 0; i < stems.size(); i++) {
