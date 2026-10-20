@@ -76,6 +76,22 @@ class ProductMatchServiceTest {
         assertThat(matches.findByTenderId(t.getId())).isEmpty();
     }
 
+    /**
+     * Живая проверка 2026-10-20: «Аспиратор сильфонный (ВКФ)» (пробоотборник газов) отмечался «наш вид»: после разбора ТЗ
+     * описание лота пропадало из текста лота, и исключению «сильфон» не по чему было сработать.
+     */
+    @Test
+    void parsedSpec_lotDescriptionFromHeader_exclusionWorks() {
+        Tender t = tender("Аспиратор сильфонный (ВКФ)", "Аспиратор", null);
+        TenderLot lot = t.getLots().get(0);
+        lot.setTechSpecStatus(TechSpecStatus.OK);
+        lot.setRequiredSpec("Номер закупки: № 17823512-1 Наименование лота: Аспиратор Описание лота: для газов, неавтоматический "
+                + "Дополнительное описание лота: Аспиратор сильфонный АМ-0059 (ВКФ) Количество: 1 "
+                + "характеристики закупаемых товаров: корпус металлический, объём 100 мл");
+        em.flush();
+        assertThat(service.evaluate(t.getId(), ProductMatchSource.SEARCH).level()).isNull();
+    }
+
     @Test
     void markNotified() {
         Tender t = tender("Аппарат для аспирации дыма", "Отсасыватель", "");

@@ -110,6 +110,33 @@ public final class LotDescriptiveText {
         return isSkSpec(requiredSpec) ? cutCommercialTail(sanitized) : sanitized;
     }
 
+    /**
+     * «Описание лота» и «Дополнительное описание лота» из шапки ТЗ goszakup — через пробел; меток нет — null.
+     * После разбора ТЗ required_spec хранит ТЗ целиком, а сверке «наша продукция» (спека 2026-10-19-product-watch §5.2)
+     * нужно короткое описание площадки: по нему срабатывают исключения групп («для газов» у аспиратора-пробоотборника).
+     */
+    public static String lotDescription(String requiredSpec) {
+        if (requiredSpec == null || requiredSpec.isBlank()) return null;
+        String norm = requiredSpec.replaceAll("\\s+", " ").trim();
+        Matcher m = LABEL_ALT.matcher(norm);
+        List<int[]> bounds = new ArrayList<>(); // {valueStart, labelStart следующей метки}
+        List<String> labels = new ArrayList<>();
+        while (m.find()) {
+            if (!bounds.isEmpty()) bounds.get(bounds.size() - 1)[1] = m.start();
+            bounds.add(new int[]{m.end(), norm.length()});
+            labels.add(canonical(m.group()));
+        }
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < bounds.size(); i++) {
+            String label = labels.get(i);
+            if (!"Описание лота:".equals(label) && !"Дополнительное описание лота:".equals(label)) continue;
+            String val = norm.substring(bounds.get(i)[0], bounds.get(i)[1]).trim();
+            if (!val.isBlank()) out.append(val).append(' ');
+        }
+        String s = out.toString().trim();
+        return s.isEmpty() ? null : s;
+    }
+
     public static String forMatching(String equipName, String manufact, String requiredSpec) {
         StringBuilder base = new StringBuilder();
         if (equipName != null && !equipName.isBlank()) base.append(equipName.trim()).append(' ');

@@ -3,6 +3,7 @@ package com.vladoose.nir.service.productwatch;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.TenderLotProductMatchRepository;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.util.LotDescriptiveText;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +38,9 @@ public class ProductMatchService {
         for (TenderLot l : t.getLots()) {
             if (l.getSourceRemovedAt() != null || l.getId() == null) continue;
             boolean spec = l.getTechSpecStatus() == TechSpecStatus.OK;
-            inputs.add(new LotInput(l.getId(), l.getEquipName(), spec ? null : l.getRequiredSpec(), spec ? l.getRequiredSpec() : null));
+            // разобранное ТЗ заменило описание площадки — берём его из шапки ТЗ (исключения групп смотрят на текст лота)
+            String description = spec ? LotDescriptiveText.lotDescription(l.getRequiredSpec()) : l.getRequiredSpec();
+            inputs.add(new LotInput(l.getId(), l.getEquipName(), description, spec ? l.getRequiredSpec() : null));
         }
         List<LotMatch> result = ProductMatcher.match(catalog.get(), t.getDescription(), inputs);
         List<TenderLotProductMatch> existing = matches.findByTenderId(tenderId);

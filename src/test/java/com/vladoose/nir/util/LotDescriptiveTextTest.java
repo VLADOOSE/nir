@@ -229,4 +229,20 @@ class LotDescriptiveTextTest {
         String email = LotDescriptiveText.requirementsForEmail(goszakupTz);
         assertThat(email).contains("Тип детектора").contains("не более 4,0 кг");
     }
+
+    /**
+     * Описание лота из шапки разобранного ТЗ goszakup (спека 2026-10-19-product-watch §5.2): после разбора required_spec
+     * хранит ТЗ, а короткое описание площадки («для газов, неавтоматический») нужно исключениям групп.
+     */
+    @Test
+    void lotDescription_fromGoszakupHeader() {
+        String spec = "Приложение 2 Техническая спецификация Номер закупки: № 17823512-1 Наименование закупки: Аспиратор "
+                + "сильфонный АМ-0059 (ВКФ) Номер лота: № 87924339-ЗЦП3 Наименование лота: Аспиратор Описание лота: для газов, "
+                + "неавтоматический Дополнительное описание лота: Аспиратор сильфонный АМ-0059 (ВКФ) Количество: 1 Единица "
+                + "измерения: Штука Места поставки: г. Усть-Каменогорск характеристики закупаемых товаров: корпус металлический";
+        assertThat(LotDescriptiveText.lotDescription(spec))
+                .isEqualTo("для газов, неавтоматический Аспиратор сильфонный АМ-0059 (ВКФ)");
+        assertThat(LotDescriptiveText.lotDescription("Требования: корпус металлический")).as("без меток goszakup").isNull();
+        assertThat(LotDescriptiveText.lotDescription(null)).isNull();
+    }
 }
