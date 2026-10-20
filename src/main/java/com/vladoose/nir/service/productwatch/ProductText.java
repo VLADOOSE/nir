@@ -75,7 +75,7 @@ public final class ProductText {
         return n;
     }
 
-    static int digits(String t) {
+    public static int digits(String t) {
         int n = 0;
         for (int i = 0; i < t.length(); i++) if (Character.isDigit(t.charAt(i))) n++;
         return n;

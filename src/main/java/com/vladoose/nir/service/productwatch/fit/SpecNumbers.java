@@ -15,8 +15,8 @@ public final class SpecNumbers {
     public record Hit(SpecCmp cmp, double lo, double hi, SpecUnit unit, List<Double> dims, int start, int end) {}
 
     private static final String NUM = "(\\d{1,3}(?:[ \\u00a0]\\d{3})+|\\d+)(?:[.,](\\d+))?";
-    /** Габариты: 2–3 числа через «х / x / × / *». */
-    private static final Pattern DIMS = Pattern.compile(NUM + "\\s*[хx×*]\\s*" + NUM + "(?:\\s*[хx×*]\\s*" + NUM + ")?");
+    /** Габариты: 2–3 числа через «х / x / × / *»; через «/» (карточка РУ: «295/295/100 мм») — только три и с единицей длины. */
+    private static final Pattern DIMS = Pattern.compile(NUM + "\\s*[хx×*/]\\s*" + NUM + "(?:\\s*[хx×*/]\\s*" + NUM + ")?");
     /** Диапазон: «от A до B», «A–B», «A - B», «A...B», «A~B». */
     private static final Pattern RANGE = Pattern.compile("(?:от\\s*)?[-−–]?\\s*" + NUM
             + "\\s*(?:до|[-−–—~]|\\.\\.\\.?|…)\\s*(?:до\\s*)?[-−–]?\\s*" + NUM);
@@ -40,6 +40,7 @@ public final class SpecNumbers {
             dims.add(num(d.group(3), d.group(4)));
             if (d.group(5) != null) dims.add(num(d.group(5), d.group(6)));
             if (u == null && d.group(5) == null) continue;   // «ОБН 2×30» — модель, не габариты: без единицы — только три числа
+            if (t.substring(d.start(), d.end()).contains("/") && (u == null || d.group(5) == null)) continue;   // «50/60 Гц», дата
             SpecUnit unit = u == null ? SpecUnit.MM : u.unit();
             if (!unit.family().equals("длина")) continue;
             dims.replaceAll(unit::toBase);

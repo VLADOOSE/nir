@@ -67,6 +67,11 @@ public final class SpecRequirements {
         return out.toString();
     }
 
+    /** Склейка строк для текста без раздела ТЗ (характеристики РУ, описание товара). */
+    public static String reflowText(String raw) {
+        return raw == null ? "" : reflow(raw);
+    }
+
     private static boolean endsClause(StringBuilder s) {
         char c = s.charAt(s.length() - 1);
         return c == ';' || c == ':' || c == '.';

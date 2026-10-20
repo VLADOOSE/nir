@@ -140,4 +140,14 @@ class SpecNumbersTest {
         assertThat(one("габариты 600х400х300").dims()).containsExactly(600.0, 400.0, 300.0);
         assertThat(SpecNumbers.find("объем камеры 65 м³")).isEmpty();
     }
+
+    /** Карточка РУ НЦЭЛС пишет габариты через «/» («295/295/100 мм»); «50/60 Гц» и дата «12/05/2026» — не габариты. */
+    @Test
+    void slashDimensions() {
+        SpecNumbers.Hit d = one("габаритные размеры блока (не более): 295/295/100 мм");
+        assertThat(d.dims()).containsExactly(295.0, 295.0, 100.0);
+        assertThat(d.cmp()).isEqualTo(SpecCmp.MAX);
+        assertThat(SpecNumbers.find("частота 50/60 гц")).allSatisfy(h -> assertThat(h.dims()).isEmpty());
+        assertThat(SpecNumbers.find("дата 12/05/2026")).isEmpty();
+    }
 }
