@@ -1,6 +1,7 @@
 package com.vladoose.nir.service.productwatch;
 
 import com.vladoose.nir.dto.response.AiBriefResponse;
+import com.vladoose.nir.dto.response.LotModelFitResponse;
 import com.vladoose.nir.dto.response.LotRegistryMatchResponse;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.*;
@@ -164,26 +165,45 @@ public class ProductAiBrief {
     private void modelLine(StringBuilder b, TenderLot l) {
         MedEquipment model = l.getProposedEquipment();
         if (model == null) return;
+        ModelSnapshot s = null;
+        try {
+            s = modelReader.snapshot(l);
+        } catch (RuntimeException ignored) {
+            // снимок — подсказка: строка модели полезна и без статуса РУ и сверки
+        }
         b.append("Модель в работе: ").append(one(model.getName()));
         if (model.getManufact() != null && !"не указан".equals(model.getManufact())) b.append(" (").append(one(model.getManufact())).append(')');
-        if (model.getRegistration() != null) b.append(", РУ ").append(model.getRegistration().getRegNumber());
+        b.append(ruText(model, s == null ? null : s.model()));
         if (l.getModelSetBy() != null) {
             b.append("; закрепил ").append(one(l.getModelSetBy()));
             if (l.getModelSetAt() != null) b.append(' ').append(l.getModelSetAt().atZoneSameInstant(Market.KZ.zone()).format(DATE));
         }
         if (l.getModelNote() != null) b.append("; почему: ").append(one(l.getModelNote()));
         b.append('\n');
+        if (s == null || s.card() == null || s.needsDetail()) return;      // в «Для ИИ» ndda.kz не зовём
         try {
-            ModelSnapshot s = modelReader.snapshot(l);
-            if (s.card() != null && !s.needsDetail()) {
-                FitCandidate c = SpecFit.compare(SpecRequirements.extract(s.text()), s.card());
-                long diff = c.rows() == null ? 0 : c.rows().stream().filter(r -> r.mark() == FitMark.DIFF).count();
-                b.append("Сверка АИС модели в работе: ✓ ").append(c.met()).append(" · ✗ ").append(c.failed())
-                        .append(" · ≈ ").append(diff).append(" · нет данных ").append(c.unknown()).append('\n');
-            }
+            FitCandidate c = SpecFit.compare(SpecRequirements.extract(s.text()), s.card());
+            long diff = c.rows() == null ? 0 : c.rows().stream().filter(r -> r.mark() == FitMark.DIFF).count();
+            b.append("Сверка АИС модели в работе: ✓ ").append(c.met()).append(" · ✗ ").append(c.failed())
+                    .append(" · ≈ ").append(diff).append(" · нет данных ").append(c.unknown()).append('\n');
         } catch (RuntimeException ignored) {
-            // сверка — подсказка: без неё текст полезен (в «Для ИИ» ndda.kz не зовём)
+            // сверка — подсказка: без неё текст полезен
         }
+    }
+
+    /** «, РУ <№> — действует до …» / «, РУ не указано» — регистрацию модели ИИ проверит первой (спека §7). */
+    private static String ruText(MedEquipment model, LotModelFitResponse.Model m) {
+        String num = model.getRegistration() != null ? model.getRegistration().getRegNumber()
+                : model.getSiteProduct() != null ? model.getSiteProduct().getRegistrationCert() : null;
+        String status = m == null || m.regStatus() == null ? null : switch (m.regStatus()) {
+            case "ACTIVE" -> "действует" + (m.regUnlimited() ? " бессрочно" : m.regExpires() == null ? "" : " до " + m.regExpires().format(DATE));
+            case "EXPIRED" -> "истекло" + (m.regExpires() == null ? "" : " " + m.regExpires().format(DATE));
+            case "NOT_FOUND" -> "не найдено в реестре";
+            case "NOT_SPECIFIED" -> "не указано";
+            default -> "не проверено";
+        };
+        if (num == null || num.isBlank()) return status == null ? "" : ", РУ " + status;
+        return ", РУ " + one(num) + (status == null || "не указано".equals(status) ? "" : " — " + status);
     }
 
     private void product(StringBuilder b, SiteProduct p) {

@@ -14,4 +14,5 @@ public class ProposedEquipmentResponse {
     private String source;             // SITE | REGISTRY | CATALOG
     private java.time.LocalDate regExpires;
     private Boolean regActive;         // РУ действует (ставит LotModelViews)
+    private String regStatus;          // ACTIVE | EXPIRED | NOT_FOUND | NOT_SPECIFIED | UNKNOWN (ставит LotModelViews)
 }

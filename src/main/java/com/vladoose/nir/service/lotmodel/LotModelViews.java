@@ -70,6 +70,7 @@ public class LotModelViews {
             LotModelFitResponse.Model m = model(lot.getProposedEquipment());
             r.getProposedEquipment().setProductUrl(m.url());
             r.getProposedEquipment().setRegActive("ACTIVE".equals(m.regStatus()));
+            r.getProposedEquipment().setRegStatus(m.regStatus());
             r.getProposedEquipment().setRegExpires(m.regExpires());
         }
         return r;

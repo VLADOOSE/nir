@@ -16,6 +16,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -39,6 +40,7 @@ class ProductAiBriefTest {
     @Autowired EntityManager em;
     @Autowired LotModelService lotModel;
     @Autowired MedEquipmentRepository equipment;
+    @Autowired MedRegistryRepository registry;
     ProductMatchService service;
 
     @BeforeEach
@@ -159,10 +161,23 @@ class ProductAiBriefTest {
         em.flush();
         String text = brief.forTender(t.getId());
         assertThat(text).contains("Если у лота указана «Модель в работе» — проверь её первой.")
-                .contains("Модель в работе: ZZ Отсасыватель (ZZ Завод); закрепил vlad")
+                .contains("Модель в работе: ZZ Отсасыватель (ZZ Завод), РУ не указано; закрепил vlad")
                 .contains("почему: ИИ: подходит по 3 из 3")
                 .contains("Сверка АИС модели в работе: ✓ ")
                 .contains("--- Лот № 2: ZZ Шкаф")
-                .contains("Модель в работе: ZZ Шкаф медицинский; закрепил vlad");
+                .contains("Модель в работе: ZZ Шкаф медицинский, РУ не указано; закрепил vlad");
+    }
+
+    /** РУ модели в работе — номер и статус (спека 2026-10-20-lot-model-in-work §7): ИИ первым проверит регистрацию. */
+    @Test
+    @WithMockUser(username = "vlad", roles = "ADMIN")
+    void modelInWork_ruNumberWithStatus() {
+        Tender t = ourTender("17000778-1", ProductFitEvaluateTest.ASPIRATOR_SPEC, 1);
+        MedRegistry reg = registry.save(MedRegistry.builder().regNumber("ZZ-РУ-AI-1").name("ZZ Аспиратор старый").producer("ZZ")
+                .expirationDate(LocalDate.of(2020, 2, 1)).unlimited(false).detailFetchedAt(OffsetDateTime.now()).build());
+        lotModel.apply(t.getLots().get(0), lotModel.equipmentForRegistry(reg), null);
+        em.flush();
+        assertThat(brief.forTender(t.getId()))
+                .contains("Модель в работе: ZZ Аспиратор старый (ZZ), РУ ZZ-РУ-AI-1 — истекло 01.02.2020; закрепил vlad");
     }
 }

@@ -102,7 +102,8 @@ class LotModelApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.proposedEquipment.source").value("REGISTRY"))
                 .andExpect(jsonPath("$.proposedEquipment.regNumber").value("ZZ-РУ-API-1"))
-                .andExpect(jsonPath("$.proposedEquipment.regActive").value(true));
+                .andExpect(jsonPath("$.proposedEquipment.regActive").value(true))
+                .andExpect(jsonPath("$.proposedEquipment.regStatus").value("ACTIVE"));   // шапка лота: «РУ ✓ / истекло / не найдено»
     }
 
     @Test
