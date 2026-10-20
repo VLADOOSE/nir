@@ -47,24 +47,15 @@ public final class ProductFixtures {
     record FullItem(String id, String name, String slug, String brand, String category, String shortDescription,
                     String description, List<SiteProductAttribute> attributes, String registrationCert) {}
 
-    record ExtraAttributes(String siteId, List<SiteProductAttribute> attributes) {}
-
-    /** Снимок каталога с описаниями, характеристиками и № РУ (админ-API) + характеристики Фотек и Ориона (задача 1), пока их нет на сайте. */
+    /** Снимок каталога с описаниями, характеристиками (с 2026-10-20 — и Фотек, Орион, задача 15) и № РУ (админ-API). */
     public static List<SiteProduct> catalogFull() {
         try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/site-catalog-full.json")) {
             ObjectMapper om = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
             List<FullItem> items = om.readValue(in, new TypeReference<>() {});
-            Map<String, List<SiteProductAttribute>> extra = new HashMap<>();
-            try (InputStream ex = ProductFixtures.class.getResourceAsStream("/product-watch/site-attributes-extra.json")) {
-                if (ex != null) for (ExtraAttributes e : om.readValue(ex, new TypeReference<List<ExtraAttributes>>() {})) extra.put(e.siteId(), e.attributes());
-            }
             AtomicLong id = new AtomicLong(1000);
             List<SiteProduct> out = new ArrayList<>();
             for (FullItem i : items) {
                 List<SiteProductAttribute> attrs = new ArrayList<>(i.attributes() == null ? List.of() : i.attributes());
-                for (SiteProductAttribute a : extra.getOrDefault(i.id(), List.of())) {
-                    if (attrs.stream().noneMatch(x -> x.name().equalsIgnoreCase(a.name()))) attrs.add(a);
-                }
                 out.add(SiteProduct.builder().id(id.incrementAndGet()).market(Market.KZ).siteId(UUID.fromString(i.id()))
                         .name(i.name()).slug(i.slug()).brand(i.brand()).category(i.category())
                         .shortDescription(i.shortDescription()).description(i.description()).attributes(attrs)
