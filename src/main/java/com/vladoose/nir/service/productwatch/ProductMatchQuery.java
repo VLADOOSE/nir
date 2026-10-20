@@ -151,12 +151,20 @@ public class ProductMatchQuery {
         if (level == ProductMatchLevel.FITS) {
             return "✓ подходит: " + shortName(top.fit() != null && top.fit().productName() != null ? top.fit().productName() : top.word());
         }
-        FitSummary f = lines.stream().map(LotLine::fit).filter(Objects::nonNull)
+        FitSummary f = lines.stream().map(LotLine::fit).filter(Objects::nonNull).filter(x -> !unconfirmed(x))
                 .max(Comparator.comparingInt((FitSummary x) -> x.verdict().rank())).orElse(null);
         if (f != null && f.verdict() == FitVerdict.FITS_NO_RU) return "подходит по ТЗ, " + noRu(f.regStatus());
         if (f != null && f.verdict() == FitVerdict.PARTIAL) return "◐ похоже: " + top.word();
         if (f != null && f.verdict() == FitVerdict.NOT_FIT) return "✗ не подходит: " + Objects.toString(f.reasonShort(), top.word());
         return "🏷 наш вид: " + top.word();
+    }
+
+    /**
+     * «◐ похоже» без единого подтверждённого требования — то же, что сверки нет: сходство не установлено (на проде 36 из 48
+     * «похоже» были без ✓ — у халатов, баллонов, индикаторов стерилизации нет характеристик товара).
+     */
+    static boolean unconfirmed(FitSummary f) {
+        return f.verdict() == FitVerdict.PARTIAL && f.met() == 0;
     }
 
     /** «РУ истекло / не найдено / не указано / не проверено» по имени статуса (null — не проверено). */

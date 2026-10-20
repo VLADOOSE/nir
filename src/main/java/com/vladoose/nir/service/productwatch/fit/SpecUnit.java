@@ -60,6 +60,9 @@ public enum SpecUnit {
                 Map.entry("см h2o", CMH2O), Map.entry("см н₂о", CMH2O), Map.entry("см н2о", CMH2O), Map.entry("смh2o", CMH2O),
                 Map.entry("cmh2o", CMH2O), Map.entry("cm h2o", CMH2O), Map.entry("мбар", MBAR), Map.entry("mbar", MBAR),
                 Map.entry("гпа", MBAR),
+                // вольт-амперы с точкой посередине — полная мощность, не вольты («240 В·А» становилось «240 В»)
+                Map.entry("в·а", VA), Map.entry("в∙а", VA), Map.entry("в⋅а", VA), Map.entry("вольт-ампер", VA), Map.entry("вольт-ампера", VA),
+                Map.entry("вольт-амперов", VA), Map.entry("вольт-амперы", VA),
                 Map.entry("вт/м2", W_M2), Map.entry("вт/м²", W_M2), Map.entry("вт/кв.м", W_M2),
                 Map.entry("кв.м", M2), Map.entry("кв. м", M2), Map.entry("м2", M2), Map.entry("м²", M2),
                 Map.entry("см²", CM2), Map.entry("см2", CM2), Map.entry("кв.см", CM2), Map.entry("кв. см", CM2),

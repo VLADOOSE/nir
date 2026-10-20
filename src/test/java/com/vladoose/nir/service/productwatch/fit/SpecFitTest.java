@@ -240,5 +240,33 @@ class SpecFitTest {
                 .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
         assertThat(c4.rows()).filteredOn(r -> r.text().startsWith("триггер")).singleElement()
                 .satisfies(r -> assertThat(r.ours()).startsWith("Триггер по давлению"));
+        // ТЗ под BOWA ARC 303 (тот же прогон): «240 В·А» у нашего блока — вольт-амперы, не вольты; «при 100–120 В» не с чем сверять
+        ProductCard esu = card(16, "ВЧ электрохирургический блок", RegStatus.ACTIVE,
+                new SiteProductAttribute("Потребляемая мощность при номинальной выходной мощности", "240 В·А"));
+        FitCandidate c5 = SpecFit.compare(reqs("потребляемый ток (максимальный): 6,4 а (при 100–120 В); масса не более 25 кг"), esu);
+        assertThat(c5.rows()).filteredOn(r -> r.text().startsWith("потребляемый ток")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c5.failed()).isZero();
+    }
+    /**
+     * Проверка на проде (2026-10-20, третий заход): общее у требования и факта — только слово самого параметра, а у
+     * обоих свои уточнения — разные параметры: «давление PEEP/CPAP 0 – 50 cmH2O» (ИВЛ HAMILTON-C6) против
+     * «эксплуатационное давление 270 – 600 кПа», «масса пустого баллона» против «масса комплекта». Факт без уточнения
+     * («Мощность, Вт») и общее уточнение («время зарядки … батареи») — по-прежнему пара.
+     */
+    @Test
+    void onlyParameterWordShared_isNotAPair() {
+        ProductCard ivl = card(16, "Аппарат ИВЛ", RegStatus.ACTIVE,
+                new SiteProductAttribute("Эксплуатационное давление", "от 270 до 600 кПа"),
+                new SiteProductAttribute("Масса комплекта", "не более 12 кг"),
+                new SiteProductAttribute("Время зарядки батареи", "не более 6 ч"));
+        FitCandidate c = SpecFit.compare(reqs("давление PEEP/CPAP 0 – 50 cmH2O; масса пустого баллона не менее 58,4 кг; "
+                + "время зарядки полностью разряженной батареи не более 8 часов"), ivl);
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("peep")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("баллона")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("зарядки")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
     }
 }

@@ -116,7 +116,7 @@ public final class SpecFit {
         for (ProductFact f : bare ? List.<ProductFact>of() : same) {
             Set<String> fn = FitText.stems(f.name());
             double a = FitText.overlap(rn, fn), b = FitText.overlap(fn, rn);
-            if (Math.max(a, b) < NAME_MATCH) continue;
+            if (Math.max(a, b) < NAME_MATCH || onlyParameterWordShared(rn, fn)) continue;
             double s = a + 0.5 * b;
             if (s > bestScore) { bestScore = s; best = f; }
         }
@@ -163,9 +163,33 @@ public final class SpecFit {
 
     /** Слово самого параметра и служебное («номинальное», «значение»): по ним одним факт не опознать. */
     private static final List<String> BARE = List.of("частот", "напряж", "мощнос", "номина", "значен", "величи", "параме", "показа");
+    /** Слова параметров, которые у прибора бывают у разных частей и режимов («давление PEEP» и «давление подачи газа»). */
+    private static final List<String> PARAMETER_WORDS = List.of("давлен", "время", "масса", "длина", "ток");
 
     private static boolean bareWord(String stem) {
         return BARE.stream().anyMatch(b -> FitText.same(stem, b));
+    }
+
+    private static boolean parameterWord(String stem) {
+        return bareWord(stem) || PARAMETER_WORDS.stream().anyMatch(b -> FitText.same(stem, b));
+    }
+
+    /**
+     * Общее у требования и факта — только слово самого параметра, а у обоих свои уточнения: разные параметры (проверка на
+     * проде 2026-10-20 — «давление PEEP/CPAP 0 – 50 cmH2O» против «эксплуатационное давление 270 – 600 кПа», «масса пустого
+     * баллона» против «масса комплекта»). Факт без уточнения («Масса, кг») — та же величина.
+     */
+    private static boolean onlyParameterWordShared(Set<String> rn, Set<String> fn) {
+        boolean sharedSpecific = false, ownR = false, ownF = false;
+        for (String r : rn) {
+            boolean inF = fn.stream().anyMatch(x -> FitText.same(r, x));
+            if (inF && !parameterWord(r)) sharedSpecific = true;
+            if (!inF && !parameterWord(r)) ownR = true;
+        }
+        for (String f : fn) {
+            if (!parameterWord(f) && rn.stream().noneMatch(x -> FitText.same(f, x))) ownF = true;
+        }
+        return !sharedSpecific && ownR && ownF;
     }
 
     private static boolean countLike(SpecUnit u) {

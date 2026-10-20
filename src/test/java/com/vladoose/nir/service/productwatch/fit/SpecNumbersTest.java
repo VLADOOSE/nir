@@ -166,4 +166,18 @@ class SpecNumbersTest {
         assertThat(one("давление 40 см h2o").unit()).isEqualTo(SpecUnit.CMH2O);
         assertThat(one("высота подъема 25 см").unit()).isEqualTo(SpecUnit.CM);   // просто сантиметры — длина, как было
     }
+
+    /**
+     * Вольт-амперы с точкой посередине — полная мощность, не вольты (проверка на проде 2026-10-20: «Потребляемая мощность
+     * … 240 В·А» у ЭХВЧ становилась «240 В», и «при 100–120 В» из ТЗ BOWA давало ложное «не подходит»).
+     */
+    @Test
+    void voltAmpereWithDotIsApparentPower() {
+        assertThat(one("потребляемая мощность: 240 в·а").unit()).isEqualTo(SpecUnit.VA);
+        assertThat(one("потребляемая мощность не более 500 в∙а").unit()).isEqualTo(SpecUnit.VA);
+        assertThat(one("мощность 1200 в⋅а").unit()).isEqualTo(SpecUnit.VA);
+        assertThat(one("мощность 300 вольт-ампер").unit()).isEqualTo(SpecUnit.VA);
+        assertThat(one("мощность не менее 300 вольт-амперов").unit()).isEqualTo(SpecUnit.VA);
+        assertThat(one("напряжение питания 220 в").unit()).isEqualTo(SpecUnit.V);   // просто вольты — как было
+    }
 }

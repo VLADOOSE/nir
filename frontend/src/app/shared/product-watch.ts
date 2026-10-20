@@ -76,7 +76,8 @@ export function fitChip(m: LotProductMatch): { text: string; tone: 'success' | '
   switch (m.fit) {
     case 'FITS': return { text: `✓ подходит: ${shortProduct(b?.name)} · ${b?.met} из ${b?.total}`, tone: 'success' };
     case 'FITS_NO_RU': return { text: `подходит по ТЗ, ${NO_RU[b?.regStatus ?? 'UNKNOWN'] ?? 'РУ не проверено'}`, tone: 'warn' };
-    case 'PARTIAL': return { text: '◐ похоже — проверьте', tone: 'warn' };
+    // без единого ✓ сходство не установлено — как без сверки (сервер: ProductMatchQuery.unconfirmed)
+    case 'PARTIAL': return b && b.met > 0 ? { text: '◐ похоже — проверьте', tone: 'warn' } : { text: '🏷 ' + m.groupName, tone: 'accent' };
     case 'NOT_FIT': return { text: `✗ не подходит: ${b?.reasonShort ?? 'см. сверку'}`, tone: 'muted' };
     default: return { text: '🏷 ' + m.groupName, tone: 'accent' };
   }
