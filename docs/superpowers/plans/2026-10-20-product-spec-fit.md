@@ -766,12 +766,6 @@ public final class SpecRequirements {
     private static String cut(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
-
-    /** Весь текст — не длиннее MAX_TEXT, обрезка подписана (спека §9.1). */
-    private static String total(String s) {
-        String tail = "\n…обрезано";
-        return s.length() <= MAX_TEXT ? s : s.substring(0, MAX_TEXT - tail.length()) + tail;
-    }
 }
 ```
 
