@@ -62,4 +62,13 @@ public class TechSpecStatusWriter {
     public int requeueStaleErrors(OffsetDateTime before) {
         return lotRepository.requeueStaleErrors(before);
     }
+
+    /** Попытка поиска нашей продукции разобрать ТЗ лота (до разбора — как отметка очереди, спека §7.4). */
+    @Transactional
+    public void incrementAttempts(Long lotId) {
+        lotRepository.findById(lotId).ifPresent(lot -> {
+            lot.setTechSpecAttempts(lot.getTechSpecAttempts() + 1);
+            lotRepository.save(lot);
+        });
+    }
 }

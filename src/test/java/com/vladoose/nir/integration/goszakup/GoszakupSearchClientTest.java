@@ -69,7 +69,7 @@ class GoszakupSearchClientTest {
     @AfterEach void stop() { server.stop(0); }
 
     private GoszakupSearchClient client() {
-        return new GoszakupHttpClient(new ObjectMapper(), "http://127.0.0.1:" + server.getAddress().getPort() + "/v2", "tok", 50);
+        return new GoszakupSearchHttpClient(new GoszakupHttpClient(new ObjectMapper(), "http://127.0.0.1:" + server.getAddress().getPort() + "/v2", "tok", 50));
     }
 
     @Test

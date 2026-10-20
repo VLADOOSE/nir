@@ -35,7 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient {
+public class GoszakupHttpClient implements GoszakupClient {
 
     /** Предел JSON-ответа API (страница ленты/лотов — сотни КБ). */
     static final long MAX_JSON_BYTES = 10L * 1024 * 1024;
@@ -255,6 +255,9 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
         });
     }
 
+    // --- поиск по стране (v3). Наружу — через бин GoszakupSearchHttpClient со СВОИМ экземпляром этого клиента:
+    // тест, подменяющий GoszakupClient моком (@MockitoBean), подменил бы и поиск, будь он тем же бином. ---
+
     private static final String BUY_FIELDS = "id numberAnno nameRu orgBin orgNameRu totalSum publishDate endDate refBuyStatusId "
             + "refTradeMethodsId systemId RefTradeMethods{ nameRu }";
     private static final String LOT_FIELDS = "id lotNumber nameRu descriptionRu count amount refLotStatusId lastUpdateDate "
@@ -339,7 +342,6 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
         return out;
     }
 
-    @Override
     public SearchPage<FoundLot> searchLots(String word, List<Integer> lotStatuses, LocalDate from, LocalDate to, Long after) {
         Long[] next = new Long[1];
         JsonNode items = v3("Lots", LOT_FIELDS, List.of(new F("nameDescriptionRu", "String", word),
@@ -348,7 +350,6 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
         return new SearchPage<>(map(items, GoszakupHttpClient::lotOf), next[0]);
     }
 
-    @Override
     public SearchPage<FoundAnnouncement> searchAnnouncements(String word, List<Integer> buyStatuses, LocalDate from, LocalDate to, Long after) {
         Long[] next = new Long[1];
         JsonNode items = v3("TrdBuy", BUY_FIELDS, List.of(new F("commonName", "String", word),
@@ -357,19 +358,16 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
         return new SearchPage<>(map(items, GoszakupHttpClient::announcementOf), next[0]);
     }
 
-    @Override
     public FoundAnnouncement announcement(String numberAnno) {
         JsonNode items = v3("TrdBuy", BUY_FIELDS, List.of(new F("numberAnno", "String", numberAnno)), 1, null, null);
         return items.size() == 0 ? null : announcementOf(items.get(0));
     }
 
-    @Override
     public List<FoundLot> lotsOfAnnouncement(String numberAnno) {
         return map(v3("Lots", LOT_FIELDS, List.of(new F("trdBuyNumberAnno", "String", numberAnno)), 100, null, null),
                 GoszakupHttpClient::lotOf);
     }
 
-    @Override
     public SearchPage<FoundPlanPoint> searchPlans(String word, List<Integer> years, List<Integer> statuses, Long after) {
         Long[] next = new Long[1];
         JsonNode items = v3("Plans", PLAN_FIELDS, List.of(new F("nameDescriptionRu", "String", word),
@@ -377,7 +375,6 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
         return new SearchPage<>(map(items, GoszakupHttpClient::planOf), next[0]);
     }
 
-    @Override
     public List<FoundPlanPoint> plansById(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
         List<Integer> asInt = ids.stream().map(Long::intValue).toList();   // id в фильтре Plans — [Int]
@@ -385,7 +382,6 @@ public class GoszakupHttpClient implements GoszakupClient, GoszakupSearchClient 
                 GoszakupHttpClient::planOf);
     }
 
-    @Override
     public List<ContractInfo> contracts(String numberAnno) {
         return map(v3("Contract", "supplierBiin contractSum contractSumWnds signDate refContractStatusId",
                 List.of(new F("trdBuyNumberAnno", "String", numberAnno)), 20, null, null),
