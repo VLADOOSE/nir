@@ -98,8 +98,15 @@ public final class CatalogSnapshot {
             String reg = RegNumbers.normalize(p.getRegistrationCert());
             cards.put(p.getId(), ProductCards.of(p, reg == null ? null : registrations.get(reg)));
         }
+        // кандидаты сверки ТЗ — товары того же вида, тем же правилом, что лот: слово группы в НАЗВАНИИ товара, уточнение — в
+        // названии или кратком описании, исключения — в названии. По бренду группы («аксион», «фотек») в группу попадает вся
+        // продукция бренда, по категории — принадлежности: ЭКГ-ТЗ сверялось бы с облучателем, электрокоагулятор — с кабелем
+        // нейтрального электрода; без уточнений бактерицидное ТЗ — с облучателем фототерапии ОФТН
         Map<Long, List<ProductCard>> groupCards = new HashMap<>();
-        byGroup.forEach((gid, ps) -> groupCards.put(gid, ps.stream().map(p -> cards.get(p.id())).filter(Objects::nonNull).toList()));
+        for (GroupRule r : rules) {
+            groupCards.put(r.id(), products.stream().filter(p -> sameKind(r, p))
+                    .map(p -> cards.get(p.id())).filter(Objects::nonNull).toList());
+        }
         Map<Long, GroupRule> byId = new HashMap<>();
         rules.forEach(r -> byId.put(r.id(), r));
         Set<String> ours = ForeignBrand.ours(products.stream().map(CatalogProduct::name).toList(),
@@ -107,6 +114,14 @@ public final class CatalogSnapshot {
         return new CatalogSnapshot(rules, products, byGroup, List.copyOf(global), groupCodes,
                 CatalogPhrases.build(products, phraseRules), SimilarProducts.idf(products), phraseRules,
                 Map.copyOf(cards), Map.copyOf(groupCards), Map.copyOf(byId), ours, Set.copyOf(knownBrands));
+    }
+
+    private static boolean sameKind(GroupRule r, CatalogProduct p) {
+        String name = ProductText.normalize(Objects.toString(p.name(), ""));
+        if (!MedicalGoodsVocabulary.matchesAny(name, r.stems())) return false;
+        String scope = ProductText.normalize(name + " " + Objects.toString(p.shortDescription(), ""));
+        if (!r.require().isEmpty() && !MedicalGoodsVocabulary.matchesAny(scope, r.require())) return false;
+        return r.exclude().isEmpty() || !MedicalGoodsVocabulary.matchesAny(name, r.exclude());
     }
 
     public List<GroupRule> groups() { return groups; }

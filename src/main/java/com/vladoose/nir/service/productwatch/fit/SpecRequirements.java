@@ -139,10 +139,13 @@ public final class SpecRequirements {
         return 0;
     }
 
-    /** Признак: слово признака или «параметр — значение», и не меньше двух значимых слов. */
+    /**
+     * Признак: слово признака или «параметр — значение», и не меньше двух значимых слов. Заголовок без значения
+     * («Комплект поставки:», «Класс IP защиты -») — не признак: у любого товара найдутся «комплект» и «поставка».
+     */
     private static boolean feature(String norm) {
         long significant = ProductText.words(norm).stream().filter(ProductText::significant).count();
-        if (significant < 2) return false;
+        if (significant < 2 || norm.matches(".*[:\\-–—]\\s*")) return false;
         for (String w : FEATURE_WORDS) if (norm.contains(w)) return true;
         return norm.matches(".{3,60}\\s[-–—:]\\s.+");
     }

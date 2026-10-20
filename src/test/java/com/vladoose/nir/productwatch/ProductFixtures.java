@@ -1,15 +1,22 @@
 package com.vladoose.nir.productwatch;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.ProductGroup;
+import com.vladoose.nir.entity.RegStatus;
 import com.vladoose.nir.entity.SiteProduct;
 import com.vladoose.nir.entity.SiteProductAttribute;
+import com.vladoose.nir.service.productwatch.fit.ForeignBrand;
+import com.vladoose.nir.service.productwatch.fit.RegistrationInfo;
 import com.vladoose.nir.util.PdfTextExtractor;
 import com.vladoose.nir.util.TechSpecExtractor;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,21 +45,77 @@ public final class ProductFixtures {
     }
 
     record FullItem(String id, String name, String slug, String brand, String category, String shortDescription,
-                    String description, List<SiteProductAttribute> attributes) {}
+                    String description, List<SiteProductAttribute> attributes, String registrationCert) {}
 
-    /** Снимок каталога с описаниями и характеристиками (админ-API, как в работе на проде) — для гейта сверки ТЗ. */
+    record ExtraAttributes(String siteId, List<SiteProductAttribute> attributes) {}
+
+    /** Снимок каталога с описаниями, характеристиками и № РУ (админ-API) + характеристики Фотек и Ориона (задача 1), пока их нет на сайте. */
     public static List<SiteProduct> catalogFull() {
         try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/site-catalog-full.json")) {
-            List<FullItem> items = new ObjectMapper().configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-                    .readValue(in, new TypeReference<>() {});
+            ObjectMapper om = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            List<FullItem> items = om.readValue(in, new TypeReference<>() {});
+            Map<String, List<SiteProductAttribute>> extra = new HashMap<>();
+            try (InputStream ex = ProductFixtures.class.getResourceAsStream("/product-watch/site-attributes-extra.json")) {
+                if (ex != null) for (ExtraAttributes e : om.readValue(ex, new TypeReference<List<ExtraAttributes>>() {})) extra.put(e.siteId(), e.attributes());
+            }
             AtomicLong id = new AtomicLong(1000);
             List<SiteProduct> out = new ArrayList<>();
             for (FullItem i : items) {
+                List<SiteProductAttribute> attrs = new ArrayList<>(i.attributes() == null ? List.of() : i.attributes());
+                for (SiteProductAttribute a : extra.getOrDefault(i.id(), List.of())) {
+                    if (attrs.stream().noneMatch(x -> x.name().equalsIgnoreCase(a.name()))) attrs.add(a);
+                }
                 out.add(SiteProduct.builder().id(id.incrementAndGet()).market(Market.KZ).siteId(UUID.fromString(i.id()))
                         .name(i.name()).slug(i.slug()).brand(i.brand()).category(i.category())
-                        .shortDescription(i.shortDescription()).description(i.description())
-                        .attributes(i.attributes() == null ? new ArrayList<>() : new ArrayList<>(i.attributes()))
-                        .syncedAt(OffsetDateTime.now()).build());
+                        .shortDescription(i.shortDescription()).description(i.description()).attributes(attrs)
+                        .registrationCert(i.registrationCert()).syncedAt(OffsetDateTime.now()).build());
+            }
+            return out;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    record RegItem(String regNumber, String status, LocalDate expires, Boolean unlimited, String purpose, String useArea,
+                   String techChars, List<String> components) {}
+
+    /** РУ наших товаров (снимок ndda.kz, задача 14) — для гейта сверки. */
+    public static Map<String, RegistrationInfo> registrations() {
+        try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/registrations.json")) {
+            List<RegItem> items = new ObjectMapper().registerModule(new JavaTimeModule())
+                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false).readValue(in, new TypeReference<>() {});
+            Map<String, RegistrationInfo> out = new HashMap<>();
+            for (RegItem r : items) {
+                out.put(r.regNumber(), new RegistrationInfo(r.regNumber(), RegStatus.valueOf(r.status()), r.expires(),
+                        Boolean.TRUE.equals(r.unlimited()), r.purpose(), r.useArea(), r.techChars(),
+                        r.components() == null ? List.of() : r.components()));
+            }
+            return out;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Бренды из производителей реестра (снимок, задача 14) — как `ProductCatalog.refresh` в работе. */
+    public static Set<String> registryBrands() {
+        try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/registry-producers.txt")) {
+            return ForeignBrand.registryBrands(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().filter(l -> !l.isBlank()).toList());
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Строка набора сверки (fit-golden.tsv): файл ТЗ, лот, объявление, описание, ожидаемый вердикт, товар, чужой бренд, заметка. */
+    public record FitGoldenRow(String file, String lot, String announcement, String description, String expected, String product,
+                               String foreign, String note) {}
+
+    public static List<FitGoldenRow> fitGolden() {
+        try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/fit-golden.tsv")) {
+            List<FitGoldenRow> out = new ArrayList<>();
+            for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
+                if (line.isBlank() || line.startsWith("#")) continue;
+                String[] c = line.split("\t", -1);
+                out.add(new FitGoldenRow(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c.length > 7 ? c[7] : ""));
             }
             return out;
         } catch (Exception e) {

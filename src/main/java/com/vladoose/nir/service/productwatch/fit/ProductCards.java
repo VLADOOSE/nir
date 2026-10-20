@@ -51,7 +51,12 @@ public final class ProductCards {
         SpecCmp nameCmp = name.contains("не более") || name.contains("не выше") ? SpecCmp.MAX
                 : name.contains("не менее") || name.contains("не ниже") ? SpecCmp.MIN : null;
         if (!hits.isEmpty()) {
-            for (SpecNumbers.Hit h : hits) out.add(fact(cleanName(name), h, nameCmp, SITE, text));
+            // габариты с допусками («300 × 300 × 100 мм (допуск −10 / −10 / −5 мм)»): прочие длины — допуски, не факты
+            boolean dims = hits.stream().anyMatch(h -> !h.dims().isEmpty());
+            for (SpecNumbers.Hit h : hits) {
+                if (dims && h.dims().isEmpty() && h.unit() != null && "длина".equals(h.unit().family())) continue;
+                out.add(fact(cleanName(name), h, nameCmp, SITE, text));
+            }
             return out;
         }
         Matcher plain = PLAIN.matcher(value);

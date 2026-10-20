@@ -149,4 +149,12 @@ class SpecRequirementsTest {
         assertThat(SpecRequirements.extract("Электрокардиограф с регистрацией ЭКГ в ручном и автоматическом режимах")).hasSize(1);
         assertThat(SpecRequirements.extract("Наличие регистрационного удостоверения в РК")).isEmpty();
     }
+    /** Калибровка (задача 14): пункт-заголовок без значения («Комплект поставки:», «Класс IP защиты -») — не требование. */
+    @Test
+    void labelWithoutValue_isNotARequirement() {
+        assertThat(SpecRequirements.extract("Комплект поставки:\nблок электрокардиографа - 1 шт;\nНаличие усилителя ЭКГ:\n"
+                + "Класс IP защиты -\nТип лампы – безозоновая"))
+                .extracting(SpecRequirement::text)
+                .containsExactly("блок электрокардиографа - 1 шт", "Тип лампы – безозоновая");
+    }
 }

@@ -98,4 +98,12 @@ class ProductCardsTest {
         assertThat(c.regExpires()).isEqualTo(LocalDate.of(2026, 6, 28));
         assertThat(RegStatus.EXPIRED.noRuText()).isEqualTo("РУ истекло");
     }
+
+    /** Калибровка (задача 14): «… мм (допуск −10 / −10 / −5 мм)» — допуски габаритов, не факты длины (давали ✓ «диаметру электрода»). */
+    @Test
+    void dimensionToleranceIsNotAFact() {
+        ProductCard c = ProductCards.of(product("ВЧ электрохирургический блок ЭХВЧ-80-03", null, null,
+                new SiteProductAttribute("Габаритные размеры блока (Д×Ш×В)", "300 × 300 × 100 мм (допуск −10 / −10 / −5 мм)")), null);
+        assertThat(c.facts()).singleElement().satisfies(f -> assertThat(f.dims()).containsExactly(300.0, 300.0, 100.0));
+    }
 }

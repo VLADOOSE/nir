@@ -132,4 +132,71 @@ class SpecFitTest {
         assertThat(fit.candidates()).extracting(FitCandidate::productId).containsExactly(5L, 1L);   // «Кабель» без ✓ — не вариант
         assertThat(fit.foreignBrand()).isEqualTo("BOWA");
     }
+
+    /**
+     * Калибровка (задача 14): единственный факт семейства без совпадения имени — только для питания. «Диаметр электрода
+     * 2,4 мм» против «длина кабеля 3 м» — не сверка (17383745-1 давал ложное «подходит»); «напряжение» против «сеть питания» — да.
+     */
+    @Test
+    void singleFactWithoutName_onlyForSupply() {
+        ProductCard cable = card(7, "Кабель", RegStatus.ACTIVE, new SiteProductAttribute("Длина кабеля", "3 м"),
+                new SiteProductAttribute("Сеть питания", "220 В"));
+        FitCandidate c = SpecFit.compare(reqs("диаметр электрода 2,4 мм; напряжение - 220 В"), cable);
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("диаметр")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("напряжение")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
+    }
+    /**
+     * Калибровка (задача 14): факт — того же параметра, а не по одному общему слову. ДКИ-Н-11 против ТЗ ДКИ-Н-12
+     * (17733214-1): «время установления рабочего режима не более 3 с» цеплялось к «время непрерывной работы от сети не
+     * менее 168 ч» и давало ложное ✗; совпало одно слово из четырёх — пары нет, «нет данных».
+     */
+    @Test
+    void weakNameMatch_isNotAPair() {
+        ProductCard dki = card(8, "Дефибриллятор-монитор", RegStatus.ACTIVE,
+                new SiteProductAttribute("Время непрерывной работы от сети", "не менее 168 ч"),
+                new SiteProductAttribute("Время установления рабочего режима", "не более 3 с"));
+        FitCandidate same = SpecFit.compare(reqs("время установления рабочего режима не более 3 с; масса не более 4 кг"), dki);
+        assertThat(same.rows()).filteredOn(r -> r.text().contains("установления")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
+        ProductCard other = card(9, "Дефибриллятор-монитор", RegStatus.ACTIVE,
+                new SiteProductAttribute("Время непрерывной работы от сети", "не менее 168 ч"));
+        FitCandidate c = SpecFit.compare(reqs("время установления рабочего режима не более 3 с; масса не более 4 кг"), other);
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("установления")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.failed()).isZero();
+    }
+
+    /**
+     * Калибровка (задача 14): без совпадения имени — только сеть питания (100–400 В, 45–65 Гц) и у требования, и у факта.
+     * ЭК3Т-01-«Р-Д» против ТЗ 17719756-1: «частота дискретизации не менее 32 000 Гц» сверялась с «питание от сети 60 Гц» —
+     * ложное ✗; «Li-ion не менее 14,8 В» с сетевыми 220 В — ложное ✓. Сетевой факт среди нескольких напряжений (220 В и
+     * аккумулятор 12 В) — берётся.
+     */
+    @Test
+    void factWithoutName_onlyMains() {
+        ProductCard ecg = card(10, "Электрокардиограф", RegStatus.ACTIVE, new SiteProductAttribute("Сеть питания", "220 В 50 Гц"),
+                new SiteProductAttribute("Аккумулятор", "12 В"));
+        FitCandidate c = SpecFit.compare(reqs("частота дискретизации не менее 32 000 Гц; Li-ion не менее 14,8 В; "
+                + "Напряжение - 220 В; Частота - 50 Гц"), ecg);
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("дискретизации")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("14,8")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().startsWith("напряжение -")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
+        assertThat(c.rows()).filteredOn(r -> r.text().startsWith("частота -")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
+    }
+    /** Калибровка (задача 14): «количество» — не имя параметра: «количество жил» провода и «количество ламп» — разные (17825385-1). */
+    @Test
+    void countWordIsNotTheParameter() {
+        ProductCard obp = card(11, "Бактерицидный облучатель", RegStatus.ACTIVE, new SiteProductAttribute("Количество ламп", "2"));
+        FitCandidate c = SpecFit.compare(reqs("провод ПВС: количество жил - 3; количество ламп - 2"), obp);
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("жил")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c.rows()).filteredOn(r -> r.text().contains("ламп")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
+    }
 }

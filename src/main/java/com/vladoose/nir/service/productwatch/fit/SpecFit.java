@@ -8,8 +8,16 @@ import com.vladoose.nir.entity.FitVerdict;
 import java.util.*;
 
 /**
- * Сверка требований ТЗ с нашим товаром (спека §6; чистая функция). Пороги — калибровка задачи 14 плана
- * 2026-10-20-product-spec-fit (замеры — в javadoc рядом после калибровки).
+ * Сверка требований ТЗ с нашим товаром (спека §6; чистая функция).
+ * <p>
+ * Калибровка задачи 14 плана 2026-10-20-product-spec-fit — набор {@code fit-golden.tsv} (37 настоящих ТЗ, гейт
+ * {@code ProductFitQualityTest}): ложных «подходит» 0, найдено 2 из 4 (ДКИ-Н-12 по ТЗ, списанному с карточки РУ, и
+ * ОМП-5/80 — РУ истекло). До калибровки ДКИ-Н-12 выходил «✗ не подходит» по одному слову «питании» в паре требования
+ * с фактом. Пороги {@link #FITS_SHARE}, {@link #FITS_MIN_MET}, {@link #APPROX_TOLERANCE}, {@link #FEATURE_SHARE} не
+ * двигались — ложные ✓ и ✗ убраны правилами: пара «требование — факт» по имени ({@link #NAME_MATCH}), без имени — только
+ * сеть питания, кандидаты — товары того же вида с уточнениями группы, «количество» — не имя параметра, заголовок без
+ * значения — не требование. Мутация {@code FITS_SHARE = 0.2} даёт три ложных «подходит»: ЭК3Т-01 на ТЗ 17719756-1,
+ * ОУФНУ на облучатель 17822225-1, блок аспирации АСД на отсасыватель 17729514-1.
  */
 public final class SpecFit {
 
@@ -21,6 +29,12 @@ public final class SpecFit {
     public static final int MIN_REQUIREMENTS = 2;
     public static final int MAX_ROWS = 80;
     private static final int MAX_ALTERNATIVES = 2;
+    /**
+     * Факт — тот же параметр, если совпала хотя бы половина значимых слов имени требования или имени факта. Калибровка
+     * задачи 14: при «любом общем слове» ТЗ ДКИ-Н-12 (17733214-1) сверялось с «время непрерывной работы от сети» и
+     * «график импульса … 175 Ом» — ложные ✗ и ✓ у нашего же товара.
+     */
+    public static final double NAME_MATCH = 0.5;
     /** «До X» у этих параметров — «не более X» (спека §5.2). */
     private static final List<String> SMALLER_BETTER = List.of("масса", "вес", "габари", "размер", "шум", "потреб");
 
@@ -84,7 +98,12 @@ public final class SpecFit {
         return switch (m) { case FAIL -> 0; case DIFF -> 1; case OK -> 2; case UNKNOWN -> 3; };
     }
 
-    /** Факт для требования: та же единица (счётные — со счётными), наибольшее совпадение имени; единственный факт семейства — и без него. */
+    /**
+     * Факт для требования: та же единица (счётные — со счётными), совпадение имени не меньше {@link #NAME_MATCH}, из них —
+     * наибольшее; без совпадения имени — только сеть питания (у прибора одно напряжение и одна частота сети): длина, масса,
+     * мощность у товара бывают у разных частей («диаметр электрода» против «длина кабеля» — не сверка), а «частота
+     * дискретизации 32 000 Гц» или «Li-ion 14,8 В» — не сеть.
+     */
     static ProductFact factFor(SpecRequirement r, List<ProductFact> facts) {
         List<ProductFact> same = facts.stream().filter(f -> compatible(r, f)).toList();
         if (same.isEmpty()) return null;
@@ -93,11 +112,32 @@ public final class SpecFit {
         double bestScore = 0;
         for (ProductFact f : same) {
             Set<String> fn = FitText.stems(f.name());
-            double s = FitText.overlap(rn, fn) + 0.5 * FitText.overlap(fn, rn);
+            double a = FitText.overlap(rn, fn), b = FitText.overlap(fn, rn);
+            if (Math.max(a, b) < NAME_MATCH) continue;
+            double s = a + 0.5 * b;
             if (s > bestScore) { bestScore = s; best = f; }
         }
-        if (best != null) return best;
-        return same.size() == 1 && !countLike(r.unit()) ? same.get(0) : null;
+        if (best != null || !mains(r.unit(), r.lo(), r.hi())) return best;
+        List<ProductFact> mains = same.stream().filter(f -> mains(f.unit(), f.lo(), f.hi())).toList();
+        return mains.size() == 1 ? mains.get(0) : null;
+    }
+
+    /** Сеть питания: напряжение 100–400 В, частота 45–65 Гц (границы «0» и «бесконечность» — открытые, не в счёт). */
+    private static boolean mains(SpecUnit u, double lo, double hi) {
+        if (u == null) return false;
+        double min, max;
+        switch (u.family()) {
+            case "напряжение" -> { min = 100; max = 400; }
+            case "частота" -> { min = 45; max = 65; }
+            default -> { return false; }
+        }
+        boolean any = false;
+        for (double v : new double[]{lo, hi}) {
+            if (v == 0 || Double.isInfinite(v)) continue;
+            if (v < min || v > max) return false;
+            any = true;
+        }
+        return any;
     }
 
     private static boolean compatible(SpecRequirement r, ProductFact f) {
