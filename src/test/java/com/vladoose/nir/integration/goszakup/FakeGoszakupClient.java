@@ -35,6 +35,8 @@ public class FakeGoszakupClient implements GoszakupClient {
     public final Map<String, Integer> subjectFailuresLeft = new HashMap<>();
     /** БИН, по которым лента отвечает 403 — не повторяемо. */
     public final java.util.Set<String> forbiddenOrgBins = new java.util.HashSet<>();
+    /** Номера объявлений, по которым лоты отвечают 403 — стоп-код поиска по стране. */
+    public final java.util.Set<String> forbiddenLots = new java.util.HashSet<>();
     /** Счётчики вызовов по ключу. */
     public final Map<String, Integer> orgCalls = new HashMap<>();
     public final Map<String, Integer> lotsCalls = new HashMap<>();
@@ -77,6 +79,7 @@ public class FakeGoszakupClient implements GoszakupClient {
     @Override public List<LotDto> fetchLots(String numberAnno) {
         lotsCalls.merge(numberAnno, 1, Integer::sum);
         failTransient(lotsFailuresLeft, numberAnno);
+        if (forbiddenLots.contains(numberAnno)) throw new GoszakupCallException("goszakup API 403 на /v2/lots", 403, false, null);
         return lotsByAnno.getOrDefault(numberAnno, List.of());
     }
     @Override public SubjectDto fetchSubject(String bin) {

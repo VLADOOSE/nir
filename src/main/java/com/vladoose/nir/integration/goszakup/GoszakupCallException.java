@@ -11,11 +11,20 @@ import com.vladoose.nir.integration.http.RetryableFailure;
 public class GoszakupCallException extends IllegalStateException implements RetryableFailure {
 
     private final boolean retryable;
+    private final int status;
 
     public GoszakupCallException(String message, boolean retryable, Throwable cause) {
+        this(message, 0, retryable, cause);
+    }
+
+    /** status — HTTP-код ответа площадки (0 — не HTTP: обрыв, разбор, неполный ответ). */
+    public GoszakupCallException(String message, int status, boolean retryable, Throwable cause) {
         super(message, cause);
         this.retryable = retryable;
+        this.status = status;
     }
+
+    public int status() { return status; }
 
     @Override
     public boolean retryable() { return retryable; }

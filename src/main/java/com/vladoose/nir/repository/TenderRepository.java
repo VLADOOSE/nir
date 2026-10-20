@@ -22,6 +22,9 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     Optional<Tender> findBySourceExtId(String sourceExtId);
 
+    /** Заведённые поиском нашей продукции по стране — обновляются им же (спека 2026-10-19-product-watch §7.3). */
+    List<Tender> findByFoundByProductSearchTrueAndStatus(String status);
+
     boolean existsBySourceExtId(String sourceExtId);
 
     List<Tender> findByStatusAndDeadlineBefore(String status, LocalDate deadline);

@@ -12,7 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * сохранения групп; первый вызов строит лениво. Чтение репозиториев — своей короткой транзакцией (фоновые потоки).
  */
 @Component
-public class ProductCatalog {
+public class ProductCatalog implements CatalogSource {
 
     private final ProductGroupRepository groups;
     private final SiteProductRepository products;

@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Data
 public class ImportSummary {
@@ -33,9 +35,14 @@ public class ImportSummary {
     @JsonIgnore
     private final List<String> createdExtIds = new ArrayList<>();
 
+    /** Номера объявлений, созданных или обновлённых прогоном (отметки «наш товар», спека 2026-10-19-product-watch §8). */
+    @JsonIgnore
+    private final Set<String> touchedExtIds = new LinkedHashSet<>();
+
     public void addCreated(String sourceExtId) {
         created++;
         createdExtIds.add(sourceExtId);
+        touchedExtIds.add(sourceExtId);
     }
 
     /**

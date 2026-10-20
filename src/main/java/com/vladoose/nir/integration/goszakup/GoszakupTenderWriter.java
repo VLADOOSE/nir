@@ -191,6 +191,44 @@ public class GoszakupTenderWriter {
         t.getLots().addAll(result);
     }
 
+    /**
+     * Тендер, найденный поиском нашей продукции по стране (спека 2026-10-19-product-watch §7.3): тот же upsert, что у
+     * импорта ЗКО (регион — по заказчику), плюс признак «найден поиском» и способ закупки площадки (колонка — 50 символов).
+     */
+    @Transactional
+    public Result upsertFound(TrdBuyDto d, SubjectDto subj, List<LotDto> lots, String tradeMethod) {
+        Result r = upsertOne(d, subj, lots, null);
+        Tender t = tenderRepository.findBySourceExtId(d.getNumberAnno()).orElseThrow();
+        t.setFoundByProductSearch(true);
+        if (tradeMethod != null && !tradeMethod.isBlank()) t.setPurchaseType(trunc(tradeMethod, 50));
+        return r;
+    }
+
+    /** Статус и срок заведённого поиском тендера, пропавшего из выдачи (отменён, приостановлен, закрыт): без лотов. */
+    @Transactional
+    public boolean updateStatus(String numberAnno, Integer refBuyStatusId, String endDate) {
+        Tender t = tenderRepository.findBySourceExtId(numberAnno).orElse(null);
+        if (t == null) return false;
+        LocalDateTime at = ImportDeadline.parse(endDate);
+        if (at != null) {
+            t.setDeadline(at.toLocalDate());
+            t.setDeadlineAt(at);
+        }
+        String status = mapStatus(refBuyStatusId);
+        if ("ACTIVE".equals(status)
+                && ImportDeadline.passed(t.getDeadline(), t.getDeadlineAt(), LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone()))) {
+            status = "COMPLETED";
+        }
+        t.setStatus(status);
+        return true;
+    }
+
+    /** null — тендера нет; иначе — заведён ли он поиском по стране. */
+    @Transactional(readOnly = true)
+    public Boolean foundBySearch(String numberAnno) {
+        return tenderRepository.findBySourceExtId(numberAnno).map(Tender::isFoundByProductSearch).orElse(null);
+    }
+
     private static String trunc(String s, int max) {
         if (s == null) return null;
         String t = s.trim();
