@@ -7,6 +7,7 @@ import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.dto.response.LotSourcingResponse;
 import com.vladoose.nir.dto.response.OfferComparisonResponse;
@@ -26,6 +27,9 @@ import com.vladoose.nir.service.ActivityApplyService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.service.productwatch.ProductMatchService;
+import com.vladoose.nir.service.productwatch.fit.SpecRequirement;
+import com.vladoose.nir.service.productwatch.fit.SpecRequirements;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -174,6 +178,12 @@ public class TenderController {
         List<TenderLotResponse> lots = tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
         Map<Long, List<LotProductMatchDto>> ours = productQuery.lotMatches(id);
         for (TenderLotResponse l : lots) l.setProductMatches(ours.getOrDefault(l.getId(), List.of()));
+        for (TenderLotResponse l : lots) {
+            if (l.getTechSpecStatus() == TechSpecStatus.OK && l.getRequiredSpec() != null) {
+                l.setRequirements(SpecRequirements.extract(ProductMatchService.fitText(l.getRequiredSpec(), null)).stream()
+                        .map(SpecRequirement::text).toList());
+            }
+        }
         return lots;
     }
 

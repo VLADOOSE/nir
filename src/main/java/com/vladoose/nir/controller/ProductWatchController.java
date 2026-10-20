@@ -2,8 +2,10 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.ProductGroupsRequest;
 import com.vladoose.nir.dto.response.ProbeResponse;
+import com.vladoose.nir.dto.response.ProductCatalogResponse;
 import com.vladoose.nir.dto.response.ProductGroupDto;
 import com.vladoose.nir.dto.response.ProductGroupsResponse;
+import com.vladoose.nir.service.productwatch.ProductCatalogQuery;
 import com.vladoose.nir.service.productwatch.ProductGroupService;
 import com.vladoose.nir.service.productwatch.ProductWatchScheduler;
 import com.vladoose.nir.util.CurrentUser;
@@ -20,10 +22,18 @@ public class ProductWatchController {
 
     private final ProductGroupService groups;
     private final ProductWatchScheduler scheduler;
+    private final ProductCatalogQuery catalogQuery;
 
-    public ProductWatchController(ProductGroupService groups, ProductWatchScheduler scheduler) {
+    public ProductWatchController(ProductGroupService groups, ProductWatchScheduler scheduler, ProductCatalogQuery catalogQuery) {
         this.groups = groups;
         this.scheduler = scheduler;
+        this.catalogQuery = catalogQuery;
+    }
+
+    /** Вкладка «Наша продукция → Товары» (спека 2026-10-20-product-spec-fit §8.2): товары сайта с РУ; на РФ — пусто. */
+    @GetMapping("/api/product-catalog")
+    public ProductCatalogResponse catalog() {
+        return catalogQuery.list();
     }
 
     @GetMapping("/api/product-groups")

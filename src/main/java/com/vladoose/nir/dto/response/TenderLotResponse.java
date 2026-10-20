@@ -30,4 +30,6 @@ public class TenderLotResponse {
     private TechSpecStatus techSpecStatus;
     /** Отметки «наш товар» лота (спека 2026-10-19-product-watch §12.3); ставит контроллер. */
     private List<LotProductMatchDto> productMatches = new ArrayList<>();
+    /** «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — только у лота с разобранным ТЗ. */
+    private List<String> requirements = new ArrayList<>();
 }

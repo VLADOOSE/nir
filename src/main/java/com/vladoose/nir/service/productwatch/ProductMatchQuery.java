@@ -62,20 +62,36 @@ public class ProductMatchQuery {
         return out;
     }
 
-    /** Отметки лотов одного тендера для карточки (спека §12.3): товар и похожие — ссылками на сайт. */
+    /** Отметки лотов одного тендера для карточки (спеки §12.3 / 2026-10-20 §8.1): товар, похожие и сверка — ссылками на сайт. */
     @Transactional(readOnly = true)
     public Map<Long, List<LotProductMatchDto>> lotMatches(long tenderId) {
         Summary s = summaries(List.of(tenderId)).get(tenderId);
         if (s == null) return Map.of();
+        List<TenderLotProductMatch> rows = matches.findByTenderId(tenderId);
+        Map<Long, String> groupNames = groups.findAllById(rows.stream().map(TenderLotProductMatch::getGroupId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(ProductGroup::getId, ProductGroup::getName));
+        Map<String, TenderLotProductMatch> byKey = new HashMap<>();
+        for (TenderLotProductMatch m : rows) byKey.put(m.getLotId() + "|" + groupNames.get(m.getGroupId()), m);
         Map<Long, List<LotProductMatchDto>> out = new HashMap<>();
         for (LotLine l : s.lots()) {
             List<LotProductMatchDto.Similar> sim = l.similar() == null ? List.of() : l.similar().stream()
                     .map(x -> new LotProductMatchDto.Similar(shortName(x.name()), x.brand(), url(x.slug())))
                     .toList();
+            TenderLotProductMatch m = byKey.get(l.lotId() + "|" + l.groupName());
             out.computeIfAbsent(l.lotId(), k -> new ArrayList<>()).add(new LotProductMatchDto(l.groupName(), l.word(), l.level().name(),
-                    l.evidence(), l.productName() == null ? null : shortName(l.productName()), url(l.productSlug()), sim));
+                    l.evidence(), l.productName() == null ? null : shortName(l.productName()), url(l.productSlug()), sim,
+                    m == null || m.getFit() == null ? null : m.getFit().name(), m == null ? null : m.getForeignBrand(), candidates(m)));
         }
         return out;
+    }
+
+    private List<LotProductMatchDto.Candidate> candidates(TenderLotProductMatch m) {
+        if (m == null || m.getFitCandidates() == null) return List.of();
+        return m.getFitCandidates().stream().map(c -> new LotProductMatchDto.Candidate(c.productId(), c.name(), url(c.slug()),
+                c.verdict() == null ? null : c.verdict().name(), c.met(), c.failed(), c.total(), c.unknown(), c.reason(), c.reasonShort(),
+                c.regStatus(), c.regNumber(), c.rows() == null ? List.of() : c.rows().stream()
+                        .map(r -> new LotProductMatchDto.Row(r.mark() == null ? null : r.mark().name(), r.text(), r.ours(), r.source())).toList()))
+                .toList();
     }
 
     private String url(String slug) {
