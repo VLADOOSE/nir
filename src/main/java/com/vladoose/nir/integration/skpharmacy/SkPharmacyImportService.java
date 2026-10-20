@@ -167,6 +167,7 @@ public class SkPharmacyImportService {
                         sum.addCreated(a.numberAnno());
                     } else {
                         sum.setUpdated(sum.getUpdated() + 1);
+                        sum.getTouchedExtIds().add(a.numberAnno());   // отметки «наш товар» (спека 2026-10-19-product-watch §8)
                     }
                     if (!complete) {
                         // «больше», если число ленты неизвестно или (обрыв пагинации) не меньше полученного

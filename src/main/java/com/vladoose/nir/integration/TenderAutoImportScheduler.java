@@ -6,13 +6,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
-import org.springframework.scheduling.config.CronTask;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
-import org.springframework.scheduling.support.CronExpression;
-import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Component;
 
-import java.time.DateTimeException;
 import java.time.ZoneId;
 
 /**
@@ -59,9 +55,10 @@ public class TenderAutoImportScheduler implements SchedulingConfigurer {
     @Override
     public void configureTasks(ScheduledTaskRegistrar registrar) {
         if (!enabled) return;
-        ZoneId z = zone(zone);
-        register(registrar, "goszakup", goszakupCron, DEFAULT_GOSZAKUP_CRON, z, this::tickGoszakup);
-        register(registrar, "СК-Фармация", skPharmacyCron, DEFAULT_SK_PHARMACY_CRON, z, this::tickSkPharmacy);
+        ZoneId z = CronSchedules.zone(zone, DEFAULT_ZONE, log);
+        CronSchedules.register(registrar, "Автоимпорт goszakup", goszakupCron, DEFAULT_GOSZAKUP_CRON, z, this::tickGoszakup, log);
+        CronSchedules.register(registrar, "Автоимпорт СК-Фармация", skPharmacyCron, DEFAULT_SK_PHARMACY_CRON, z,
+                this::tickSkPharmacy, log);
     }
 
     void tickGoszakup() {
@@ -72,31 +69,5 @@ public class TenderAutoImportScheduler implements SchedulingConfigurer {
     void tickSkPharmacy() {
         log.info("Автоимпорт тендеров: запуск СК-Фармации (идущий прогон не дублируется)");
         skPharmacy.startAsync();
-    }
-
-    private static void register(ScheduledTaskRegistrar registrar, String platform, String cron, String byDefault,
-                                 ZoneId zone, Runnable tick) {
-        String expr = cron == null || cron.isBlank() ? byDefault : cron.trim();
-        if ("-".equals(expr)) {
-            log.info("Автоимпорт {}: выключен расписанием «-»", platform);
-            return;
-        }
-        if (!CronExpression.isValidExpression(expr)) {
-            log.error("Автоимпорт {}: расписание «{}» не разобрано (cron Spring из 6 полей) — автозапуск {} выключен",
-                    platform, expr, platform);
-            return;
-        }
-        registrar.addCronTask(new CronTask(tick, new CronTrigger(expr, zone)));
-        log.info("Автоимпорт {}: «{}», пояс {}", platform, expr, zone);
-    }
-
-    private static ZoneId zone(String s) {
-        if (s == null || s.isBlank()) return DEFAULT_ZONE;
-        try {
-            return ZoneId.of(s.trim());
-        } catch (DateTimeException e) {
-            log.error("Автоимпорт тендеров: пояс «{}» не разобран — беру {}", s, DEFAULT_ZONE);
-            return DEFAULT_ZONE;
-        }
     }
 }

@@ -1,5 +1,6 @@
 package com.vladoose.nir.repository;
 
+import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Source;
 import com.vladoose.nir.entity.Tender;
 import org.springframework.data.domain.Pageable;
@@ -24,6 +25,10 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
 
     /** Заведённые поиском нашей продукции по стране — обновляются им же (спека 2026-10-19-product-watch §7.3). */
     List<Tender> findByFoundByProductSearchTrueAndStatus(String status);
+
+    /** Тендеры площадок с идущим приёмом — для пересчёта отметок «наш товар» (спека 2026-10-19-product-watch §8). */
+    @Query("select t.id from Tender t where t.market = :market and t.status = 'ACTIVE' and t.source = com.vladoose.nir.entity.Source.PUBLIC_TENDER")
+    List<Long> findOpenIds(@Param("market") Market market);
 
     boolean existsBySourceExtId(String sourceExtId);
 

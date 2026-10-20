@@ -171,7 +171,10 @@ public class GoszakupImportService {
             SubjectDto subj = relevant ? subjectOf(d.effectiveBin(), subjects) : null;
             GoszakupTenderWriter.Result r = writer.upsertOne(d, subj, lots, regionOverride);
             if (r == GoszakupTenderWriter.Result.CREATED) sum.addCreated(d.getNumberAnno());
-            else sum.setUpdated(sum.getUpdated() + 1);
+            else {
+                sum.setUpdated(sum.getUpdated() + 1);
+                sum.getTouchedExtIds().add(d.getNumberAnno());   // отметки «наш товар» (спека 2026-10-19-product-watch §8)
+            }
             if (relevant) sum.setMatched(sum.getMatched() + 1); // «подходящих» = медтоварные (созданные + обновлённые)
         } catch (RuntimeException e) {
             sum.addError("объявление " + d.getNumberAnno() + ": " + ErrorText.of(e));

@@ -78,6 +78,17 @@ public class ImportOutageNotifier {
      * @param platform «goszakup» / «СК-Фармации» (в родительном — «Импорт СК-Фармации не работает»): и ключ счёта, и подпись
      */
     public synchronized void afterRun(String platform, ImportSummary sum) {
+        afterRun(platform, "Импорт " + platform, sum);
+    }
+
+    /**
+     * То же для любого фонового прогона площадки (спека 2026-10-19-product-watch §7.5).
+     *
+     * @param key   ключ счёта аварии (площадка или «product-watch»)
+     * @param title подпись: «Импорт goszakup» / «Поиск нашей продукции»
+     */
+    public synchronized void afterRun(String key, String title, ImportSummary sum) {
+        String platform = key;
         if (!enabled || !telegram.isConfigured()) return;
         State st = states.computeIfAbsent(platform, p -> new State());
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone());
@@ -85,12 +96,12 @@ public class ImportOutageNotifier {
             if (st.failedRuns == 0) st.firstFailedAt = now;
             st.failedRuns++;
             if (!st.alerted && st.failedRuns >= failureRuns) {
-                st.alerted = send(platform, down(platform, st.failedRuns, st.firstFailedAt, sum));
+                st.alerted = send(platform, down(title, st.failedRuns, st.firstFailedAt, sum));
             }
             return;
         }
         // «снова работает» — только если об аварии сообщали; не дошло — повтор со следующим удачным прогоном
-        if (st.alerted && !send(platform, up(platform, now, sum, st))) return;
+        if (st.alerted && !send(platform, up(title, now, sum, st))) return;
         states.remove(platform);
     }
 
@@ -99,8 +110,8 @@ public class ImportOutageNotifier {
         return s.getErrors() > 0 && s.getCreated() + s.getUpdated() == 0;
     }
 
-    private static String down(String platform, int runs, LocalDateTime since, ImportSummary sum) {
-        StringBuilder b = new StringBuilder("⚠️ Импорт ").append(platform).append(" не работает: ").append(runs)
+    private static String down(String title, int runs, LocalDateTime since, ImportSummary sum) {
+        StringBuilder b = new StringBuilder("⚠️ ").append(title).append(" не работает: ").append(runs)
                 .append(' ').append(runsWord(runs)).append(" подряд (с ").append(since.format(TIME))
                 .append(") — ни один тендер не записан");
         String reason = TelegramText.oneLine(sum.getLastError(), 300);
@@ -110,8 +121,8 @@ public class ImportOutageNotifier {
         return b.toString();
     }
 
-    private static String up(String platform, LocalDateTime now, ImportSummary sum, State st) {
-        return "✅ Импорт " + platform + " снова работает: прогон " + now.format(TIME) + " прошёл (создано "
+    private static String up(String title, LocalDateTime now, ImportSummary sum, State st) {
+        return "✅ " + title + " снова работает: прогон " + now.format(TIME) + " прошёл (создано "
                 + sum.getCreated() + ", обновлено " + sum.getUpdated() + ")\nНе работал с "
                 + st.firstFailedAt.format(TIME) + ", упавших прогонов подряд: " + st.failedRuns;
     }
