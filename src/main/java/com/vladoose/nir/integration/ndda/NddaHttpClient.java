@@ -3,9 +3,12 @@ package com.vladoose.nir.integration.ndda;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vladoose.nir.exception.UpstreamException;
+import com.vladoose.nir.integration.http.UpstreamHttp;
+import com.vladoose.nir.integration.http.UpstreamIoException;
 import com.vladoose.nir.integration.ndda.dto.NddaComplectItemDto;
 import com.vladoose.nir.integration.ndda.dto.NddaDetailDto;
 import com.vladoose.nir.integration.ndda.dto.NddaListItemDto;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +16,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -26,15 +30,27 @@ import java.util.Map;
 @Component
 public class NddaHttpClient implements NddaClient {
 
+    /** Дедлайн на весь обмен, тело включительно; ответ — не больше 20 МБ (комплектность бывает длинной). */
+    static final Duration DEADLINE = Duration.ofSeconds(60);
+    private static final long MAX_BYTES = 20L * 1024 * 1024;
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15)).build();
     private final ObjectMapper objectMapper;
     private final String baseUrl;
 
+    private final Duration deadline;
+
+    @Autowired
     public NddaHttpClient(ObjectMapper objectMapper,
                           @Value("${ndda.api.base-url:https://oldregister.ndda.kz/register-backend}") String baseUrl) {
+        this(objectMapper, baseUrl, DEADLINE);
+    }
+
+    NddaHttpClient(ObjectMapper objectMapper, String baseUrl, Duration deadline) {
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.deadline = deadline;
     }
 
     @Override
@@ -110,20 +126,21 @@ public class NddaHttpClient implements NddaClient {
         }
     }
 
+    /**
+     * Обмен с дедлайном на весь ответ, тело включительно ({@link UpstreamHttp#exchange}): у {@code HttpRequest.timeout}
+     * в JDK 17 таймер снимается после заголовков, и вставшее тело держало бы поток вечно (CLAUDE.md §14) — а проверка РУ
+     * товаров сайта идёт каждый день в общем потоке «нашей продукции».
+     */
     private String send(HttpRequest request) {
+        HttpResponse<byte[]> resp;
         try {
-            HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                throw new UpstreamException("НЦЭЛС ответил " + resp.statusCode());
-            }
-            return resp.body();
-        } catch (UpstreamException e) {
-            throw e;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new UpstreamException("НЦЭЛС: запрос прерван", e);
-        } catch (Exception e) {
+            resp = UpstreamHttp.exchange(http, request, MAX_BYTES, deadline);
+        } catch (UpstreamIoException e) {
             throw new UpstreamException("НЦЭЛС недоступен: " + e.getMessage(), e);
         }
+        if (resp.statusCode() != 200) {
+            throw new UpstreamException("НЦЭЛС ответил " + resp.statusCode());
+        }
+        return new String(resp.body(), StandardCharsets.UTF_8);
     }
 }
