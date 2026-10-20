@@ -212,7 +212,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
             else log.info("{}: {}", title, sum.getMessage());
         }
         try {
-            outage.afterRun(key, title, sum);
+            outage.afterProductRun(key, title, sum);
         } catch (Throwable e) {
             log.warn("Наша продукция: оповещение о сбое упало: {}", ErrorText.of(e));
         }

@@ -18,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Bot API: sendMessage в тему почты или тендеров. Обмен — с дедлайном на ВЕСЬ ответ (GatewayHttp: таймаут HttpRequest в JDK 17
+ * Bot API: sendMessage в тему почты, тендеров или нашей продукции. Обмен — с дедлайном на ВЕСЬ ответ (GatewayHttp: таймаут HttpRequest в JDK 17
  * снимается после заголовков). Адрес запроса содержит токен — он не попадает ни в одно сообщение об ошибке.
  */
 @Component
@@ -60,6 +60,16 @@ public class TelegramClient {
      */
     public long sendTenders(String text, boolean silent) {
         return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, silent);
+    }
+
+    /**
+     * «Наш товар в тендерах», сводка планов закупок и сбой их сбора — своя тема (`TELEGRAM_PRODUCTS_THREAD_ID`, решение
+     * оператора 2026-10-20: не в тему тендеров ЗКО); пусто — тема тендеров, как до неё.
+     */
+    public long sendProducts(String text, boolean silent) {
+        return settings.productsThreadId().isEmpty()
+                ? send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, silent)
+                : send(settings.productsThreadId(), "TELEGRAM_PRODUCTS_THREAD_ID", text, silent);
     }
 
     /** threadVariable — имя переменной окружения темы: в тексте ошибки, если там не число. */

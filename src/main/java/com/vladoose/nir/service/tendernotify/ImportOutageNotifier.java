@@ -52,6 +52,8 @@ public class ImportOutageNotifier {
 
     private final TelegramSettings telegram;
     private final Sender sender;
+    /** Поиск нашей продукции и сбор планов — своя тема (решение оператора 2026-10-20). */
+    private final Sender products;
     private final boolean enabled;
     private final int failureRuns;
     private final Clock clock;
@@ -60,12 +62,17 @@ public class ImportOutageNotifier {
     @Autowired
     public ImportOutageNotifier(TelegramSettings telegram, TelegramClient client,
                                 @Value("${tenders.notify.enabled:false}") boolean enabled) {
-        this(telegram, client::sendTenders, enabled, FAILURE_RUNS, Clock.systemUTC());
+        this(telegram, client::sendTenders, text -> client.sendProducts(text, true), enabled, FAILURE_RUNS, Clock.systemUTC());
     }
 
     ImportOutageNotifier(TelegramSettings telegram, Sender sender, boolean enabled, int failureRuns, Clock clock) {
+        this(telegram, sender, sender, enabled, failureRuns, clock);
+    }
+
+    ImportOutageNotifier(TelegramSettings telegram, Sender sender, Sender products, boolean enabled, int failureRuns, Clock clock) {
         this.telegram = telegram;
         this.sender = sender;
+        this.products = products;
         this.enabled = enabled;
         this.failureRuns = failureRuns;
         this.clock = clock;
@@ -88,6 +95,15 @@ public class ImportOutageNotifier {
      * @param title подпись: «Импорт goszakup» / «Поиск нашей продукции»
      */
     public synchronized void afterRun(String key, String title, ImportSummary sum) {
+        run(key, title, sum, sender);
+    }
+
+    /** То же для поиска нашей продукции и сбора планов — в их тему («Тендеры (наши товары)»; пусто — «Тендеры»). */
+    public synchronized void afterProductRun(String key, String title, ImportSummary sum) {
+        run(key, title, sum, products);
+    }
+
+    private void run(String key, String title, ImportSummary sum, Sender to) {
         String platform = key;
         if (!enabled || !telegram.isConfigured()) return;
         State st = states.computeIfAbsent(platform, p -> new State());
@@ -96,12 +112,12 @@ public class ImportOutageNotifier {
             if (st.failedRuns == 0) st.firstFailedAt = now;
             st.failedRuns++;
             if (!st.alerted && st.failedRuns >= failureRuns) {
-                st.alerted = send(platform, down(title, st.failedRuns, st.firstFailedAt, sum));
+                st.alerted = send(to, platform, down(title, st.failedRuns, st.firstFailedAt, sum));
             }
             return;
         }
         // «снова работает» — только если об аварии сообщали; не дошло — повтор со следующим удачным прогоном
-        if (st.alerted && !send(platform, up(title, now, sum, st))) return;
+        if (st.alerted && !send(to, platform, up(title, now, sum, st))) return;
         states.remove(platform);
     }
 
@@ -135,9 +151,9 @@ public class ImportOutageNotifier {
         return "прогонов";
     }
 
-    private boolean send(String platform, String text) {
+    private static boolean send(Sender to, String platform, String text) {
         try {
-            sender.send(text);
+            to.send(text);
             log.info("Telegram: оповещение о сбое импорта {} отправлено", platform);
             return true;
         } catch (RuntimeException e) {

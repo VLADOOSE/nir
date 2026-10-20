@@ -82,6 +82,40 @@ class TelegramClientTest {
         assertThat(stub.requests()).isEmpty();
     }
 
+    /** «Наш товар в тендерах» — своя тема (TELEGRAM_PRODUCTS_THREAD_ID, решение оператора 2026-10-20), не тема тендеров ЗКО. */
+    @Test
+    void sendsProductsToProductsThread() throws Exception {
+        stub.enqueue(TelegramStubServer.Reply.ok(558));
+        TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "88", "95"), json);
+
+        c.sendProducts("★ Точно наше", false);
+
+        JsonNode b = json.readTree(stub.requests().get(0).body());
+        assertThat(b.path("message_thread_id").asLong()).isEqualTo(95);
+        assertThat(b.has("disable_notification")).isFalse();
+    }
+
+    /** Своей темы нет — как до неё: в тему тендеров. */
+    @Test
+    void productsWithoutOwnThread_goToTendersThread() throws Exception {
+        stub.enqueue(TelegramStubServer.Reply.ok(559));
+        TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "88", ""), json);
+
+        c.sendProducts("🏷 Наш товар", true);
+
+        JsonNode b = json.readTree(stub.requests().get(0).body());
+        assertThat(b.path("message_thread_id").asLong()).isEqualTo(88);
+        assertThat(b.path("disable_notification").asBoolean()).isTrue();
+    }
+
+    @Test
+    void nonNumericProductsThread_namesItsOwnVariable() {
+        TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "88", "наши"), json);
+        assertThatThrownBy(() -> c.sendProducts("x", true))
+                .hasMessageContaining("TELEGRAM_PRODUCTS_THREAD_ID");
+        assertThat(stub.requests()).isEmpty();
+    }
+
     @Test
     void loud_withoutThread_omitsOptionalFields() throws Exception {
         client("").sendMail("Текст", false);

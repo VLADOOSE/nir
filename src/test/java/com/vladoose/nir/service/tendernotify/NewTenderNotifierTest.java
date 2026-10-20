@@ -178,7 +178,8 @@ class NewTenderNotifierTest {
 
         List<String> productSent = new ArrayList<>();
         new ProductWatchNotifier(matchRepo, tenderRepository, productQuery, productMatches, txManager, TG_ON,
-                (text, quiet) -> productSent.add(text), true, "https://ais.westmed.kz", CLOCK).afterRun(new ImportSummary());
+                (text, quiet) -> productSent.add(text), true, com.vladoose.nir.service.productwatch.ProductNotifyPolicy.of("all", "0"),
+                "https://ais.westmed.kz", CLOCK).afterRun(new ImportSummary());
         assertThat(productSent).isEmpty();
     }
 

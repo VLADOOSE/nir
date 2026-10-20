@@ -6,6 +6,7 @@ import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.ProcurementPlanPointRepository;
 import com.vladoose.nir.service.productwatch.ProcurementPlanDigest;
+import com.vladoose.nir.service.productwatch.ProductNotifyPolicy;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,12 +37,16 @@ class ProcurementPlanDigestTest {
     void setUp() {
         MarketContext.set(Market.KZ);
         points.deleteAllInBatch();
-        TelegramSettings tg = new TelegramSettings(true, "https://api.telegram.org", "1:x", "-1001", "");
-        digest = new ProcurementPlanDigest(points, tm, tg, (text, quiet) -> { sent.add(text); silent.add(quiet); }, true,
-                "https://ais.westmed.kz", CLOCK);
+        digest = digest(ProductNotifyPolicy.of("all", "0"));
     }
 
     @AfterEach void clear() { MarketContext.clear(); }
+
+    ProcurementPlanDigest digest(ProductNotifyPolicy policy) {
+        TelegramSettings tg = new TelegramSettings(true, "https://api.telegram.org", "1:x", "-1001", "");
+        return new ProcurementPlanDigest(points, tm, tg, (text, quiet) -> { sent.add(text); silent.add(quiet); }, true, policy,
+                "https://ais.westmed.kz", CLOCK);
+    }
 
     ProcurementPlanPoint point(long extId, String name, ProductMatchLevel level, String amount) {
         OffsetDateTime t = OffsetDateTime.now(CLOCK);
@@ -78,11 +83,32 @@ class ProcurementPlanDigestTest {
         point(5, "Рециркулятор", ProductMatchLevel.TYPE, "100");
         ProcurementPlanDigest failing = new ProcurementPlanDigest(points, tm,
                 new TelegramSettings(true, "https://api.telegram.org", "1:x", "-1001", ""),
-                (text, quiet) -> { throw new IllegalStateException("Telegram: HTTP 500"); }, true, "", CLOCK);
+                (text, quiet) -> { throw new IllegalStateException("Telegram: HTTP 500"); }, true, ProductNotifyPolicy.of("all", "0"), "", CLOCK);
         ImportSummary sum = new ImportSummary();
         failing.flush(false, sum);
         assertThat(sum.getErrors()).isEqualTo(1);
         assertThat(points.findByExtId(5L).orElseThrow().getDigestedAt()).isNull();
+    }
+
+    /** Решение оператора 2026-10-20: в сводку — только «★» от 1 млн ₸; остальное помечается молча, без накопления. */
+    @Test
+    void star_onlyExactFromMillion_restDigestedSilently() {
+        point(20, "Электрокардиограф ЭК12Т-01-«Р-Д»", ProductMatchLevel.NAMED, "1200000");
+        point(21, "Электрокардиограф ЭК3Т-01-«Р-Д»", ProductMatchLevel.NAMED, "500000");
+        point(22, "Облучатель-рециркулятор", ProductMatchLevel.TYPE, "9000000");
+        digest(ProductNotifyPolicy.of("star", "1000000")).flush(false, new ImportSummary());
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0)).startsWith("🗓 Новое в планах закупок: 1").contains("ЭК12Т-01")
+                .doesNotContain("ЭК3Т-01").doesNotContain("Облучатель");
+        for (long ext : List.of(20L, 21L, 22L)) assertThat(points.findByExtId(ext).orElseThrow().getDigestedAt()).isNotNull();
+    }
+
+    @Test
+    void star_nothingPasses_noMessage_allDigested() {
+        point(30, "Облучатель-рециркулятор", ProductMatchLevel.TYPE, "9000000");
+        digest(ProductNotifyPolicy.of("star", "1000000")).flush(false, new ImportSummary());
+        assertThat(sent).isEmpty();
+        assertThat(points.findByExtId(30L).orElseThrow().getDigestedAt()).isNotNull();
     }
 
     @Test

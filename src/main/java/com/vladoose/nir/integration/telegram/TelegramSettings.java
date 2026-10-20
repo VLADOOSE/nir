@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Настройки Bot API (`notify.telegram.*`): бот @West_Med_bot сайта westmed.kz, группа «Заявки», темы «Почта zakup@»
- * и «Тендеры» (новые профильные тендеры).
+ * «Тендеры» (новые профильные тендеры) и «Тендеры (наши товары)» (поиск нашей продукции, планы закупок).
  * Токен наружу не отдаётся: только пакетный {@link #botToken()} для клиента, toString — без него.
  */
 @Component
@@ -23,6 +23,7 @@ public class TelegramSettings {
     private final String chatId;
     private final String mailThreadId;
     private final String tendersThreadId;
+    private final String productsThreadId;
 
     @Autowired
     public TelegramSettings(@Value("${notify.telegram.enabled:false}") boolean enabled,
@@ -30,18 +31,26 @@ public class TelegramSettings {
                             @Value("${notify.telegram.bot-token:}") String botToken,
                             @Value("${notify.telegram.chat-id:}") String chatId,
                             @Value("${notify.telegram.mail-thread-id:}") String mailThreadId,
-                            @Value("${notify.telegram.tenders-thread-id:}") String tendersThreadId) {
+                            @Value("${notify.telegram.tenders-thread-id:}") String tendersThreadId,
+                            @Value("${notify.telegram.products-thread-id:}") String productsThreadId) {
         this.enabled = enabled;
         this.apiUrl = trim(apiUrl);
         this.botToken = trim(botToken);
         this.chatId = trim(chatId);
         this.mailThreadId = trim(mailThreadId);
         this.tendersThreadId = trim(tendersThreadId);
+        this.productsThreadId = trim(productsThreadId);
+    }
+
+    /** Без своей темы «нашей продукции». */
+    public TelegramSettings(boolean enabled, String apiUrl, String botToken, String chatId, String mailThreadId,
+                            String tendersThreadId) {
+        this(enabled, apiUrl, botToken, chatId, mailThreadId, tendersThreadId, "");
     }
 
     /** Без темы тендеров (почтовые тесты). */
     public TelegramSettings(boolean enabled, String apiUrl, String botToken, String chatId, String mailThreadId) {
-        this(enabled, apiUrl, botToken, chatId, mailThreadId, "");
+        this(enabled, apiUrl, botToken, chatId, mailThreadId, "", "");
     }
 
     @PostConstruct
@@ -60,6 +69,7 @@ public class TelegramSettings {
     public String chatId() { return chatId; }
     public String mailThreadId() { return mailThreadId; }
     public String tendersThreadId() { return tendersThreadId; }
+    public String productsThreadId() { return productsThreadId; }
 
     String botToken() { return botToken; }
 
@@ -68,6 +78,7 @@ public class TelegramSettings {
     @Override
     public String toString() {
         return "TelegramSettings{enabled=" + enabled + ", chatId=" + chatId + ", mailThreadId=" + mailThreadId
-                + ", tendersThreadId=" + tendersThreadId + ", botToken=" + (botToken.isEmpty() ? "—" : "***") + "}";
+                + ", tendersThreadId=" + tendersThreadId + ", productsThreadId=" + productsThreadId
+                + ", botToken=" + (botToken.isEmpty() ? "—" : "***") + "}";
     }
 }

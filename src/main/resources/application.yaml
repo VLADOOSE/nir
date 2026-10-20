@@ -130,6 +130,7 @@ notify:
     mail-thread-id: ${TELEGRAM_MAIL_THREAD_ID:}
     # тема «Тендеры» той же группы — новые профильные тендеры (NewTenderNotifier); пусто — «Общая»
     tenders-thread-id: ${TELEGRAM_TENDERS_THREAD_ID:}
+    products-thread-id: ${TELEGRAM_PRODUCTS_THREAD_ID:}   # «Тендеры (наши товары)»; пусто — тема тендеров
 
 # Публичный адрес АИС — для ссылок «Открыть в АИС» в уведомлениях (прод — application-prod.yaml). Пусто — без ссылок.
 ais:
@@ -184,6 +185,8 @@ product-watch:
   catalog-cron: ${PRODUCT_WATCH_CATALOG_CRON:}
   zone: ${PRODUCT_WATCH_ZONE:}                    # пусто — Asia/Oral
   spec-per-run: ${PRODUCT_WATCH_SPEC_PER_RUN:}    # пусто — 10 ТЗ за прогон
+  notify: ${PRODUCT_WATCH_NOTIFY:}                # ALL / STAR / OFF; пусто — STAR (только «★», решение оператора 2026-10-20)
+  notify-min-sum: ${PRODUCT_WATCH_NOTIFY_MIN_SUM:}  # ₸, сумма наших лотов; пусто — 1000000, 0 — без порога
 
 ndda:
   api:

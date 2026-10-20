@@ -59,7 +59,7 @@ class ProductWatchSchedulerTest {
         CountDownLatch done = new CountDownLatch(1);
         doAnswer(inv -> { seen.set(MarketContext.get()); return null; }).when(search).run(any());
         doAnswer(inv -> { atNotify.set(MarketContext.get()); return null; }).when(notifier).afterRun(any());
-        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterRun(any(), any(), any());
+        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterProductRun(any(), any(), any());
         ProductWatchScheduler s = scheduler(true, "", "", "");
         s.startSearch();
         assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
@@ -69,7 +69,7 @@ class ProductWatchSchedulerTest {
         order.verify(search).run(any());
         order.verify(specs).run(eq(10), any(ImportSummary.class));
         order.verify(notifier).afterRun(any(ImportSummary.class));
-        order.verify(outage).afterRun(eq("product-watch"), eq("Поиск нашей продукции"), any());
+        order.verify(outage).afterProductRun(eq("product-watch"), eq("Поиск нашей продукции"), any());
     }
 
     /** Поиск упал целиком — найденное до сбоя всё равно уходит в Telegram, сбой уведомления итог не роняет. */
@@ -78,7 +78,7 @@ class ProductWatchSchedulerTest {
         CountDownLatch done = new CountDownLatch(1);
         doThrow(new IllegalStateException("boom")).when(search).run(any());
         doThrow(new IllegalStateException("Telegram")).when(notifier).afterRun(any());
-        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterRun(any(), any(), any());
+        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterProductRun(any(), any(), any());
         scheduler(true, "", "", "").startSearch();
         assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
         verify(notifier).afterRun(any(ImportSummary.class));
@@ -107,14 +107,14 @@ class ProductWatchSchedulerTest {
     void plansRunCollectThenDigest_inOrder() throws Exception {
         when(planService.collect(any())).thenReturn(true);
         CountDownLatch done = new CountDownLatch(1);
-        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterRun(any(), any(), any());
+        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterProductRun(any(), any(), any());
         ProductWatchScheduler s = scheduler(true, "-", "-", "-");
         s.startPlans();
         assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
         InOrder o = inOrder(planService, planDigest, outage);
         o.verify(planService).collect(any());
         o.verify(planDigest).flush(eq(true), any());
-        o.verify(outage).afterRun(eq("product-plans"), eq("Сбор планов закупок"), any());
+        o.verify(outage).afterProductRun(eq("product-plans"), eq("Сбор планов закупок"), any());
     }
 
     /** Итог прогона — в лог (CLAUDE.md §14: по пустому логу удачный прогон неотличим от «не запускался»). */
@@ -130,7 +130,7 @@ class ProductWatchSchedulerTest {
                     .when(search).run(any());
             doAnswer(inv -> { ImportSummary s = inv.getArgument(0); s.addError("план 5"); s.setMessage("Планы: найдено 9, наших 2, новых 2, ошибок 1"); return true; })
                     .when(planService).collect(any());
-            doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterRun(any(), any(), any());
+            doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterProductRun(any(), any(), any());
             ProductWatchScheduler s = scheduler(true, "-", "-", "-");
             s.startSearch();
             s.startPlans();

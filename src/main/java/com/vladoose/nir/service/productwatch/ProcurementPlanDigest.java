@@ -23,8 +23,9 @@ import java.time.OffsetDateTime;
 import java.util.*;
 
 /**
- * Сводка «🗓 Новое в планах закупок» раз в день (спека 2026-10-19-product-watch §10.3): тихо, в тему «Тендеры»;
+ * Сводка «🗓 Новое в планах закупок» раз в день (спека 2026-10-19-product-watch §10.3): тихо, в тему нашей продукции;
  * первый сбор — молча (иначе в тему высыпался бы весь план страны). Не ушло — пункты не помечаются, следующий сбор повторит.
+ * С 2026-10-20 — {@link ProductNotifyPolicy} (по умолчанию только «★» от 1 млн ₸), остальное помечается молча.
  */
 @Component
 public class ProcurementPlanDigest {
@@ -45,20 +46,25 @@ public class ProcurementPlanDigest {
     private final TelegramSettings telegram;
     private final Sender sender;
     private final boolean enabled;
+    private final ProductNotifyPolicy policy;
     private final String publicUrl;
     private final Clock clock;
 
     @Autowired
     public ProcurementPlanDigest(ProcurementPlanPointRepository points, PlatformTransactionManager tm, TelegramSettings telegram,
                                  TelegramClient client, @Value("${product-watch.enabled:false}") boolean enabled,
+                                 @Value("${product-watch.notify:}") String notify,
+                                 @Value("${product-watch.notify-min-sum:}") String notifyMinSum,
                                  @Value("${ais.public-url:}") String publicUrl) {
-        this(points, tm, telegram, client::sendTenders, enabled, publicUrl, Clock.systemUTC());
+        this(points, tm, telegram, client::sendProducts, enabled, ProductNotifyPolicy.of(notify, notifyMinSum), publicUrl,
+                Clock.systemUTC());
     }
 
     public ProcurementPlanDigest(ProcurementPlanPointRepository points, PlatformTransactionManager tm, TelegramSettings telegram,
-                                 Sender sender, boolean enabled, String publicUrl, Clock clock) {
+                                 Sender sender, boolean enabled, ProductNotifyPolicy policy, String publicUrl, Clock clock) {
         this.points = points; this.tx = new TransactionTemplate(tm); this.telegram = telegram; this.sender = sender;
-        this.enabled = enabled; this.publicUrl = publicUrl == null ? "" : publicUrl.replaceAll("/+$", ""); this.clock = clock;
+        this.enabled = enabled; this.policy = policy;
+        this.publicUrl = publicUrl == null ? "" : publicUrl.replaceAll("/+$", ""); this.clock = clock;
     }
 
     public synchronized void flush(boolean firstRun, ImportSummary sum) {
@@ -76,7 +82,14 @@ public class ProcurementPlanDigest {
             markDigested(ids);
             return;
         }
-        List<ProcurementPlanPoint> sorted = fresh.stream()
+        // режим и порог (решение оператора 2026-10-20): не прошедшие помечаются молча — тоже без накопления
+        List<ProcurementPlanPoint> pass = fresh.stream()
+                .filter(p -> policy.levelPasses(p.getLevel()) && policy.sumPasses(p.getAmount())).toList();
+        if (pass.isEmpty()) {
+            markDigested(ids);
+            return;
+        }
+        List<ProcurementPlanPoint> sorted = pass.stream()
                 .sorted(Comparator.comparing((ProcurementPlanPoint p) -> p.getLevel() == ProductMatchLevel.TYPE ? 1 : 0)
                         .thenComparing(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount(), Comparator.reverseOrder()))
                 .toList();
@@ -88,7 +101,7 @@ public class ProcurementPlanDigest {
             return;
         }
         markDigested(ids);
-        log.info("Telegram: сводка планов отправлена ({})", ids.size());
+        log.info("Telegram: сводка планов отправлена ({} из {})", pass.size(), ids.size());
     }
 
     private void markDigested(List<Long> ids) {

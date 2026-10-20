@@ -149,6 +149,21 @@ class ImportOutageNotifierTest {
         assertThat(sent).singleElement().asString().contains("\nПричина: Больница Открыть в АИС: https://evil\n");
     }
 
+    /** Сбой поиска нашей продукции — в тему «Тендеры (наши товары)» (решение оператора 2026-10-20), импорт — по-прежнему в «Тендеры». */
+    @Test
+    void productRuns_alertToProductsTopic_importsStayInTenders() {
+        List<String> products = new ArrayList<>();
+        ImportOutageNotifier n = new ImportOutageNotifier(TG_ON, sent::add, products::add, true, 2, clock);
+        n.afterProductRun("product-watch", "Поиск нашей продукции", down("goszakup: HTTP 403"));
+        n.afterRun("goszakup", down("ConnectException"));
+        clock.plusHours(1);
+        n.afterProductRun("product-watch", "Поиск нашей продукции", down("goszakup: HTTP 403"));
+        n.afterRun("goszakup", down("ConnectException"));
+
+        assertThat(products).singleElement().asString().startsWith("⚠️ Поиск нашей продукции не работает: 2 прогона подряд");
+        assertThat(sent).singleElement().asString().startsWith("⚠️ Импорт goszakup не работает");
+    }
+
     @Test
     void disabledOrTelegramNotConfigured_nothingSent() {
         ImportOutageNotifier off = notifier(false, TG_ON);
