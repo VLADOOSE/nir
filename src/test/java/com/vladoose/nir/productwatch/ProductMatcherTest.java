@@ -32,7 +32,8 @@ class ProductMatcherTest {
                 new LotInput(1, "Отсасыватель", "для аспирации жидкого содержимого", astana));
         LotMatch suction = m.stream().filter(x -> x.groupId() == 10).findFirst().orElseThrow();
         assertThat(suction.level()).isEqualTo(ProductMatchLevel.COPIED);
-        assertThat(suction.evidence()).contains("блок аспирации").contains("держатель шланга аспирационного напольный");
+        // «блок аспирации» — слово группы и частое слово: общая фраза любого ТЗ отсасывателя (калибровка задачи 6)
+        assertThat(suction.evidence()).contains("держатель шланга аспирационного напольный").contains("амбулаторной гинекологии");
         String product = snap.products().stream().filter(p -> p.id() == suction.productId()).findFirst().orElseThrow().name();
         assertThat(product).startsWith("Аппарат для аспирации дыма АСД");
         assertThat(suction.specUsed()).isTrue();

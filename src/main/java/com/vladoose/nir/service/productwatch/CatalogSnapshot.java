@@ -16,15 +16,21 @@ public final class CatalogSnapshot {
     private final Map<Long, List<BrandModels.Code>> groupCodes;
     private final Map<Long, List<CatalogPhrases.Phrase>> phrases;
     private final Map<String, Double> idf;
+    private final CatalogPhrases.Rules rules;
 
     private CatalogSnapshot(List<GroupRule> groups, List<CatalogProduct> products, Map<Long, List<CatalogProduct>> groupProducts,
                             List<BrandModels.Code> globalCodes, Map<Long, List<BrandModels.Code>> groupCodes,
-                            Map<Long, List<CatalogPhrases.Phrase>> phrases, Map<String, Double> idf) {
+                            Map<Long, List<CatalogPhrases.Phrase>> phrases, Map<String, Double> idf, CatalogPhrases.Rules rules) {
         this.groups = groups; this.products = products; this.groupProducts = groupProducts; this.globalCodes = globalCodes;
-        this.groupCodes = groupCodes; this.phrases = phrases; this.idf = idf;
+        this.groupCodes = groupCodes; this.phrases = phrases; this.idf = idf; this.rules = rules;
     }
 
     public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts) {
+        return build(groups, siteProducts, CatalogPhrases.Rules.DEFAULT);
+    }
+
+    /** Снимок с правилом фраз — для калибровки (задача 6 плана); в работе — {@link CatalogPhrases.Rules#DEFAULT}. */
+    public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts, CatalogPhrases.Rules phraseRules) {
         List<GroupRule> rules = groups.stream().filter(ProductGroup::isActive).map(GroupRule::of).toList();
         List<CatalogProduct> products = siteProducts.stream().filter(p -> p.getRemovedAt() == null)
                 .map(p -> new CatalogProduct(p.getId(), p.getName(), p.getBrand(), p.getSlug(), p.getCategory(),
@@ -60,7 +66,7 @@ public final class CatalogSnapshot {
             groupCodes.put(r.id(), List.copyOf(codes));
         }
         return new CatalogSnapshot(rules, products, byGroup, List.copyOf(global), groupCodes,
-                CatalogPhrases.build(products), SimilarProducts.idf(products));
+                CatalogPhrases.build(products, phraseRules), SimilarProducts.idf(products), phraseRules);
     }
 
     public List<GroupRule> groups() { return groups; }
@@ -70,4 +76,5 @@ public final class CatalogSnapshot {
     public List<BrandModels.Code> groupCodes(long groupId) { return groupCodes.getOrDefault(groupId, List.of()); }
     public Map<Long, List<CatalogPhrases.Phrase>> phrases() { return phrases; }
     public Map<String, Double> idf() { return idf; }
+    public CatalogPhrases.Rules rules() { return rules; }
 }

@@ -41,7 +41,7 @@ class ProductWatchSchemaTest {
         if (kz.stream().anyMatch(g -> g.getUpdatedAt() != null)) return;
         assertThat(kz).hasSize(24);
         assertThat(kz.get(0).isBrandGroup()).isTrue();
-        assertThat(kz.get(0).getSearchWords()).contains("фотек", "аксион", "эмалед", "эхвч");
+        assertThat(kz.get(0).getSearchWords()).contains("фотек", "аксион", "эмалед").doesNotContain("эхвч");   // V37: «ЭХВЧ» — общее сокращение
         assertThat(kz).filteredOn(ProductGroup::isBrandGroup).hasSize(1);
         ProductGroup lamps = kz.stream().filter(g -> g.getName().startsWith("Светильники")).findFirst().orElseThrow();
         assertThat(lamps.getSearchWords()).containsExactly("светильник");
@@ -49,6 +49,24 @@ class ProductWatchSchemaTest {
         assertThat(lamps.getExcludeWords()).contains("уличн", "прожектор");
         assertThat(lamps.getBrandWords()).contains("эмалед");
         assertThat(groups.findByMarketOrderByPositionAscIdAsc(Market.RF)).isEmpty();
+    }
+
+    /** Фикстура сида (гейт сверки ТЗ работает на ней без базы) — та же, что в миграции; правленые группы — не сверяются. */
+    @Test
+    void seedFixtureMirrorsMigration() {
+        List<ProductGroup> kz = groups.findByMarketOrderByPositionAscIdAsc(Market.KZ);
+        if (kz.stream().anyMatch(g -> g.getUpdatedAt() != null)) return;
+        List<ProductGroup> fixture = ProductFixtures.seedGroups();
+        assertThat(kz).hasSameSizeAs(fixture);
+        for (int i = 0; i < kz.size(); i++) {
+            ProductGroup db = kz.get(i), f = fixture.get(i);
+            assertThat(db.getName()).isEqualTo(f.getName());
+            assertThat(db.getSearchWords()).as(db.getName()).isEqualTo(f.getSearchWords());
+            assertThat(db.getRequireWords()).as(db.getName()).isEqualTo(f.getRequireWords());
+            assertThat(db.getExcludeWords()).as(db.getName()).isEqualTo(f.getExcludeWords());
+            assertThat(db.getBrandWords()).as(db.getName()).isEqualTo(f.getBrandWords());
+            assertThat(db.isBrandGroup()).as(db.getName()).isEqualTo(f.isBrandGroup());
+        }
     }
 
     @Test

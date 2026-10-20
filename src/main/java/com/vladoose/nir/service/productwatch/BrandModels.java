@@ -37,13 +37,16 @@ public final class BrandModels {
         return Pattern.compile(q.toString(), Pattern.UNICODE_CHARACTER_CLASS);
     }
 
-    /** Коды моделей из названия товара: слово с ≥ 2 буквами и ≥ 1 цифрой («ДКИ-Н-11», «ЭХВЧ-350-03»). */
+    /**
+     * Коды моделей из названия товара: слово с ≥ 2 буквами и ≥ 2 цифрами («ДКИ-Н-11», «ЭХВЧ-350-03»). Одна цифра — обычно
+     * параметр, а не модель («SpO2», «CO2» в названиях дефибрилляторов-мониторов: калибровка задачи 6 дала «★» чужим ТЗ).
+     */
     public static List<String> modelCodes(String productName) {
         List<String> out = new ArrayList<>();
         if (productName == null) return out;
         for (String raw : productName.split("[\\s«»\"“”()\\[\\],;]+")) {
             String t = raw.replaceAll("^[\\-–—./]+|[\\-–—./]+$", "");
-            if (!t.isEmpty() && ProductText.letters(t) >= 2 && ProductText.digits(t) >= 1) out.add(t);
+            if (!t.isEmpty() && ProductText.letters(t) >= 2 && ProductText.digits(t) >= 2) out.add(t);
         }
         return out;
     }

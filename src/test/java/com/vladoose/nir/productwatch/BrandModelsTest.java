@@ -39,7 +39,7 @@ class BrandModelsTest {
     @Test
     void modelCodesFromCatalogNames_globalOnlyDistinct() {
         assertThat(BrandModels.modelCodes("Дефибриллятор-монитор ДКИ-Н-11 «Аксион» (ЭКГ, SpO2, НИАД)"))
-                .contains("ДКИ-Н-11", "SpO2");
+                .contains("ДКИ-Н-11").as("одна цифра — параметр, не модель").doesNotContain("SpO2");
         assertThat(BrandModels.modelCodes("ВЧ электрохирургический блок для аппарата ЭХВЧ-350-03-\"ФОТЕК\"")).contains("ЭХВЧ-350-03");
         assertThat(BrandModels.modelCodes("Рециркулятор бактерицидный настенный РБм 2Х15")).isEmpty();
         assertThat(BrandModels.globalCode("ДКИ-Н-11")).isTrue();
