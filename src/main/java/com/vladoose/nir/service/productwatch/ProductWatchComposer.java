@@ -15,8 +15,9 @@ import java.util.stream.Collectors;
 
 /**
  * Текст «Наш товар в тендерах» (спека 2026-10-19-product-watch §9, чистая функция): одно сообщение на прогон — сверху
- * «★ Точно наше», ниже «🏷 Наш вид изделия»; повышение 🏷 → ★ у уже сообщённого тендера — короткое «★ Уточнение».
- * Со звуком, если есть ★. Лоты — только наши. Поля — одной строкой ({@link TelegramText#oneLine}): их пишет площадка.
+ * «★ Точно наше», ниже «✅ Подходит наш товар» (сверка ТЗ, спека 2026-10-20-product-spec-fit §7) и «🏷 Наш вид изделия»;
+ * повышение у уже сообщённого тендера — короткое «★ Уточнение». Со звуком, если есть ★ или «подходит». Лоты — только
+ * наши. Поля — одной строкой ({@link TelegramText#oneLine}): их пишет площадка.
  */
 public final class ProductWatchComposer {
 
@@ -44,19 +45,21 @@ public final class ProductWatchComposer {
         if (cards.isEmpty()) return null;
         String base = publicUrl == null || publicUrl.isBlank() ? null : publicUrl.trim().replaceAll("/+$", "");
         List<Card> exact = cards.stream().filter(c -> !c.upgrade() && c.level().exact()).toList();
+        List<Card> fits = cards.stream().filter(c -> !c.upgrade() && c.level() == ProductMatchLevel.FITS).toList();
         List<Card> upgrades = cards.stream().filter(Card::upgrade).toList();
-        List<Card> type = cards.stream().filter(c -> !c.upgrade() && !c.level().exact()).toList();
-        int fresh = exact.size() + type.size();
+        List<Card> type = cards.stream().filter(c -> !c.upgrade() && c.level() == ProductMatchLevel.TYPE).toList();
+        int fresh = exact.size() + fits.size() + type.size();
         StringBuilder out = new StringBuilder(fresh == 0
                 ? "★ Уточнение: ТЗ под наш товар" + (upgrades.size() > 1 ? " — " + upgrades.size() : "")
                 : "🏷 Наш товар в тендерах: " + fresh);
         String tail = tail(base);
         List<Card> shown = new ArrayList<>();
         section(out, fresh == 0 ? null : "★ Точно наше", exact, base, tail, shown);
+        section(out, fresh == 0 ? null : "✅ Подходит наш товар", fits, base, tail, shown);
         section(out, fresh == 0 ? null : "★ Уточнение", upgrades, base, tail, shown);
         section(out, "🏷 Наш вид изделия", type, base, tail, shown);
         if (shown.size() < cards.size()) out.append("\n\n…и ещё ").append(cards.size() - shown.size()).append(tail);
-        boolean sound = shown.stream().anyMatch(c -> c.level().exact());
+        boolean sound = shown.stream().anyMatch(c -> c.level().alert());
         return new Message(out.toString(), sound, shown.stream().map(Card::tenderId).toList());
     }
 
@@ -99,7 +102,11 @@ public final class ProductWatchComposer {
                                 + (x.brand() == null || x.brand().isBlank() ? "" : " (" + TelegramText.oneLine(x.brand(), 30) + ")"))
                         .collect(Collectors.joining(", "));
             };
-            parts.add(what.isEmpty() ? lot : lot + " · " + what);
+            String line = what.isEmpty() ? lot : lot + " · " + what;
+            if (l.level() == ProductMatchLevel.FITS && l.fit() != null && l.fit().foreignBrand() != null) {
+                line += "\nТЗ под " + TelegramText.oneLine(l.fit().foreignBrand(), 40) + " — наш аналог по ТЗ проходит";
+            }
+            parts.add(line);
         }
         if (!parts.isEmpty()) b.append('\n').append(String.join("\n", parts));
         if (c.lots().size() > SHOWN_LOTS) b.append("\nи ещё ").append(c.lots().size() - SHOWN_LOTS).append(" наших лотов");

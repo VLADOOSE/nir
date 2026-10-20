@@ -212,12 +212,12 @@ public class NewTenderNotifier {
             ProductMatchQuery.Summary s = ours.get(t.getId());
             if (s == null || s.level() == null) continue;
             shownOurs.put(t.getId(), s.level());
-            sound |= s.level().exact();
+            sound |= s.level().alert();   // ★ и «✓ подходит» (спека 2026-10-20-product-spec-fit §6.4)
         }
         return new Prepared(c.text(), used, sound, shownOurs);
     }
 
-    /** Порядок в сообщении: ★ (NAMED, COPIED), потом 🏷, потом без нашего товара. */
+    /** Порядок в сообщении: ★ (NAMED, COPIED), потом ✓ (FITS), потом 🏷, потом без нашего товара. */
     private static int rank(ProductMatchQuery.Summary s) {
         return s == null || s.level() == null ? -1 : s.level().ordinal();
     }

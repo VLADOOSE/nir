@@ -1,5 +1,6 @@
 package com.vladoose.nir.productwatch;
 
+import com.vladoose.nir.entity.FitVerdict;
 import com.vladoose.nir.entity.ProductMatchLevel;
 import com.vladoose.nir.entity.SimilarProductRef;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
@@ -72,5 +73,38 @@ class ProductWatchComposerTest {
     @Test
     void nothing_returnsNull() {
         assertThat(ProductWatchComposer.compose(List.of(), "https://ais.westmed.kz")).isNull();
+    }
+
+    @Test
+    void fitsSection_withMetTailAndForeignLine_sound() {
+        ProductMatchQuery.LotLine lot = new ProductMatchQuery.LotLine(1, "Электрокоагулятор", 1, ProductMatchLevel.FITS, "Электрохирургия",
+                "электрокоагулятор", null, null, null, List.of(),
+                new ProductMatchQuery.FitSummary(FitVerdict.FITS, "ВЧ электрохирургический блок для аппарата ЭХВЧ-350-03-«ФОТЕК»",
+                        "ehvch350", 9, 12, 2, null, "BOWA", "ACTIVE"));
+        ProductWatchComposer.Card card = new ProductWatchComposer.Card(10, "17828560-1", "goszakup", null,
+                "Приобретение электрокоагулятора для больниц", "КГП на ПХВ «Многопрофильная областная детская больница»",
+                "Кызылординская область", new BigDecimal("15700000"), LocalDate.of(2026, 10, 22),
+                LocalDateTime.of(2026, 10, 22, 8, 0), ProductMatchLevel.FITS, false, List.of(lot));
+        ProductWatchComposer.Message m = ProductWatchComposer.compose(List.of(card), "https://ais.westmed.kz");
+        assertThat(m.text()).startsWith("🏷 Наш товар в тендерах: 1")
+                .contains("\n\n✅ Подходит наш товар\n")
+                .contains("Электрокоагулятор — 1 шт. · подходит наш товар: ВЧ электрохирургический блок для аппарата ЭХВЧ-350-03-«ФОТЕК» — 9 из 12 требований (нет данных: 2)")
+                .contains("\nТЗ под BOWA — наш аналог по ТЗ проходит")
+                .doesNotContain("🏷 Наш вид изделия");
+        assertThat(m.sound()).isTrue();
+    }
+
+    /** Порядок разделов: «★ Точно наше» → «✅ Подходит» → «🏷 Наш вид»; без ★ и FITS — тихо. */
+    @Test
+    void sectionsOrder_andTypeOnlyIsSilent() {
+        ProductMatchQuery.LotLine fitsLot = new ProductMatchQuery.LotLine(2, "Аспиратор", 1, ProductMatchLevel.FITS, "Отсасыватели", "аспиратор",
+                null, null, null, List.of(), new ProductMatchQuery.FitSummary(FitVerdict.FITS, "ОМХ-5/80", "omh", 5, 8, 3, null, null, "ACTIVE"));
+        ProductWatchComposer.Card fits = new ProductWatchComposer.Card(11, "17000001-1", "goszakup", null, "Аспиратор", null, null, null,
+                null, null, ProductMatchLevel.FITS, false, List.of(fitsLot));
+        String text = ProductWatchComposer.compose(List.of(astana(ProductMatchLevel.TYPE, false), fits, astana(ProductMatchLevel.COPIED, false)),
+                null).text();
+        assertThat(text.indexOf("★ Точно наше")).isLessThan(text.indexOf("✅ Подходит наш товар"));
+        assertThat(text.indexOf("✅ Подходит наш товар")).isLessThan(text.indexOf("🏷 Наш вид изделия"));
+        assertThat(ProductWatchComposer.compose(List.of(astana(ProductMatchLevel.TYPE, false)), null).sound()).isFalse();
     }
 }

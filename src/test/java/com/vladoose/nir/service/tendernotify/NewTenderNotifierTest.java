@@ -183,6 +183,21 @@ class NewTenderNotifierTest {
         assertThat(productSent).isEmpty();
     }
 
+    /**
+     * «✓ подходит» у нового тендера ЗКО — строкой и со звуком (спека 2026-10-20-product-spec-fit §6.4: FITS — сигнальный
+     * уровень, как ★): второго сообщения о тендере в теме нашей продукции нет, без звука сигнал потерялся бы.
+     */
+    @Test
+    void ourProductFits_lineWithSound() {
+        Tender t = tender("NT-F", ZKO, "ACTIVE", TODAY.plusDays(2));
+        mark(t, ProductMatchLevel.FITS, null);
+
+        notifier(true, TG_ON, ZKO).afterImport(created("NT-F"));
+
+        assertThat(sent).singleElement().asString().contains("\n✓ Подходит наш товар: отсасыватель");
+        assertThat(silent).containsExactly(false);
+    }
+
     /** Тендеры с нашим товаром — первыми; 🏷 «наш вид» — без звука. */
     @Test
     void ourProductTendersFirst_typeSilent() {

@@ -40,6 +40,7 @@ class ProductNotifyPolicyTest {
         assertThat(star.levelPasses(ProductMatchLevel.TYPE)).isFalse();
         assertThat(star.levelPasses(ProductMatchLevel.NAMED)).isTrue();
         assertThat(star.levelPasses(ProductMatchLevel.COPIED)).isTrue();
+        assertThat(star.levelPasses(ProductMatchLevel.FITS)).as("«✓ подходит» — тоже сигнал (спека 2026-10-20-product-spec-fit §6.4)").isTrue();
         assertThat(ProductNotifyPolicy.of("all", "0").levelPasses(ProductMatchLevel.TYPE)).isTrue();
         assertThat(ProductNotifyPolicy.of("off", "0").levelPasses(ProductMatchLevel.COPIED)).isFalse();
     }
