@@ -30,6 +30,9 @@ import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
 import com.vladoose.nir.service.productwatch.ProductAiBrief;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.repository.TenderLotRepository;
+import com.vladoose.nir.service.lotmodel.LotModelViews;
 import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.productwatch.fit.SpecRequirement;
 import com.vladoose.nir.service.productwatch.fit.SpecRequirements;
@@ -40,6 +43,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -62,6 +67,8 @@ public class TenderController {
     private final TenderWorkStageService workStageService;
     private final ProductMatchQuery productQuery;
     private final ProductAiBrief aiBrief;
+    private final TenderLotRepository tenderLotRepository;
+    private final LotModelViews lotModelViews;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -76,7 +83,9 @@ public class TenderController {
                             TenderWorkStageService workStageService,
                             SkPharmacyImportScheduler skScheduler,
                             ProductMatchQuery productQuery,
-                            ProductAiBrief aiBrief) {
+                            ProductAiBrief aiBrief,
+                            TenderLotRepository tenderLotRepository,
+                            LotModelViews lotModelViews) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -91,6 +100,8 @@ public class TenderController {
         this.skScheduler = skScheduler;
         this.productQuery = productQuery;
         this.aiBrief = aiBrief;
+        this.tenderLotRepository = tenderLotRepository;
+        this.lotModelViews = lotModelViews;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -130,6 +141,11 @@ public class TenderController {
         if (list.isEmpty()) return list;
         Map<Long, OurProductSummary> ours = productQuery.ourProduct(list.stream().map(TenderResponse::getId).toList());
         for (TenderResponse r : list) r.setOurProduct(ours.get(r.getId()));
+        Map<Long, List<String>> models = new HashMap<>();
+        for (Object[] row : tenderLotRepository.findModelsByTenderIds(list.stream().map(TenderResponse::getId).toList())) {
+            models.computeIfAbsent((Long) row[0], k -> new ArrayList<>()).add((String) row[1]);
+        }
+        for (TenderResponse r : list) r.setModelsInWork(models.getOrDefault(r.getId(), List.of()));
         return list;
     }
 
@@ -181,7 +197,11 @@ public class TenderController {
     @GetMapping("/{id}/lots")
     public List<TenderLotResponse> getLots(@PathVariable Long id) {
         service.findInMarket(id);
-        List<TenderLotResponse> lots = tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
+        List<TenderLot> entities = tenderLotService.findByTenderId(id);
+        List<TenderLotResponse> lots = tenderLotMapper.toResponseList(entities);
+        Map<Long, TenderLot> byId = new HashMap<>();
+        entities.forEach(e -> byId.put(e.getId(), e));
+        for (TenderLotResponse l : lots) lotModelViews.enrich(l, byId.get(l.getId()));   // ссылка на товар сайта, РУ модели
         Map<Long, List<LotProductMatchDto>> ours = productQuery.lotMatches(id);
         for (TenderLotResponse l : lots) l.setProductMatches(ours.getOrDefault(l.getId(), List.of()));
         for (TenderLotResponse l : lots) {

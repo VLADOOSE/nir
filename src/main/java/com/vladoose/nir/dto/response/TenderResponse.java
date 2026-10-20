@@ -39,4 +39,6 @@ public class TenderResponse {
     private boolean foundByProductSearch;
     /** «Наш товар»: пусто — отметок нет (ставит контроллер одним заходом на весь список). */
     private OurProductSummary ourProduct;
+    /** Модели в работе лотов — для чипа «📌 …» и фильтра (спека 2026-10-20-lot-model-in-work §7). */
+    private List<String> modelsInWork = new ArrayList<>();
 }

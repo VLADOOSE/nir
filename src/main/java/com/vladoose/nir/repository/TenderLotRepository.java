@@ -15,6 +15,10 @@ import java.util.List;
 
 public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
 
+    /** Модели в работе лотов тендеров — одним запросом на список (`[tenderId, имя модели]`, порядок лотов). */
+    @Query("SELECT l.tender.id, e.name FROM TenderLot l JOIN l.proposedEquipment e WHERE l.tender.id IN :ids ORDER BY l.id")
+    List<Object[]> findModelsByTenderIds(@Param("ids") Collection<Long> ids);
+
     List<TenderLot> findByTenderId(Long tenderId);
 
     List<TenderLot> findByEquipmentTypeId(Long equipmentTypeId);
