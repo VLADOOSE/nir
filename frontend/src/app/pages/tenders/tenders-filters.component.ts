@@ -42,7 +42,7 @@ export interface TendersFilters {
         <option *ngFor="let r of regions" [value]="r">{{ r }}</option>
       </select>
       <select class="f-sel" *ngIf="isKz" [(ngModel)]="filters.our" (change)="emit()" title="Наш товар">
-        <option value="">Наш товар: все</option><option value="EXACT">★ Точно наше</option><option value="ANY">Любой наш вид</option>
+        <option value="">Наш товар: все</option><option value="EXACT">{{ ourLabels['EXACT'] }}</option><option value="ANY">Любой наш вид</option>
         <option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option>
       </select>
       <button class="f-reset" (click)="reset.emit()">Сбросить</button>
@@ -67,7 +67,7 @@ export interface TendersFilters {
       <label>Стадия<select [(ngModel)]="filters.stage" (change)="emit()"><option value="">Все</option><option value="NOT_STARTED">Не начат</option><option value="REQUESTED">Запрос отправлен</option><option value="PRICED">Есть цены</option><option value="WINNER_SELECTED">Победитель выбран</option></select></label>
       <label *ngIf="isKz">Площадка<select [(ngModel)]="filters.platform" (change)="emit()"><option value="">Все</option><option value="GOSZAKUP">Госзакуп</option><option value="SK_PHARMACY">СК-Фармация</option></select></label>
       <label *ngIf="isKz">Регион<select [(ngModel)]="filters.region" (change)="emit()"><option value="">Все</option><option [value]="noRegionValue">Регион не указан</option><option *ngFor="let r of regions" [value]="r">{{ r }}</option></select></label>
-      <label *ngIf="isKz">Наш товар<select [(ngModel)]="filters.our" (change)="emit()"><option value="">Все</option><option value="EXACT">★ Точно наше</option><option value="ANY">Любой наш вид</option><option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option></select></label>
+      <label *ngIf="isKz">Наш товар<select [(ngModel)]="filters.our" (change)="emit()"><option value="">Все</option><option value="EXACT">{{ ourLabels['EXACT'] }}</option><option value="ANY">Любой наш вид</option><option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option></select></label>
       <label>Учреждение<select [(ngModel)]="filters.facilityId" (change)="emit()"><option [ngValue]="null">Все</option><option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option></select></label>
       <label class="fm-dates">Дедлайн<span><input type="date" [(ngModel)]="filters.deadlineFrom" (change)="emit()" /><input type="date" [(ngModel)]="filters.deadlineTo" (change)="emit()" /></span></label>
       <div class="fm-sheet-actions"><button class="fm-apply" (click)="sheetOpen = false">Применить</button><button class="fm-clear" (click)="reset.emit(); sheetOpen = false">Сброс</button></div>
@@ -120,6 +120,8 @@ export class TendersFiltersComponent {
   @Input() regions: string[] = [];
   @Input() isKz = false;
   @Input() noRegionValue = '__none__';
+  /** Подписи вариантов «Наш товар» — из одного места (их же берёт чип активного фильтра). */
+  readonly ourLabels = OUR_LABELS;
   /** Группы «нашей продукции», отмеченные на тендерах списка (для фильтра). */
   @Input() ourGroups: string[] = [];
   @Output() filtersChange = new EventEmitter<TendersFilters>();

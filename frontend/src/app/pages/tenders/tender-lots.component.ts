@@ -8,6 +8,9 @@ import { MarketService } from '../../services/market.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { LotRegistryPanelComponent } from './lot-registry-panel.component';
 import { LotKpPanelComponent } from './lot-kp-panel.component';
+import { LotFitComponent } from './lot-fit.component';
+import { fitChip } from '../../shared/product-watch';
+import type { LotProductMatch } from '../../shared/product-watch';
 
 /** Стадия работы по лоту — считается на клиенте из уже загруженных лотов и запросов КП. */
 export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | 'success' | 'danger'; filled: boolean; }
@@ -21,7 +24,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 @Component({
   selector: 'app-tender-lots',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent],
   template: `
     <div class="lots-toolbar">
       <!-- пока форма открыта, кнопки нет: клик по ней сбрасывал форму в режим создания и терял правки -->
@@ -99,19 +102,21 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             <span class="stage-chip stage-danger"
                   title="Лота больше нет на площадке. Он остался в АИС, потому что на него есть запрос КП или позиция заявки.">снят с площадки</span>
           </div>
-          <!-- наш товар (спека 2026-10-19-product-watch §12.3): видно и у свёрнутого лота; ссылки — на товар сайта -->
+          <!-- наш товар (спеки 2026-10-19-product-watch §12.3, 2026-10-20-product-spec-fit §8.1): видно и у свёрнутого лота;
+               чип — вердикт сверки ТЗ с нашим товаром, ссылки — на товар сайта -->
           <div class="lot-ours" *ngFor="let m of l.productMatches || []">
-            <span class="stage-chip" [class.stage-success]="m.level !== 'TYPE'" [class.stage-accent]="m.level === 'TYPE'">{{
-              m.level === 'TYPE' ? '🏷 ' + m.groupName : '★ ' + (m.level === 'COPIED' ? 'ТЗ списано с нашего' : 'назван наш товар') }}</span>
+            <span class="stage-chip lot-ours-chip" [class]="'stage-' + chip(m).tone">{{ chip(m).text }}</span>
+            <span class="stage-chip stage-muted" *ngIf="m.foreignBrand">ТЗ под {{ m.foreignBrand }}</span>
             <span class="lot-ours-text">
               <a *ngIf="m.productUrl" [href]="m.productUrl" target="_blank" rel="noopener" (click)="$event.stopPropagation()">{{ m.productName }} ↗</a>
               <ng-container *ngIf="!m.productUrl && m.productName">{{ m.productName }}</ng-container>
               <ng-container *ngIf="m.evidence">{{ m.productName ? ' — ' : '' }}{{ m.evidence }}</ng-container>
-              <ng-container *ngIf="m.level === 'TYPE' && m.similar.length">похоже:
+              <ng-container *ngIf="m.level === 'TYPE' && (!m.fit || m.fit === 'NO_REQUIREMENTS') && m.similar.length">похоже:
                 <ng-container *ngFor="let x of m.similar; let last = last"><a *ngIf="x.url" [href]="x.url" target="_blank" rel="noopener"
                   (click)="$event.stopPropagation()">{{ x.name }}</a><span *ngIf="!x.url">{{ x.name }}</span><ng-container *ngIf="!last">, </ng-container></ng-container>
               </ng-container>
-              <ng-container *ngIf="m.level === 'TYPE' && (l.techSpecStatus === 'NO_FILE' || l.techSpecStatus === 'UNREADABLE')">{{
+              <ng-container *ngIf="m.level === 'TYPE' && (!m.fit || m.fit === 'NO_REQUIREMENTS')
+                  && (l.techSpecStatus === 'NO_FILE' || l.techSpecStatus === 'UNREADABLE')">{{
                 m.similar.length ? ' · ' : '' }}ТЗ недоступно</ng-container>
             </span>
           </div>
@@ -157,9 +162,17 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           </span>
         </div>
 
+        <!-- сверка ТЗ с нашим товаром и «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — отдельным чанком -->
+        @defer (on viewport) {
+          <app-lot-fit *ngFor="let m of fitMatches(l)" [match]="m"></app-lot-fit>
+          <app-lot-fit *ngIf="!fitMatches(l).length && l.requirements?.length" [requirements]="l.requirements"></app-lot-fit>
+        } @placeholder {
+          <div class="lot-fit-ph"></div>
+        }
+
         <div class="lot-spec" *ngIf="l.requiredSpec">
           <button class="spec-toggle" (click)="toggleSpec(l)">
-            {{ isSpecOpen(l) ? '▴' : '▾' }} Техническая спецификация
+            {{ isSpecOpen(l) ? '▴' : '▾' }} Полный текст ТЗ
           </button>
           <div class="spec-body" *ngIf="isSpecOpen(l)">{{ l.requiredSpec }}</div>
         </div>
@@ -206,6 +219,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    /* двойной класс — сильнее .stage-chip независимо от порядка: длинный «✓ подходит: …» переносится на 390 px */
+    .stage-chip.lot-ours-chip { white-space: normal; }
+    .lot-fit-ph { min-height: 1px; }
     .stage-muted { background: var(--surface-2); color: var(--text-muted); }
     .stage-accent { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .stage-warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
@@ -400,6 +416,14 @@ export class TenderLotsComponent implements OnChanges {
     this.cdr.detectChanges();
   }
   isSpecOpen(l: any): boolean { return this.specOpenLotId === l.id; }
+
+  /** Подпись и тон чипа отметки «наш товар» (вердикт сверки ТЗ). */
+  chip(m: LotProductMatch) { return fitChip(m); }
+
+  /** Отметки лота со сверкой ТЗ (есть кандидаты) — для блока «Сверка с нашим товаром». */
+  fitMatches(l: any): LotProductMatch[] {
+    return (l.productMatches || []).filter((m: LotProductMatch) => m.candidates?.length);
+  }
 
   // ===== стадия лота и получатели КП (предпосчёт) =====
   /**
