@@ -4,10 +4,12 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.SiteProduct;
+import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.SiteProductRepository;
 import com.vladoose.nir.repository.TenderRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +44,7 @@ class LotModelApiTest {
     @Autowired TenderRepository tenders;
     @Autowired SiteProductRepository products;
     @Autowired MedRegistryRepository registry;
+    @Autowired EntityManager em;
     MockMvc mvc;
     TenderLot lot;
     SiteProduct dki;
@@ -131,5 +134,24 @@ class LotModelApiTest {
         mvc.perform(in(Market.RF, json(post("/api/lots/" + lot.getId() + "/model"), "{\"siteProductId\":" + dki.getId() + "}")))
                 .andExpect(status().isNotFound());
         mvc.perform(in(Market.RF, delete("/api/lots/" + lot.getId() + "/model"))).andExpect(status().isNotFound());
+    }
+
+    /** Лоты карточки — по номеру: закреплённый лот не уезжает в конец списка (UPDATE переносит строку в конец таблицы). */
+    @Test
+    @WithMockUser(username = "vlad", roles = "ADMIN")
+    void lotsKeepOrderAfterPin() throws Exception {
+        Tender t = lot.getTender();
+        TenderLot second = new TenderLot();
+        second.setTender(t);
+        second.setLotNumber(2);
+        second.setEquipName("ZZ Второй лот");
+        t.getLots().add(second);
+        em.persist(second);
+        em.flush();
+        mvc.perform(in(Market.KZ, json(post("/api/lots/" + lot.getId() + "/model"), "{\"siteProductId\":" + dki.getId() + "}")))
+                .andExpect(status().isOk());
+        mvc.perform(in(Market.KZ, get("/api/tenders/" + t.getId() + "/lots")))
+                .andExpect(jsonPath("$[0].id").value(lot.getId()))
+                .andExpect(jsonPath("$[1].id").value(second.getId()));
     }
 }

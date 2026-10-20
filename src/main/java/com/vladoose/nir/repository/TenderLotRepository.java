@@ -21,6 +21,9 @@ public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
 
     List<TenderLot> findByTenderId(Long tenderId);
 
+    /** Лоты карточки — по номеру (без номера — в конце), затем по id: без порядка UPDATE уносил бы лот в конец списка. */
+    List<TenderLot> findByTenderIdOrderByLotNumberAscIdAsc(Long tenderId);
+
     List<TenderLot> findByEquipmentTypeId(Long equipmentTypeId);
 
     /**

@@ -27,7 +27,7 @@ public class TenderLotService {
     }
 
     public List<TenderLot> findByTenderId(Long tenderId) {
-        return repository.findByTenderId(tenderId);
+        return repository.findByTenderIdOrderByLotNumberAscIdAsc(tenderId);
     }
 
     public TenderLot findById(Long id) {
