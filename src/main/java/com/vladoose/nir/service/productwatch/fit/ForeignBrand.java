@@ -18,6 +18,10 @@ public final class ForeignBrand {
                     + "\\s*[:\\-–—]\\s*([\\p{L}][\\p{L}\\p{N}\\-]{1,40})");
     private static final Pattern LATIN = Pattern.compile("(?<![\\p{L}\\p{N}])([A-Z][A-Za-z]{3,}|[A-Z]{3,})(?![\\p{L}\\p{N}])");
     private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]+");
+    /** Между словом и следующим — знак «параметр: значение» или граница пункта. */
+    private static final Pattern VALUE_GAP = Pattern.compile("[:=≥≤<>();]");
+    /** Русское слово, затем скобки с одной латиницей: «цветопередачи (CRI)». */
+    private static final Pattern GLOSS = Pattern.compile("\\p{IsCyrillic}\\s*\\(([\\p{IsLatin}\\p{N}\\s.\\-/]{2,40})\\)");
     /** Римское число («отведения I, II, III», «класс III») — не бренд. */
     private static final Pattern ROMAN = Pattern.compile("M{0,3}(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})");
     private static final Set<String> STOP = Set.of("spo", "tft", "lcd", "led", "usb", "ddp", "iso", "iec", "aha", "qrs", "ecg",
@@ -27,7 +31,9 @@ public final class ForeignBrand {
             "ups", "gsm", "gps", "rfid", "hdmi", "vga", "fda", "gmp", "aed", "cpr", "ivl", "uzi", "uhf", "vhf", "ntc", "ptc",
             "aureus", "officinalis", "latex", "nitrile", "luer", "lock", "luerlock", "json", "xml", "html", "word", "excel",
             // стандарты и организации по стандартам («протокол … AAMI DF-80», «IEEE 802.11») — не производители
-            "aami", "ansi", "astm", "ieee", "nema", "cispr", "cenelec", "nist", "osha", "gost");
+            "aami", "ansi", "astm", "ieee", "nema", "cispr", "cenelec", "nist", "osha", "gost",
+            // условия поставки («DDP (Incoterms 2020)»)
+            "incoterms");
     private static final Set<String> GENERIC = Set.of("medical", "medic", "healthcare", "health", "systems", "system", "technologies",
             "technology", "tech", "electronics", "electronic", "international", "group", "company", "corporation", "industries",
             "industry", "instruments", "instrument", "products", "product", "solutions", "devices", "device", "scientific",
@@ -35,7 +41,10 @@ public final class ForeignBrand {
             "holdings", "manufacturing", "trading", "equipment", "supplies", "china", "germany", "korea", "japan", "italy", "france",
             "india", "turkey", "usa", "shenzhen", "shanghai", "beijing", "jiangsu", "zhejiang", "guangdong", "hangzhou", "suzhou",
             "wuhan", "ningbo", "tianjin", "qingdao", "changzhou", "xiamen", "chongqing", "guangzhou", "foshan", "zhuhai", "nanjing",
-            "medizintechnik", "medizin", "technik", "pharma", "diagnostics", "diagnostic", "laboratories", "laboratory");
+            "medizintechnik", "medizin", "technik", "pharma", "diagnostics", "diagnostic", "laboratories", "laboratory",
+            // обычные слова в названиях производителей реестра («Light Instruments Ltd.», «… LifeSciences (Ireland)»): в ТЗ —
+            // «Light Touch», «Therapy», «Center»; проверка на проде 2026-10-20
+            "light", "center", "centre", "therapy", "cardio", "ireland", "lifesciences");
     private static final Set<String> COMPAT = Set.of("типа", "тип", "разъем", "разъема", "разъемом", "разъём", "разъёма", "разъёмом",
             "совместим", "совместимы", "совместимый", "совместимые", "совместимость", "коннектор", "коннектором", "стандарта",
             "стандарт", "датчик", "датчиком", "датчики", "на", "к", "режим", "режима", "режимом");
@@ -64,11 +73,12 @@ public final class ForeignBrand {
         List<Integer> wordStarts = new ArrayList<>();
         Matcher w = WORD.matcher(text);
         while (w.find()) { words.add(w.group()); wordStarts.add(w.start()); }
+        Set<Integer> glossed = glossed(text, wordStarts);
         Map<String, List<Integer>> occ = new LinkedHashMap<>();   // токен (нижний регистр) → номера слов
         Map<String, String> asWritten = new HashMap<>();
         for (int i = 0; i < words.size(); i++) {
             String tok = words.get(i);
-            if (!LATIN.matcher(tok).matches()) continue;
+            if (!LATIN.matcher(tok).matches() || glossed.contains(i)) continue;
             String key = tok.toLowerCase(Locale.ROOT);
             if (STOP.contains(key) || GENERIC.contains(key) || ours.contains(key) || ROMAN.matcher(tok).matches()) continue;
             occ.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
@@ -77,7 +87,8 @@ public final class ForeignBrand {
         for (Map.Entry<String, List<Integer>> e : occ.entrySet()) {
             List<Integer> at = e.getValue();
             if (at.stream().allMatch(i -> compat(words, i))) continue;
-            boolean strong = known.contains(e.getKey()) || at.size() >= 2 || at.stream().anyMatch(i -> modelCodeAfter(words, i));
+            boolean strong = known.contains(e.getKey()) || at.size() >= 2
+                    || at.stream().anyMatch(i -> modelCodeAfter(text, words, wordStarts, i));
             if (strong) return asWritten.get(e.getKey());
         }
         return null;
@@ -89,12 +100,35 @@ public final class ForeignBrand {
         return false;
     }
 
-    /** Код модели: в двух следующих словах есть цифра («BOWA ARC 303»). */
-    private static boolean modelCodeAfter(List<String> words, int i) {
+    /**
+     * Код модели: в двух следующих словах есть цифра («BOWA ARC 303», «HAMILTON-C6»), промежуточное слово — латиницей
+     * («Drager Oxylog 3000»). Число после «:», «≥», «=», скобки или «;» — значение параметра или номер пункта, не модель:
+     * «CMRR: ≥ 135 дБ», «APNEA (апноэ); 5. Настройки» (проверка на проде 2026-10-20).
+     */
+    private static boolean modelCodeAfter(String text, List<String> words, List<Integer> starts, int i) {
         for (int k = i + 1; k <= Math.min(words.size() - 1, i + 2); k++) {
-            if (words.get(k).chars().anyMatch(Character::isDigit)) return true;
+            String gap = text.substring(starts.get(k - 1) + words.get(k - 1).length(), starts.get(k));
+            if (VALUE_GAP.matcher(gap).find()) return false;
+            String wk = words.get(k);
+            if (wk.chars().anyMatch(Character::isDigit)) return true;
+            if (!LATIN.matcher(wk).matches()) return false;
         }
         return false;
+    }
+
+    /**
+     * Сокращение латиницей в скобках после русского термина — расшифровка, не бренд: «Индекс цветопередачи (CRI)»,
+     * «сенсорное управление (light touch)» (проверка на проде 2026-10-20). Номера слов внутри таких скобок.
+     */
+    private static Set<Integer> glossed(String text, List<Integer> starts) {
+        Set<Integer> out = new HashSet<>();
+        Matcher g = GLOSS.matcher(text);
+        while (g.find()) {
+            for (int k = 0; k < starts.size(); k++) {
+                if (starts.get(k) >= g.start(1) && starts.get(k) < g.end(1)) out.add(k);
+            }
+        }
+        return out;
     }
 
     public static Set<String> ours(Collection<String> productNames, Collection<String> siteBrands) {

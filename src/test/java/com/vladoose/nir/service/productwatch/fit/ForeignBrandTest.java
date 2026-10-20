@@ -80,4 +80,30 @@ class ForeignBrandTest {
                 .isNull();
         assertThat(ForeignBrand.detect("Отведения I, II, III, aVR; класс защиты III; категория XII", OURS, Set.of())).isNull();
     }
+    /**
+     * Проверка на проде после выкладки (2026-10-20): термины латиницей давали «ТЗ под …». CMRR — число после «:»
+     * принималось за код модели, APNEA — номер следующего пункта, CRI и light touch — сокращение в скобках после
+     * русского термина, повторённое вместе с абзацем. Настоящие производители тех же ТЗ — по-прежнему чужой бренд.
+     */
+    @Test
+    void termsAreNotBrands_liveSpecs() {
+        assertThat(ForeignBrand.detect("Коэффициент ослабления синфазного сигнала CMRR: ≥ 135 дБ (если режекторный фильтр включен; "
+                + "≥ 115 дБ (если выключен)", OURS, Set.of())).isNull();
+        assertThat(ForeignBrand.detect("– Модуль SpO2 отсоединён; – Модуль CO2 отсоединён; – APNEA (апноэ); 5. Настройки оператора",
+                OURS, Set.of())).isNull();
+        assertThat(ForeignBrand.detect("Регулировка освещенности: от 10% до 100%. Индекс цветопередачи (CRI): 97 Ra. Описание: "
+                + "Регулировка освещенности: от 10% до 100%. Индекс цветопередачи (CRI): 97 Ra", OURS, Set.of())).isNull();
+        assertThat(ForeignBrand.detect("Должно быть обеспечено цифровое сенсорное управление (light touch) на корпусе блока. "
+                + "Система управления: не менее 5 шагов регулировки яркости Light Touch и включение/выключение", OURS, Set.of())).isNull();
+        assertThat(ForeignBrand.detect("Воздушный фильтр HEPA класса 13, предфильтр", OURS, Set.of())).isNull();   // через русское слово — не код
+        // обычные слова среди производителей реестра («Light Instruments Ltd.») и условия поставки — не бренд
+        Set<String> registry = ForeignBrand.registryBrands(List.of("Light Instruments Ltd.", "BG LIGHT LTD", "Cardio Medical Center",
+                "Integra LifeSciences (Ireland) Limited"));
+        assertThat(ForeignBrand.detect("регулировки яркости Light Touch и включение; программа Therapy Center", OURS, registry)).isNull();
+        assertThat(ForeignBrand.detect("Условия поставки – DDP (Incoterms 2020) до места эксплуатации", OURS, Set.of())).isNull();
+        assertThat(ForeignBrand.detect("Аппарат искусственной вентиляции легких HAMILTON-C6 Производитель Hamilton Medical AG, Швейцария",
+                OURS, Set.of())).isEqualTo("HAMILTON");
+        assertThat(ForeignBrand.detect("Кислородный баллон на транспортный МВЛ аппарат Drager Oxylog 3000 plus", OURS, Set.of()))
+                .isEqualTo("Drager");
+    }
 }
