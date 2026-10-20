@@ -5,11 +5,15 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MarketService } from '../../services/market.service';
+import { AuthService } from '../../services/auth.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { LotRegistryPanelComponent } from './lot-registry-panel.component';
 import { LotKpPanelComponent } from './lot-kp-panel.component';
 import { LotFitComponent } from './lot-fit.component';
+import { LotModelFitComponent } from './lot-model-fit.component';
+import { LotModelDialogComponent } from './lot-model-dialog.component';
 import { fitChip } from '../../shared/product-watch';
+import { MODEL_SOURCE, regShort } from '../../shared/lot-model';
 import type { LotProductMatch } from '../../shared/product-watch';
 
 /** Стадия работы по лоту — считается на клиенте из уже загруженных лотов и запросов КП. */
@@ -24,7 +28,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 @Component({
   selector: 'app-tender-lots',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent],
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent,
+            LotModelFitComponent, LotModelDialogComponent],
   template: `
     <div class="lots-toolbar">
       <!-- пока форма открыта, кнопки нет: клик по ней сбрасывал форму в режим создания и терял правки -->
@@ -123,12 +128,20 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <div class="lot-metrics" *ngIf="l.quantity || l.maxCost || l.equipmentType?.name">
             <ng-container *ngIf="l.quantity">{{ l.quantity }} шт</ng-container><ng-container *ngIf="l.maxCost">{{ l.quantity ? ' · ' : '' }}до {{ l.maxCost | money }} за ед.</ng-container><ng-container *ngIf="l.equipmentType?.name">{{ (l.quantity || l.maxCost) ? ' · ' : '' }}{{ l.equipmentType.name }}</ng-container>
           </div>
-          <div class="lot-proposed" *ngIf="l.proposedEquipment">
-            <span class="badge-proposed">Предложено:</span>
-            {{ l.proposedEquipment.name }} ({{ l.proposedEquipment.manufact }})
-            <span class="badge-reg-ok" *ngIf="l.proposedEquipment.registrationStatus === 'REGISTERED'"
-                  [title]="'РУ ' + (l.proposedEquipment.regNumber || '')">РУ ✓</span>
-            <button class="x-mini" (click)="clearProposed(l, $event)" title="Снять предложение">✕</button>
+          <!-- модель в работе (спека 2026-10-20-lot-model-in-work §7): видна и у свёрнутого лота -->
+          <div class="lot-model" *ngIf="l.proposedEquipment">
+            <span class="badge-model">📌 Модель в работе:</span>
+            <a *ngIf="l.proposedEquipment.productUrl; else modelName" [href]="l.proposedEquipment.productUrl" target="_blank"
+               rel="noopener" (click)="$event.stopPropagation()">{{ l.proposedEquipment.name }} ↗</a>
+            <ng-template #modelName><span>{{ l.proposedEquipment.name }}</span></ng-template>
+            <span *ngIf="l.proposedEquipment.manufact && l.proposedEquipment.manufact !== 'не указан'"> ({{ l.proposedEquipment.manufact }})</span>
+            <span class="model-src">{{ modelSource(l) }}</span>
+            <span class="model-reg" [class.model-reg-bad]="!l.proposedEquipment.regActive"
+                  [title]="l.proposedEquipment.regNumber ? 'РУ ' + l.proposedEquipment.regNumber : ''">{{ modelReg(l) }}</span>
+            <button class="x-mini" *ngIf="auth.isAdmin()" (click)="clearModel(l, $event)" title="Снять модель в работе">✕</button>
+            <!-- заметка — две строки, целиком — по нажатию (спека §7) -->
+            <div class="model-note" *ngIf="l.modelNote" [class.model-note-open]="noteOpen.has(l.id)" (click)="toggleNote(l, $event)"
+                 [title]="noteOpen.has(l.id) ? '' : 'Показать заметку целиком'">{{ l.modelNote }}</div>
           </div>
           <div class="lot-kp" *ngIf="kpDistributorsFor(l.id).length">✉ КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
         </div>
@@ -149,6 +162,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
                   title="Скачать и разобрать техспецификацию с площадки">{{ tzBusy.has(l.id) ? '…' : 'ТЗ' }}</button>
           <button class="btn btn-registry" *ngIf="isKz()" (click)="openRegistry(l)"
                   title="Подбор из реестра НЦЭЛС (кандидаты + комплектность аппаратов)">Подбор</button>
+          <button class="btn btn-model" *ngIf="canModel" (click)="openModel(l)"
+                  title="Закрепить за лотом наш товар или модель из реестра — например, по ответу ИИ">📌 Модель…</button>
           <button class="btn btn-kp" (click)="openKpFor(l)">КП</button>
           <!-- каталог-матч: только РФ (KZ-каталог наполняется из реестра, там подбор — через «Подбор») -->
           <button class="btn btn-match" *ngIf="lotHasCriteria(l) && !isKz()"
@@ -164,7 +179,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 
         <!-- сверка ТЗ с нашим товаром и «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — отдельным чанком -->
         @defer (on viewport) {
-          <app-lot-fit *ngFor="let m of fitMatches(l)" [match]="m"></app-lot-fit>
+          <app-lot-model-fit *ngIf="l.proposedEquipment" [lotId]="l.id" [canEdit]="auth.isAdmin()" (changed)="lotsChanged.emit()"
+            [modelKey]="l.proposedEquipment.id + '|' + (l.modelSetAt || '') + '|' + (l.modelNote || '')"></app-lot-model-fit>
+          <app-lot-fit *ngFor="let m of fitMatches(l)" [match]="m" [canPin]="canModel" (pin)="pinOur(l, $event)"
+            [pinnedProductId]="l.proposedEquipment?.siteProductId ?? null"></app-lot-fit>
           <app-lot-fit *ngIf="!fitMatches(l).length && l.requirements?.length" [requirements]="l.requirements"></app-lot-fit>
         } @placeholder {
           <div class="lot-fit-ph"></div>
@@ -188,6 +206,11 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
         </app-lot-kp-panel>
       </div>
     </div>
+
+    <!-- окно «📌 Модель…» — отдельным чанком, грузится при первом открытии -->
+    @defer (when modelLot) {
+      <app-lot-model-dialog *ngIf="modelLot" [lot]="modelLot" (pinned)="onModelPinned()" (closed)="modelLot = null"></app-lot-model-dialog>
+    }
   `,
   styles: [`
     .lots-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -210,12 +233,17 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-ours { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin-top: 4px; font-size: 12px; }
     .lot-ours-text { color: var(--text-muted); min-width: 0; overflow-wrap: anywhere; }
     .lot-ours a { color: var(--accent); }
-    .lot-proposed { margin-top: 5px; font-size: 12px; color: var(--text); }
+    .lot-model { margin-top: 5px; font-size: 12px; color: var(--text); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline;
+      overflow-wrap: anywhere; }
+    .lot-model a { color: var(--accent); }
+    .badge-model { font-weight: 600; color: var(--accent); }
+    .model-src { color: var(--text-muted); }
+    .model-reg { padding: 0 8px; border-radius: 999px; color: var(--success-text); background: color-mix(in srgb, var(--success) 15%, transparent); }
+    .model-reg.model-reg-bad { color: var(--warn-text); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+    .model-note { flex-basis: 100%; color: var(--text-muted); white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; cursor: pointer; }
+    .model-note.model-note-open { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; cursor: auto; }
     .lot-kp { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
-    .badge-proposed { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text);
-                      border-radius: 8px; padding: 1px 7px; font-size: 11px; font-weight: 600; margin-right: 4px; }
-    .badge-reg-ok { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
-                    border-radius: 8px; padding: 1px 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
     .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -259,6 +287,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
        в .btn-tz:disabled[_ngcontent] (0,3,0) против глобального (0,2,0) */
     .btn-tz:disabled { opacity: .6; cursor: wait; }
     .btn-registry { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .btn-model { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
     .btn-match { background: var(--success); color: var(--accent-contrast); }
     .btn-more { background: var(--surface-2); color: var(--text); font-weight: 700; padding: 4px 9px; }
 
@@ -330,7 +359,7 @@ export class TenderLotsComponent implements OnChanges {
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
               private host: ElementRef<HTMLElement>,
-              public market: MarketService) {}
+              public market: MarketService, public auth: AuthService) {}
 
   /**
    * Пришли новые входы от родителя:
@@ -472,7 +501,7 @@ export class TenderLotsComponent implements OnChanges {
     if (prStatuses.length && prStatuses.every((s: string) => s === 'DECLINED'))
       return { label: 'Отказы', tone: 'danger', filled: true };
     if (prStatuses.length) return { label: 'КП отправлено', tone: 'warn', filled: true };
-    if (l.proposedEquipment) return { label: 'Модель выбрана', tone: 'accent', filled: true };
+    if (l.proposedEquipment) return { label: 'Модель в работе', tone: 'accent', filled: true };
     // импортный лот — по разбору ТЗ (как шаг «Лоты и ТЗ»: описание с площадки — ещё не ТЗ), ручной — по требованиям
     if (l.techSpecStatus ? l.techSpecStatus === 'OK' : l.requiredSpec) return { label: 'Есть ТЗ', tone: 'accent', filled: true };
     return { label: 'Нужно ТЗ', tone: 'muted', filled: false };
@@ -592,11 +621,57 @@ export class TenderLotsComponent implements OnChanges {
     });
   }
 
-  clearProposed(l: any, ev: Event) {
+  // ===== модель в работе (спека 2026-10-20-lot-model-in-work §7) =====
+  modelLot: any = null;
+  /** Лоты, у которых заметка к модели раскрыта целиком. */
+  noteOpen = new Set<number>();
+
+  /** Закреплять наш товар или запись реестра — админ на KZ (спека §5.1). */
+  get canModel(): boolean { return this.auth.isAdmin() && this.isKz(); }
+
+  modelSource(l: any): string { return MODEL_SOURCE[l.proposedEquipment?.source as 'SITE'] ?? 'каталог'; }
+
+  /** «РУ ✓» / «РУ истекло ДД.ММ.ГГГГ» / «РУ не найдено» / «РУ не указано» — статус РУ модели из ответа лота. */
+  modelReg(l: any): string {
+    const p = l.proposedEquipment;
+    if (!p) return '';
+    if (p.regStatus) return regShort(p.regStatus, p.regExpires);
+    if (p.regActive) return 'РУ ✓';
+    return p.regNumber ? regShort('EXPIRED', p.regExpires) : 'РУ не указано';
+  }
+
+  toggleNote(l: any, ev: Event) {
+    ev.stopPropagation();   // клик по шапке лота сворачивает/раскрывает лот
+    if (this.noteOpen.has(l.id)) this.noteOpen.delete(l.id); else this.noteOpen.add(l.id);
+  }
+
+  openModel(l: any) { this.modelLot = l; this.cdr.detectChanges(); }
+
+  onModelPinned() {
+    this.modelLot = null;
+    this.notify.success('Модель в работе закреплена');
+    this.lotsChanged.emit();
+  }
+
+  pinOur(l: any, productId: number) {
+    const go = () => this.api.pinLotModel(l.id, { siteProductId: productId }).subscribe({
+      next: () => { this.notify.success('Модель в работе закреплена'); this.lotsChanged.emit(); },
+      error: (e: any) => this.notify.error(e.error?.message || 'Не удалось закрепить модель'),
+    });
+    if (!l.proposedEquipment) { go(); return; }
+    this.confirm.ask('Заменить модель в работе?', '«' + l.proposedEquipment.name + '» перестанет быть моделью лота.',
+      { confirmLabel: 'Заменить' }).subscribe(ok => { if (ok) go(); });
+  }
+
+  clearModel(l: any, ev: Event) {
     ev.stopPropagation();
-    this.api.clearProposedEquipment(l.id).subscribe({
-      next: () => { this.notify.success('Предложение модели снято'); this.lotsChanged.emit(); },
-      error: (e: any) => this.notify.error(e.error?.message || 'Ошибка'),
+    this.confirm.ask('Снять модель в работе?', '«' + l.proposedEquipment?.name + '» больше не будет моделью лота.',
+      { confirmLabel: 'Снять' }).subscribe(ok => {
+      if (!ok) return;
+      this.api.clearLotModel(l.id).subscribe({
+        next: () => { this.notify.success('Модель снята'); this.lotsChanged.emit(); },
+        error: (e: any) => this.notify.error(e.error?.message || 'Ошибка'),
+      });
     });
   }
 

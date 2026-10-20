@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output } from '@angular/core';
 import { NgClass, NgFor, NgIf } from '@angular/common';
 import { NO_RU, shortProduct } from '../../shared/product-watch';
 import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/product-watch';
@@ -12,20 +12,23 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
   standalone: true,
   imports: [NgIf, NgFor, NgClass],
   template: `
-    <section class="lf" *ngIf="match && current as c">
+    <section class="lf" *ngIf="list.length && current as c">
       <div class="lf-head">
-        <span class="lf-title">Сверка с нашим товаром</span>
-        <span class="lf-foreign" *ngIf="match.foreignBrand">ТЗ под {{ match.foreignBrand }}</span>
+        <span class="lf-title">{{ title }}</span>
+        <span class="lf-foreign" *ngIf="match?.foreignBrand">ТЗ под {{ match!.foreignBrand }}</span>
       </div>
       <div class="lf-product">
         <a *ngIf="c.url; else plainName" [href]="c.url" target="_blank" rel="noopener">{{ c.name }} ↗</a>
         <ng-template #plainName><span>{{ c.name }}</span></ng-template>
         <span class="lf-reg" [ngClass]="c.regStatus === 'ACTIVE' ? 'lf-reg-ok' : 'lf-reg-bad'">{{ regText(c) }}</span>
+        <button type="button" class="lf-pin" *ngIf="canPin && c.productId && c.productId !== pinnedProductId"
+                (click)="pin.emit(c.productId)" title="Закрепить этот товар моделью в работе лота">📌 Закрепить</button>
+        <span class="lf-pinned" *ngIf="c.productId && c.productId === pinnedProductId">📌 в работе</span>
       </div>
       <div class="lf-count">✓ {{ c.met }} · ✗ {{ c.failed }} · ≈ {{ diff(c) }} · нет данных {{ c.unknown }}</div>
-      <div class="lf-alts" *ngIf="match.candidates.length > 1">
+      <div class="lf-alts" *ngIf="list.length > 1">
         <span class="lf-alts-label">ещё:</span>
-        <ng-container *ngFor="let a of match.candidates; let i = index">
+        <ng-container *ngFor="let a of list; let i = index">
           <button type="button" class="lf-alt" *ngIf="i !== index" (click)="index = i"
                   [title]="'Сравнить ТЗ с ' + a.name">{{ short(a.name) }}{{ i === 0 ? ' (лучший)' : '' }}</button>
         </ng-container>
@@ -39,7 +42,7 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
         </li>
       </ol>
     </section>
-    <section class="lf" *ngIf="!match && requirements?.length">
+    <section class="lf" *ngIf="!match && !candidates && requirements?.length">
       <div class="lf-head"><span class="lf-title">Требования ТЗ: {{ requirements!.length }}</span></div>
       <ol class="lf-rows lf-plain"><li *ngFor="let r of requirements"><span class="lf-text">{{ r }}</span></li></ol>
     </section>
@@ -58,6 +61,10 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
     .lf-alts { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--text-muted); }
     .lf-alt { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
       color: var(--text); cursor: pointer; }
+    .lf-pin { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--accent); background: var(--surface);
+      color: var(--accent); cursor: pointer; }
+    .lf-pinned { font-size: 12px; padding: 1px 8px; border-radius: 999px; color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 15%, transparent); }
     .lf-rows { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
     .lf-rows li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; align-items: start; }
     .lf-plain li { grid-template-columns: 1fr; }
@@ -69,16 +76,25 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
     .lf-text { color: var(--text); overflow-wrap: anywhere; }
     .lf-ours { display: block; font-size: 12px; color: var(--text-muted); }
     @media (max-width: 900px) {
-      .lf-alt { min-height: 40px; }
+      .lf-alt, .lf-pin { min-height: 40px; }
     }
   `]
 })
 export class LotFitComponent implements OnChanges {
   @Input() match: LotProductMatch | null = null;
   @Input() requirements: string[] | null = null;
+  @Input() title = 'Сверка с нашим товаром';
+  /** Свои кандидаты — сверка модели в работе (без отметки «наш товар»). */
+  @Input() candidates: FitCandidateView[] | null = null;
+  /** Админ на KZ: у нашего товара — «📌 Закрепить». */
+  @Input() canPin = false;
+  /** Наш товар, уже закреплённый за лотом, — вместо кнопки метка «📌 в работе». */
+  @Input() pinnedProductId: number | null = null;
+  @Output() pin = new EventEmitter<number>();
   index = 0;
 
-  get current(): FitCandidateView | null { return this.match?.candidates?.[this.index] ?? null; }
+  get list(): FitCandidateView[] { return this.candidates ?? this.match?.candidates ?? []; }
+  get current(): FitCandidateView | null { return this.list[this.index] ?? null; }
 
   ngOnChanges(): void { this.index = 0; }
 

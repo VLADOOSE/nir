@@ -11,6 +11,7 @@ import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../
 import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
 import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
 import type { AnnouncementResult, PlanPoint, ProbeResult, ProductCatalogState, ProductGroup, ProductGroupsState, TenderSearchStatus, WatchStatus } from '../shared/product-watch';
+import type { LotModelFit, LotModelSearch } from '../shared/lot-model';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -273,8 +274,21 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/lots/${lotId}/proposed-equipment`, { equipmentId });
   }
 
-  clearProposedEquipment(lotId: number): Observable<any> {
-    return this.http.delete<any>(`${this.base}/lots/${lotId}/proposed-equipment`);
+  // ===== «Модель в работе» лота (спека 2026-10-20-lot-model-in-work) =====
+  searchLotModels(lotId: number, q: string): Observable<LotModelSearch> {
+    return this.http.get<LotModelSearch>(`${this.base}/lots/${lotId}/model-search`, { params: { q } });
+  }
+  pinLotModel(lotId: number, body: { siteProductId?: number; regNumber?: string; note?: string | null }): Observable<any> {
+    return this.http.post<any>(`${this.base}/lots/${lotId}/model`, body);
+  }
+  setLotModelNote(lotId: number, note: string | null): Observable<any> {
+    return this.http.put<any>(`${this.base}/lots/${lotId}/model-note`, { note });
+  }
+  clearLotModel(lotId: number): Observable<any> {
+    return this.http.delete<any>(`${this.base}/lots/${lotId}/model`);
+  }
+  getLotModelFit(lotId: number): Observable<LotModelFit> {
+    return this.http.get<LotModelFit>(`${this.base}/lots/${lotId}/model-fit`);
   }
 
   /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup. */

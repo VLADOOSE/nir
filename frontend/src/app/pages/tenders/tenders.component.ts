@@ -27,7 +27,7 @@ import { DealLayoutComponent } from '../../shared/deal-layout.component';
 import { DealProgressComponent } from '../../shared/deal-progress.component';
 import { DealTimelineComponent } from '../../shared/deal-timeline.component';
 import type { DealAction, DealProgress } from '../../shared/deal';
-import { ourMatches } from '../../shared/product-watch';
+import { ourMatches, shortProduct } from '../../shared/product-watch';
 
 @Component({
   selector: 'app-tenders',
@@ -155,6 +155,7 @@ import { ourMatches } from '../../shared/product-watch';
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
             <span *ngIf="stageByTenderId[t.id]" [style]="stageChipStyle(stageByTenderId[t.id])">{{ stageLabel(stageByTenderId[t.id]) }}</span>
             <span *ngIf="t.ourProduct" class="pw-chip" [class.pw-exact]="t.ourProduct.level !== 'TYPE'" [title]="t.ourProduct.groups.join(', ')">{{ t.ourProduct.label }}</span>
+            <span *ngIf="t.modelsInWork?.length" class="pw-chip" [title]="'Модель в работе: ' + t.modelsInWork.join(', ')">📌 {{ modelsChip(t.modelsInWork) }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
           <div class="tender-price">{{ t.totalCost | money }}</div>
@@ -646,7 +647,7 @@ export class TendersComponent {
     // ?our= — фильтр «Наш товар» из ссылки Telegram: ставится один раз и убирается из адреса (иначе вернулся бы
     // при каждом открытии карточки — она тоже пишет адрес).
     const our = this.route.snapshot.queryParamMap.get('our');
-    if (our === 'ANY' || our === 'EXACT' || our?.startsWith('g:')) this.filterOur = our;
+    if (our === 'ANY' || our === 'EXACT' || our === 'PINNED' || our?.startsWith('g:')) this.filterOur = our;
     if (our !== null) {   // после текущей навигации: страница ещё создаётся
       setTimeout(() => this.router.navigate([], { relativeTo: this.route, queryParams: { our: null }, queryParamsHandling: 'merge', replaceUrl: true }));
     }
@@ -974,16 +975,24 @@ export class TendersComponent {
       if (to && t.deadline && new Date(t.deadline) > to) return false;
       if (this.filterRegion === this.NO_REGION) { if (t.region) return false; }
       else if (this.filterRegion && t.region !== this.filterRegion) return false;
-      if (!ourMatches(t.ourProduct, this.filterOur)) return false;
+      if (this.filterOur === 'PINNED') { if (!t.modelsInWork?.length) return false; }
+      else if (!ourMatches(t.ourProduct, this.filterOur)) return false;
       return true;
     });
     this.sortTenders();
     // «📋 Для ИИ» по списку (спека §9.1): открытые тендеры с нашей отметкой, ближайший срок — первым; сервер берёт первые 15
     const market = this.market.value;
     this.aiIds = this.filterOur ? this.filteredTenders
-      .filter(t => t.ourProduct && !deadlinePassed(t, market))
+      .filter(t => (this.filterOur === 'PINNED' ? t.modelsInWork?.length : t.ourProduct) && !deadlinePassed(t, market))
       .sort((a, b) => (deadlineEnd(a, market) ?? Number.MAX_SAFE_INTEGER) - (deadlineEnd(b, market) ?? Number.MAX_SAFE_INTEGER))
       .map(t => t.id) : [];
+  }
+
+  /** Чип «📌 …» карточки: одна модель — её короткое имя, несколько — число. */
+  modelsChip(models: string[]): string {
+    if (models.length === 1) return shortProduct(models[0]);
+    const n = models.length, d = n % 10, h = n % 100;
+    return n + ' ' + (d === 1 && h !== 11 ? 'модель' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'модели' : 'моделей');
   }
 
   /** Склонение «тендер / тендера / тендеров» для кнопки «Для ИИ». */

@@ -53,7 +53,7 @@ export interface LotProductMatch {
   fit: FitVerdict | null; foreignBrand: string | null; candidates: FitCandidateView[];
 }
 
-export const OUR_LABELS: Record<string, string> = { ANY: 'Любой наш вид', EXACT: '★ Подходит или точно наше' };
+export const OUR_LABELS: Record<string, string> = { ANY: 'Любой наш вид', EXACT: '★ Подходит или точно наше', PINNED: '📌 С моделью в работе' };
 
 /** Текст РУ для «подходит по ТЗ, но …» (как RegStatus.noRuText сервера). */
 export const NO_RU: Record<string, string> = {
