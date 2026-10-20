@@ -29,23 +29,6 @@ export interface ProbeLot {
   numberAnno: string; lotName: string; announcement: string; customer: string; deadlineAt: string | null; passed: boolean; reason: string;
 }
 export interface ProbeResult { found: number; passed: number; lots: ProbeLot[]; }
-
-/** Слова через запятую ↔ список (страница правит списки строкой). */
-export function wordsText(xs: string[] | null | undefined): string { return (xs || []).join(', '); }
-export function wordsList(s: string): string[] { return (s || '').split(',').map(x => x.trim()).filter(x => !!x); }
-
-/**
- * «20.10 09:30» по часам браузера — без DatePipe: его код в ленивой странице оптимизатор чанков переносил в начальный
- * бандл (+9 кБ, замер 2026-10-20).
- */
-export function whenText(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 /** Сводка «наш товар» тендера в списке (спека §12.2). */
 export interface OurProduct { level: MatchLevel; label: string; groups: string[]; }
 
@@ -74,31 +57,18 @@ export interface PlanPoint {
   firstSeenAt: string; goneStatus: string | null;
 }
 
-export const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
-
-/** «ноябрь 2026»; месяц не указан — только год. */
-export function monthText(year: number | null, month: number | null): string {
-  return month && month >= 1 && month <= 12 ? `${MONTHS[month - 1]} ${year ?? ''}`.trim() : `${year ?? ''}`;
+/** «Найти тендеры» по стране в частной заявке (спека §11). */
+export type SearchState = 'OPEN' | 'FAILED' | 'CLOSED' | 'DONE' | 'CANCELLED' | 'PLANNED';
+export interface TenderSearchHit {
+  kind: 'TENDER' | 'PLAN'; numberAnno: string | null; lotNumber: string | null; lotName: string; announcement: string | null;
+  customer: string | null; region: string | null; quantity: number | null; unitPrice: number | null; amount: number | null;
+  deadlineAt: string | null; state: SearchState; tradeMethod: string | null; score: number; positions: number[];
+  specPositions: number[]; tenderId: number | null; planYear: number | null; planMonth: number | null;
 }
-
-/** «19.10.2026» по часам браузера (без DatePipe — см. whenText). */
-export function dayText(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+export interface TenderSearchStatus {
+  running: boolean; progress: number; total: number; startedAt: string | null; waiting: string | null; error: string | null;
+  hits: TenderSearchHit[];
 }
-
-/** «5 920 000,00» — деньги плана (валюта — тенге, подпись рядом). */
-export function planMoney(n: number | null | undefined): string {
-  if (n == null) return '';
-  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
-
-/** Единица плана коротко — как в сводке Telegram: «Штука» → «шт.», «Комплект» → «компл.». */
-export function unitShort(u: string | null | undefined): string {
-  const s = (u || '').trim().toLowerCase();
-  const map: Record<string, string> = { 'штука': 'шт.', 'штука условная': 'усл. шт.', 'комплект': 'компл.', 'упаковка': 'уп.', 'рулон': 'рул.' };
-  return map[s] ?? s;
+export interface AnnouncementResult {
+  status: string; supplierName: string | null; supplierBin: string | null; contractSum: number | null; signDate: string | null;
 }

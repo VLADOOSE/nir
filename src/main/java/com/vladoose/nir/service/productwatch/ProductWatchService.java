@@ -61,6 +61,23 @@ public class ProductWatchService {
         return e instanceof GoszakupCallException g && (g.status() == 401 || g.status() == 403 || g.status() == 429);
     }
 
+    /**
+     * «Завести в АИС» из «Найти тендеры» (спека §11.2): объявление по номеру — без проверки «наш лот»; уже есть — его id.
+     * Отметки «наш товар» считаются, как у найденного поиском.
+     */
+    public long importAnnouncement(String numberAnno) {
+        Optional<Tender> existing = tenders.findBySourceExtId(numberAnno);
+        if (existing.isPresent()) return existing.get().getId();
+        FoundAnnouncement a = UpstreamRetry.call(sleeper, () -> search.announcement(numberAnno));
+        if (a == null) throw new com.vladoose.nir.exception.NotFoundException("Объявление " + numberAnno + " на goszakup не найдено");
+        List<LotDto> lots = UpstreamRetry.call(sleeper, () -> client.fetchLots(numberAnno));
+        SubjectDto subj = a.orgBin() == null ? null : UpstreamRetry.call(sleeper, () -> client.fetchSubject(a.orgBin()));
+        writer.upsertFound(a.toTrdBuy(), subj, lots, a.tradeMethodName());
+        long id = tenders.findBySourceExtId(numberAnno).orElseThrow().getId();
+        matches.evaluate(id, ProductMatchSource.SEARCH);
+        return id;
+    }
+
     public void run(ImportSummary sum) {
         if (!search.isConfigured()) {
             sum.setEnabled(false);

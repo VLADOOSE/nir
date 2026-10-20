@@ -10,7 +10,7 @@ import { MarketService } from '../../services/market.service';
 import { NotificationService } from '../../services/notification.service';
 import { errorText } from '../../shared/error-text';
 import { KZ_REGIONS } from '../../shared/kz-regions';
-import { dayText, monthText, planMoney, unitShort, whenText } from '../../shared/product-watch';
+import { dayText, monthText, planMoney, unitShort, whenText } from '../../shared/product-watch-pages';
 import type { PlanPoint, ProductGroup, WatchStatus } from '../../shared/product-watch';
 
 /** «Планы закупок» (спека 2026-10-19-product-watch §10.2): пункты планов с нашими видами, ещё не объявленные. */

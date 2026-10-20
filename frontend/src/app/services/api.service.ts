@@ -10,7 +10,7 @@ import type {
 import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
 import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
 import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
-import type { PlanPoint, ProbeResult, ProductGroup, ProductGroupsState, WatchStatus } from '../shared/product-watch';
+import type { AnnouncementResult, PlanPoint, ProbeResult, ProductGroup, ProductGroupsState, TenderSearchStatus, WatchStatus } from '../shared/product-watch';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -844,5 +844,17 @@ export class ApiService {
   }
   collectProcurementPlans(): Observable<WatchStatus> {
     return this.http.post<WatchStatus>(`${this.base}/procurement-plans/collect`, {});
+  }
+  startTenderSearch(id: number): Observable<TenderSearchStatus> {
+    return this.http.post<TenderSearchStatus>(`${this.base}/private-requests/${id}/tender-search`, {});
+  }
+  getTenderSearch(id: number): Observable<TenderSearchStatus> {
+    return this.http.get<TenderSearchStatus>(`${this.base}/private-requests/${id}/tender-search`);
+  }
+  importAnnouncement(anno: string): Observable<{ tenderId: number }> {
+    return this.http.post<{ tenderId: number }>(`${this.base}/goszakup/announcements/${encodeURIComponent(anno)}/import`, {});
+  }
+  announcementResult(anno: string): Observable<AnnouncementResult> {
+    return this.http.get<AnnouncementResult>(`${this.base}/goszakup/announcements/${encodeURIComponent(anno)}/result`);
   }
 }

@@ -16,6 +16,7 @@ import { PrLinesComponent } from './pr-lines.component';
 import { PrSupplyComponent } from './pr-supply.component';
 import { PrOffersComponent } from './pr-offers.component';
 import { PrExecutionComponent } from './pr-execution.component';
+import { PrTenderSearchComponent } from './pr-tender-search.component';
 import { OFFER_STATUS_LABELS, dateText } from '../../shared/client-offer';
 import type { OfferStatus } from '../../shared/client-offer';
 import { MarketService } from '../../services/market.service';
@@ -33,7 +34,7 @@ import type { DealAction } from '../../shared/deal';
   selector: 'app-private-request-page',
   standalone: true,
   imports: [NgIf, NgFor, RouterLink, PrClientSectionComponent, PrLinesComponent, PrSupplyComponent, PrOffersComponent,
-            PrExecutionComponent, DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
+            PrExecutionComponent, DealLayoutComponent, DealProgressComponent, DealTimelineComponent, PrTenderSearchComponent],
   template: `
     <div class="pr-page" *ngIf="view as v; else stateTpl">
       <header class="pr-top">
@@ -74,6 +75,7 @@ import type { DealAction } from '../../shared/deal';
             <app-pr-lines [view]="v" [readonly]="!auth.isAdmin()" [isKz]="isKz" (viewChange)="onView($event)"
                           (saveState)="onSaveState($event)"></app-pr-lines>
           </div>
+          <app-pr-tender-search *ngIf="isKz" [view]="v" [readonly]="!auth.isAdmin()" (changed)="timeline?.refresh()"></app-pr-tender-search>
           <div #pricesAnchor class="anchor">
             <app-pr-supply #supply [view]="v" [readonly]="!auth.isAdmin()" (changed)="refresh()"></app-pr-supply>
           </div>

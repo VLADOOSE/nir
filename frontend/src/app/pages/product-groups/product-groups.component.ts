@@ -6,7 +6,8 @@ import { AuthService } from '../../services/auth.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { NotificationService } from '../../services/notification.service';
 import { errorText } from '../../shared/error-text';
-import { ProbeResult, ProductGroup, ProductGroupsState, whenText, wordsList, wordsText } from '../../shared/product-watch';
+import type { ProbeResult, ProductGroup, ProductGroupsState } from '../../shared/product-watch';
+import { whenText, wordsList, wordsText } from '../../shared/product-watch-pages';
 
 interface Row {
   g: ProductGroup; words: string; require: string; exclude: string; brands: string;

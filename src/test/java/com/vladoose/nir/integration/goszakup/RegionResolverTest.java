@@ -33,4 +33,9 @@ class RegionResolverTest {
     @Test void oblastBeforeCity_whenBothPresent() {
         assertThat(r.resolve("Управление здравоохранения Алматинской области, г. Алматы")).isEqualTo("Алматинская область");
     }
+
+    /** Полное имя заказчика пишет город в родительном падеже («…акимата города Астаны»). */
+    @Test void astanaDeclined() {
+        assertThat(r.resolve("ГКП на ПХВ «Городская многопрофильная больница № 2» акимата города Астаны")).isEqualTo("г. Астана");
+    }
 }

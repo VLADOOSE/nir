@@ -66,4 +66,11 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     /** Номера заявок для журнала КП («из заявки ЧЗ-…») — одним запросом. */
     @Query("select t.id, t.tenderNumber from Tender t where t.id in :ids")
     List<Object[]> findNumbersByIds(@Param("ids") Collection<Long> ids);
+
+    List<Tender> findBySourceExtIdIn(Collection<String> sourceExtIds);
+
+    /** Разобранное ТЗ лота, если тендер уже в АИС (по номеру объявления и номеру лота площадки). */
+    @Query("select l.requiredSpec from TenderLot l where l.tender.sourceExtId = :anno and l.sourceLotCode = :code"
+            + " and l.techSpecStatus = com.vladoose.nir.entity.TechSpecStatus.OK")
+    List<String> findParsedLotSpec(@Param("anno") String anno, @Param("code") String code);
 }

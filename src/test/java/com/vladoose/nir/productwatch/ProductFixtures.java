@@ -78,6 +78,15 @@ public final class ProductFixtures {
         }
     }
 
+    /** Байты PDF ТЗ из ресурсов (для фейка клиента goszakup). */
+    static byte[] pdf(String file) {
+        try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/specs/" + file)) {
+            return in.readAllBytes();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Русская часть ТЗ — тем же кодом, что разбор «ТЗ» в работе. */
     public static String spec(String file) {
         try (InputStream in = ProductFixtures.class.getResourceAsStream("/product-watch/specs/" + file)) {
