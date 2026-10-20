@@ -3,6 +3,7 @@ package com.vladoose.nir.service.productwatch;
 import com.vladoose.nir.entity.ProductMatchSource;
 import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.entity.TenderLotProductMatch;
 import com.vladoose.nir.integration.goszakup.GoszakupClient;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.integration.http.UpstreamRetry;
@@ -14,18 +15,23 @@ import com.vladoose.nir.service.TechSpecStatusWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
 
 /**
  * ТЗ найденных лотов (спека 2026-10-19-product-watch §7.4): не больше limit за прогон, сначала ближайший срок.
  * Попытка отмечается ДО разбора (урок фоновой очереди: SIGKILL не ловится никаким catch); разобрано — пересчёт отметок
  * тендера по ТЗ; нет файла / не читается / 3 неудачи — сверка закончена, отметка остаётся по названию. Три аварии
- * площадки подряд — пачка обрывается (как у фоновой очереди).
+ * площадки подряд — пачка обрывается (как у фоновой очереди). ТЗ — только у тендеров, где сумма всех отмеченных лотов
+ * не меньше порога {@code PRODUCT_WATCH_NOTIFY_MIN_SUM} (спека 2026-10-20-product-spec-fit §12): у дешёвых сверка
+ * в Telegram всё равно не уйдёт, а скачивание тратит общий с продом токен goszakup.
  */
 @Component
 public class ProductSpecChecker {
@@ -42,22 +48,32 @@ public class ProductSpecChecker {
     private final ProductMatchService matchService;
     private final BooleanSupplier goszakupConfigured;
     private final UpstreamRetry.Sleeper sleeper;
+    private final ProductNotifyPolicy policy;
 
     @Autowired
     public ProductSpecChecker(TenderLotProductMatchRepository matches, TenderLotRepository lots, TechSpecStatusWriter statusWriter,
-                              TechSpecLotParser parser, ProductMatchService matchService, GoszakupClient goszakup) {
-        this(matches, lots, statusWriter, parser, matchService, goszakup::isConfigured, UpstreamRetry.REAL);
+                              TechSpecLotParser parser, ProductMatchService matchService, GoszakupClient goszakup,
+                              @Value("${product-watch.notify:}") String notify, @Value("${product-watch.notify-min-sum:}") String notifyMinSum) {
+        this(matches, lots, statusWriter, parser, matchService, goszakup::isConfigured, UpstreamRetry.REAL,
+                ProductNotifyPolicy.of(notify, notifyMinSum));
     }
 
     public ProductSpecChecker(TenderLotProductMatchRepository matches, TenderLotRepository lots, TechSpecStatusWriter statusWriter,
                               LotSpecParser parser, ProductMatchService matchService, BooleanSupplier goszakupConfigured,
-                              UpstreamRetry.Sleeper sleeper) {
+                              UpstreamRetry.Sleeper sleeper, ProductNotifyPolicy policy) {
         this.matches = matches; this.lots = lots; this.statusWriter = statusWriter; this.parser = parser;
-        this.matchService = matchService; this.goszakupConfigured = goszakupConfigured; this.sleeper = sleeper;
+        this.matchService = matchService; this.goszakupConfigured = goszakupConfigured; this.sleeper = sleeper; this.policy = policy;
     }
 
     public int run(int limit, ImportSummary sum) {
-        List<TenderLot> queue = lots.findAllById(matches.findLotsForSpecCheckUnordered(goszakupConfigured.getAsBoolean())).stream()
+        List<TenderLot> candidates = lots.findAllById(matches.findLotsForSpecCheckUnordered(goszakupConfigured.getAsBoolean()));
+        if (candidates.isEmpty()) return 0;
+        // отметки кандидатов — одним запросом; порог — до предела пачки: дешёвый лот не занимает место дорогого
+        Map<Long, List<Long>> marked = matches.findByTenderIdIn(candidates.stream().map(l -> l.getTender().getId()).collect(Collectors.toSet()))
+                .stream().collect(Collectors.groupingBy(TenderLotProductMatch::getTenderId,
+                        Collectors.mapping(TenderLotProductMatch::getLotId, Collectors.toList())));
+        List<TenderLot> queue = candidates.stream()
+                .filter(l -> policy.sumPasses(OurLots.sum(l.getTender(), marked.getOrDefault(l.getTender().getId(), List.of()))))
                 .sorted(Comparator.comparing((TenderLot l) -> l.getTender().getDeadlineAt(), Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder())))
                 .limit(limit).toList();
         int done = 0, outages = 0;

@@ -3,7 +3,6 @@ package com.vladoose.nir.service.productwatch;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.ProductMatchLevel;
 import com.vladoose.nir.entity.Tender;
-import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
 import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
@@ -21,7 +20,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -152,7 +150,7 @@ public class ProductWatchNotifier {
             List<ProductMatchQuery.LotLine> lots = upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR
                     ? s.lots().stream().filter(l -> l.level().alert()).toList()
                     : s.lots();
-            if (lots.isEmpty() || !policy.sumPasses(ourLotsSum(t, lots))) continue;
+            if (lots.isEmpty() || !policy.sumPasses(OurLots.sum(t, lots.stream().map(ProductMatchQuery.LotLine::lotId).toList()))) continue;
             out.add(new ProductWatchComposer.Card(t.getId(), t.getTenderNumber(), platformLabel(t.getPlatform()),
                     t.getPurchaseType(), t.getDescription(), t.getCustomerName(), t.getRegion(), t.getTotalCost(),
                     t.getDeadline(), t.getDeadlineAt(), s.level(), upgrade, lots));
@@ -163,23 +161,6 @@ public class ProductWatchNotifier {
                         : c.deadline() != null ? c.deadline().atTime(23, 59) : LocalDateTime.MAX)
                 .thenComparing(ProductWatchComposer.Card::tenderId));
         return out;
-    }
-
-    /**
-     * Сумма наших лотов: цена за единицу × количество (у goszakup — с V25); цены нет у лота, а он в тендере один —
-     * сумма тендера. Ничего не известно — null: порог не доказан, сообщения нет (лучше тишина, чем шлак).
-     */
-    static BigDecimal ourLotsSum(Tender t, List<ProductMatchQuery.LotLine> lots) {
-        Set<Long> ids = new HashSet<>();
-        lots.forEach(l -> ids.add(l.lotId()));
-        BigDecimal sum = null;
-        for (TenderLot l : t.getLots()) {
-            if (!ids.contains(l.getId()) || l.getMaxCost() == null || l.getQuantity() == null) continue;
-            BigDecimal a = l.getMaxCost().multiply(BigDecimal.valueOf(l.getQuantity()));
-            sum = sum == null ? a : sum.add(a);
-        }
-        if (sum == null && t.getLots().size() == 1 && ids.contains(t.getLots().get(0).getId())) return t.getTotalCost();
-        return sum;
     }
 
     private static String platformLabel(TenderPlatform p) {

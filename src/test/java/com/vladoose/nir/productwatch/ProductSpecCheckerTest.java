@@ -62,7 +62,8 @@ class ProductSpecCheckerTest {
     }
 
     private ProductSpecChecker checker(LotSpecParser parser) {
-        return new ProductSpecChecker(matches, lots, statusWriter, parser, matchService, () -> true, ms -> { });
+        return new ProductSpecChecker(matches, lots, statusWriter, parser, matchService, () -> true, ms -> { },
+                ProductNotifyPolicy.of("all", "0"));   // без порога — как до сверки ТЗ
     }
 
     @Test
