@@ -47,6 +47,8 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
     private final SiteCatalogSync catalog;
     private final ImportOutageNotifier outage;
     private final ProductWatchNotifier notifier;
+    private final ProcurementPlanService plans;
+    private final ProcurementPlanDigest digest;
     private final boolean enabled;
     private final String searchCron, plansCron, catalogCron, zone;
     private final int specPerRun;
@@ -59,6 +61,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
     private final AtomicBoolean searchQueued = new AtomicBoolean(false);
     private final AtomicBoolean catalogQueued = new AtomicBoolean(false);
     private final AtomicBoolean rematchQueued = new AtomicBoolean(false);
+    private final AtomicBoolean plansQueued = new AtomicBoolean(false);
     private volatile String current;
     private volatile Instant lastSearchAt, lastPlansAt, lastCatalogAt;
     private volatile ImportSummary lastSearch, lastPlans;
@@ -67,6 +70,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
     @Autowired
     public ProductWatchScheduler(ProductWatchService search, ProductSpecChecker specs, ProductRematchService rematch,
                                  SiteCatalogSync catalog, ImportOutageNotifier outage, ProductWatchNotifier notifier,
+                                 ProcurementPlanService plans, ProcurementPlanDigest digest,
                                  @Value("${product-watch.enabled:false}") boolean enabled,
                                  @Value("${product-watch.cron:}") String searchCron,
                                  @Value("${product-watch.plans-cron:}") String plansCron,
@@ -75,6 +79,8 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
                                  @Value("${product-watch.spec-per-run:}") String specPerRun) {
         this.search = search; this.specs = specs; this.rematch = rematch; this.catalog = catalog; this.outage = outage;
         this.notifier = notifier;
+        this.plans = plans;
+        this.digest = digest;
         this.enabled = enabled; this.searchCron = searchCron; this.plansCron = plansCron; this.catalogCron = catalogCron;
         this.zone = zone; this.specPerRun = parseInt(specPerRun, DEFAULT_SPEC_PER_RUN);
     }
@@ -95,7 +101,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
         ZoneId z = CronSchedules.zone(zone, DEFAULT_ZONE, log);
         CronSchedules.register(registrar, "Поиск нашей продукции", searchCron, DEFAULT_SEARCH_CRON, z, this::startSearch, log);
         CronSchedules.register(registrar, "Каталог сайта", catalogCron, DEFAULT_CATALOG_CRON, z, this::startCatalog, log);
-        // планы закупок — задача 11: CronSchedules.register(registrar, "Планы закупок", plansCron, DEFAULT_PLANS_CRON, z, this::startPlans, log);
+        CronSchedules.register(registrar, "Планы закупок", plansCron, DEFAULT_PLANS_CRON, z, this::startPlans, log);
     }
 
     /** При старте с включённым блоком — молчаливый пересчёт (каталог пуст — сперва загрузка). */
@@ -122,7 +128,25 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
                 lastSearchAt = Instant.now();
                 searchQueued.set(false);
                 notifyProducts(sum);   // и после сбоя: найденное до него уже отмечено (спека §9)
-                report(sum);
+                report("product-watch", "Поиск нашей продукции", sum);
+            }
+        }));
+        return status();
+    }
+
+    /** Сбор планов закупок (спека §10): сбор, потом сводка дня (первый сбор — молча). */
+    public Status startPlans() {
+        if (!enabled || !plansQueued.compareAndSet(false, true)) return status();
+        ImportSummary sum = new ImportSummary();
+        lastPlans = sum;
+        executor.execute(() -> runTask("планы закупок", () -> {
+            try {
+                boolean first = plans.collect(sum);
+                digest.flush(first, sum);
+            } finally {
+                lastPlansAt = Instant.now();
+                plansQueued.set(false);
+                report("product-plans", "Сбор планов закупок", sum);
             }
         }));
         return status();
@@ -181,9 +205,9 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
         }
     }
 
-    private void report(ImportSummary sum) {
+    private void report(String key, String title, ImportSummary sum) {
         try {
-            outage.afterRun("product-watch", "Поиск нашей продукции", sum);
+            outage.afterRun(key, title, sum);
         } catch (Throwable e) {
             log.warn("Наша продукция: оповещение о сбое упало: {}", ErrorText.of(e));
         }

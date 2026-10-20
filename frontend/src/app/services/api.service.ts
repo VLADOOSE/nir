@@ -10,7 +10,7 @@ import type {
 import type { DealKind, DealProgress, DealTimeline, DealTimelineItem } from '../shared/deal';
 import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, SupplierMark } from '../shared/deal-execution';
 import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
-import type { ProbeResult, ProductGroup, ProductGroupsState, WatchStatus } from '../shared/product-watch';
+import type { PlanPoint, ProbeResult, ProductGroup, ProductGroupsState, WatchStatus } from '../shared/product-watch';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -838,5 +838,11 @@ export class ApiService {
   }
   syncSiteCatalog(): Observable<WatchStatus> {
     return this.http.post<WatchStatus>(`${this.base}/site-catalog/sync`, {});
+  }
+  getProcurementPlans(params: Record<string, string>): Observable<PlanPoint[]> {
+    return this.http.get<PlanPoint[]>(`${this.base}/procurement-plans`, { params });
+  }
+  collectProcurementPlans(): Observable<WatchStatus> {
+    return this.http.post<WatchStatus>(`${this.base}/procurement-plans/collect`, {});
   }
 }

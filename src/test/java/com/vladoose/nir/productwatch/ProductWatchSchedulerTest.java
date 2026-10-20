@@ -6,6 +6,7 @@ import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.productwatch.*;
 import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
 import java.util.concurrent.CountDownLatch;
@@ -25,9 +26,12 @@ class ProductWatchSchedulerTest {
     SiteCatalogSync catalog = mock(SiteCatalogSync.class);
     ImportOutageNotifier outage = mock(ImportOutageNotifier.class);
     ProductWatchNotifier notifier = mock(ProductWatchNotifier.class);
+    ProcurementPlanService planService = mock(ProcurementPlanService.class);
+    ProcurementPlanDigest planDigest = mock(ProcurementPlanDigest.class);
 
     private ProductWatchScheduler scheduler(boolean enabled, String cron, String plans, String catalogCron) {
-        return new ProductWatchScheduler(search, specs, rematch, catalog, outage, notifier, enabled, cron, plans, catalogCron, "", "10");
+        return new ProductWatchScheduler(search, specs, rematch, catalog, outage, notifier, planService, planDigest, enabled, cron, plans,
+                catalogCron, "", "10");
     }
 
     @Test
@@ -35,6 +39,9 @@ class ProductWatchSchedulerTest {
         ScheduledTaskRegistrar r = new ScheduledTaskRegistrar();
         scheduler(true, "", "-", "0 0 6 * *").configureTasks(r);   // поиск — умолчание, планы — выкл, каталог — опечатка
         assertThat(r.getCronTaskList()).hasSize(1);
+        ScheduledTaskRegistrar all = new ScheduledTaskRegistrar();
+        scheduler(true, "", "", "").configureTasks(all);             // поиск, планы, каталог — по умолчанию
+        assertThat(all.getCronTaskList()).hasSize(3);
         ScheduledTaskRegistrar off = new ScheduledTaskRegistrar();
         scheduler(false, "", "", "").configureTasks(off);
         assertThat(off.getCronTaskList()).isEmpty();
@@ -91,4 +98,17 @@ class ProductWatchSchedulerTest {
         verify(search, times(1)).run(any());
     }
 
+    @Test
+    void plansRunCollectThenDigest_inOrder() throws Exception {
+        when(planService.collect(any())).thenReturn(true);
+        CountDownLatch done = new CountDownLatch(1);
+        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterRun(any(), any(), any());
+        ProductWatchScheduler s = scheduler(true, "-", "-", "-");
+        s.startPlans();
+        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        InOrder o = inOrder(planService, planDigest, outage);
+        o.verify(planService).collect(any());
+        o.verify(planDigest).flush(eq(true), any());
+        o.verify(outage).afterRun(eq("product-plans"), eq("Сбор планов закупок"), any());
+    }
 }

@@ -65,3 +65,40 @@ export function ourMatches(our: OurProduct | null | undefined, filter: string): 
   if (filter === 'EXACT') return our.level !== 'TYPE';
   return filter.startsWith('g:') && our.groups.includes(filter.slice(2));
 }
+
+/** Пункт плана закупок на странице «Планы закупок» (спека §10.2). */
+export interface PlanPoint {
+  id: number; extId: number; year: number; month: number | null; monthPassed: boolean; customerName: string | null;
+  region: string | null; name: string; description: string | null; quantity: number | null; unit: string | null;
+  unitPrice: number | null; amount: number | null; tradeMethod: string | null; groups: string[]; level: MatchLevel;
+  firstSeenAt: string; goneStatus: string | null;
+}
+
+export const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+/** «ноябрь 2026»; месяц не указан — только год. */
+export function monthText(year: number | null, month: number | null): string {
+  return month && month >= 1 && month <= 12 ? `${MONTHS[month - 1]} ${year ?? ''}`.trim() : `${year ?? ''}`;
+}
+
+/** «19.10.2026» по часам браузера (без DatePipe — см. whenText). */
+export function dayText(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+/** «5 920 000,00» — деньги плана (валюта — тенге, подпись рядом). */
+export function planMoney(n: number | null | undefined): string {
+  if (n == null) return '';
+  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+/** Единица плана коротко — как в сводке Telegram: «Штука» → «шт.», «Комплект» → «компл.». */
+export function unitShort(u: string | null | undefined): string {
+  const s = (u || '').trim().toLowerCase();
+  const map: Record<string, string> = { 'штука': 'шт.', 'штука условная': 'усл. шт.', 'комплект': 'компл.', 'упаковка': 'уп.', 'рулон': 'рул.' };
+  return map[s] ?? s;
+}

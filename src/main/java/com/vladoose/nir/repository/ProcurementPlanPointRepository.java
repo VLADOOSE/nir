@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface ProcurementPlanPointRepository extends JpaRepository<ProcurementPlanPoint, Long> {
     Optional<ProcurementPlanPoint> findByExtId(Long extId);
     List<ProcurementPlanPoint> findByGoneAtIsNull();
+    List<ProcurementPlanPoint> findByDigestedAtIsNullAndGoneAtIsNull();
 }

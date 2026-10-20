@@ -54,6 +54,8 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/client-offers/client-offer-editor.component').then(m => m.ClientOfferEditorComponent) },
       { path: 'price-requests/:id',
         loadComponent: () => import('./pages/price-requests/price-request-reply.component').then(m => m.PriceRequestReplyComponent) },
+      { path: 'procurement-plans',
+        loadComponent: () => import('./pages/procurement-plans/procurement-plans.component').then(m => m.ProcurementPlansComponent) },
       { path: 'product-groups',
         loadComponent: () => import('./pages/product-groups/product-groups.component').then(m => m.ProductGroupsComponent) },
       { path: 'inbound', component: InboundComponent },
