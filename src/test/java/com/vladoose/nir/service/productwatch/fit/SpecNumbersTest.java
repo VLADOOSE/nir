@@ -150,4 +150,20 @@ class SpecNumbersTest {
         assertThat(SpecNumbers.find("частота 50/60 гц")).allSatisfy(h -> assertThat(h.dims()).isEmpty());
         assertThat(SpecNumbers.find("дата 12/05/2026")).isEmpty();
     }
+    /**
+     * Проверка на проде (2026-10-20): «см H₂O» читалось сантиметрами длины — ТЗ ИВЛ HAMILTON-C6 («компенсация давления до
+     * высоты 4000 м») сравнивалось с «Триггер по давлению: −1 ±0,5 см H₂O». Сантиметры водяного столба и миллибары — давление.
+     */
+    @Test
+    void waterColumnAndMillibarArePressure() {
+        SpecNumbers.Hit trigger = one("триггер по давлению: −1 ±0,5 см h₂o");
+        assertThat(trigger.unit()).isEqualTo(SpecUnit.CMH2O);
+        assertThat(trigger.unit().family()).isEqualTo("давление");
+        SpecNumbers.Hit peep = one("пдкв не менее 20 см вод. ст.");
+        assertThat(peep.unit()).isEqualTo(SpecUnit.CMH2O);
+        assertThat(peep.lo()).isCloseTo(20 * 0.0980665, org.assertj.core.data.Offset.offset(1e-9));   // база давления — кПа
+        assertThat(one("давление в контуре до 60 мбар").unit()).isEqualTo(SpecUnit.MBAR);
+        assertThat(one("давление 40 см h2o").unit()).isEqualTo(SpecUnit.CMH2O);
+        assertThat(one("высота подъема 25 см").unit()).isEqualTo(SpecUnit.CM);   // просто сантиметры — длина, как было
+    }
 }

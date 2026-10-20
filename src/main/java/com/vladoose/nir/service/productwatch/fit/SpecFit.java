@@ -108,9 +108,12 @@ public final class SpecFit {
         List<ProductFact> same = facts.stream().filter(f -> compatible(r, f)).toList();
         if (same.isEmpty()) return null;
         Set<String> rn = FitText.stems(r.name());
+        // название из одного слова параметра («частота», «номинальное напряжение»): по названию сравнивать не с чем —
+        // «частота 50 – 60 Гц» иначе брала «частоту модуляции 75 Гц» (проверка на проде 2026-10-20); сеть — путём ниже
+        boolean bare = !rn.isEmpty() && rn.stream().allMatch(SpecFit::bareWord);
         ProductFact best = null;
         double bestScore = 0;
-        for (ProductFact f : same) {
+        for (ProductFact f : bare ? List.<ProductFact>of() : same) {
             Set<String> fn = FitText.stems(f.name());
             double a = FitText.overlap(rn, fn), b = FitText.overlap(fn, rn);
             if (Math.max(a, b) < NAME_MATCH) continue;
@@ -143,7 +146,21 @@ public final class SpecFit {
     private static boolean compatible(SpecRequirement r, ProductFact f) {
         if (r.kind() == SpecRequirement.Kind.DIMS) return !f.dims().isEmpty();
         if (countLike(r.unit())) return countLike(f.unit()) && (r.unit() != SpecUnit.CHANNEL || f.unit() != SpecUnit.PCS);
-        return f.unit() != null && f.dims().isEmpty() && f.unit().family().equals(r.unit().family());
+        if (f.unit() == null || !f.dims().isEmpty() || !f.unit().family().equals(r.unit().family())) return false;
+        // потребляемая мощность — не мощность лампы и не выходная («не менее 90 Вт» против «Мощность 1 лампы: 15», проверка
+        // на проде 2026-10-20)
+        return !"мощность".equals(r.unit().family()) || consumption(r.name()) == consumption(f.name());
+    }
+
+    private static boolean consumption(String name) {
+        return name != null && name.contains("потреб");
+    }
+
+    /** Слово самого параметра и служебное («номинальное», «значение»): по ним одним факт не опознать. */
+    private static final List<String> BARE = List.of("частот", "напряж", "мощнос", "номина", "значен", "величи", "параме", "показа");
+
+    private static boolean bareWord(String stem) {
+        return BARE.stream().anyMatch(b -> FitText.same(stem, b));
     }
 
     private static boolean countLike(SpecUnit u) {

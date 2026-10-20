@@ -199,4 +199,40 @@ class SpecFitTest {
         assertThat(c.rows()).filteredOn(r -> r.text().contains("ламп")).singleElement()
                 .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.OK));
     }
+    /**
+     * Проверка на проде (2026-10-20), три ложных ✗: «частота 50 – 60 Гц» (CUSA, 526624-1) сравнивалась с «частота
+     * модуляции … 75 Гц» — название требования из одного слова параметра по названию не сравнивается, сеть — прежним путём;
+     * «потребляемая мощность не менее 90 Вт» (облучатель, 17822670-1) — с «Мощность 1 лампы, Вт: 15»: потребляемая — только с
+     * потребляемой; «до высоты 4000 м» (ИВЛ, 526444-1) — с «−1 ±0,5 см H₂O»: это давление, не длина.
+     */
+    @Test
+    void liveFalseFails_areNotPairs() {
+        ProductCard actiton = card(12, "Блок управления ACTITON", RegStatus.ACTIVE,
+                new SiteProductAttribute("Частота модуляции высокочастотного напряжения", "75 Гц"),
+                new SiteProductAttribute("Сеть питания", "220 В 50 Гц"));
+        FitCandidate c1 = SpecFit.compare(reqs("частота 50 – 60 Гц; масса не более 25 кг"), actiton);
+        assertThat(c1.rows()).filteredOn(r -> r.text().startsWith("частота")).singleElement()
+                .satisfies(r -> {
+                    assertThat(r.mark()).isEqualTo(FitMark.OK);
+                    assertThat(r.ours()).contains("Сеть питания");
+                });
+        ProductCard rb = card(13, "Рециркулятор бактерицидный", RegStatus.ACTIVE, new SiteProductAttribute("Мощность 1 лампы, Вт", "15"));
+        FitCandidate c2 = SpecFit.compare(reqs("потребляемая мощность не менее 90 Вт; мощность лампы не более 30 Вт"), rb);
+        assertThat(c2.rows()).filteredOn(r -> r.text().startsWith("потребляемая")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c2.rows()).filteredOn(r -> r.text().startsWith("мощность лампы")).singleElement()
+                .satisfies(r -> {
+                    assertThat(r.mark()).isEqualTo(FitMark.OK);
+                    assertThat(r.ours()).startsWith("Мощность 1 лампы");
+                });
+        ProductCard rbFull = card(15, "Рециркулятор бактерицидный", RegStatus.ACTIVE, new SiteProductAttribute("Потребляемая мощность, Вт", "60"));
+        assertThat(SpecFit.compare(reqs("потребляемая мощность не менее 90 Вт; масса не более 5 кг"), rbFull).rows())
+                .filteredOn(r -> r.text().startsWith("потребляемая")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.FAIL));   // потребляемая с потребляемой — сверяется
+        ProductCard ivl = card(14, "Аппарат ИВЛ", RegStatus.ACTIVE, new SiteProductAttribute("Триггер по давлению", "−1 ±0,5 см H₂O"));
+        FitCandidate c3 = SpecFit.compare(reqs("автоматическая компенсация парциального давления до высоты 4000 м; масса не более 5 кг"), ivl);
+        assertThat(c3.rows()).filteredOn(r -> r.text().contains("4000")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c3.failed()).isZero();
+    }
 }
