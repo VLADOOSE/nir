@@ -1,10 +1,14 @@
 package com.vladoose.nir.service.productwatch;
 
+import com.vladoose.nir.dto.response.LotProductMatchDto;
+import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.integration.westmed.WestmedLeadMapper;
 import com.vladoose.nir.repository.ProductGroupRepository;
 import com.vladoose.nir.repository.SiteProductRepository;
 import com.vladoose.nir.repository.TenderLotProductMatchRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,13 +33,44 @@ public class ProductMatchQuery {
     private final ProductGroupRepository groups;
     private final SiteProductRepository products;
     private final TenderLotRepository lots;
+    /** Адрес сайта для ссылок на товары, без «/» в конце. */
+    private final String siteUrl;
 
     public ProductMatchQuery(TenderLotProductMatchRepository matches, ProductGroupRepository groups, SiteProductRepository products,
-                             TenderLotRepository lots) {
+                             TenderLotRepository lots, @Value("${leads.westmed.site-url:https://westmed.kz}") String siteUrl) {
         this.matches = matches;
         this.groups = groups;
         this.products = products;
         this.lots = lots;
+        this.siteUrl = siteUrl == null ? "" : siteUrl.replaceAll("/+$", "");
+    }
+
+    /** Сводки для списка «Тендеры» — одним заходом на весь список (спека §12.2). */
+    @Transactional(readOnly = true)
+    public Map<Long, OurProductSummary> ourProduct(Collection<Long> tenderIds) {
+        Map<Long, OurProductSummary> out = new HashMap<>();
+        summaries(tenderIds).forEach((id, s) -> out.put(id, new OurProductSummary(s.level().name(), s.label(), s.groups())));
+        return out;
+    }
+
+    /** Отметки лотов одного тендера для карточки (спека §12.3): товар и похожие — ссылками на сайт. */
+    @Transactional(readOnly = true)
+    public Map<Long, List<LotProductMatchDto>> lotMatches(long tenderId) {
+        Summary s = summaries(List.of(tenderId)).get(tenderId);
+        if (s == null) return Map.of();
+        Map<Long, List<LotProductMatchDto>> out = new HashMap<>();
+        for (LotLine l : s.lots()) {
+            List<LotProductMatchDto.Similar> sim = l.similar() == null ? List.of() : l.similar().stream()
+                    .map(x -> new LotProductMatchDto.Similar(shortName(x.name()), x.brand(), url(x.slug())))
+                    .toList();
+            out.computeIfAbsent(l.lotId(), k -> new ArrayList<>()).add(new LotProductMatchDto(l.groupName(), l.word(), l.level().name(),
+                    l.evidence(), l.productName() == null ? null : shortName(l.productName()), url(l.productSlug()), sim));
+        }
+        return out;
+    }
+
+    private String url(String slug) {
+        return slug == null || slug.isBlank() ? null : WestmedLeadMapper.productUrl(siteUrl, slug);
     }
 
     @Transactional(readOnly = true)

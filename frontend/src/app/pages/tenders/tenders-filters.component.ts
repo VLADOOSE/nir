@@ -1,10 +1,13 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { OUR_LABELS } from '../../shared/product-watch';
 
 export interface TendersFilters {
   query: string; status: string; sortMode: string; stage: string; platform: string;
   facilityId: number | null; deadlineFrom: string; deadlineTo: string; region: string;
+  /** «Наш товар» (спека 2026-10-19-product-watch §12.2): '' — все, 'EXACT', 'ANY', 'g:<группа>'. */
+  our: string;
 }
 
 @Component({
@@ -38,6 +41,10 @@ export interface TendersFilters {
         <option value="">Все регионы</option><option [value]="noRegionValue">Регион не указан</option>
         <option *ngFor="let r of regions" [value]="r">{{ r }}</option>
       </select>
+      <select class="f-sel" *ngIf="isKz" [(ngModel)]="filters.our" (change)="emit()" title="Наш товар">
+        <option value="">Наш товар: все</option><option value="EXACT">★ Точно наше</option><option value="ANY">Любой наш вид</option>
+        <option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option>
+      </select>
       <button class="f-reset" (click)="reset.emit()">Сбросить</button>
     </div>
 
@@ -60,6 +67,7 @@ export interface TendersFilters {
       <label>Стадия<select [(ngModel)]="filters.stage" (change)="emit()"><option value="">Все</option><option value="NOT_STARTED">Не начат</option><option value="REQUESTED">Запрос отправлен</option><option value="PRICED">Есть цены</option><option value="WINNER_SELECTED">Победитель выбран</option></select></label>
       <label *ngIf="isKz">Площадка<select [(ngModel)]="filters.platform" (change)="emit()"><option value="">Все</option><option value="GOSZAKUP">Госзакуп</option><option value="SK_PHARMACY">СК-Фармация</option></select></label>
       <label *ngIf="isKz">Регион<select [(ngModel)]="filters.region" (change)="emit()"><option value="">Все</option><option [value]="noRegionValue">Регион не указан</option><option *ngFor="let r of regions" [value]="r">{{ r }}</option></select></label>
+      <label *ngIf="isKz">Наш товар<select [(ngModel)]="filters.our" (change)="emit()"><option value="">Все</option><option value="EXACT">★ Точно наше</option><option value="ANY">Любой наш вид</option><option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option></select></label>
       <label>Учреждение<select [(ngModel)]="filters.facilityId" (change)="emit()"><option [ngValue]="null">Все</option><option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option></select></label>
       <label class="fm-dates">Дедлайн<span><input type="date" [(ngModel)]="filters.deadlineFrom" (change)="emit()" /><input type="date" [(ngModel)]="filters.deadlineTo" (change)="emit()" /></span></label>
       <div class="fm-sheet-actions"><button class="fm-apply" (click)="sheetOpen = false">Применить</button><button class="fm-clear" (click)="reset.emit(); sheetOpen = false">Сброс</button></div>
@@ -112,6 +120,8 @@ export class TendersFiltersComponent {
   @Input() regions: string[] = [];
   @Input() isKz = false;
   @Input() noRegionValue = '__none__';
+  /** Группы «нашей продукции», отмеченные на тендерах списка (для фильтра). */
+  @Input() ourGroups: string[] = [];
   @Output() filtersChange = new EventEmitter<TendersFilters>();
   @Output() reset = new EventEmitter<void>();
 
@@ -132,6 +142,7 @@ export class TendersFiltersComponent {
     if (f.facilityId != null) out.push({ label: (this.facilities.find(x => x.id === f.facilityId)?.name) || 'Учреждение', key: 'facilityId' });
     if (f.deadlineFrom) out.push({ label: 'от ' + f.deadlineFrom, key: 'deadlineFrom' });
     if (f.deadlineTo) out.push({ label: 'до ' + f.deadlineTo, key: 'deadlineTo' });
+    if (f.our) out.push({ label: f.our.startsWith('g:') ? f.our.slice(2) : (OUR_LABELS[f.our] || f.our), key: 'our' });
     return out;
   }
   clear(key: keyof TendersFilters) {

@@ -26,6 +26,7 @@ import { DealLayoutComponent } from '../../shared/deal-layout.component';
 import { DealProgressComponent } from '../../shared/deal-progress.component';
 import { DealTimelineComponent } from '../../shared/deal-timeline.component';
 import type { DealAction, DealProgress } from '../../shared/deal';
+import { ourMatches } from '../../shared/product-watch';
 
 @Component({
   selector: 'app-tenders',
@@ -40,7 +41,7 @@ import type { DealAction, DealProgress } from '../../shared/deal';
 
       <app-tenders-filters
         [filters]="filtersState" [facilities]="facilities" [regions]="REGIONS"
-        [isKz]="isKz()" [noRegionValue]="NO_REGION"
+        [isKz]="isKz()" [noRegionValue]="NO_REGION" [ourGroups]="ourGroups"
         (filtersChange)="onFiltersChange($event)" (reset)="resetTendersFilter()">
       </app-tenders-filters>
 
@@ -150,6 +151,7 @@ import type { DealAction, DealProgress } from '../../shared/deal';
             <span *ngIf="isDemoTender(t.tenderNumber)" class="demo-badge" title="Контрольный пример, не существует в реестре закупок">Демо</span>
             <span class="badge" [class]="'badge-' + t.status">{{ getStatusLabel(t.status) }}</span>
             <span *ngIf="stageByTenderId[t.id]" [style]="stageChipStyle(stageByTenderId[t.id])">{{ stageLabel(stageByTenderId[t.id]) }}</span>
+            <span *ngIf="t.ourProduct" class="pw-chip" [class.pw-exact]="t.ourProduct.level !== 'TYPE'" [title]="t.ourProduct.groups.join(', ')">{{ t.ourProduct.label }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
           <div class="tender-price">{{ t.totalCost | money }}</div>
@@ -199,6 +201,11 @@ import type { DealAction, DealProgress } from '../../shared/deal';
           <span *ngIf="isDemoTender(selectedTender.tenderNumber)" class="demo-badge-h2" title="Контрольный пример, не существует в реестре закупок">Контрольный пример</span>
         </h2>
         <div class="info-grid">
+          <div class="info-item info-wide" *ngIf="selectedTender.foundByProductSearch || selectedTender.ourProduct">
+            <span class="info-label">Наш товар</span>
+            <span><span *ngIf="selectedTender.ourProduct" class="pw-chip" [class.pw-exact]="selectedTender.ourProduct.level !== 'TYPE'">{{ selectedTender.ourProduct.label }}</span>
+              <span *ngIf="selectedTender.foundByProductSearch" class="pw-found">Найден поиском по нашей продукции</span></span>
+          </div>
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || selectedTender.customerName || '—' }}</span></div>
           <div class="info-item" *ngIf="selectedTender.region"><span class="info-label">Регион</span><span>{{ selectedTender.region }}</span></div>
           <div class="info-item"><span class="info-label">Статус</span><span class="badge" [class]="'badge-' + selectedTender.status">{{ getStatusLabel(selectedTender.status) }}</span></div>
@@ -354,6 +361,14 @@ import type { DealAction, DealProgress } from '../../shared/deal';
     .tender-number { font-weight: 600; color: var(--accent); font-size: 15px; }
     .tender-price { font-size: 18px; font-weight: 700; color: var(--text); white-space: nowrap; }
     .purchase-type { font-size: 12px; color: var(--text-muted); background: var(--surface-2); padding: 2px 8px; border-radius: 4px; }
+    /* «наш товар» (спека 2026-10-19-product-watch §12.2): 🏷 — тинт акцента, ★ — успеха */
+    /* inline-block: у строчного элемента max-width и многоточие не работают — длинная подпись распирала сетку карточки */
+    .pw-chip { display: inline-block; vertical-align: middle; font-size: 12px; padding: 2px 8px; border-radius: 10px; color: var(--accent);
+               background: color-mix(in srgb, var(--accent) 15%, transparent); white-space: nowrap; max-width: 320px; overflow: hidden;
+               text-overflow: ellipsis; }
+    .pw-chip.pw-exact { color: var(--success-text); background: color-mix(in srgb, var(--success) 15%, transparent); font-weight: 600; }
+    .pw-found { font-size: 13px; color: var(--success-text); margin-left: 6px; }
+    .info-wide { grid-column: 1 / -1; }
     .tender-card-title { font-size: 14px; color: var(--text); margin-bottom: 12px; line-height: 1.5; }
     .tender-card-details { margin-bottom: 12px; }
     .detail-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -368,7 +383,7 @@ import type { DealAction, DealProgress } from '../../shared/deal';
     .tender-info { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
     .tender-info h2 { margin-bottom: 16px; }
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
-    .info-item { display: flex; flex-direction: column; }
+    .info-item { display: flex; flex-direction: column; min-width: 0; }
     .info-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
     .info-item span:not(.info-label) { font-size: 14px; }
     .info-desc { margin-top: 16px; font-size: 14px; color: var(--text); line-height: 1.5; }
@@ -441,6 +456,7 @@ import type { DealAction, DealProgress } from '../../shared/deal';
     @media (max-width: 900px) {
       .detail-row { grid-template-columns: 1fr; gap: 4px; }
       .info-grid { grid-template-columns: 1fr; }
+      .pw-chip { max-width: 100%; }
       .tender-card { padding: 14px 16px; }
       .tender-card-actions { flex-wrap: wrap; }
 
@@ -526,6 +542,10 @@ export class TendersComponent {
   filterPlatform = '';
   stageByTenderId: { [id: number]: string } = {};
   filterRegion = '';
+  /** «Наш товар»: '' — все, 'EXACT', 'ANY', 'g:<группа>' (адрес ?our= — из Telegram). */
+  filterOur = '';
+  /** Группы «нашей продукции» на тендерах списка — для фильтра (считается при загрузке, не в шаблоне). */
+  ourGroups: string[] = [];
   protected readonly NO_REGION = '__none__';
   readonly REGIONS: string[] = KZ_REGIONS;
   filterFacilityId: number | null = null;
@@ -535,12 +555,12 @@ export class TendersComponent {
   get filtersState(): TendersFilters {
     return { query: this.filterQuery, status: this.filterStatus, sortMode: this.sortMode, stage: this.filterStage,
       platform: this.filterPlatform, facilityId: this.filterFacilityId, deadlineFrom: this.filterDeadlineFrom,
-      deadlineTo: this.filterDeadlineTo, region: this.filterRegion };
+      deadlineTo: this.filterDeadlineTo, region: this.filterRegion, our: this.filterOur };
   }
   onFiltersChange(f: TendersFilters) {
     this.filterQuery = f.query; this.filterStatus = f.status; this.sortMode = f.sortMode as any; this.filterStage = f.stage;
     this.filterPlatform = f.platform; this.filterFacilityId = f.facilityId; this.filterDeadlineFrom = f.deadlineFrom;
-    this.filterDeadlineTo = f.deadlineTo; this.filterRegion = f.region;
+    this.filterDeadlineTo = f.deadlineTo; this.filterRegion = f.region; this.filterOur = f.our;
     this.applyTendersFilter();
   }
   allApplyItems: any[] = [];
@@ -616,6 +636,14 @@ export class TendersComponent {
       next: items => { this.allApplyItems = items || []; },
       error: () => { this.allApplyItems = []; }
     });
+
+    // ?our= — фильтр «Наш товар» из ссылки Telegram: ставится один раз и убирается из адреса (иначе вернулся бы
+    // при каждом открытии карточки — она тоже пишет адрес).
+    const our = this.route.snapshot.queryParamMap.get('our');
+    if (our === 'ANY' || our === 'EXACT' || our?.startsWith('g:')) this.filterOur = our;
+    if (our !== null) {   // после текущей навигации: страница ещё создаётся
+      setTimeout(() => this.router.navigate([], { relativeTo: this.route, queryParams: { our: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    }
 
     // Открытая карточка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
     // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
@@ -764,7 +792,12 @@ export class TendersComponent {
 
   loadTenders() {
     this.api.getTenders().subscribe({
-      next: data => { this.tenders = data; this.applyTendersFilter(); this.cdr.detectChanges(); },
+      next: data => {
+        this.tenders = data;
+        this.ourGroups = [...new Set<string>(data.flatMap((t: any) => t.ourProduct?.groups || []))].sort((a, b) => a.localeCompare(b, 'ru'));
+        this.applyTendersFilter();
+        this.cdr.detectChanges();
+      },
       error: err => this.notify.error('Ошибка загрузки тендеров: ' + (err.error?.message || err.message))
     });
     this.api.getTenderWorkStages().subscribe({
@@ -935,6 +968,7 @@ export class TendersComponent {
       if (to && t.deadline && new Date(t.deadline) > to) return false;
       if (this.filterRegion === this.NO_REGION) { if (t.region) return false; }
       else if (this.filterRegion && t.region !== this.filterRegion) return false;
+      if (!ourMatches(t.ourProduct, this.filterOur)) return false;
       return true;
     });
     this.sortTenders();
@@ -1033,6 +1067,7 @@ export class TendersComponent {
     this.filterStage = '';
     this.filterPlatform = '';
     this.filterRegion = '';
+    this.filterOur = '';
     this.filterFacilityId = null;
     this.filterDeadlineFrom = '';
     this.filterDeadlineTo = '';

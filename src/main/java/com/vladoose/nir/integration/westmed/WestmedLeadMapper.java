@@ -83,6 +83,11 @@ public class WestmedLeadMapper {
     }
 
     private String productUrl(String slug) {
+        return productUrl(siteUrl, slug);
+    }
+
+    /** Ссылка на товар сайта; siteUrl — без «/» в конце. */
+    public static String productUrl(String siteUrl, String slug) {
         return siteUrl + "/product/" + slug;   // next-intl localePrefix "as-needed": ru — без префикса
     }
 }

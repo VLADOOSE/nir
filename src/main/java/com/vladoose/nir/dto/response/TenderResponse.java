@@ -35,4 +35,8 @@ public class TenderResponse {
     private String contactPhone;
     private String contactEmail;
     private List<TenderLotShortResponse> lots = new ArrayList<>();
+    /** Заведён поиском по нашей продукции по стране (спека 2026-10-19-product-watch §7.3). */
+    private boolean foundByProductSearch;
+    /** «Наш товар»: пусто — отметок нет (ставит контроллер одним заходом на весь список). */
+    private OurProductSummary ourProduct;
 }

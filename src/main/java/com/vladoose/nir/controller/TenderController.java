@@ -2,6 +2,8 @@ package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.request.TenderRequest;
 import com.vladoose.nir.dto.response.ActivityApplyResponse;
+import com.vladoose.nir.dto.response.LotProductMatchDto;
+import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.entity.Tender;
@@ -23,6 +25,7 @@ import com.vladoose.nir.mapper.TenderMapper;
 import com.vladoose.nir.service.ActivityApplyService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -50,6 +53,7 @@ public class TenderController {
     private final OfferComparisonService offerComparisonService;
     private final WinnerAssignmentService winnerAssignmentService;
     private final TenderWorkStageService workStageService;
+    private final ProductMatchQuery productQuery;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -62,7 +66,8 @@ public class TenderController {
                             OfferComparisonService offerComparisonService,
                             WinnerAssignmentService winnerAssignmentService,
                             TenderWorkStageService workStageService,
-                            SkPharmacyImportScheduler skScheduler) {
+                            SkPharmacyImportScheduler skScheduler,
+                            ProductMatchQuery productQuery) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -75,6 +80,7 @@ public class TenderController {
         this.winnerAssignmentService = winnerAssignmentService;
         this.workStageService = workStageService;
         this.skScheduler = skScheduler;
+        this.productQuery = productQuery;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -106,7 +112,15 @@ public class TenderController {
 
     @GetMapping
     public List<TenderResponse> findAll() {
-        return mapper.toResponseList(service.findAll());
+        return withOurProduct(mapper.toResponseList(service.findAll()));
+    }
+
+    /** Сводки «наш товар» (спека 2026-10-19-product-watch §12.2) — одним заходом на весь список, без N+1. */
+    private List<TenderResponse> withOurProduct(List<TenderResponse> list) {
+        if (list.isEmpty()) return list;
+        Map<Long, OurProductSummary> ours = productQuery.ourProduct(list.stream().map(TenderResponse::getId).toList());
+        for (TenderResponse r : list) r.setOurProduct(ours.get(r.getId()));
+        return list;
     }
 
     @GetMapping("/search")
@@ -118,14 +132,14 @@ public class TenderController {
             @RequestParam(required = false) BigDecimal maxCost,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
-        return mapper.toResponseList(
-                service.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo));
+        return withOurProduct(mapper.toResponseList(
+                service.searchTenders(status, facilityId, equipType, minCost, maxCost, dateFrom, dateTo)));
     }
 
     /** Карточка тендера: чужой рынок и частная заявка — 404 (TenderService.findPublic). */
     @GetMapping("/{id}")
     public TenderResponse findById(@PathVariable Long id) {
-        return mapper.toResponse(service.findPublic(id));
+        return withOurProduct(List.of(mapper.toResponse(service.findPublic(id)))).get(0);
     }
 
     @PostMapping
@@ -157,7 +171,10 @@ public class TenderController {
     @GetMapping("/{id}/lots")
     public List<TenderLotResponse> getLots(@PathVariable Long id) {
         service.findInMarket(id);
-        return tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
+        List<TenderLotResponse> lots = tenderLotMapper.toResponseList(tenderLotService.findByTenderId(id));
+        Map<Long, List<LotProductMatchDto>> ours = productQuery.lotMatches(id);
+        for (TenderLotResponse l : lots) l.setProductMatches(ours.getOrDefault(l.getId(), List.of()));
+        return lots;
     }
 
     @GetMapping("/{id}/applies")

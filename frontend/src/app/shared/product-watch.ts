@@ -45,3 +45,23 @@ export function whenText(iso: string | null | undefined): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+
+/** Сводка «наш товар» тендера в списке (спека §12.2). */
+export interface OurProduct { level: MatchLevel; label: string; groups: string[]; }
+
+/** Отметка «наш товар» лота в карточке тендера (спека §12.3): ссылки — на товары сайта. */
+export interface LotProductMatch {
+  groupName: string; word: string; level: MatchLevel; evidence: string | null; productName: string | null; productUrl: string | null;
+  similar: { name: string; brand: string | null; url: string | null }[];
+}
+
+export const OUR_LABELS: Record<string, string> = { ANY: 'Любой наш вид', EXACT: '★ Точно наше' };
+
+/** Проходит ли тендер фильтр «Наш товар»: '' — все; 'ANY' — любая отметка; 'EXACT' — ★; 'g:<группа>' — эта группа. */
+export function ourMatches(our: OurProduct | null | undefined, filter: string): boolean {
+  if (!filter) return true;
+  if (!our) return false;
+  if (filter === 'ANY') return true;
+  if (filter === 'EXACT') return our.level !== 'TYPE';
+  return filter.startsWith('g:') && our.groups.includes(filter.slice(2));
+}

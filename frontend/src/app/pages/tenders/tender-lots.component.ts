@@ -99,6 +99,22 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             <span class="stage-chip stage-danger"
                   title="Лота больше нет на площадке. Он остался в АИС, потому что на него есть запрос КП или позиция заявки.">снят с площадки</span>
           </div>
+          <!-- наш товар (спека 2026-10-19-product-watch §12.3): видно и у свёрнутого лота; ссылки — на товар сайта -->
+          <div class="lot-ours" *ngFor="let m of l.productMatches || []">
+            <span class="stage-chip" [class.stage-success]="m.level !== 'TYPE'" [class.stage-accent]="m.level === 'TYPE'">{{
+              m.level === 'TYPE' ? '🏷 ' + m.groupName : '★ ' + (m.level === 'COPIED' ? 'ТЗ списано с нашего' : 'назван наш товар') }}</span>
+            <span class="lot-ours-text">
+              <a *ngIf="m.productUrl" [href]="m.productUrl" target="_blank" rel="noopener" (click)="$event.stopPropagation()">{{ m.productName }} ↗</a>
+              <ng-container *ngIf="!m.productUrl && m.productName">{{ m.productName }}</ng-container>
+              <ng-container *ngIf="m.evidence">{{ m.productName ? ' — ' : '' }}{{ m.evidence }}</ng-container>
+              <ng-container *ngIf="m.level === 'TYPE' && m.similar.length">похоже:
+                <ng-container *ngFor="let x of m.similar; let last = last"><a *ngIf="x.url" [href]="x.url" target="_blank" rel="noopener"
+                  (click)="$event.stopPropagation()">{{ x.name }}</a><span *ngIf="!x.url">{{ x.name }}</span><ng-container *ngIf="!last">, </ng-container></ng-container>
+              </ng-container>
+              <ng-container *ngIf="m.level === 'TYPE' && (l.techSpecStatus === 'NO_FILE' || l.techSpecStatus === 'UNREADABLE')">{{
+                m.similar.length ? ' · ' : '' }}ТЗ недоступно</ng-container>
+            </span>
+          </div>
           <div class="lot-metrics" *ngIf="l.quantity || l.maxCost || l.equipmentType?.name">
             <ng-container *ngIf="l.quantity">{{ l.quantity }} шт</ng-container><ng-container *ngIf="l.maxCost">{{ l.quantity ? ' · ' : '' }}до {{ l.maxCost | money }} за ед.</ng-container><ng-container *ngIf="l.equipmentType?.name">{{ (l.quantity || l.maxCost) ? ' · ' : '' }}{{ l.equipmentType.name }}</ng-container>
           </div>
@@ -178,6 +194,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-open .lot-chev { color: var(--accent); }
     .lot-metrics { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
     .lot-flags { margin-top: 4px; }
+    .lot-ours { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin-top: 4px; font-size: 12px; }
+    .lot-ours-text { color: var(--text-muted); min-width: 0; overflow-wrap: anywhere; }
+    .lot-ours a { color: var(--accent); }
     .lot-proposed { margin-top: 5px; font-size: 12px; color: var(--text); }
     .lot-kp { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
     .badge-proposed { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text);

@@ -15,6 +15,7 @@ import java.util.List;
 public interface TenderLotMapper {
 
     @Mapping(target = "tender", source = "tender")
+    @Mapping(target = "productMatches", ignore = true)
     TenderLotResponse toResponse(TenderLot entity);
 
     List<TenderLotResponse> toResponseList(List<TenderLot> entities);
