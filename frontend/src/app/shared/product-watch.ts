@@ -36,6 +36,13 @@ export interface ProbeLot {
   numberAnno: string; lotName: string; announcement: string; customer: string; deadlineAt: string | null; passed: boolean; reason: string;
 }
 export interface ProbeResult { found: number; passed: number; lots: ProbeLot[]; }
+/** Товар сайта с РУ — вкладка «Наша продукция → Товары» (спека 2026-10-20-product-spec-fit §8.2). */
+export interface ProductCatalogItem {
+  id: number; name: string; brand: string | null; url: string | null; regNumber: string | null; regStatus: string;
+  regExpires: string | null; regUnlimited: boolean; attributesCount: number;
+}
+export interface ProductCatalogState { kz: boolean; checkedAt: string | null; items: ProductCatalogItem[]; }
+
 /** Сводка «наш товар» тендера в списке (спека §12.2). */
 export interface OurProduct { level: MatchLevel; label: string; groups: string[]; }
 

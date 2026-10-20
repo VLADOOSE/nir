@@ -8,6 +8,7 @@ import { NotificationService } from '../../services/notification.service';
 import { errorText } from '../../shared/error-text';
 import type { ProbeResult, ProductGroup, ProductGroupsState } from '../../shared/product-watch';
 import { whenText, wordsList, wordsText } from '../../shared/product-watch-pages';
+import { ProductCatalogComponent } from './product-catalog.component';
 
 interface Row {
   g: ProductGroup; words: string; require: string; exclude: string; brands: string;
@@ -18,12 +19,21 @@ interface Row {
 @Component({
   selector: 'app-product-groups',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule],
+  imports: [NgIf, NgFor, FormsModule, ProductCatalogComponent],
   template: `
     <div class="pg-page">
       <h2>Наша продукция</h2>
       <p class="subtitle">Что АИС ищет в тендерах по всей стране: виды изделий из нашего каталога, их слова поиска, уточнения и исключения.
-        Найденное — в «Тендерах» с отметкой «🏷 наш вид» или «★ точно наше» и в теме «Тендеры» в Telegram.</p>
+        Найденное — в «Тендерах» с отметкой «🏷 наш вид», «✓ подходит» (ТЗ сверено с нашим товаром) или «★ точно наше»
+        и в Telegram, в теме «Тендеры (наши товары)».</p>
+      <div class="pg-tabs" role="group" aria-label="Раздел">
+        <button type="button" class="pg-tab" [class.pg-tab-on]="tab === 'groups'" [attr.aria-pressed]="tab === 'groups'"
+                (click)="setTab('groups')">Группы</button>
+        <button type="button" class="pg-tab" [class.pg-tab-on]="tab === 'products'" [attr.aria-pressed]="tab === 'products'"
+                (click)="setTab('products')">Товары</button>
+      </div>
+      <app-product-catalog *ngIf="tab === 'products'"></app-product-catalog>
+      <ng-container *ngIf="tab === 'groups'">
       <p class="pg-note" *ngIf="loading">Загружаю…</p>
       <p class="pg-note" *ngIf="state && !state.kz">Только для Казахстана — переключите рынок на West-Med (KZ).</p>
       <ng-container *ngIf="state?.kz">
@@ -77,12 +87,18 @@ interface Row {
           <button type="button" class="btn btn-line pg-small" *ngIf="admin && state!.watch?.enabled" (click)="syncCatalog()">Обновить</button>
         </p>
       </ng-container>
+      </ng-container>
     </div>
   `,
   styles: [`
     .pg-page { max-width: 900px; display: flex; flex-direction: column; gap: 10px; }
     .pg-page h2 { margin: 0; }
     .pg-note, .pg-hint { margin: 0; font-size: 13px; color: var(--text-muted); }
+    .pg-tabs { display: flex; gap: 6px; }
+    .pg-tab { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+              cursor: pointer; font: inherit; font-size: 14px; }
+    .pg-tab.pg-tab-on { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); color: var(--accent);
+                        font-weight: 600; }
     .pg-status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--success-text); }
     .pg-status.pg-off { color: var(--warn-text); }
     .pg-small { padding: 4px 10px; font-size: 12px; }
@@ -128,6 +144,14 @@ export class ProductGroupsComponent implements OnInit, OnDestroy {
   get admin(): boolean { return this.auth.isAdmin(); }
 
   readonly when = whenText;
+
+  /** Вкладка «Группы» / «Товары»; выбор помнит браузер. */
+  tab: 'groups' | 'products' = readTab();
+
+  setTab(t: 'groups' | 'products') {
+    this.tab = t;
+    try { localStorage.setItem(TAB_KEY, t); } catch { /* приватный режим — без памяти выбора */ }
+  }
 
   ngOnInit() {
     this.load();
@@ -219,5 +243,15 @@ export class ProductGroupsComponent implements OnInit, OnDestroy {
       next: w => { if (this.state) this.state.watch = w; this.notify.success('Каталог сайта обновляется'); this.cdr.detectChanges(); },
       error: e => this.notify.error(errorText(e)),
     });
+  }
+}
+
+const TAB_KEY = 'ais.pg.tab';
+
+function readTab(): 'groups' | 'products' {
+  try {
+    return localStorage.getItem(TAB_KEY) === 'products' ? 'products' : 'groups';
+  } catch {
+    return 'groups';
   }
 }
