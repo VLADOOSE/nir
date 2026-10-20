@@ -26,14 +26,27 @@ final class NewTenderComposer {
 
     record LotLine(String name, Integer qty) {}
 
+    /**
+     * ourProduct — строка «наш товар» (спека 2026-10-19-product-watch §9: «★ ТЗ списано с нашего товара: …» /
+     * «★ Назван наш товар: …» / «🏷 Наш вид: …»), null — нашего товара нет.
+     */
     record Card(long tenderId, String platformLabel, String number, String customer, String region, String subject,
-                BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots) {}
+                BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots, String ourProduct) {}
+
+    /** Текст и сколько карточек в него вошло — по порядку (остальные — строкой «…и ещё N»). */
+    record Composed(String text, int shown) {}
 
     private NewTenderComposer() {
     }
 
     /** null — показывать нечего. publicUrl пустой — без ссылок. */
     static String compose(List<Card> cards, String publicUrl) {
+        Composed c = composeShown(cards, publicUrl);
+        return c == null ? null : c.text();
+    }
+
+    /** Как {@link #compose}, и сколько первых карточек показано: по ним уведомитель отмечает «наш товар» сообщённым. */
+    static Composed composeShown(List<Card> cards, String publicUrl) {
         if (cards.isEmpty()) return null;
         String base = publicUrl == null || publicUrl.isBlank() ? null : publicUrl.trim().replaceAll("/+$", "");
         StringBuilder out = new StringBuilder(cards.size() == 1 ? "🏥 Новый тендер" : "🏥 Новые тендеры: " + cards.size());
@@ -47,7 +60,7 @@ final class NewTenderComposer {
             shown++;
         }
         if (shown < cards.size()) out.append(tail(cards.size() - shown, base));
-        return out.toString();
+        return new Composed(out.toString(), shown);
     }
 
     private static String tail(int rest, String base) {
@@ -67,6 +80,8 @@ final class NewTenderComposer {
             b.append("\nЛоты (").append(c.lots().size()).append("): ").append(String.join("; ", parts));
             if (c.lots().size() > SHOWN_LOTS) b.append("; и ещё ").append(c.lots().size() - SHOWN_LOTS);
         }
+        // наш товар — сразу под лотами: второго сообщения о новом тендере ЗКО не будет (спека 2026-10-19-product-watch §9)
+        if (c.ourProduct() != null && !c.ourProduct().isBlank()) b.append('\n').append(TelegramText.oneLine(c.ourProduct(), 300));
         String money = c.total() == null ? "" : "Сумма: " + DocFormat.money(c.total()) + " ₸";
         // время окончания приёма — если площадка его назвала (B2): тендеры ЗКО живут 2–4 дня
         String deadline = c.deadlineAt() != null ? c.deadlineAt().format(DATE_TIME)

@@ -46,6 +46,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
     private final ProductRematchService rematch;
     private final SiteCatalogSync catalog;
     private final ImportOutageNotifier outage;
+    private final ProductWatchNotifier notifier;
     private final boolean enabled;
     private final String searchCron, plansCron, catalogCron, zone;
     private final int specPerRun;
@@ -65,7 +66,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
 
     @Autowired
     public ProductWatchScheduler(ProductWatchService search, ProductSpecChecker specs, ProductRematchService rematch,
-                                 SiteCatalogSync catalog, ImportOutageNotifier outage,
+                                 SiteCatalogSync catalog, ImportOutageNotifier outage, ProductWatchNotifier notifier,
                                  @Value("${product-watch.enabled:false}") boolean enabled,
                                  @Value("${product-watch.cron:}") String searchCron,
                                  @Value("${product-watch.plans-cron:}") String plansCron,
@@ -73,6 +74,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
                                  @Value("${product-watch.zone:}") String zone,
                                  @Value("${product-watch.spec-per-run:}") String specPerRun) {
         this.search = search; this.specs = specs; this.rematch = rematch; this.catalog = catalog; this.outage = outage;
+        this.notifier = notifier;
         this.enabled = enabled; this.searchCron = searchCron; this.plansCron = plansCron; this.catalogCron = catalogCron;
         this.zone = zone; this.specPerRun = parseInt(specPerRun, DEFAULT_SPEC_PER_RUN);
     }
@@ -119,6 +121,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
             } finally {
                 lastSearchAt = Instant.now();
                 searchQueued.set(false);
+                notifyProducts(sum);   // и после сбоя: найденное до него уже отмечено (спека §9)
                 report(sum);
             }
         }));
@@ -166,6 +169,15 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
         } finally {
             current = null;
             MarketContext.clear();
+        }
+    }
+
+    /** «Наш товар в тендерах» — в потоке прогона, под рынком KZ; сбой уведомления итог прогона не роняет. */
+    private void notifyProducts(ImportSummary sum) {
+        try {
+            notifier.afterRun(sum);
+        } catch (Throwable e) {
+            log.warn("Наша продукция: уведомление «наш товар» упало: {}", ErrorText.of(e));
         }
     }
 

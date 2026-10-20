@@ -1,13 +1,17 @@
 package com.vladoose.nir.service.tendernotify;
 
 import com.vladoose.nir.context.MarketContext;
-import com.vladoose.nir.entity.Market;
-import com.vladoose.nir.entity.Tender;
-import com.vladoose.nir.entity.TenderLot;
-import com.vladoose.nir.entity.TenderPlatform;
+import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
+import com.vladoose.nir.repository.ProductGroupRepository;
+import com.vladoose.nir.repository.SiteProductRepository;
+import com.vladoose.nir.repository.TenderLotProductMatchRepository;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.service.productwatch.ProductMatchService;
+import com.vladoose.nir.service.productwatch.ProductWatchNotifier;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,9 +25,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -44,8 +50,16 @@ class NewTenderNotifierTest {
 
     @Autowired TenderRepository tenderRepository;
     @Autowired PlatformTransactionManager txManager;
+    @Autowired ProductMatchQuery productQuery;
+    @Autowired ProductMatchService productMatches;
+    @Autowired TenderLotProductMatchRepository matchRepo;
+    @Autowired ProductGroupRepository groupRepo;
+    @Autowired SiteProductRepository siteProducts;
+    @Autowired EntityManager em;
 
     final List<String> sent = new ArrayList<>();
+    /** Без звука ли ушло каждое сообщение (★ «наш товар» — со звуком, остальное тихо). */
+    final List<Boolean> silent = new ArrayList<>();
     RuntimeException failNext;
 
     @BeforeEach
@@ -59,14 +73,15 @@ class NewTenderNotifierTest {
     }
 
     NewTenderNotifier notifier(TenderRepository repo, boolean enabled, TelegramSettings tg, String regions) {
-        return new NewTenderNotifier(repo, txManager, tg, text -> {
+        return new NewTenderNotifier(repo, txManager, tg, (text, quiet) -> {
             if (failNext != null) {
                 RuntimeException e = failNext;
                 failNext = null;
                 throw e;
             }
             sent.add(text);
-        }, enabled, regions, "https://ais.westmed.kz", CLOCK);
+            silent.add(quiet);
+        }, productQuery, productMatches, enabled, regions, "https://ais.westmed.kz", CLOCK);
     }
 
     Tender tender(String ext, String region, String status, LocalDate deadline) {
@@ -120,6 +135,92 @@ class NewTenderNotifierTest {
                 .doesNotContain("NT-B").doesNotContain("NT-C").doesNotContain("NT-D")
                 .contains("openId=" + a.getId() + "&market=KZ").contains("openId=" + e.getId() + "&market=KZ")
                 .contains("Лоты (1): Кушетка медицинская — 2 шт.");
+        assertThat(silent).containsExactly(true);                           // без нашего товара — тихо
+    }
+
+    ProductGroup ourGroup;
+
+    /** Отметка «наш товар» на первом лоте тендера — как её ставит импорт (спека 2026-10-19-product-watch §8). */
+    void mark(Tender t, ProductMatchLevel level, String productName) {
+        if (ourGroup == null) {
+            ourGroup = groupRepo.save(ProductGroup.builder().market(Market.KZ).name("NT: отсасыватели")
+                    .searchWords(List.of("отсасыватель")).requireWords(List.of()).excludeWords(List.of()).brandWords(List.of())
+                    .active(true).position(99).build());
+        }
+        Long productId = null;
+        if (productName != null) {
+            productId = siteProducts.save(SiteProduct.builder().market(Market.KZ).siteId(UUID.randomUUID())
+                    .name(productName).syncedAt(OffsetDateTime.now()).build()).getId();
+        }
+        matchRepo.save(TenderLotProductMatch.builder().tenderId(t.getId()).lotId(t.getLots().get(0).getId()).groupId(ourGroup.getId())
+                .word("отсасыватель").level(level).evidence(level == ProductMatchLevel.COPIED ? "совпало 5 фраз: блок аспирации" : null)
+                .productId(productId).source(ProductMatchSource.IMPORT).build());
+        em.flush();
+    }
+
+    /**
+     * Наш товар у нового тендера ЗКО (спека 2026-10-19-product-watch §9): строка в «🏥 Новый тендер», ★ — со звуком,
+     * тендер сообщён — уведомитель нашей продукции второго сообщения о нём не шлёт.
+     */
+    @Test
+    void ourProductCopied_lineWithSound_thenProductNotifierSilent() {
+        Tender t = tender("NT-P", ZKO, "ACTIVE", TODAY.plusDays(2));
+        mark(t, ProductMatchLevel.COPIED, "Аппарат для аспирации дыма АСД-«ФОТЕК». Набор с фильтрами");
+
+        notifier(true, TG_ON, ZKO).afterImport(created("NT-P"));
+
+        assertThat(sent).singleElement().asString().startsWith("🏥 Новый тендер\n")
+                .contains("Лоты (1): Кушетка медицинская — 2 шт.\n★ ТЗ списано с нашего товара: Аппарат для аспирации дыма АСД-«ФОТЕК»\n");
+        assertThat(silent).containsExactly(false);
+        em.flush();
+        em.clear();
+        assertThat(tenderRepository.findById(t.getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.COPIED);
+
+        List<String> productSent = new ArrayList<>();
+        new ProductWatchNotifier(matchRepo, tenderRepository, productQuery, productMatches, txManager, TG_ON,
+                (text, quiet) -> productSent.add(text), true, "https://ais.westmed.kz", CLOCK).afterRun(new ImportSummary());
+        assertThat(productSent).isEmpty();
+    }
+
+    /** Тендеры с нашим товаром — первыми; 🏷 «наш вид» — без звука. */
+    @Test
+    void ourProductTendersFirst_typeSilent() {
+        tender("NT-Q1", ZKO, "ACTIVE", TODAY.plusDays(2));
+        Tender ours = tender("NT-Q2", ZKO, "ACTIVE", TODAY.plusDays(2));
+        mark(ours, ProductMatchLevel.TYPE, null);
+
+        notifier(true, TG_ON, ZKO).afterImport(created("NT-Q1", "NT-Q2"));
+
+        String text = sent.get(0);
+        assertThat(text.indexOf("NT-Q2")).isLessThan(text.indexOf("NT-Q1"));
+        assertThat(text).contains("\n🏷 Наш вид: отсасыватель\n");
+        assertThat(silent).containsExactly(true);
+    }
+
+    /** Не поместившийся в сообщение тендер сообщённым не считается — его пришлёт уведомитель нашей продукции. */
+    @Test
+    void cutFromMessage_notMarkedNotified() {
+        List<Tender> all = new ArrayList<>();
+        String[] ext = new String[15];
+        for (int i = 0; i < ext.length; i++) {
+            ext[i] = "NT-R" + i;
+            Tender t = tender(ext[i], ZKO, "ACTIVE", TODAY.plusDays(2));
+            t.setDescription("Очень длинное наименование закупки медицинских изделий для нужд больницы ".repeat(3));
+            tenderRepository.saveAndFlush(t);
+            mark(t, ProductMatchLevel.TYPE, null);
+            all.add(t);
+        }
+
+        notifier(true, TG_ON, ZKO).afterImport(created(ext));
+
+        String text = sent.get(0);
+        assertThat(text).contains("…и ещё");
+        em.flush();
+        em.clear();
+        long marked = all.stream()
+                .filter(t -> tenderRepository.findById(t.getId()).orElseThrow().getProductNotifiedLevel() != null).count();
+        assertThat(marked).isGreaterThan(0).isLessThan(ext.length);
+        assertThat(text.split("\n▸ ", -1).length - 1).as("сообщено ровно показанное").isEqualTo((int) marked);
     }
 
     /** B2: срок сегодня, но время приёма уже прошло — не «новый тендер», а закрытый; время — в тексте. */

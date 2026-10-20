@@ -61,6 +61,19 @@ class TelegramClientTest {
         assertThat(b.path("disable_notification").asBoolean()).isTrue();
     }
 
+    /** «★ точно наш товар» (спека 2026-10-19-product-watch §9) — со звуком, в ту же тему тендеров. */
+    @Test
+    void sendsTendersLoud_whenAsked() throws Exception {
+        stub.enqueue(TelegramStubServer.Reply.ok(557));
+        TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "88"), json);
+
+        c.sendTenders("★ Точно наше", false);
+
+        JsonNode b = json.readTree(stub.requests().get(0).body());
+        assertThat(b.path("message_thread_id").asLong()).isEqualTo(88);
+        assertThat(b.has("disable_notification")).isFalse();
+    }
+
     @Test
     void nonNumericTendersThread_namesItsOwnVariable() {
         TelegramClient c = new TelegramClient(new TelegramSettings(true, stub.url(), TOKEN, "-1001", "77", "тендеры"), json);

@@ -30,4 +30,17 @@ public interface TenderLotProductMatchRepository extends JpaRepository<TenderLot
             ORDER BY l.id, t.deadline_at NULLS LAST
             """, nativeQuery = true)
     List<Long> findLotsForSpecCheckUnordered(@Param("goszakup") boolean goszakup);
+
+    /**
+     * Тендеры KZ в статусе ACTIVE, у которых наибольший уровень отметки выше уже сообщённого (спека 2026-10-19-product-watch
+     * §9; пусто — ниже любого). Срок приёма сверяет уведомитель — по часам рынка.
+     */
+    @Query(value = """
+            SELECT m.tender_id FROM tender_lot_product_match m JOIN tender t ON t.id = m.tender_id
+            WHERE t.market = 'KZ' AND t.status = 'ACTIVE'
+            GROUP BY m.tender_id, t.product_notified_level
+            HAVING MAX(CASE m.level WHEN 'COPIED' THEN 3 WHEN 'NAMED' THEN 2 ELSE 1 END)
+                 > COALESCE(CASE t.product_notified_level WHEN 'COPIED' THEN 3 WHEN 'NAMED' THEN 2 WHEN 'TYPE' THEN 1 END, 0)
+            """, nativeQuery = true)
+    List<Long> findTendersToNotify();
 }

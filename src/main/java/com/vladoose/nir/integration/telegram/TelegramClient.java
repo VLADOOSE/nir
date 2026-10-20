@@ -51,7 +51,15 @@ public class TelegramClient {
 
     /** Сообщение о новых тендерах в их тему (`TELEGRAM_TENDERS_THREAD_ID`; пусто — «Общая»), тихо (просьба оператора). */
     public long sendTenders(String text) {
-        return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, true);
+        return sendTenders(text, true);
+    }
+
+    /**
+     * Сообщение в тему тендеров; silent — без звука. Со звуком — только «★ точно наш товар» (спека
+     * 2026-10-19-product-watch §9), всё остальное в теме тихо.
+     */
+    public long sendTenders(String text, boolean silent) {
+        return send(settings.tendersThreadId(), "TELEGRAM_TENDERS_THREAD_ID", text, silent);
     }
 
     /** threadVariable — имя переменной окружения темы: в тексте ошибки, если там не число. */

@@ -1,5 +1,6 @@
 package com.vladoose.nir.service.tendernotify;
 
+import com.vladoose.nir.entity.ProductMatchLevel;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
@@ -8,6 +9,8 @@ import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.integration.telegram.TelegramClient;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.Card;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.LotLine;
 import com.vladoose.nir.util.ErrorText;
@@ -27,9 +30,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -45,6 +50,10 @@ import java.util.stream.Collectors;
  * Одно сообщение на прогон. Чтение из базы — своей короткой транзакцией, отправка — вне её (§6). Не собралось или
  * не ушло — ошибка в итоге прогона, номера остаются в памяти и уходят со следующим прогоном (рестарт бэкенда их
  * теряет — принято: тендер виден в АИС, а прогоны идут раз в час).
+ * <p>
+ * Наш товар (спека 2026-10-19-product-watch §9): отметки ставятся до этого уведомления, у тендера с отметкой — строка
+ * «★ …» / «🏷 …» под лотами, такие тендеры идут первыми, сообщение с ★ — со звуком; показанные в сообщении тендеры
+ * с отметкой считаются сообщёнными — уведомитель нашей продукции второго сообщения о них не шлёт.
  */
 @Component
 public class NewTenderNotifier {
@@ -53,9 +62,9 @@ public class NewTenderNotifier {
     private static final ZoneId ZONE = ZoneId.of("Asia/Oral");
     static final String DEFAULT_REGION = "Западно-Казахстанская область";
 
-    /** Отправка готового текста; в работе — тема тендеров Bot API. */
+    /** Отправка готового текста; в работе — тема тендеров Bot API. silent — без звука (со звуком — только ★ «наш товар»). */
     interface Sender {
-        void send(String text);
+        void send(String text, boolean silent);
     }
 
     private final TenderRepository tenderRepository;
@@ -67,21 +76,26 @@ public class NewTenderNotifier {
     private final Set<String> regions;
     private final String publicUrl;
     private final Clock clock;
+    private final ProductMatchQuery products;
+    private final ProductMatchService productMatches;
 
     /** Не ушедшие из-за сбоя Telegram или не собранные из-за сбоя базы — уйдут со следующим прогоном (если ещё действуют). */
     private final Set<String> pending = new LinkedHashSet<>();
 
     @Autowired
     public NewTenderNotifier(TenderRepository tenderRepository, PlatformTransactionManager txManager,
-                             TelegramSettings telegram, TelegramClient client,
+                             TelegramSettings telegram, TelegramClient client, ProductMatchQuery products,
+                             ProductMatchService productMatches,
                              @Value("${tenders.notify.enabled:false}") boolean enabled,
                              @Value("${tenders.notify.regions:}") String regions,
                              @Value("${ais.public-url:}") String publicUrl) {
-        this(tenderRepository, txManager, telegram, client::sendTenders, enabled, regions, publicUrl, Clock.systemUTC());
+        this(tenderRepository, txManager, telegram, client::sendTenders, products, productMatches, enabled, regions, publicUrl,
+                Clock.systemUTC());
     }
 
     NewTenderNotifier(TenderRepository tenderRepository, PlatformTransactionManager txManager, TelegramSettings telegram,
-                      Sender sender, boolean enabled, String regions, String publicUrl, Clock clock) {
+                      Sender sender, ProductMatchQuery products, ProductMatchService productMatches, boolean enabled,
+                      String regions, String publicUrl, Clock clock) {
         this.tenderRepository = tenderRepository;
         this.readTx = new TransactionTemplate(txManager);
         this.readTx.setReadOnly(true);
@@ -91,6 +105,8 @@ public class NewTenderNotifier {
         this.regions = parseRegions(regions);
         this.publicUrl = publicUrl;
         this.clock = clock;
+        this.products = products;
+        this.productMatches = productMatches;
     }
 
     /** Пусто (в т. ч. пустая переменная окружения) — ЗКО; «*» — все регионы. */
@@ -138,15 +154,29 @@ public class NewTenderNotifier {
         pending.clear();
         if (p == null || p.text() == null) return;   // никто не прошёл фильтр
         try {
-            sender.send(p.text());
-            log.info("Telegram: уведомление о новых тендерах отправлено ({})", p.extIds().size());
+            sender.send(p.text(), !p.sound());
+            log.info("Telegram: уведомление о новых тендерах отправлено ({}){}", p.extIds().size(), p.sound() ? " со звуком" : "");
         } catch (RuntimeException e) {
             pending.addAll(p.extIds());
             log.warn("Telegram: уведомление о новых тендерах не ушло ({}), повтор — со следующим прогоном: {}",
                     p.extIds().size(), ErrorText.of(e));
             fail(sum, "уведомление в Telegram о новых тендерах не ушло (повтор — со следующим прогоном): "
                     + ErrorText.of(e));
+            return;
         }
+        markOurProducts(p.ours());
+    }
+
+    /** Наш товар, показанный в «🏥 Новый тендер», — сообщён: уведомитель нашей продукции о нём промолчит. */
+    private void markOurProducts(Map<Long, ProductMatchLevel> ours) {
+        ours.forEach((tenderId, level) -> {
+            try {
+                productMatches.markNotified(tenderId, level);
+            } catch (RuntimeException e) {
+                // ушло, но не отмечено — уведомитель нашей продукции пришлёт ещё раз (лучше повтор, чем потеря)
+                log.warn("Telegram: тендер {} с нашим товаром не отмечен сообщённым: {}", tenderId, ErrorText.of(e));
+            }
+        });
     }
 
     /** Ошибку видно в тосте и строке «Обновлено…»; причина сбоя самого импорта, если была, не затирается. */
@@ -155,19 +185,41 @@ public class NewTenderNotifier {
         if (sum.getMessage() != null) sum.setMessage(sum.getMessage() + " · Telegram: уведомление о новых тендерах не ушло");
     }
 
-    private record Prepared(String text, List<String> extIds) {}
+    /** ours — показанные в тексте тендеры с нашим товаром и их уровень; sound — среди них есть ★. */
+    private record Prepared(String text, List<String> extIds, boolean sound, Map<Long, ProductMatchLevel> ours) {}
 
     private Prepared prepare(Collection<String> extIds) {
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZONE);
-        List<Card> cards = new ArrayList<>();
+        List<Tender> found = new ArrayList<>();
         List<String> used = new ArrayList<>();
         for (String extId : extIds) {
             tenderRepository.findBySourceExtId(extId).filter(t -> qualifies(t, now)).ifPresent(t -> {
-                cards.add(card(t));
+                found.add(t);
                 used.add(extId);
             });
         }
-        return new Prepared(NewTenderComposer.compose(cards, publicUrl), used);
+        if (found.isEmpty()) return new Prepared(null, used, false, Map.of());
+        Map<Long, ProductMatchQuery.Summary> ours = products.summaries(found.stream().map(Tender::getId).toList());
+        // наш товар — первым: если сообщение придётся обрезать, в «…и ещё N» уйдут чужие тендеры, а не наши
+        List<Tender> ordered = found.stream()
+                .sorted(Comparator.comparingInt((Tender t) -> rank(ours.get(t.getId()))).reversed())
+                .toList();
+        List<Card> cards = ordered.stream().map(t -> card(t, ours.get(t.getId()))).toList();
+        NewTenderComposer.Composed c = NewTenderComposer.composeShown(cards, publicUrl);
+        Map<Long, ProductMatchLevel> shownOurs = new LinkedHashMap<>();
+        boolean sound = false;
+        for (Tender t : ordered.subList(0, c.shown())) {
+            ProductMatchQuery.Summary s = ours.get(t.getId());
+            if (s == null || s.level() == null) continue;
+            shownOurs.put(t.getId(), s.level());
+            sound |= s.level().exact();
+        }
+        return new Prepared(c.text(), used, sound, shownOurs);
+    }
+
+    /** Порядок в сообщении: ★ (NAMED, COPIED), потом 🏷, потом без нашего товара. */
+    private static int rank(ProductMatchQuery.Summary s) {
+        return s == null || s.level() == null ? -1 : s.level().ordinal();
     }
 
     private boolean qualifies(Tender t, LocalDateTime now) {
@@ -177,14 +229,15 @@ public class NewTenderNotifier {
         return regions.isEmpty() || regions.contains(norm(t.getRegion()));
     }
 
-    private static Card card(Tender t) {
+    private static Card card(Tender t, ProductMatchQuery.Summary ours) {
         List<LotLine> lots = t.getLots().stream()
                 .sorted(Comparator.comparing(TenderLot::getLotNumber, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(TenderLot::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(l -> new LotLine(l.getEquipName(), l.getQuantity()))
                 .toList();
         return new Card(t.getId(), platformLabel(t.getPlatform()), t.getTenderNumber(), t.getCustomerName(), t.getRegion(),
-                t.getDescription(), t.getTotalCost(), t.getDeadline(), t.getDeadlineAt(), lots);
+                t.getDescription(), t.getTotalCost(), t.getDeadline(), t.getDeadlineAt(), lots,
+                ours == null || ours.level() == null ? null : ProductMatchQuery.telegramLine(ours));
     }
 
     private static String platformLabel(TenderPlatform p) {

@@ -157,4 +157,25 @@ class GoszakupImportSchedulerTest {
 
         verify(outage).afterRun(eq("goszakup"), argThat(s -> s != null && s.getErrors() == 1));
     }
+
+    /**
+     * Порядок в конце прогона (спека 2026-10-19-product-watch §9): отметки «наш товар» → «🏥 Новый тендер» (со строкой
+     * «наш товар») → «Наш товар в тендерах» (остальные затронутые) → оповещение о сбое. Падение уведомителя нашей
+     * продукции прогон не роняет.
+     */
+    @Test
+    void finishedRun_marksThenNewTenders_thenOurProducts_thenOutage() throws Exception {
+        GoszakupImportService service = mock(GoszakupImportService.class);
+        java.util.List<String> calls = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        doAnswer(inv -> { calls.add("new"); return null; }).when(notifier).afterImport(any(ImportSummary.class));
+        doAnswer(inv -> { calls.add("outage"); return null; }).when(outage).afterRun(eq("goszakup"), any(ImportSummary.class));
+
+        GoszakupImportScheduler scheduler = new GoszakupImportScheduler(service, notifier, outage,
+                sum -> calls.add("marks"), sum -> { calls.add("ours"); throw new IllegalStateException("Telegram"); });
+        scheduler.startAsync(null);
+        awaitIdle(scheduler);
+
+        assertThat(calls).containsExactly("marks", "new", "ours", "outage");
+        assertThat(scheduler.status().running()).isFalse();
+    }
 }

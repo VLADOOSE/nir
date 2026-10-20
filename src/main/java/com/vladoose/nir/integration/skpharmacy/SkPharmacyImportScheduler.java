@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
 import com.vladoose.nir.service.productwatch.ProductImportMarks;
+import com.vladoose.nir.service.productwatch.ProductWatchNotifier;
 import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import com.vladoose.nir.service.tendernotify.NewTenderNotifier;
 import com.vladoose.nir.util.ErrorText;
@@ -34,6 +35,8 @@ public class SkPharmacyImportScheduler {
     private final ImportOutageNotifier outage;
     /** Отметки «наш товар» у созданных и обновлённых тендеров (спека 2026-10-19-product-watch §8). */
     private final Consumer<ImportSummary> productMarks;
+    /** «Наш товар в тендерах» — о затронутых прогоном, кроме уже сообщённых в «🏥 Новый тендер» (спека §9). */
+    private final Consumer<ImportSummary> productNotify;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastFinishedAt;
@@ -46,20 +49,23 @@ public class SkPharmacyImportScheduler {
 
     @Autowired
     public SkPharmacyImportScheduler(SkPharmacyImportService importService, NewTenderNotifier notifier,
-                                     ImportOutageNotifier outage, ProductImportMarks marks) {
-        this.importService = importService;
-        this.notifier = notifier;
-        this.outage = outage;
-        this.productMarks = marks::afterImport;
+                                     ImportOutageNotifier outage, ProductImportMarks marks, ProductWatchNotifier productNotifier) {
+        this(importService, notifier, outage, marks::afterImport, productNotifier::afterRun);
     }
 
-    /** Без отметок «наш товар» — тесты планировщика. */
+    /** Без нашей продукции — тесты планировщика. */
     public SkPharmacyImportScheduler(SkPharmacyImportService importService, NewTenderNotifier notifier,
                                      ImportOutageNotifier outage) {
+        this(importService, notifier, outage, sum -> { }, sum -> { });
+    }
+
+    SkPharmacyImportScheduler(SkPharmacyImportService importService, NewTenderNotifier notifier, ImportOutageNotifier outage,
+                              Consumer<ImportSummary> productMarks, Consumer<ImportSummary> productNotify) {
         this.importService = importService;
         this.notifier = notifier;
         this.outage = outage;
-        this.productMarks = sum -> { };
+        this.productMarks = productMarks;
+        this.productNotify = productNotify;
     }
 
     public ImportStatus status() {
@@ -84,6 +90,7 @@ public class SkPharmacyImportScheduler {
             } finally {
                 markProducts(sum);       // отметки «наш товар» — до уведомления (в нём строка «наш товар»)
                 notifyNewTenders(sum);   // и после сбоя: созданное до него — тоже новое
+                notifyProducts(sum);     // наш товар в остальных затронутых тендерах (новые — уже в «🏥 Новый тендер»)
                 reportOutage(sum);       // авария площадки (упавшие подряд прогоны без записей) — в Telegram
                 lastFinishedAt = Instant.now();
                 running.set(false);
@@ -108,6 +115,15 @@ public class SkPharmacyImportScheduler {
             notifier.afterImport(sum);
         } catch (Throwable e) {
             log.warn("СК-Фармация: уведомление о новых тендерах упало: {}", ErrorText.of(e));
+        }
+    }
+
+    /** «Наш товар в тендерах» — в потоке прогона и под рынком KZ; сбой итог прогона не роняет. */
+    private void notifyProducts(ImportSummary sum) {
+        try {
+            productNotify.accept(sum);
+        } catch (Throwable e) {
+            log.warn("СК-Фармация: уведомление «наш товар» упало: {}", ErrorText.of(e));
         }
     }
 

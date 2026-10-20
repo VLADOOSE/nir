@@ -92,4 +92,21 @@ class SkPharmacyImportSchedulerTest {
 
         verify(outage).afterRun(eq("СК-Фармации"), argThat(s -> s != null && s.getErrors() == 1));
     }
+
+    /** Порядок в конце прогона, как у goszakup: отметки → «🏥 Новый тендер» → «Наш товар в тендерах» → оповещение о сбое. */
+    @Test
+    void finishedRun_marksThenNewTenders_thenOurProducts_thenOutage() throws Exception {
+        SkPharmacyImportService service = mock(SkPharmacyImportService.class);
+        java.util.List<String> calls = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        doAnswer(inv -> { calls.add("new"); return null; }).when(notifier).afterImport(any(ImportSummary.class));
+        doAnswer(inv -> { calls.add("outage"); return null; }).when(outage).afterRun(eq("СК-Фармации"), any(ImportSummary.class));
+
+        SkPharmacyImportScheduler scheduler = new SkPharmacyImportScheduler(service, notifier, outage,
+                sum -> calls.add("marks"), sum -> { calls.add("ours"); throw new IllegalStateException("Telegram"); });
+        scheduler.startAsync();
+        long deadline = System.currentTimeMillis() + 3000;
+        while ((scheduler.status().running() || calls.size() < 4) && System.currentTimeMillis() < deadline) Thread.sleep(20);
+
+        assertThat(calls).containsExactly("marks", "new", "ours", "outage");
+    }
 }
