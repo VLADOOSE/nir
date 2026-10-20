@@ -107,4 +107,24 @@ class ProductWatchComposerTest {
         assertThat(text.indexOf("✅ Подходит наш товар")).isLessThan(text.indexOf("🏷 Наш вид изделия"));
         assertThat(ProductWatchComposer.compose(List.of(astana(ProductMatchLevel.TYPE, false)), null).sound()).isFalse();
     }
+    /**
+     * Живая проверка задачи 16: «наш вид», уже сообщённый, стал «подходит» — уточнение не «ТЗ под наш товар» (ТЗ не списано,
+     * товар подходит по требованиям). На проде так придут тендеры, сообщённые первым прогоном 20.10 как «🏷 наш вид».
+     */
+    @Test
+    void fitsUpgrade_saysFits_notCopiedSpec() {
+        ProductMatchQuery.LotLine fitsLot = new ProductMatchQuery.LotLine(2, "Дефибриллятор", 1, ProductMatchLevel.FITS, "Дефибрилляторы",
+                "дефибриллятор", null, null, null, List.of(),
+                new ProductMatchQuery.FitSummary(FitVerdict.FITS, "Дефибриллятор ДКИ-Н-12", "dki", 21, 34, 13, null, null, "ACTIVE"));
+        ProductWatchComposer.Card up = new ProductWatchComposer.Card(12, "17733214-1", "goszakup", null, "Приобретение дефибриллятора",
+                null, null, null, null, null, ProductMatchLevel.FITS, true, List.of(fitsLot));
+        ProductWatchComposer.Message m = ProductWatchComposer.compose(List.of(up), null);
+        assertThat(m.text()).startsWith("✅ Уточнение: подходит наш товар").doesNotContain("ТЗ под наш товар");
+        assertThat(m.sound()).isTrue();
+        // вместе со свежими — раздел «✅ Уточнение», точное повышение — по-прежнему «★ Уточнение»
+        String mixed = ProductWatchComposer.compose(List.of(astana(ProductMatchLevel.TYPE, false), up), null).text();
+        assertThat(mixed).contains("\n\n✅ Уточнение\n").doesNotContain("★ Уточнение");
+        assertThat(ProductWatchComposer.compose(List.of(astana(ProductMatchLevel.COPIED, true)), null).text())
+                .startsWith("★ Уточнение: ТЗ под наш товар");
+    }
 }
