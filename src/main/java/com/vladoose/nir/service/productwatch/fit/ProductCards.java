@@ -1,10 +1,13 @@
 package com.vladoose.nir.service.productwatch.fit;
 
+import com.vladoose.nir.entity.MedEquipment;
+import com.vladoose.nir.entity.MedRegistry;
 import com.vladoose.nir.entity.RegStatus;
 import com.vladoose.nir.entity.SiteProduct;
 import com.vladoose.nir.entity.SiteProductAttribute;
 import com.vladoose.nir.service.productwatch.ProductText;
 
+import java.time.LocalDate;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,6 +43,28 @@ public final class ProductCards {
         return new ProductCard(p.getId(), p.getName(), p.getBrand(), p.getSlug(), RegNumbers.normalize(p.getRegistrationCert()),
                 status, reg == null ? null : reg.expires(), reg != null && reg.unlimited(), List.copyOf(facts),
                 Set.copyOf(FitText.stems(text.toString())));
+    }
+
+    /**
+     * Модель реестра «в работе» (спека 2026-10-20-lot-model-in-work §6): факты — числа кратких характеристик карточки РУ
+     * (источник «РУ»), слова — наименование, назначение, область применения, характеристики; РУ — по сроку в реестре.
+     */
+    public static ProductCard ofRegistry(MedRegistry r, LocalDate today) {
+        StringBuilder text = new StringBuilder();
+        append(text, r.getName(), r.getPurpose(), r.getUseArea(), r.getTechChars());
+        boolean unlimited = Boolean.TRUE.equals(r.getUnlimited());
+        RegStatus status = unlimited ? RegStatus.ACTIVE : r.getExpirationDate() == null ? RegStatus.UNKNOWN
+                : r.getExpirationDate().isBefore(today) ? RegStatus.EXPIRED : RegStatus.ACTIVE;
+        return new ProductCard(0, r.getName(), r.getProducer(), null, r.getRegNumber(), status, r.getExpirationDate(), unlimited,
+                List.copyOf(textFacts(r.getTechChars(), REG)), Set.copyOf(FitText.stems(text.toString())));
+    }
+
+    /** Позиция каталога без товара сайта и без РУ (подбор по каталогу): факты — из её описания. */
+    public static ProductCard ofEquipment(MedEquipment e) {
+        StringBuilder text = new StringBuilder();
+        append(text, e.getName(), e.getSpec());
+        return new ProductCard(0, e.getName(), e.getManufact(), null, null, RegStatus.UNKNOWN, null, false,
+                List.copyOf(textFacts(e.getSpec(), DESCRIPTION)), Set.copyOf(FitText.stems(text.toString())));
     }
 
     static List<ProductFact> attributeFacts(SiteProductAttribute a) {

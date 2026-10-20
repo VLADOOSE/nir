@@ -41,10 +41,7 @@ public class ProductMatchService {
         List<LotInput> inputs = new ArrayList<>();
         for (TenderLot l : t.getLots()) {
             if (l.getSourceRemovedAt() != null || l.getId() == null) continue;
-            boolean spec = l.getTechSpecStatus() == TechSpecStatus.OK;
-            // разобранное ТЗ заменило описание площадки — берём его из шапки ТЗ (исключения групп смотрят на текст лота)
-            String description = spec ? LotDescriptiveText.lotDescription(l.getRequiredSpec()) : l.getRequiredSpec();
-            inputs.add(new LotInput(l.getId(), l.getEquipName(), description, spec ? l.getRequiredSpec() : null));
+            inputs.add(new LotInput(l.getId(), l.getEquipName(), descriptionOf(l), specOf(l)));
         }
         CatalogSnapshot snap = catalog.get();
         List<LotMatch> result = ProductMatcher.match(snap, t.getDescription(), inputs);
@@ -88,6 +85,21 @@ public class ProductMatchService {
             if (!keep.contains(m.getLotId() + "/" + m.getGroupId())) matches.delete(m);
         }
         return new Result(tenderId, max, lots.size(), hadMarks);
+    }
+
+    /** Текст ТЗ лота для сверки — один на отметку, сверку модели в работе и «Для ИИ». */
+    public static String lotFitText(TenderLot l) {
+        return fitText(specOf(l), descriptionOf(l));
+    }
+
+    /** Разобранное ТЗ лота (`tech_spec_status = OK`) или null. */
+    static String specOf(TenderLot l) {
+        return l.getTechSpecStatus() == TechSpecStatus.OK ? l.getRequiredSpec() : null;
+    }
+
+    /** Описание лота: разобранное ТЗ заменило описание площадки — берём его из шапки ТЗ (исключения групп смотрят на текст лота). */
+    static String descriptionOf(TenderLot l) {
+        return l.getTechSpecStatus() == TechSpecStatus.OK ? LotDescriptiveText.lotDescription(l.getRequiredSpec()) : l.getRequiredSpec();
     }
 
     /**
