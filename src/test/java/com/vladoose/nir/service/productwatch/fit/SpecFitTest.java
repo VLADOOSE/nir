@@ -91,6 +91,34 @@ class SpecFitTest {
                 .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.FAIL));
     }
 
+    /**
+     * Диапазон ТЗ против нашего диапазона — диапазон регулировки: ✓, только если наш покрывает его целиком; частично — ≈
+     * (решает человек), не пересекаются — ✗ (проверка на проде 2026-10-20: ИВЛ под HAMILTON — «концентрация кислорода
+     * 21–100 %» против нашего «60–100 %» стояла ✓). Одно наше значение внутри — ✓; сеть питания — по пересечению;
+     * «0–X» — нижняя граница не требование («вакуум 0–75 кПа» — «до 75»).
+     */
+    @Test
+    void rangeRequirement_ourRangeMustCoverIt() {
+        ProductCard ivl = card(20, "Аппарат ИВЛ", RegStatus.ACTIVE,
+                new SiteProductAttribute("Концентрация кислорода", "60–100 %"),
+                new SiteProductAttribute("Дыхательный объем", "от 50 до 3000 мл"),
+                new SiteProductAttribute("Разрежение", "от -5 до -80 кПа"),
+                new SiteProductAttribute("Частота сети", "50 ± 2,5 Гц"),
+                new SiteProductAttribute("Температура хранения", "25 °C"));
+        assertThat(mark("концентрация кислорода 21 – 100%; масса не более 5 кг", ivl, "концентрация")).isEqualTo(FitMark.DIFF);
+        assertThat(mark("дыхательный объем 20 – 2000 мл; масса не более 5 кг", ivl, "дыхательный")).isEqualTo(FitMark.DIFF);
+        assertThat(mark("дыхательный объем 50 – 2000 мл; масса не более 5 кг", ivl, "дыхательный")).isEqualTo(FitMark.OK);
+        assertThat(mark("концентрация кислорода 21 – 50%; масса не более 5 кг", ivl, "концентрация")).isEqualTo(FitMark.FAIL);
+        assertThat(mark("уровень вакуума 0 – 75 кПа; масса не более 5 кг", ivl, "уровень")).isEqualTo(FitMark.OK);
+        assertThat(mark("частота 50 – 60 Гц; масса не более 5 кг", ivl, "частота")).isEqualTo(FitMark.OK);
+        assertThat(mark("температура хранения 18 – 30 °C; масса не более 5 кг", ivl, "температура")).isEqualTo(FitMark.OK);
+    }
+
+    static FitMark mark(String spec, ProductCard card, String rowStart) {
+        return SpecFit.compare(reqs(spec), card).rows().stream().filter(r -> r.text().startsWith(rowStart))
+                .findFirst().orElseThrow(() -> new AssertionError("нет строки «" + rowStart + "» в " + spec)).mark();
+    }
+
     /** «не менее 20» при нашем «не менее 15» — не доказано (нет данных), а не провал. */
     @Test
     void minAgainstOurMin_unknown() {

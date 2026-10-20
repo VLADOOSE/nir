@@ -225,7 +225,7 @@ public final class SpecFit {
                 return switch (fc) {
                     case MIN -> fLo <= b ? FitMark.OK : FitMark.FAIL;
                     case MAX -> fHi >= a ? FitMark.OK : FitMark.FAIL;
-                    default -> fLo <= b * (1 + 1e-9) && fHi >= a * (1 - 1e-9) ? FitMark.OK : FitMark.FAIL;
+                    default -> range(r, a, b, fLo, fHi);
                 };
             }
             default: {   // APPROX: число без условия
@@ -240,6 +240,25 @@ public final class SpecFit {
                 };
             }
         }
+    }
+
+    /**
+     * Диапазон ТЗ [a, b] против нашего значения или диапазона. Одно наше значение — ✓ внутри, ✗ снаружи. Наш диапазон —
+     * диапазон регулировки: ✓, только если покрывает диапазон ТЗ целиком, частично — ≈ (наш до границы ТЗ не достаёт —
+     * проверка на проде 2026-10-20: «концентрация кислорода 21–100 %» против «60–100 %», «дыхательный объём 20–2000 мл»
+     * против «50–3000 мл» стояли ✓), не пересекаются — ✗. Сеть питания — по пересечению («50–60 Гц» против «50 ± 2,5 Гц» —
+     * тот же прибор); «0–X» — нижняя граница не требование («вакуум 0–75 кПа» — «до 75»).
+     */
+    private static FitMark range(SpecRequirement r, double a, double b, double fLo, double fHi) {
+        if (!le(fLo, b) || !le(a, fHi)) return FitMark.FAIL;
+        if (fLo == fHi || mains(r.unit(), a, b)) return FitMark.OK;
+        boolean low = a == 0 || le(fLo, a);
+        return low && le(b, fHi) ? FitMark.OK : FitMark.DIFF;
+    }
+
+    /** x ≤ y с допуском на погрешность чисел (и для отрицательных). */
+    private static boolean le(double x, double y) {
+        return x <= y + 1e-9 * Math.max(1, Math.abs(y));
     }
 
     /** Габариты — по осям по убыванию; оси сверх меньшего из двух списков не сравниваются. */
