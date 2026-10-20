@@ -205,7 +205,12 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
         }
     }
 
+    /** Итог прогона — в лог (иначе удачный прогон на проде ничем себя не выдаёт, CLAUDE.md §14) и в оповещатель сбоев. */
     private void report(String key, String title, ImportSummary sum) {
+        if (sum.getMessage() != null) {
+            if (sum.getErrors() > 0) log.warn("{}: {}", title, sum.getMessage());
+            else log.info("{}: {}", title, sum.getMessage());
+        }
         try {
             outage.afterRun(key, title, sum);
         } catch (Throwable e) {
