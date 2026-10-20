@@ -242,4 +242,8 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
             "         m.reg_number " +
             "LIMIT :limit")
     List<ApparatusRow> findApparatusByTerm(@Param("term") String term, @Param("limit") int limit);
+
+    /** Производители реестра — для брендов «ТЗ под чужой бренд» (спека 2026-10-20-product-spec-fit §5.5). */
+    @Query("select distinct m.producer from MedRegistry m where m.producer is not null")
+    List<String> findDistinctProducers();
 }

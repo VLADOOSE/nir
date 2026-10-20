@@ -62,7 +62,7 @@ public record ProductNotifyPolicy(Mode mode, BigDecimal minSum) {
         if (level == null) return false;
         return switch (mode) {
             case ALL -> true;
-            case STAR -> level.exact();
+            case STAR -> level.alert();   // «✓ подходит» (FITS) — тоже, решение 2 спеки 2026-10-20-product-spec-fit
             case OFF -> false;
         };
     }

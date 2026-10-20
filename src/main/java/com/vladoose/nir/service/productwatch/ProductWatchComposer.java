@@ -92,6 +92,8 @@ public final class ProductWatchComposer {
                         + TelegramText.oneLine(ProductMatchQuery.shortName(l.productName() == null ? l.word() : l.productName()), 100)
                         + countTail(l.evidence());
                 case NAMED -> "назван наш товар: " + TelegramText.oneLine(ProductMatchQuery.what(l), 100);
+                case FITS -> "подходит наш товар: " + TelegramText.oneLine(ProductMatchQuery.shortName(
+                        l.fit() == null ? l.word() : l.fit().productName()), 100) + ProductMatchQuery.metTail(l.fit());
                 case TYPE -> l.similar() == null || l.similar().isEmpty() ? "" : "похоже: " + l.similar().stream().limit(2)
                         .map(x -> TelegramText.oneLine(ProductMatchQuery.shortName(x.name()), 60)
                                 + (x.brand() == null || x.brand().isBlank() ? "" : " (" + TelegramText.oneLine(x.brand(), 30) + ")"))

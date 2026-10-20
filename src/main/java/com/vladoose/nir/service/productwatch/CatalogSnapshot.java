@@ -3,6 +3,11 @@ package com.vladoose.nir.service.productwatch;
 import com.vladoose.nir.entity.ProductGroup;
 import com.vladoose.nir.entity.SiteProduct;
 import com.vladoose.nir.integration.MedicalGoodsVocabulary;
+import com.vladoose.nir.service.productwatch.fit.ForeignBrand;
+import com.vladoose.nir.service.productwatch.fit.ProductCard;
+import com.vladoose.nir.service.productwatch.fit.ProductCards;
+import com.vladoose.nir.service.productwatch.fit.RegNumbers;
+import com.vladoose.nir.service.productwatch.fit.RegistrationInfo;
 
 import java.util.*;
 
@@ -17,20 +22,42 @@ public final class CatalogSnapshot {
     private final Map<Long, List<CatalogPhrases.Phrase>> phrases;
     private final Map<String, Double> idf;
     private final CatalogPhrases.Rules rules;
+    /** Карточки товаров для сверки ТЗ (спека 2026-10-20-product-spec-fit §4): все и по группам. */
+    private final Map<Long, ProductCard> cards;
+    private final Map<Long, List<ProductCard>> groupCards;
+    private final Map<Long, GroupRule> groupById;
+    /** Наши бренды и серии; бренды производителей реестра — для «ТЗ под чужой бренд» (§5.5). */
+    private final Set<String> ours;
+    private final Set<String> knownBrands;
 
     private CatalogSnapshot(List<GroupRule> groups, List<CatalogProduct> products, Map<Long, List<CatalogProduct>> groupProducts,
                             List<BrandModels.Code> globalCodes, Map<Long, List<BrandModels.Code>> groupCodes,
-                            Map<Long, List<CatalogPhrases.Phrase>> phrases, Map<String, Double> idf, CatalogPhrases.Rules rules) {
+                            Map<Long, List<CatalogPhrases.Phrase>> phrases, Map<String, Double> idf, CatalogPhrases.Rules rules,
+                            Map<Long, ProductCard> cards, Map<Long, List<ProductCard>> groupCards, Map<Long, GroupRule> groupById,
+                            Set<String> ours, Set<String> knownBrands) {
         this.groups = groups; this.products = products; this.groupProducts = groupProducts; this.globalCodes = globalCodes;
         this.groupCodes = groupCodes; this.phrases = phrases; this.idf = idf; this.rules = rules;
+        this.cards = cards; this.groupCards = groupCards; this.groupById = groupById; this.ours = ours; this.knownBrands = knownBrands;
     }
 
     public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts) {
-        return build(groups, siteProducts, CatalogPhrases.Rules.DEFAULT);
+        return build(groups, siteProducts, Map.of(), Set.of(), CatalogPhrases.Rules.DEFAULT);
     }
 
     /** Снимок с правилом фраз — для калибровки (задача 6 плана); в работе — {@link CatalogPhrases.Rules#DEFAULT}. */
     public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts, CatalogPhrases.Rules phraseRules) {
+        return build(groups, siteProducts, Map.of(), Set.of(), phraseRules);
+    }
+
+    /** Снимок с РУ товаров (по № РУ сайта) и брендами реестра — как в работе ({@link ProductCatalog#refresh()}). */
+    public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts,
+                                        Map<String, RegistrationInfo> registrations, Set<String> knownBrands) {
+        return build(groups, siteProducts, registrations, knownBrands, CatalogPhrases.Rules.DEFAULT);
+    }
+
+    public static CatalogSnapshot build(List<ProductGroup> groups, List<SiteProduct> siteProducts,
+                                        Map<String, RegistrationInfo> registrations, Set<String> knownBrands,
+                                        CatalogPhrases.Rules phraseRules) {
         List<GroupRule> rules = groups.stream().filter(ProductGroup::isActive).map(GroupRule::of).toList();
         List<CatalogProduct> products = siteProducts.stream().filter(p -> p.getRemovedAt() == null)
                 .map(p -> new CatalogProduct(p.getId(), p.getName(), p.getBrand(), p.getSlug(), p.getCategory(),
@@ -65,8 +92,21 @@ public final class CatalogSnapshot {
             codes.addAll(r.codes());
             groupCodes.put(r.id(), List.copyOf(codes));
         }
+        Map<Long, ProductCard> cards = new HashMap<>();
+        for (SiteProduct p : siteProducts) {
+            if (p.getRemovedAt() != null || p.getId() == null) continue;
+            String reg = RegNumbers.normalize(p.getRegistrationCert());
+            cards.put(p.getId(), ProductCards.of(p, reg == null ? null : registrations.get(reg)));
+        }
+        Map<Long, List<ProductCard>> groupCards = new HashMap<>();
+        byGroup.forEach((gid, ps) -> groupCards.put(gid, ps.stream().map(p -> cards.get(p.id())).filter(Objects::nonNull).toList()));
+        Map<Long, GroupRule> byId = new HashMap<>();
+        rules.forEach(r -> byId.put(r.id(), r));
+        Set<String> ours = ForeignBrand.ours(products.stream().map(CatalogProduct::name).toList(),
+                products.stream().map(CatalogProduct::brand).toList());
         return new CatalogSnapshot(rules, products, byGroup, List.copyOf(global), groupCodes,
-                CatalogPhrases.build(products, phraseRules), SimilarProducts.idf(products), phraseRules);
+                CatalogPhrases.build(products, phraseRules), SimilarProducts.idf(products), phraseRules,
+                Map.copyOf(cards), Map.copyOf(groupCards), Map.copyOf(byId), ours, Set.copyOf(knownBrands));
     }
 
     public List<GroupRule> groups() { return groups; }
@@ -77,4 +117,9 @@ public final class CatalogSnapshot {
     public Map<Long, List<CatalogPhrases.Phrase>> phrases() { return phrases; }
     public Map<String, Double> idf() { return idf; }
     public CatalogPhrases.Rules rules() { return rules; }
+    public ProductCard card(long productId) { return cards.get(productId); }
+    public List<ProductCard> groupCards(long groupId) { return groupCards.getOrDefault(groupId, List.of()); }
+    public GroupRule group(long groupId) { return groupById.get(groupId); }
+    public Set<String> ours() { return ours; }
+    public Set<String> knownBrands() { return knownBrands; }
 }

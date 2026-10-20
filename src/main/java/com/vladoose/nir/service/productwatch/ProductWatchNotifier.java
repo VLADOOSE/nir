@@ -148,9 +148,9 @@ public class ProductWatchNotifier {
             ProductMatchQuery.Summary s = sums.get(t.getId());
             if (s == null || s.level() == null) continue;
             boolean upgrade = t.getProductNotifiedLevel() != null;
-            // «Уточнение» и режим «только ★» — только точные лоты; порог — по сумме тех лотов, о которых сообщение
+            // «Уточнение» и режим «только ★» — только лоты «★» и «✓ подходит»; порог — по сумме тех лотов, о которых сообщение
             List<ProductMatchQuery.LotLine> lots = upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR
-                    ? s.lots().stream().filter(l -> l.level().exact()).toList()
+                    ? s.lots().stream().filter(l -> l.level().alert()).toList()
                     : s.lots();
             if (lots.isEmpty() || !policy.sumPasses(ourLotsSum(t, lots))) continue;
             out.add(new ProductWatchComposer.Card(t.getId(), t.getTenderNumber(), platformLabel(t.getPlatform()),

@@ -22,9 +22,18 @@ import java.util.stream.Collectors;
 @Service
 public class ProductMatchQuery {
 
-    /** Наш лот: что за лот, уровень, группа и её слово, доказательство, товар каталога, похожие наши товары. */
+    /** Итог сверки нашего лота — для чипа и сообщения (спека 2026-10-20-product-spec-fit §6.3, §7). */
+    public record FitSummary(FitVerdict verdict, String productName, String productSlug, int met, int total, int unknown,
+                             String reasonShort, String foreignBrand, String regStatus) {}
+
+    /** Наш лот: что за лот, уровень, группа и её слово, доказательство, товар каталога, похожие наши товары, сверка ТЗ. */
     public record LotLine(long lotId, String lotName, Integer qty, ProductMatchLevel level, String groupName, String word,
-                          String evidence, String productName, String productSlug, List<SimilarProductRef> similar) {}
+                          String evidence, String productName, String productSlug, List<SimilarProductRef> similar, FitSummary fit) {
+        public LotLine(long lotId, String lotName, Integer qty, ProductMatchLevel level, String groupName, String word,
+                       String evidence, String productName, String productSlug, List<SimilarProductRef> similar) {
+            this(lotId, lotName, qty, level, groupName, word, evidence, productName, productSlug, similar, null);
+        }
+    }
 
     /** Итог тендера: наибольший уровень, подпись чипа, группы, наши лоты (сначала точные). */
     public record Summary(long tenderId, ProductMatchLevel level, String label, List<String> groups, List<LotLine> lots) {}
@@ -97,7 +106,7 @@ public class ProductMatchQuery {
                         SiteProduct p = m.getProductId() == null ? null : prods.get(m.getProductId());
                         return new LotLine(m.getLotId(), l == null ? null : l.getEquipName(), l == null ? null : l.getQuantity(),
                                 m.getLevel(), groupNames.get(m.getGroupId()), m.getWord(), m.getEvidence(),
-                                p == null ? null : p.getName(), p == null ? null : p.getSlug(), m.getSimilar());
+                                p == null ? null : p.getName(), p == null ? null : p.getSlug(), m.getSimilar(), fit(m));
                     }).toList();
             ProductMatchLevel level = lines.stream().map(LotLine::level).reduce(null, ProductMatchLevel::max);
             List<String> gs = lines.stream().map(LotLine::groupName).filter(Objects::nonNull).distinct().toList();
@@ -106,11 +115,47 @@ public class ProductMatchQuery {
         return out;
     }
 
-    /** Подпись чипа: «★ наш товар: АСД-ФОТЕК» / «★ наш товар: Фотек» / «🏷 наш вид: отсасыватель». */
+    /** Итог сверки из строки отметки; сверки не было — null. */
+    static FitSummary fit(TenderLotProductMatch m) {
+        if (m.getFit() == null || m.getFitCandidates() == null || m.getFitCandidates().isEmpty()) {
+            return m.getFit() == null ? null : new FitSummary(m.getFit(), null, null, 0, 0, 0, null, m.getForeignBrand(), null);
+        }
+        FitCandidate b = m.getFitCandidates().get(0);
+        return new FitSummary(m.getFit(), b.name(), b.slug(), b.met(), b.total(), b.unknown(), b.reasonShort(), m.getForeignBrand(),
+                b.regStatus());
+    }
+
+    /**
+     * Подпись чипа тендера (спека 2026-10-20-product-spec-fit §8.3): ★ — как было; «✓ подходит» — наш товар; у вида —
+     * вердикт сверки лучшего лота; сверки нет — слово группы.
+     */
     static String label(ProductMatchLevel level, List<LotLine> lines) {
         LotLine top = lines.get(0);
         if (level != null && level.exact()) return "★ наш товар: " + what(top);
+        if (level == ProductMatchLevel.FITS) {
+            return "✓ подходит: " + shortName(top.fit() != null && top.fit().productName() != null ? top.fit().productName() : top.word());
+        }
+        FitSummary f = lines.stream().map(LotLine::fit).filter(Objects::nonNull)
+                .max(Comparator.comparingInt((FitSummary x) -> x.verdict().rank())).orElse(null);
+        if (f != null && f.verdict() == FitVerdict.FITS_NO_RU) return "подходит по ТЗ, " + noRu(f.regStatus());
+        if (f != null && f.verdict() == FitVerdict.PARTIAL) return "◐ похоже: " + top.word();
+        if (f != null && f.verdict() == FitVerdict.NOT_FIT) return "✗ не подходит: " + Objects.toString(f.reasonShort(), top.word());
         return "🏷 наш вид: " + top.word();
+    }
+
+    /** «РУ истекло / не найдено / не указано / не проверено» по имени статуса (null — не проверено). */
+    static String noRu(String regStatus) {
+        try {
+            return regStatus == null ? RegStatus.UNKNOWN.noRuText() : RegStatus.valueOf(regStatus).noRuText();
+        } catch (IllegalArgumentException e) {
+            return RegStatus.UNKNOWN.noRuText();
+        }
+    }
+
+    /** « — 5 из 8 требований (нет данных: 3)». */
+    public static String metTail(FitSummary f) {
+        if (f == null || f.total() == 0) return "";
+        return " — " + f.met() + " из " + f.total() + " требований" + (f.unknown() > 0 ? " (нет данных: " + f.unknown() + ")" : "");
     }
 
     /** Строка для «🏥 Новый тендер» (спека §9): самый точный наш лот. */
@@ -119,6 +164,8 @@ public class ProductMatchQuery {
         return switch (s.level()) {
             case COPIED -> "★ ТЗ списано с нашего товара: " + shortName(Objects.toString(top.productName(), top.word()));
             case NAMED -> "★ Назван наш товар: " + what(top);
+            case FITS -> "✓ Подходит наш товар: " + shortName(Objects.toString(top.fit() == null ? null : top.fit().productName(), top.word()))
+                    + metTail(top.fit());
             case TYPE -> "🏷 Наш вид: " + top.word() + similarTail(top);
         };
     }
