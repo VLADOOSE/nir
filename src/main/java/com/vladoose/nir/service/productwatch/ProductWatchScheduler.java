@@ -45,6 +45,7 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
     private final ProductSpecChecker specs;
     private final ProductRematchService rematch;
     private final SiteCatalogSync catalog;
+    private final ProductRegistrationSync registrations;
     private final ImportOutageNotifier outage;
     private final ProductWatchNotifier notifier;
     private final ProcurementPlanService plans;
@@ -69,7 +70,8 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
 
     @Autowired
     public ProductWatchScheduler(ProductWatchService search, ProductSpecChecker specs, ProductRematchService rematch,
-                                 SiteCatalogSync catalog, ImportOutageNotifier outage, ProductWatchNotifier notifier,
+                                 SiteCatalogSync catalog, ProductRegistrationSync registrations, ImportOutageNotifier outage,
+                                 ProductWatchNotifier notifier,
                                  ProcurementPlanService plans, ProcurementPlanDigest digest,
                                  @Value("${product-watch.enabled:false}") boolean enabled,
                                  @Value("${product-watch.cron:}") String searchCron,
@@ -77,7 +79,8 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
                                  @Value("${product-watch.catalog-cron:}") String catalogCron,
                                  @Value("${product-watch.zone:}") String zone,
                                  @Value("${product-watch.spec-per-run:}") String specPerRun) {
-        this.search = search; this.specs = specs; this.rematch = rematch; this.catalog = catalog; this.outage = outage;
+        this.search = search; this.specs = specs; this.rematch = rematch; this.catalog = catalog; this.registrations = registrations;
+        this.outage = outage;
         this.notifier = notifier;
         this.plans = plans;
         this.digest = digest;
@@ -152,18 +155,30 @@ public class ProductWatchScheduler implements SchedulingConfigurer {
         return status();
     }
 
+    /** Каталог сайта, потом РУ его товаров на ndda.kz (и при сбое каталога: товары в базе есть), потом пересчёт отметок. */
     public Status startCatalog() {
         if (!enabled || !catalogQueued.compareAndSet(false, true)) return status();
         executor.execute(() -> runTask("каталог сайта", () -> {
+            StringBuilder text = new StringBuilder();
             try {
-                SiteCatalogSync.SyncResult r = catalog.sync();
-                lastCatalog = "товаров " + r.count() + " (новых " + r.added() + ", изменено " + r.updated() + ", пропало " + r.removed() + ")"
-                        + (r.full() ? "" : " — без описаний (публичный список)");
-            } catch (RuntimeException e) {
-                lastCatalog = "не загрузился: " + ErrorText.of(e);
-            } finally {
+                try {
+                    SiteCatalogSync.SyncResult r = catalog.sync();
+                    text.append("товаров ").append(r.count()).append(" (новых ").append(r.added()).append(", изменено ")
+                            .append(r.updated()).append(", пропало ").append(r.removed()).append(")")
+                            .append(r.full() ? "" : " — без описаний (публичный список)");
+                } catch (RuntimeException e) {
+                    text.append("не загрузился: ").append(ErrorText.of(e));
+                }
+                try {
+                    text.append("; ").append(registrations.sync().text());
+                } catch (RuntimeException e) {
+                    text.append("; РУ не проверены: ").append(ErrorText.of(e));
+                }
+            } finally {   // и после Error: иначе очередь каталога осталась бы занятой до перезапуска
+                lastCatalog = text.toString();
                 lastCatalogAt = Instant.now();
                 catalogQueued.set(false);
+                startRematch();                                  // новые характеристики и РУ — пересчёт открытых тендеров
             }
         }));
         return status();

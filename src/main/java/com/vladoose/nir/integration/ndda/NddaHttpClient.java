@@ -14,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +39,26 @@ public class NddaHttpClient implements NddaClient {
 
     @Override
     public Long resolveId(String regNumber) {
-        // list с фильтром по точному № РУ → массив из 0/1 элемента (живая форма 2026-07-05)
+        return list(regNumber, 1).stream().filter(i -> regNumber.equals(i.getRegNumber()))
+                .map(NddaListItemDto::getId).findFirst().orElse(null);
+    }
+
+    @Override
+    public NddaRegistration findRegistration(String regNumber) {
+        for (int period : new int[]{1, 2}) {
+            NddaListItemDto i = list(regNumber, period).stream().filter(x -> regNumber.equals(x.getRegNumber())).findFirst().orElse(null);
+            if (i != null) {
+                return new NddaRegistration(i.getId(), i.getRegNumber(), i.getName(), i.getProducerNameRu(), i.getCountryNameRu(),
+                        date(i.getRegDate()), date(i.getExpirationDate()), Boolean.TRUE.equals(i.getUnlimitedSign()), period == 1);
+            }
+        }
+        return null;
+    }
+
+    private List<NddaListItemDto> list(String regNumber, int period) {
         Map<String, Object> filter = new LinkedHashMap<>();
-        filter.put("regTypeId", 2);   // тип «МИ»
-        filter.put("regPeriod", 1);   // действующие
+        filter.put("regTypeId", 2);       // тип «МИ»
+        filter.put("regPeriod", period);  // 1 — действующие, 2 — недействующие (живая форма 2026-10-20)
         filter.put("regNumber", regNumber);
         String body;
         try {
@@ -54,13 +71,19 @@ public class NddaHttpClient implements NddaClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .timeout(Duration.ofSeconds(30)).build());
         try {
-            List<NddaListItemDto> items = objectMapper.readValue(json, new TypeReference<List<NddaListItemDto>>() {});
-            return items.stream()
-                    .filter(i -> regNumber.equals(i.getRegNumber()))
-                    .map(NddaListItemDto::getId)
-                    .findFirst().orElse(null);
+            return objectMapper.readValue(json, new TypeReference<List<NddaListItemDto>>() {});
         } catch (Exception e) {
             throw new UpstreamException("НЦЭЛС: неожиданный ответ list: " + e.getMessage(), e);
+        }
+    }
+
+    /** «2026-06-28T00:00:00» → дата; пусто или мусор — null. */
+    private static LocalDate date(String s) {
+        if (s == null || s.length() < 10) return null;
+        try {
+            return LocalDate.parse(s.substring(0, 10));
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
         }
     }
 

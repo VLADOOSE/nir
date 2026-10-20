@@ -16,4 +16,7 @@ public interface NddaClient {
 
     /** Комплектность (состав) аппарата по внутреннему id: список компонентов с производителем/страной. */
     List<NddaComplectItemDto> fetchComplectList(long nddaId);
+
+    /** РУ по точному номеру: действующие (regPeriod 1), иначе недействующие (regPeriod 2); null — нет ни там, ни там. */
+    NddaRegistration findRegistration(String regNumber);
 }

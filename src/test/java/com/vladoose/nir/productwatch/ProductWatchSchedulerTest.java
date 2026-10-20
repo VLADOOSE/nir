@@ -29,13 +29,14 @@ class ProductWatchSchedulerTest {
     ProductSpecChecker specs = mock(ProductSpecChecker.class);
     ProductRematchService rematch = mock(ProductRematchService.class);
     SiteCatalogSync catalog = mock(SiteCatalogSync.class);
+    ProductRegistrationSync registrations = mock(ProductRegistrationSync.class);
     ImportOutageNotifier outage = mock(ImportOutageNotifier.class);
     ProductWatchNotifier notifier = mock(ProductWatchNotifier.class);
     ProcurementPlanService planService = mock(ProcurementPlanService.class);
     ProcurementPlanDigest planDigest = mock(ProcurementPlanDigest.class);
 
     private ProductWatchScheduler scheduler(boolean enabled, String cron, String plans, String catalogCron) {
-        return new ProductWatchScheduler(search, specs, rematch, catalog, outage, notifier, planService, planDigest, enabled, cron, plans,
+        return new ProductWatchScheduler(search, specs, rematch, catalog, registrations, outage, notifier, planService, planDigest, enabled, cron, plans,
                 catalogCron, "", "10");
     }
 
@@ -147,5 +148,35 @@ class ProductWatchSchedulerTest {
         } finally {
             logger.detachAppender(logs);
         }
+    }
+
+    @Test
+    void catalogRun_thenRegistrations_thenRematch() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        when(registrations.sync()).thenReturn(new ProductRegistrationSync.Result(1, 1, 0, 0, 0));
+        when(catalog.sync()).thenReturn(new SiteCatalogSync.SyncResult(1, 0, 0, 0, true));
+        doAnswer(inv -> { done.countDown(); return 0; }).when(rematch).rematchOpen();
+        scheduler(true, "-", "-", "-").startCatalog();
+        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        InOrder o = inOrder(catalog, registrations, rematch);
+        o.verify(catalog).sync();
+        o.verify(registrations).sync();
+        o.verify(rematch).rematchOpen();
+    }
+
+    /** Error при загрузке каталога (не RuntimeException) — очередь каталога освобождается, следующий запуск идёт. */
+    @Test
+    void catalogError_queueReleased() throws Exception {
+        class Boom extends Error {}
+        CountDownLatch rematched = new CountDownLatch(2);
+        when(catalog.sync()).thenThrow(new Boom()).thenReturn(new SiteCatalogSync.SyncResult(1, 0, 0, 0, true));
+        when(registrations.sync()).thenReturn(new ProductRegistrationSync.Result(0, 0, 0, 0, 0));
+        doAnswer(inv -> { rematched.countDown(); return 0; }).when(rematch).rematchOpen();
+        ProductWatchScheduler s = scheduler(true, "-", "-", "-");
+        s.startCatalog();
+        verify(rematch, timeout(5000)).rematchOpen();
+        s.startCatalog();
+        assertThat(rematched.await(5, TimeUnit.SECONDS)).isTrue();
+        verify(catalog, times(2)).sync();
     }
 }

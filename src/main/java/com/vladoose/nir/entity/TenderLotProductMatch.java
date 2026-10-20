@@ -53,6 +53,33 @@ public class TenderLotProductMatch {
     private OffsetDateTime specCheckedAt;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private FitVerdict fit;
+
+    @Column(name = "fit_product_id")
+    private Long fitProductId;
+
+    @Column(name = "fit_met")
+    private Integer fitMet;
+
+    @Column(name = "fit_total")
+    private Integer fitTotal;
+
+    @Column(name = "fit_reason", length = 300)
+    private String fitReason;
+
+    @Column(name = "foreign_brand", length = 100)
+    private String foreignBrand;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "fit_candidates", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<FitCandidate> fitCandidates = new ArrayList<>();
+
+    @Column(name = "fit_checked_at")
+    private OffsetDateTime fitCheckedAt;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private ProductMatchSource source;
 
