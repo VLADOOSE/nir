@@ -1,7 +1,10 @@
 package com.vladoose.nir.integration.westmed;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vladoose.nir.entity.SiteProductAttribute;
+import com.vladoose.nir.integration.westmed.dto.WestmedCatalogItem;
 import com.vladoose.nir.integration.westmed.dto.WestmedPage;
 import com.vladoose.nir.integration.westmed.dto.WestmedPriceRequest;
 import com.vladoose.nir.integration.westmed.dto.WestmedProduct;
@@ -18,8 +21,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +39,7 @@ import java.util.concurrent.TimeoutException;
  * Пароль и токен не попадают ни в логи, ни в тексты исключений.
  */
 @Component
-public class WestmedHttpClient implements WestmedClient {
+public class WestmedHttpClient implements WestmedClient, WestmedCatalogClient {
 
     private static final TypeReference<WestmedPage<WestmedPriceRequest>> PRICE_PAGE = new TypeReference<>() {};
     private static final TypeReference<WestmedPage<WestmedQuoteRequest>> QUOTE_PAGE = new TypeReference<>() {};
@@ -97,6 +104,67 @@ public class WestmedHttpClient implements WestmedClient {
     @Override
     public void updateStatus(WestmedKind kind, String siteId, String status) {
         admin("PATCH", "/api/admin/" + kind.path() + "/" + siteId + "/status", json(Map.of("status", status)), null);
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AdminListItem(UUID id, String name, String slug, String sku, String categoryName, String brandName,
+                         String status, Instant deletedAt) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AdminAttribute(String attributeName, String attributeValue, Integer sortOrder) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AdminCard(UUID id, String name, String slug, String sku, String description, String shortDescription,
+                     String registrationCert, String categoryName, String brandName, Instant updatedAt,
+                     Instant deletedAt, List<AdminAttribute> attributes) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record PublicItem(UUID id, String name, String slug, String sku, String shortDescription, String categoryName,
+                      String brandName) {}
+
+    private static final TypeReference<WestmedPage<AdminListItem>> ADMIN_PAGE = new TypeReference<>() {};
+    private static final TypeReference<AdminCard> ADMIN_CARD = new TypeReference<>() {};
+    private static final TypeReference<WestmedPage<PublicItem>> PUBLIC_PAGE = new TypeReference<>() {};
+    /** Предохранитель обхода страниц (100 × 20 = 2000 товаров — с запасом над живыми 196). */
+    static final int CATALOG_MAX_PAGES = 20;
+
+    @Override
+    public boolean adminConfigured() { return isConfigured(); }
+
+    @Override
+    public List<WestmedCatalogItem> adminCatalog() {
+        List<WestmedCatalogItem> out = new ArrayList<>();
+        for (int page = 0; page < CATALOG_MAX_PAGES; page++) {
+            WestmedPage<AdminListItem> p = admin("GET", "/api/admin/products?page=" + page + "&size=100&status=ACTIVE", null, ADMIN_PAGE);
+            for (AdminListItem i : p.contentOrEmpty()) {
+                if (i.deletedAt() != null || i.id() == null) continue;
+                AdminCard c = admin("GET", "/api/admin/products/" + i.id(), null, ADMIN_CARD);
+                List<SiteProductAttribute> attrs = c.attributes() == null ? List.of() : c.attributes().stream()
+                        .sorted(Comparator.comparing(a -> a.sortOrder() == null ? 0 : a.sortOrder()))
+                        .map(a -> new SiteProductAttribute(a.attributeName(), a.attributeValue())).toList();
+                out.add(new WestmedCatalogItem(i.id(), c.name(), c.sku(), c.slug(), c.brandName(), c.categoryName(),
+                        c.shortDescription(), c.description(), attrs, c.registrationCert(), c.updatedAt()));
+            }
+            if (p.isLast()) break;
+        }
+        return out;
+    }
+
+    @Override
+    public List<WestmedCatalogItem> publicCatalog() {
+        List<WestmedCatalogItem> out = new ArrayList<>();
+        for (int page = 0; page < CATALOG_MAX_PAGES; page++) {
+            HttpResponse<String> r = send("GET", "/api/v1/products?size=500&page=" + page, null, null);
+            if (r.statusCode() != 200) throw new WestmedApiException(r.statusCode(), "каталог сайта: HTTP " + r.statusCode());
+            WestmedPage<PublicItem> p = parse(r.body(), PUBLIC_PAGE);
+            for (PublicItem i : p.contentOrEmpty()) {
+                if (i.id() == null) continue;
+                out.add(new WestmedCatalogItem(i.id(), i.name(), i.sku(), i.slug(), i.brandName(), i.categoryName(),
+                        i.shortDescription(), null, List.of(), null, null));
+            }
+            if (p.isLast()) break;
+        }
+        return out;
     }
 
     private <T> T admin(String method, String path, String body, TypeReference<T> type) {
