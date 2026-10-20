@@ -71,6 +71,11 @@ public class TenderLot {
     @Column(name = "tech_spec_attempted_at")
     private OffsetDateTime techSpecAttemptedAt;
 
+    /** Сколько раз поиск нашей продукции пытался разобрать ТЗ лота (спека 2026-10-19-product-watch §7.4): не больше 3. */
+    @Column(name = "tech_spec_attempts", nullable = false)
+    @Builder.Default
+    private int techSpecAttempts = 0;
+
     @Column(name = "source_removed_at")
     private OffsetDateTime sourceRemovedAt;
 

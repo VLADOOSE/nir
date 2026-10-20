@@ -124,6 +124,19 @@ public class Tender implements MarketScoped {
     @Column(name = "customer_bin", length = 20)
     private String customerBin;
 
+    /** Тендер заведён поиском нашей продукции по стране (спека 2026-10-19-product-watch §7.3): обновляется им же. */
+    @Column(name = "found_by_product_search", nullable = false)
+    @Builder.Default
+    private boolean foundByProductSearch = false;
+
+    /** Наибольший уровень «наш товар», уже сообщённый в Telegram (спека §9); пусто — не сообщали. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "product_notified_level", length = 10)
+    private ProductMatchLevel productNotifiedLevel;
+
+    @Column(name = "product_notified_at")
+    private OffsetDateTime productNotifiedAt;
+
     @OneToMany(mappedBy = "tender", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TenderLot> lots = new ArrayList<>();

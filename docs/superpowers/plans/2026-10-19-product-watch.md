@@ -260,7 +260,7 @@ CREATE TABLE tender_lot_product_match (
     level           VARCHAR(10)   NOT NULL,
     evidence        VARCHAR(1000),
     product_id      BIGINT        REFERENCES site_product (id) ON DELETE SET NULL,
-    similar         JSONB         NOT NULL DEFAULT '[]',
+    similar_products JSONB        NOT NULL DEFAULT '[]',
     spec_checked_at TIMESTAMPTZ,
     source          VARCHAR(10)   NOT NULL,
     matched_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -609,7 +609,7 @@ public class TenderLotProductMatch {
     private Long productId;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(nullable = false, columnDefinition = "jsonb")
+    @Column(name = "similar_products", nullable = false, columnDefinition = "jsonb")
     @Builder.Default
     private List<SimilarProductRef> similar = new ArrayList<>();
 
