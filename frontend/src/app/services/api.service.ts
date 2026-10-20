@@ -842,6 +842,12 @@ export class ApiService {
   getProductCatalog(): Observable<ProductCatalogState> {
     return this.http.get<ProductCatalogState>(`${this.base}/product-catalog`);
   }
+  getAiBrief(tenderId: number): Observable<string> {
+    return this.http.get(`${this.base}/tenders/${tenderId}/ai-brief`, { responseType: 'text' });
+  }
+  postAiBrief(ids: number[]): Observable<{ text: string; tenders: number; total: number }> {
+    return this.http.post<{ text: string; tenders: number; total: number }>(`${this.base}/tenders/ai-brief`, { ids });
+  }
   getProcurementPlans(params: Record<string, string>): Observable<PlanPoint[]> {
     return this.http.get<PlanPoint[]>(`${this.base}/procurement-plans`, { params });
   }

@@ -1,7 +1,9 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.request.AiBriefRequest;
 import com.vladoose.nir.dto.request.TenderRequest;
 import com.vladoose.nir.dto.response.ActivityApplyResponse;
+import com.vladoose.nir.dto.response.AiBriefResponse;
 import com.vladoose.nir.dto.response.LotProductMatchDto;
 import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
@@ -26,6 +28,7 @@ import com.vladoose.nir.mapper.TenderMapper;
 import com.vladoose.nir.service.ActivityApplyService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.productwatch.ProductAiBrief;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.productwatch.fit.SpecRequirement;
@@ -58,6 +61,7 @@ public class TenderController {
     private final WinnerAssignmentService winnerAssignmentService;
     private final TenderWorkStageService workStageService;
     private final ProductMatchQuery productQuery;
+    private final ProductAiBrief aiBrief;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -71,7 +75,8 @@ public class TenderController {
                             WinnerAssignmentService winnerAssignmentService,
                             TenderWorkStageService workStageService,
                             SkPharmacyImportScheduler skScheduler,
-                            ProductMatchQuery productQuery) {
+                            ProductMatchQuery productQuery,
+                            ProductAiBrief aiBrief) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -85,6 +90,7 @@ public class TenderController {
         this.workStageService = workStageService;
         this.skScheduler = skScheduler;
         this.productQuery = productQuery;
+        this.aiBrief = aiBrief;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -185,6 +191,17 @@ public class TenderController {
             }
         }
         return lots;
+    }
+
+    /** «📋 Для ИИ» по одному тендеру (спека 2026-10-20-product-spec-fit §9): текст для вставки в Claude / Gemini. */
+    @GetMapping(value = "/{id}/ai-brief", produces = "text/plain;charset=UTF-8")
+    public String aiBrief(@PathVariable Long id) {
+        return aiBrief.forTender(id);
+    }
+
+    @PostMapping("/ai-brief")
+    public AiBriefResponse aiBriefList(@RequestBody AiBriefRequest req) {
+        return aiBrief.forTenders(req.ids());
     }
 
     @GetMapping("/{id}/applies")

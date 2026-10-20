@@ -10,6 +10,7 @@ import { MarketService } from '../../services/market.service';
 import { AuthService } from '../../services/auth.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { Deadlined, deadlineEnd, deadlinePassed, deadlineText } from '../../shared/deadline';
+import { AiBriefButtonComponent, tendersWord } from '../../shared/ai-brief-button.component';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { OfferComparisonComponent } from './offer-comparison.component';
@@ -32,7 +33,7 @@ import { ourMatches } from '../../shared/product-watch';
   selector: 'app-tenders',
   standalone: true,
   imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent,
-            DealLayoutComponent, DealProgressComponent, DealTimelineComponent],
+            DealLayoutComponent, DealProgressComponent, DealTimelineComponent, AiBriefButtonComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -76,6 +77,8 @@ import { ourMatches } from '../../shared/product-watch';
           </span>
         </div>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
+        <!-- «📋 Для ИИ» по списку (спека 2026-10-20-product-spec-fit §9.1): открытые тендеры с нашей отметкой под фильтром «Наш товар» -->
+        <app-ai-brief-button *ngIf="filterOur && aiIds.length" [ids]="aiIds" [label]="'📋 Для ИИ: ' + aiIds.length + ' ' + aiWord()"></app-ai-brief-button>
       </div>
 
       <form *ngIf="showTenderForm" [formGroup]="tenderForm" (ngSubmit)="onSaveTender()" class="edit-form">
@@ -204,7 +207,8 @@ import { ourMatches } from '../../shared/product-watch';
           <div class="info-item info-wide" *ngIf="selectedTender.foundByProductSearch || selectedTender.ourProduct">
             <span class="info-label">Наш товар</span>
             <span><span *ngIf="selectedTender.ourProduct" class="pw-chip" [class.pw-exact]="selectedTender.ourProduct.level !== 'TYPE'">{{ selectedTender.ourProduct.label }}</span>
-              <span *ngIf="selectedTender.foundByProductSearch" class="pw-found">Найден поиском по нашей продукции</span></span>
+              <span *ngIf="selectedTender.foundByProductSearch" class="pw-found">Найден поиском по нашей продукции</span>
+              <app-ai-brief-button *ngIf="selectedTender.ourProduct" [tenderId]="selectedTender.id"></app-ai-brief-button></span>
           </div>
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || selectedTender.customerName || '—' }}</span></div>
           <div class="info-item" *ngIf="selectedTender.region"><span class="info-label">Регион</span><span>{{ selectedTender.region }}</span></div>
@@ -544,6 +548,8 @@ export class TendersComponent {
   filterRegion = '';
   /** «Наш товар»: '' — все, 'EXACT', 'ANY', 'g:<группа>' (адрес ?our= — из Telegram). */
   filterOur = '';
+  /** Тендеры для «📋 Для ИИ» по списку — считаются в applyTendersFilter. */
+  aiIds: number[] = [];
   /** Группы «нашей продукции» на тендерах списка — для фильтра (считается при загрузке, не в шаблоне). */
   ourGroups: string[] = [];
   protected readonly NO_REGION = '__none__';
@@ -972,7 +978,16 @@ export class TendersComponent {
       return true;
     });
     this.sortTenders();
+    // «📋 Для ИИ» по списку (спека §9.1): открытые тендеры с нашей отметкой, ближайший срок — первым; сервер берёт первые 15
+    const market = this.market.value;
+    this.aiIds = this.filterOur ? this.filteredTenders
+      .filter(t => t.ourProduct && !deadlinePassed(t, market))
+      .sort((a, b) => (deadlineEnd(a, market) ?? Number.MAX_SAFE_INTEGER) - (deadlineEnd(b, market) ?? Number.MAX_SAFE_INTEGER))
+      .map(t => t.id) : [];
   }
+
+  /** Склонение «тендер / тендера / тендеров» для кнопки «Для ИИ». */
+  aiWord(): string { return tendersWord(this.aiIds.length); }
 
   private sortTenders() {
     const ts = (d: any) => d ? new Date(d).getTime() : null;
