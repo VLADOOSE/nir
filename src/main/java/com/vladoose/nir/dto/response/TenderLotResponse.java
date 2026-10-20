@@ -24,6 +24,10 @@ public class TenderLotResponse {
     private BigDecimal maxWeightKg;
     private String requiredSpec;
     private ProposedEquipmentResponse proposedEquipment;
+    /** «Модель в работе»: «почему эта модель», кто и когда закрепил (V40). */
+    private String modelNote;
+    private String modelSetBy;
+    private OffsetDateTime modelSetAt;
     /** Лота больше нет на площадке; остался, потому что на него есть запрос КП или позиция заявки (B5). */
     private OffsetDateTime sourceRemovedAt;
     /** Разбор ТЗ импортного лота (пусто — ручной лот): чип «Есть ТЗ» и шаг «Лоты и ТЗ» читают один признак. */

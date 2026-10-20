@@ -62,4 +62,9 @@ public class MedEquipment implements MarketScoped {
 
     @Column(name = "registration_checked_at")
     private OffsetDateTime registrationCheckedAt;
+
+    /** Наш товар сайта, из которого заведена позиция (V40): «модель в работе» лота — наш товар. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "site_product_id")
+    private SiteProduct siteProduct;
 }

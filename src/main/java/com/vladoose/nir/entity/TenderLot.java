@@ -84,6 +84,17 @@ public class TenderLot {
     @JoinColumn(name = "proposed_equipment_id")
     private MedEquipment proposedEquipment;
 
+    /** «Почему эта модель» — заметка к модели в работе (вывод ИИ), V40. */
+    @Column(name = "model_note", length = 1000)
+    private String modelNote;
+
+    /** Кто и когда последним ставил или снимал модель в работе (V40). */
+    @Column(name = "model_set_by", length = 100)
+    private String modelSetBy;
+
+    @Column(name = "model_set_at")
+    private OffsetDateTime modelSetAt;
+
     /** Ед. изм. позиции частной заявки; пусто = «шт». */
     @Column(length = 30)
     private String unit;

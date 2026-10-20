@@ -25,6 +25,9 @@ public interface TenderLotMapper {
     @Mapping(target = "tender", source = "tenderId", qualifiedByName = "tenderFromId")
     @Mapping(target = "equipmentType", source = "equipTypeId", qualifiedByName = "equipmentTypeFromId")
     @Mapping(target = "proposedEquipment", ignore = true)
+    @Mapping(target = "modelNote", ignore = true)
+    @Mapping(target = "modelSetBy", ignore = true)
+    @Mapping(target = "modelSetAt", ignore = true)
     TenderLot toEntity(TenderLotRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -32,6 +35,9 @@ public interface TenderLotMapper {
     @Mapping(target = "tender", source = "tenderId", qualifiedByName = "tenderFromId")
     @Mapping(target = "equipmentType", source = "equipTypeId", qualifiedByName = "equipmentTypeFromId")
     @Mapping(target = "proposedEquipment", ignore = true)
+    @Mapping(target = "modelNote", ignore = true)
+    @Mapping(target = "modelSetBy", ignore = true)
+    @Mapping(target = "modelSetAt", ignore = true)
     void updateEntity(TenderLotRequest request, @MappingTarget TenderLot entity);
 
     /** MedEquipment → компактное DTO предложенной модели (подхватывается MapStruct по типам). */
@@ -43,6 +49,9 @@ public interface TenderLotMapper {
         r.setManufact(e.getManufact());
         r.setRegistrationStatus(e.getRegistrationStatus() != null ? e.getRegistrationStatus().name() : null);
         r.setRegNumber(e.getRegistration() != null ? e.getRegistration().getRegNumber() : null);
+        r.setSiteProductId(e.getSiteProduct() != null ? e.getSiteProduct().getId() : null);
+        r.setSource(e.getSiteProduct() != null ? "SITE" : e.getRegistration() != null ? "REGISTRY" : "CATALOG");
+        r.setRegExpires(e.getRegistration() != null ? e.getRegistration().getExpirationDate() : null);
         return r;
     }
 
