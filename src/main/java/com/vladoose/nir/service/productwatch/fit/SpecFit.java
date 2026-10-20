@@ -147,13 +147,18 @@ public final class SpecFit {
         if (r.kind() == SpecRequirement.Kind.DIMS) return !f.dims().isEmpty();
         if (countLike(r.unit())) return countLike(f.unit()) && (r.unit() != SpecUnit.CHANNEL || f.unit() != SpecUnit.PCS);
         if (f.unit() == null || !f.dims().isEmpty() || !f.unit().family().equals(r.unit().family())) return false;
-        // потребляемая мощность — не мощность лампы и не выходная («не менее 90 Вт» против «Мощность 1 лампы: 15», проверка
-        // на проде 2026-10-20)
-        return !"мощность".equals(r.unit().family()) || consumption(r.name()) == consumption(f.name());
+        return KIND.stream().allMatch(k -> has(r.name(), k) == has(f.name(), k));
     }
 
-    private static boolean consumption(String name) {
-        return name != null && name.contains("потреб");
+    /**
+     * Вид параметра, отличающий его от одноимённого (проверка на проде 2026-10-20): потребляемая мощность — не мощность
+     * лампы («не менее 90 Вт» против «Мощность 1 лампы: 15»), триггер по давлению — не управляемое давление («Pinsp 3 – 100
+     * cmH2O» против «Триггер: −1 см H₂O»). Вид — у обоих или ни у кого.
+     */
+    private static final List<String> KIND = List.of("потреб", "тригге");
+
+    private static boolean has(String name, String kind) {
+        return name != null && name.contains(kind);
     }
 
     /** Слово самого параметра и служебное («номинальное», «значение»): по ним одним факт не опознать. */

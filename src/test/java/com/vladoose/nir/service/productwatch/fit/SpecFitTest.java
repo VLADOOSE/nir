@@ -234,5 +234,11 @@ class SpecFitTest {
         assertThat(c3.rows()).filteredOn(r -> r.text().contains("4000")).singleElement()
                 .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
         assertThat(c3.failed()).isZero();
+        // после правки единиц (тот же ТЗ HAMILTON-C6 на проде): триггер — только с триггером, не с управляемым давлением
+        FitCandidate c4 = SpecFit.compare(reqs("управляемое давление (Pinsp) 3 - 100 cmH2O; триггер по давлению от 0,5 до 20 см вод. ст."), ivl);
+        assertThat(c4.rows()).filteredOn(r -> r.text().startsWith("управляемое")).singleElement()
+                .satisfies(r -> assertThat(r.mark()).isEqualTo(FitMark.UNKNOWN));
+        assertThat(c4.rows()).filteredOn(r -> r.text().startsWith("триггер")).singleElement()
+                .satisfies(r -> assertThat(r.ours()).startsWith("Триггер по давлению"));
     }
 }
