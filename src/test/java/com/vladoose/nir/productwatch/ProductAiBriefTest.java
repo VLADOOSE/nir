@@ -5,12 +5,14 @@ import com.vladoose.nir.dto.response.AiBriefResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
+import com.vladoose.nir.service.lotmodel.LotModelService;
 import com.vladoose.nir.service.productwatch.*;
 import com.vladoose.nir.service.productwatch.fit.RegistrationInfo;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -35,6 +37,8 @@ class ProductAiBriefTest {
     @Autowired SiteProductRepository productRepo;
     @Autowired ProductRegistrationRepository registrations;
     @Autowired EntityManager em;
+    @Autowired LotModelService lotModel;
+    @Autowired MedEquipmentRepository equipment;
     ProductMatchService service;
 
     @BeforeEach
@@ -132,5 +136,33 @@ class ProductAiBriefTest {
                 .market(Market.KZ).currency("KZT").build());
         assertThatThrownBy(() -> brief.forTender(rf.getId())).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> brief.forTender(pr.getId())).isInstanceOf(NotFoundException.class);
+    }
+
+    /** «Модель в работе» (спека 2026-10-20-lot-model-in-work §7): строка, заметка и сверка; лот без отметки, но с моделью — тоже. */
+    @Test
+    @WithMockUser(username = "vlad", roles = "ADMIN")
+    void modelInWork_lineNoteAndFit_evenWithoutOurMark() {
+        Tender t = ourTender("17000777-1", ProductFitEvaluateTest.ASPIRATOR_SPEC, 1);
+        TenderLot first = t.getLots().get(0);
+        MedEquipment eq = equipment.save(MedEquipment.builder().name("ZZ Отсасыватель").manufact("ZZ Завод").market(Market.KZ)
+                .spec("Производительность по воздуху не менее 20 л/мин").build());
+        lotModel.apply(first, eq, "ИИ: подходит по 3 из 3");
+        TenderLot other = new TenderLot();
+        other.setTender(t);
+        other.setLotNumber(2);
+        other.setEquipName("ZZ Шкаф");
+        t.getLots().add(other);
+        em.persist(other);                       // не tenders.save(t): merge положил бы в коллекцию копию, а `other` остался бы новым
+        em.flush();
+        lotModel.apply(other, equipment.save(MedEquipment.builder().name("ZZ Шкаф медицинский").manufact("не указан")
+                .market(Market.KZ).build()), null);
+        em.flush();
+        String text = brief.forTender(t.getId());
+        assertThat(text).contains("Если у лота указана «Модель в работе» — проверь её первой.")
+                .contains("Модель в работе: ZZ Отсасыватель (ZZ Завод); закрепил vlad")
+                .contains("почему: ИИ: подходит по 3 из 3")
+                .contains("Сверка АИС модели в работе: ✓ ")
+                .contains("--- Лот № 2: ZZ Шкаф")
+                .contains("Модель в работе: ZZ Шкаф медицинский; закрепил vlad");
     }
 }

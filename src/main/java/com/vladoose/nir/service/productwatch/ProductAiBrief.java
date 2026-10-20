@@ -9,6 +9,8 @@ import com.vladoose.nir.integration.westmed.WestmedLeadMapper;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.RegistryMatchService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.lotmodel.LotModelReader;
+import com.vladoose.nir.service.lotmodel.ModelSnapshot;
 import com.vladoose.nir.service.productwatch.fit.*;
 import com.vladoose.nir.util.DocFormat;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +48,7 @@ public class ProductAiBrief {
             4. Есть ли у подходящего изделия действующая регистрация в РК (реестр НЦЭЛС: https://oldregister.ndda.kz).
             Если можешь искать в интернете — проверь характеристики моделей по официальным источникам и дай ссылки.
             Ничего не выдумывай: нет данных — так и пиши.
+            Если у лота указана «Модель в работе» — проверь её первой.
 
             Ответ — списком в формате:
             Тендер № … — Лот № … — Требуется: … — ТЗ похоже на: … — Наш товар: … (подходит / не подходит: причина / нет данных) — РУ в РК: …
@@ -57,13 +60,14 @@ public class ProductAiBrief {
     private final ProductRegistrationRepository registrations;
     private final MedRegistryRepository registry;
     private final RegistryMatchService registryMatch;
+    private final LotModelReader modelReader;
     private final String siteUrl;
 
     public ProductAiBrief(TenderService tenderService, TenderLotProductMatchRepository matches, SiteProductRepository products,
                           ProductRegistrationRepository registrations, MedRegistryRepository registry, RegistryMatchService registryMatch,
-                          @Value("${leads.westmed.site-url:https://westmed.kz}") String siteUrl) {
+                          LotModelReader modelReader, @Value("${leads.westmed.site-url:https://westmed.kz}") String siteUrl) {
         this.tenderService = tenderService; this.matches = matches; this.products = products; this.registrations = registrations;
-        this.registry = registry; this.registryMatch = registryMatch;
+        this.registry = registry; this.registryMatch = registryMatch; this.modelReader = modelReader;
         this.siteUrl = siteUrl == null ? "" : siteUrl.replaceAll("/+$", "");
     }
 
@@ -107,8 +111,8 @@ public class ProductAiBrief {
                 .collect(Collectors.groupingBy(TenderLotProductMatch::getLotId, LinkedHashMap::new, Collectors.toList()));
         for (TenderLot l : t.getLots()) {
             List<TenderLotProductMatch> ms = byLot.get(l.getId());
-            if (ms == null) continue;
-            lot(b, l, ms, specChars);
+            if (ms == null && l.getProposedEquipment() == null) continue;      // лот с моделью в работе — и без нашей отметки
+            lot(b, l, ms == null ? List.of() : ms, specChars);
         }
         return b.toString();
     }
@@ -119,6 +123,7 @@ public class ProductAiBrief {
         if (l.getQuantity() != null) b.append(" — ").append(l.getQuantity()).append(" шт.");
         if (l.getMaxCost() != null) b.append(", до ").append(DocFormat.money(l.getMaxCost())).append(" ₸ за ед.");
         b.append('\n');
+        modelLine(b, l);
         for (TenderLotProductMatch m : ms) b.append("Сверка АИС: ").append(verdict(m)).append('\n');
         boolean spec = l.getTechSpecStatus() == TechSpecStatus.OK && l.getRequiredSpec() != null;
         String body = ProductMatchService.fitText(spec ? l.getRequiredSpec() : null, spec ? null : l.getRequiredSpec());   // как в сверке
@@ -149,6 +154,35 @@ public class ProductAiBrief {
             }
         } catch (RuntimeException ignored) {
             // подбор реестра — подсказка: без него текст полезен
+        }
+    }
+
+    /**
+     * Модель в работе (спека 2026-10-20-lot-model-in-work §7): что закреплено, кем и почему, и её сверка — ИИ проверит её
+     * первой. Снимок — без своей транзакции: сбой внутри чужой пометил бы транзакцию «Для ИИ» на откат и уронил бы весь текст.
+     */
+    private void modelLine(StringBuilder b, TenderLot l) {
+        MedEquipment model = l.getProposedEquipment();
+        if (model == null) return;
+        b.append("Модель в работе: ").append(one(model.getName()));
+        if (model.getManufact() != null && !"не указан".equals(model.getManufact())) b.append(" (").append(one(model.getManufact())).append(')');
+        if (model.getRegistration() != null) b.append(", РУ ").append(model.getRegistration().getRegNumber());
+        if (l.getModelSetBy() != null) {
+            b.append("; закрепил ").append(one(l.getModelSetBy()));
+            if (l.getModelSetAt() != null) b.append(' ').append(l.getModelSetAt().atZoneSameInstant(Market.KZ.zone()).format(DATE));
+        }
+        if (l.getModelNote() != null) b.append("; почему: ").append(one(l.getModelNote()));
+        b.append('\n');
+        try {
+            ModelSnapshot s = modelReader.snapshot(l);
+            if (s.card() != null && !s.needsDetail()) {
+                FitCandidate c = SpecFit.compare(SpecRequirements.extract(s.text()), s.card());
+                long diff = c.rows() == null ? 0 : c.rows().stream().filter(r -> r.mark() == FitMark.DIFF).count();
+                b.append("Сверка АИС модели в работе: ✓ ").append(c.met()).append(" · ✗ ").append(c.failed())
+                        .append(" · ≈ ").append(diff).append(" · нет данных ").append(c.unknown()).append('\n');
+            }
+        } catch (RuntimeException ignored) {
+            // сверка — подсказка: без неё текст полезен (в «Для ИИ» ndda.kz не зовём)
         }
     }
 
