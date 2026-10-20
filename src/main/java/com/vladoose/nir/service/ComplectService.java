@@ -20,6 +20,7 @@ import com.vladoose.nir.util.BrandTransliterator;
 import com.vladoose.nir.util.ComplectComponentMatcher;
 import com.vladoose.nir.util.ComplectTermExtractor;
 import com.vladoose.nir.util.LotDescriptiveText;
+import com.vladoose.nir.service.lotmodel.LotModelService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,19 +46,22 @@ public class ComplectService {
     private final MedEquipmentRepository equipmentRepository;
     private final NddaClient nddaClient;
     private final ComplectWriter writer;
+    private final LotModelService lotModel;
 
     public ComplectService(TenderLotService lotService,
                            MedRegistryRepository registryRepository,
                            RegistryComponentRepository componentRepository,
                            MedEquipmentRepository equipmentRepository,
                            NddaClient nddaClient,
-                           ComplectWriter writer) {
+                           ComplectWriter writer,
+                           LotModelService lotModel) {
         this.lotService = lotService;
         this.registryRepository = registryRepository;
         this.componentRepository = componentRepository;
         this.equipmentRepository = equipmentRepository;
         this.nddaClient = nddaClient;
         this.writer = writer;
+        this.lotModel = lotModel;
     }
 
     public ComplectSearchResponse search(Long lotId, String termOverride) {
@@ -159,8 +163,7 @@ public class ComplectService {
                     e.setMarket(MarketContext.get());
                     return equipmentRepository.save(e);
                 });
-        lot.setProposedEquipment(eq);
-        return lotService.save(lot);
+        return lotModel.apply(lot, eq, null);   // «кто/когда» и событие — общая служба модели в работе
     }
 
     private static String trim255(String s) {

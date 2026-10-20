@@ -19,6 +19,7 @@ import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
+import com.vladoose.nir.service.lotmodel.LotModelService;
 import com.vladoose.nir.util.LotQueryBuilder;
 import com.vladoose.nir.util.LotQueryBuilder.LotQuery;
 import com.vladoose.nir.util.LotQueryTokenizer.WeightedToken;
@@ -38,13 +39,16 @@ public class RegistryMatchService {
     private final MedRegistryRepository registryRepository;
     private final MedEquipmentRepository equipmentRepository;
     private final TenderLotRepository tenderLotRepository;
+    private final LotModelService lotModel;
 
     public RegistryMatchService(MedRegistryRepository registryRepository,
                                 MedEquipmentRepository equipmentRepository,
-                                TenderLotRepository tenderLotRepository) {
+                                TenderLotRepository tenderLotRepository,
+                                LotModelService lotModel) {
         this.registryRepository = registryRepository;
         this.equipmentRepository = equipmentRepository;
         this.tenderLotRepository = tenderLotRepository;
+        this.lotModel = lotModel;
     }
 
     /** Переиспользуемый примитив: (наименование, производитель) -> кандидаты реестра. */
@@ -462,28 +466,9 @@ public class RegistryMatchService {
         MedRegistry reg = registryRepository.findByRegNumber(regNumber)
                 .orElseThrow(() -> new NotFoundException("РУ не найдено в реестре: " + regNumber));
 
-        MedEquipment eq = equipmentRepository.findFirstByRegistrationRegNumber(regNumber)
-                .orElseGet(() -> {
-                    MedEquipment e = new MedEquipment();
-                    e.setName(trim255(reg.getName()));
-                    e.setManufact(reg.getProducer() != null && !reg.getProducer().isBlank()
-                            ? trim255(reg.getProducer()) : "не указан");
-                    if (reg.getTechChars() != null && !reg.getTechChars().isBlank()) {
-                        e.setSpec(reg.getTechChars()); // из кеша карточки НЦЭЛС; внешку при adopt не зовём
-                    }
-                    e.setRegistrationStatus(RegistrationStatus.REGISTERED);
-                    e.setRegistration(reg);
-                    e.setRegistrationCheckedAt(OffsetDateTime.now());
-                    e.setMarket(MarketContext.get()); // пред-штамп (defense-in-depth к листенеру)
-                    return equipmentRepository.save(e);
-                });
-
-        lot.setProposedEquipment(eq);
-        return tenderLotRepository.save(lot);
-    }
-
-    private static String trim255(String s) {
-        return s != null && s.length() > 255 ? s.substring(0, 255) : s;
+        // позиция каталога — из реестра (кеш карточки НЦЭЛС в spec, внешку при adopt не зовём); модель, «кто/когда»
+        // и событие в «Истории» — через общую службу «модели в работе» (спека 2026-10-20-lot-model-in-work §5.1)
+        return lotModel.apply(lot, lotModel.equipmentForRegistry(reg), null);
     }
 
     @Transactional

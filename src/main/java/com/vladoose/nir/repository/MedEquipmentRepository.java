@@ -20,6 +20,9 @@ public interface MedEquipmentRepository extends JpaRepository<MedEquipment, Long
     /** Дедуп позиции по РУ + имени (разные компоненты одного аппарата не сливаются). */
     Optional<MedEquipment> findFirstByRegistrationRegNumberAndNameIgnoreCase(String regNumber, String name);
 
+    /** Позиция каталога, заведённая из нашего товара сайта (V40: одна на товар). */
+    Optional<MedEquipment> findFirstBySiteProductId(Long siteProductId);
+
     /** Поиск по названию и производителю (спека 2026-10-13 §2.4); рынок — фильтром аспекта, РУ — сразу (без N+1). */
     @Query("SELECT e FROM MedEquipment e LEFT JOIN FETCH e.registration " +
            "WHERE lower(e.name) LIKE :p ESCAPE '\\' OR lower(e.manufact) LIKE :p ESCAPE '\\' ORDER BY e.name, e.id")

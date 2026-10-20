@@ -20,6 +20,7 @@ public class DealEventService {
     public static final String REOPENED = "REOPENED";
     public static final String APPLY_STATUS = "APPLY_STATUS";
     public static final String WINNER = "WINNER";
+    public static final String MODEL = "MODEL";
 
     private final DealEventRepository repository;
 

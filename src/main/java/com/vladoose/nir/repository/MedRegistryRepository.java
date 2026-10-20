@@ -17,6 +17,11 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
 
     Optional<MedRegistry> findByRegNumber(String regNumber);
 
+    /** № РУ без учёта регистра и лишних пробелов (как `RegNumbers.normalize`): на сайте номер бывает записан иначе, чем в реестре. */
+    @Query(value = "SELECT * FROM med_registry WHERE upper(btrim(regexp_replace(reg_number, '\\s+', ' ', 'g'))) = :n LIMIT 1",
+            nativeQuery = true)
+    Optional<MedRegistry> findByNormalizedRegNumber(@Param("n") String normalized);
+
     List<MedRegistry> findByRegNumberIn(Collection<String> regNumbers);
 
     /**

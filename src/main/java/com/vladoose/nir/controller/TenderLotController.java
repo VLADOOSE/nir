@@ -24,6 +24,7 @@ import com.vladoose.nir.service.MedEquipmentService;
 import com.vladoose.nir.service.TechSpecService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.lotmodel.LotModelService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -41,6 +42,7 @@ public class TenderLotController {
     private final ComplectService complectService;
     private final EquipmentTypeService equipmentTypeService;
     private final LotTypeClassifier classifier;
+    private final LotModelService lotModel;
 
     public TenderLotController(TenderLotService service,
                                TenderService tenderService,
@@ -50,7 +52,8 @@ public class TenderLotController {
                                TechSpecService techSpecService,
                                ComplectService complectService,
                                EquipmentTypeService equipmentTypeService,
-                               LotTypeClassifier classifier) {
+                               LotTypeClassifier classifier,
+                               LotModelService lotModel) {
         this.service = service;
         this.tenderService = tenderService;
         this.mapper = mapper;
@@ -60,6 +63,7 @@ public class TenderLotController {
         this.complectService = complectService;
         this.equipmentTypeService = equipmentTypeService;
         this.classifier = classifier;
+        this.lotModel = lotModel;
     }
 
     /** «Взять из реестра в работу»: РУ → позиция каталога → предложенная модель лота. */
@@ -99,19 +103,13 @@ public class TenderLotController {
         if (eq.getMarket() != null && eq.getMarket() != MarketContext.get()) {
             throw new NotFoundException("Оборудование не найдено: id=" + request.getEquipmentId());
         }
-        lot.setProposedEquipment(eq);
-        return mapper.toResponse(service.save(lot));
+        return mapper.toResponse(lotModel.apply(lot, eq, null));   // «кто/когда» и событие — служба модели в работе
     }
 
     @DeleteMapping("/{id}/proposed-equipment")
     @PreAuthorize("hasRole('ADMIN')")
     public TenderLotResponse clearProposedEquipment(@PathVariable Long id) {
-        TenderLot lot = service.findById(id);
-        if (lot.getTender().getMarket() != null && lot.getTender().getMarket() != MarketContext.get()) {
-            throw new NotFoundException("Лот не найден: id=" + id);
-        }
-        lot.setProposedEquipment(null);
-        return mapper.toResponse(service.save(lot));
+        return mapper.toResponse(lotModel.clearModel(id));   // гард рынка, «кто/когда» и событие — в службе
     }
 
     /** Назначить/снять вид МИ лота (питает подбор поставщиков; чинит несохранение типа). */
