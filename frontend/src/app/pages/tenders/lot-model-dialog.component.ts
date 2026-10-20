@@ -43,6 +43,8 @@ interface Picked { kind: 'our' | 'reg'; key: number | string; name: string; }
           </section>
           <p class="hint" *ngIf="!searching && !r.ours.length && !r.registry.length">Ничего не нашлось — уточните запрос.</p>
         </ng-container>
+        <!-- выбор виден и после нового поиска: «Закрепить» закрепит именно его -->
+        <p class="picked" *ngIf="picked">Выбрано: <b>{{ picked.name }}</b> · {{ picked.kind === 'our' ? 'наш товар' : 'реестр, РУ ' + picked.key }}</p>
         <label class="note" *ngIf="picked">Почему эта модель (можно вставить вывод ИИ)
           <textarea [(ngModel)]="note" maxlength="1000" rows="3"></textarea>
         </label>
@@ -73,6 +75,7 @@ interface Picked { kind: 'our' | 'reg'; key: number | string; name: string; }
     .h-meta .bad { color: var(--warn-text); }
     .note { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
     .note textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .picked { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
     .replace { margin: 0; font-size: 13px; color: var(--warn-text); overflow-wrap: anywhere; }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 0; }
     @media (max-width: 900px) {

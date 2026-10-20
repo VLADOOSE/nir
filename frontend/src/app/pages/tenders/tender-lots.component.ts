@@ -136,7 +136,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             <ng-template #modelName><span>{{ l.proposedEquipment.name }}</span></ng-template>
             <span *ngIf="l.proposedEquipment.manufact && l.proposedEquipment.manufact !== 'не указан'"> ({{ l.proposedEquipment.manufact }})</span>
             <span class="model-src">{{ modelSource(l) }}</span>
-            <span class="model-reg" [class.model-reg-bad]="!l.proposedEquipment.regActive"
+            <!-- на РФ РУ не ведётся: только «РУ ✓», как было у «Предложено» -->
+            <span class="model-reg" *ngIf="isKz() || l.proposedEquipment.regActive" [class.model-reg-bad]="!l.proposedEquipment.regActive"
                   [title]="l.proposedEquipment.regNumber ? 'РУ ' + l.proposedEquipment.regNumber : ''">{{ modelReg(l) }}</span>
             <button class="x-mini" *ngIf="auth.isAdmin()" (click)="clearModel(l, $event)" title="Снять модель в работе">✕</button>
             <!-- заметка — две строки, целиком — по нажатию (спека §7) -->
@@ -225,7 +226,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-head-body { flex: 1; min-width: 0; }
     .lot-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .lot-num { font-weight: 600; color: var(--accent); font-size: 14px; }
-    .lot-name { font-size: 15px; color: var(--text); font-weight: 500; flex: 1; min-width: 0; }
+    /* основа — ширина названия: не помещается вместе с чипом стадии — чип строкой ниже (с flex: 1 длинное слово
+       «Дефибриллятор» на телефоне наезжало на чип); слово длиннее строки переносится */
+    .lot-name { font-size: 15px; color: var(--text); font-weight: 500; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
     .lot-chev { color: var(--text); font-size: 14px; line-height: 1; }
     .lot-open .lot-chev { color: var(--accent); }
     .lot-metrics { font-size: 13px; color: var(--text-muted); margin-top: 3px; }

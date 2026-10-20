@@ -23,7 +23,7 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
         <span class="lf-reg" [ngClass]="c.regStatus === 'ACTIVE' ? 'lf-reg-ok' : 'lf-reg-bad'">{{ regText(c) }}</span>
         <button type="button" class="lf-pin" *ngIf="canPin && c.productId && c.productId !== pinnedProductId"
                 (click)="pin.emit(c.productId)" title="Закрепить этот товар моделью в работе лота">📌 Закрепить</button>
-        <span class="lf-pinned" *ngIf="c.productId && c.productId === pinnedProductId">📌 в работе</span>
+        <span class="lf-pinned" *ngIf="isPinned(c)">📌 в работе</span>
       </div>
       <div class="lf-count">✓ {{ c.met }} · ✗ {{ c.failed }} · ≈ {{ diff(c) }} · нет данных {{ c.unknown }}</div>
       <div class="lf-alts" *ngIf="list.length > 1">
@@ -33,11 +33,13 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
                   [title]="'Сравнить ТЗ с ' + a.name">{{ short(a.name) }}{{ i === 0 ? ' (лучший)' : '' }}</button>
         </ng-container>
       </div>
-      <ol class="lf-rows">
+      <!-- закреплённый товар — те же строки, что в «Сверке с моделью в работе» выше: не повторяем -->
+      <p class="lf-dup" *ngIf="isPinned(c)">Строки сверки — выше, в «Сверке с моделью в работе».</p>
+      <ol class="lf-rows" *ngIf="!isPinned(c)">
         <li *ngFor="let r of c.rows" [ngClass]="'lf-' + r.mark">
           <span class="lf-mark" [attr.aria-label]="markLabel(r.mark)">{{ markIcon(r.mark) }}</span>
           <span class="lf-text">{{ r.text }}
-            <span class="lf-ours">{{ r.ours ? 'у нас: ' + r.ours + (r.source ? ' (' + r.source + ')' : '') : 'нет данных' }}</span>
+            <span class="lf-ours">{{ r.ours ? oursLabel + ': ' + r.ours + (r.source ? ' (' + r.source + ')' : '') : 'нет данных' }}</span>
           </span>
         </li>
       </ol>
@@ -65,6 +67,7 @@ import type { FitCandidateView, FitMark, LotProductMatch } from '../../shared/pr
       color: var(--accent); cursor: pointer; }
     .lf-pinned { font-size: 12px; padding: 1px 8px; border-radius: 999px; color: var(--accent);
       background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .lf-dup { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); }
     .lf-rows { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
     .lf-rows li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; align-items: start; }
     .lf-plain li { grid-template-columns: 1fr; }
@@ -91,6 +94,8 @@ export class LotFitComponent implements OnChanges {
   /** Наш товар, уже закреплённый за лотом, — вместо кнопки метка «📌 в работе». */
   @Input() pinnedProductId: number | null = null;
   @Output() pin = new EventEmitter<number>();
+  /** Чьи данные в строке: «у нас» — наш товар; у модели в работе из реестра или каталога — «у модели». */
+  @Input() oursLabel = 'у нас';
   index = 0;
 
   get list(): FitCandidateView[] { return this.candidates ?? this.match?.candidates ?? []; }
@@ -99,6 +104,7 @@ export class LotFitComponent implements OnChanges {
   ngOnChanges(): void { this.index = 0; }
 
   short(name: string): string { return shortProduct(name); }
+  isPinned(c: FitCandidateView): boolean { return !!c.productId && c.productId === this.pinnedProductId; }
   diff(c: FitCandidateView): number { return c.rows.filter(r => r.mark === 'DIFF').length; }
   regText(c: FitCandidateView): string {
     return c.regStatus === 'ACTIVE' ? 'РУ действует' + (c.regNumber ? ' · ' + c.regNumber : '') : (NO_RU[c.regStatus] ?? 'РУ не проверено');

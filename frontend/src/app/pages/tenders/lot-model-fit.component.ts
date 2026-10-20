@@ -16,7 +16,8 @@ import type { LotModelFit } from '../../shared/lot-model';
   imports: [NgIf, FormsModule, LotFitComponent],
   template: `
     <ng-container *ngIf="data?.model">
-      <app-lot-fit *ngIf="fitList.length" [title]="'Сверка с моделью в работе'" [candidates]="fitList"></app-lot-fit>
+      <app-lot-fit *ngIf="fitList.length" [title]="'Сверка с моделью в работе'" [candidates]="fitList"
+                   [oursLabel]="data!.model!.source === 'SITE' ? 'у нас' : 'у модели'"></app-lot-fit>
       <div class="lm-box" *ngIf="!fitList.length">
         <span class="lm-title">Сверка с моделью в работе</span>
         <span *ngIf="data!.card === 'MISSING'">{{ data!.error }}
