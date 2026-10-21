@@ -1,8 +1,10 @@
 package com.vladoose.nir.service.productwatch;
 
+import com.vladoose.nir.entity.AiVerdict;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.ProductMatchLevel;
 import com.vladoose.nir.entity.Tender;
+import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
 import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
@@ -20,9 +22,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * «Наш товар в тендерах» в Telegram (спека 2026-10-19-product-watch §9): зовётся в конце поиска по стране и импортов
@@ -42,6 +46,11 @@ public class ProductWatchNotifier {
         void send(String text, boolean silent);
     }
 
+    /** Сообщение-пачка с кнопками бота (спека 2026-10-21-tender-telegram-bot §4); false — не ушло, повтор следующим прогоном. */
+    public interface DigestPublisher {
+        boolean publish(ProductDigestComposer.Chunk chunk);
+    }
+
     private final TenderLotProductMatchRepository matches;
     private final TenderRepository tenders;
     private final ProductMatchQuery query;
@@ -53,6 +62,8 @@ public class ProductWatchNotifier {
     private final ProductNotifyPolicy policy;
     private final String publicUrl;
     private final Clock clock;
+    /** Кнопки бота включены (TELEGRAM_BOT_ACTIONS_ENABLED) — пачка вместо прежнего сообщения; null — прежний вид. */
+    private final DigestPublisher digest;
 
     @Autowired
     public ProductWatchNotifier(TenderLotProductMatchRepository matches, TenderRepository tenders, ProductMatchQuery query,
@@ -60,14 +71,23 @@ public class ProductWatchNotifier {
                                 TelegramClient client, @Value("${product-watch.enabled:false}") boolean enabled,
                                 @Value("${product-watch.notify:}") String notify,
                                 @Value("${product-watch.notify-min-sum:}") String notifyMinSum,
-                                @Value("${ais.public-url:}") String publicUrl) {
+                                @Value("${ais.public-url:}") String publicUrl,
+                                DigestPublisher digestPublisher,
+                                @Value("${notify.telegram.bot-actions-enabled:false}") boolean botActions) {
         this(matches, tenders, query, matchService, tm, telegram, client::sendProducts, enabled,
-                ProductNotifyPolicy.of(notify, notifyMinSum), publicUrl, Clock.systemUTC());
+                ProductNotifyPolicy.of(notify, notifyMinSum), publicUrl, Clock.systemUTC(), botActions ? digestPublisher : null);
     }
 
     public ProductWatchNotifier(TenderLotProductMatchRepository matches, TenderRepository tenders, ProductMatchQuery query,
                                 ProductMatchService matchService, PlatformTransactionManager tm, TelegramSettings telegram,
                                 Sender sender, boolean enabled, ProductNotifyPolicy policy, String publicUrl, Clock clock) {
+        this(matches, tenders, query, matchService, tm, telegram, sender, enabled, policy, publicUrl, clock, null);
+    }
+
+    public ProductWatchNotifier(TenderLotProductMatchRepository matches, TenderRepository tenders, ProductMatchQuery query,
+                                ProductMatchService matchService, PlatformTransactionManager tm, TelegramSettings telegram,
+                                Sender sender, boolean enabled, ProductNotifyPolicy policy, String publicUrl, Clock clock,
+                                DigestPublisher digest) {
         this.matches = matches;
         this.tenders = tenders;
         this.query = query;
@@ -80,6 +100,7 @@ public class ProductWatchNotifier {
         this.policy = policy;
         this.publicUrl = publicUrl;
         this.clock = clock;
+        this.digest = digest;
     }
 
     /** Что и куда шлём — в лог при старте: на проде иначе не видно, какой режим и тема подхватились. */
@@ -94,7 +115,8 @@ public class ProductWatchNotifier {
         String min = policy.minSum().signum() == 0 ? "без порога суммы" : "наши лоты от " + policy.minSum().toPlainString() + " ₸";
         String topic = !telegram.productsThreadId().isEmpty() ? "тема " + telegram.productsThreadId()
                 : telegram.tendersThreadId().isEmpty() ? "«Общая»" : "тема тендеров " + telegram.tendersThreadId();
-        log.info("«Наш товар» в Telegram: {}, {}, {}", what, min, topic);
+        log.info("«Наш товар» в Telegram: {}, {}, {}{}", what, min, topic,
+                digest != null ? ", сообщение-пачка с кнопками бота" : "");
     }
 
     /**
@@ -103,15 +125,22 @@ public class ProductWatchNotifier {
      */
     public synchronized void afterRun(ImportSummary sum) {
         if (!enabled || !telegram.isConfigured() || policy.mode() == ProductNotifyPolicy.Mode.OFF) return;
-        List<ProductWatchComposer.Card> cards;
+        Prepared prepared;
         try {
-            cards = readTx.execute(st -> prepare());
+            prepared = readTx.execute(st -> prepare());
         } catch (RuntimeException e) {
             log.warn("Telegram: «наш товар в тендерах» не собрано, повтор — со следующим прогоном: {}", ErrorText.of(e));
             sum.addSideError("уведомление «наш товар» не собрано (повтор — со следующим прогоном): " + ErrorText.of(e));
             return;
         }
-        if (cards == null || cards.isEmpty()) return;
+        if (prepared == null) return;
+        prepared.silent().forEach(this::markQuietly);   // все наши лоты — «не наше» по ответу ИИ: молча сообщены
+        List<ProductWatchComposer.Card> cards = prepared.cards();
+        if (cards.isEmpty()) return;
+        if (digest != null) {
+            publishDigest(cards, sum);
+            return;
+        }
         ProductWatchComposer.Message m = ProductWatchComposer.compose(cards, publicUrl);
         try {
             sender.send(m.text(), !m.sound());
@@ -123,22 +152,49 @@ public class ProductWatchNotifier {
         Set<Long> shown = new HashSet<>(m.shown());
         for (ProductWatchComposer.Card c : cards) {
             if (!shown.contains(c.tenderId())) continue;   // не поместился — уйдёт следующим прогоном
-            try {
-                matchService.markNotified(c.tenderId(), c.level());
-            } catch (RuntimeException e) {
-                // ушло, но не отмечено — следующий прогон пришлёт ещё раз (лучше повтор, чем потеря)
-                log.warn("«Наш товар»: тендер {} не отмечен сообщённым: {}", c.tenderId(), ErrorText.of(e));
-            }
+            markQuietly(c.tenderId(), c.level());
         }
         log.info("Telegram: «наш товар в тендерах» отправлено ({} из {}){}", shown.size(), cards.size(), m.sound() ? " со звуком" : "");
     }
 
-    private List<ProductWatchComposer.Card> prepare() {
+    /**
+     * Сообщение-пачка (спека 2026-10-21-tender-telegram-bot §4): по 15 тендеров; сообщёнными отмечаются вошедшие в ушедшую
+     * пачку; не ушла — остальные ждут следующего прогона.
+     */
+    private void publishDigest(List<ProductWatchComposer.Card> cards, ImportSummary sum) {
+        Map<Long, ProductWatchComposer.Card> byId = cards.stream()
+                .collect(Collectors.toMap(ProductWatchComposer.Card::tenderId, c -> c, (a, b) -> a));
+        int sent = 0;
+        for (ProductDigestComposer.Chunk chunk : ProductDigestComposer.compose(cards, publicUrl)) {
+            if (!digest.publish(chunk)) {
+                sum.addSideError("уведомление «наш товар» с кнопками не ушло (повтор — со следующим прогоном)");
+                break;
+            }
+            chunk.tenderIds().forEach(id -> markQuietly(id, byId.get(id).level()));
+            sent += chunk.tenderIds().size();
+        }
+        log.info("Telegram: «наш товар» — сообщение-пачка с кнопками, тендеров {} из {}", sent, cards.size());
+    }
+
+    /** Ушло, но не отмечено — следующий прогон пришлёт ещё раз (лучше повтор, чем потеря). */
+    private void markQuietly(long tenderId, ProductMatchLevel level) {
+        try {
+            matchService.markNotified(tenderId, level);
+        } catch (RuntimeException e) {
+            log.warn("«Наш товар»: тендер {} не отмечен сообщённым: {}", tenderId, ErrorText.of(e));
+        }
+    }
+
+    /** Карточки сообщения и тендеры, у которых все наши лоты «не наше» по ответу ИИ (отмечаются сообщёнными молча). */
+    private record Prepared(List<ProductWatchComposer.Card> cards, Map<Long, ProductMatchLevel> silent) {}
+
+    private Prepared prepare() {
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone());
         List<Long> ids = matches.findTendersToNotify();
-        if (ids.isEmpty()) return List.of();
+        if (ids.isEmpty()) return new Prepared(List.of(), Map.of());
         Map<Long, ProductMatchQuery.Summary> sums = query.summaries(ids);
         List<ProductWatchComposer.Card> out = new ArrayList<>();
+        Map<Long, ProductMatchLevel> silent = new LinkedHashMap<>();
         for (Tender t : tenders.findAllById(ids)) {
             if (t.getMarket() != Market.KZ || !"ACTIVE".equals(t.getStatus())) continue;
             // приём «до 09:00» в 09:10 закрыт, даже если площадка ещё не сменила статус (спека §9, Review Focus #3)
@@ -146,21 +202,29 @@ public class ProductWatchNotifier {
             ProductMatchQuery.Summary s = sums.get(t.getId());
             if (s == null || s.level() == null) continue;
             boolean upgrade = t.getProductNotifiedLevel() != null;
+            // «не наше» по ответу ИИ (спека 2026-10-21-tender-telegram-bot §4): такие лоты — ни в сообщение, ни в сумму
+            Set<Long> notOurs = t.getLots().stream().filter(l -> l.getAiVerdict() == AiVerdict.NO).map(TenderLot::getId)
+                    .collect(Collectors.toSet());
             // «Уточнение» и режим «только ★» — только лоты «★» и «✓ подходит»; порог — по сумме тех лотов, о которых сообщение
-            List<ProductMatchQuery.LotLine> lots = upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR
+            List<ProductMatchQuery.LotLine> lots = (upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR
                     ? s.lots().stream().filter(l -> l.level().alert()).toList()
-                    : s.lots();
-            if (lots.isEmpty() || !policy.sumPasses(OurLots.sum(t, lots.stream().map(ProductMatchQuery.LotLine::lotId).toList()))) continue;
+                    : s.lots()).stream().filter(l -> !notOurs.contains(l.lotId())).toList();
+            if (lots.isEmpty()) {
+                if (!notOurs.isEmpty() && s.lots().stream().allMatch(l -> notOurs.contains(l.lotId()))) silent.put(t.getId(), s.level());
+                continue;
+            }
+            BigDecimal ourSum = OurLots.sum(t, lots.stream().map(ProductMatchQuery.LotLine::lotId).toList());
+            if (!policy.sumPasses(ourSum)) continue;
             out.add(new ProductWatchComposer.Card(t.getId(), t.getTenderNumber(), platformLabel(t.getPlatform()),
                     t.getPurchaseType(), t.getDescription(), t.getCustomerName(), t.getRegion(), t.getTotalCost(),
-                    t.getDeadline(), t.getDeadlineAt(), s.level(), upgrade, lots));
+                    t.getDeadline(), t.getDeadlineAt(), s.level(), upgrade, lots, ourSum));
         }
         // сначала точнее, внутри — у кого приём кончается раньше
         out.sort(Comparator.comparing((ProductWatchComposer.Card c) -> -c.level().ordinal())
                 .thenComparing(c -> c.deadlineAt() != null ? c.deadlineAt()
                         : c.deadline() != null ? c.deadline().atTime(23, 59) : LocalDateTime.MAX)
                 .thenComparing(ProductWatchComposer.Card::tenderId));
-        return out;
+        return new Prepared(out, silent);
     }
 
     private static String platformLabel(TenderPlatform p) {

@@ -30,7 +30,15 @@ public final class ProductWatchComposer {
     /** upgrade — тендер уже сообщён уровнем ниже; lots — наши лоты (у уточнения — только точные). */
     public record Card(long tenderId, String number, String platformLabel, String tradeMethod, String subject, String customer,
                        String region, BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, ProductMatchLevel level,
-                       boolean upgrade, List<ProductMatchQuery.LotLine> lots) {}
+                       boolean upgrade, List<ProductMatchQuery.LotLine> lots, BigDecimal ourSum) {
+        /** Без суммы наших лотов — прежние вызовы (тесты сообщения «Наш товар»). */
+        public Card(long tenderId, String number, String platformLabel, String tradeMethod, String subject, String customer,
+                    String region, BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, ProductMatchLevel level,
+                    boolean upgrade, List<ProductMatchQuery.LotLine> lots) {
+            this(tenderId, number, platformLabel, tradeMethod, subject, customer, region, total, deadline, deadlineAt, level,
+                    upgrade, lots, null);
+        }
+    }
 
     /**
      * shown — тендеры, вошедшие в текст (остальные — строкой «…и ещё N»): сообщёнными отмечаются только они.

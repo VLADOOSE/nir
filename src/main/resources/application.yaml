@@ -131,6 +131,8 @@ notify:
     # тема «Тендеры» той же группы — новые профильные тендеры (NewTenderNotifier); пусто — «Общая»
     tenders-thread-id: ${TELEGRAM_TENDERS_THREAD_ID:}
     products-thread-id: ${TELEGRAM_PRODUCTS_THREAD_ID:}   # «Тендеры (наши товары)»; пусто — тема тендеров
+    # Кнопки бота (спека 2026-10-21-tender-telegram-bot): сообщение-пачка с кнопками и приём нажатий; пустым не оставлять
+    bot-actions-enabled: ${TELEGRAM_BOT_ACTIONS_ENABLED:false}
 
 # Публичный адрес АИС — для ссылок «Открыть в АИС» в уведомлениях (прод — application-prod.yaml). Пусто — без ссылок.
 ais:
