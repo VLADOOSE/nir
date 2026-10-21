@@ -96,6 +96,9 @@ class ProductFitEvaluateTest {
         assertThat(m.getFitCandidates().get(0).rows()).isNotEmpty();
         assertThat(m.getFitCheckedAt()).isNotNull();
         assertThat(query.ourProduct(List.of(t.getId())).get(t.getId()).label()).startsWith("✓ подходит: Отсасыватель");
+        // для сортировки списка «Ближе к нашему товару» — вердикт и цифры лучшей сверки
+        assertThat(query.ourProduct(List.of(t.getId())).get(t.getId()).fit().verdict()).isEqualTo("FITS");
+        assertThat(query.ourProduct(List.of(t.getId())).get(t.getId()).fit().met()).isEqualTo(m.getFitMet());
     }
 
     /** Review Focus #5: ТЗ не разобрано, но в описании площадки есть числа — сверка по описанию. */

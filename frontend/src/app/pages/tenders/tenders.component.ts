@@ -979,7 +979,7 @@ export class TendersComponent {
     return Math.max(5, Math.min(100, Math.round(100 * (s.pagesRead || 0) / s.maxPages)));
   }
 
-  sortMode: 'published' | 'deadline' = 'published';
+  sortMode: 'published' | 'deadline' | 'fit' = 'published';
 
   applyTendersFilter() {
     const q = (this.filterQuery || '').toLowerCase();
@@ -1065,6 +1065,17 @@ export class TendersComponent {
         const fa = da >= now ? 0 : 1, fb = db >= now ? 0 : 1;
         if (fa !== fb) return fa - fb;
         return fa === 0 ? da - db : db - da;
+      });
+    } else if (this.sortMode === 'fit') {
+      // «ближе к нашему товару»: ★ (назван наш товар, ТЗ списано) → «подходит» → «подходит, РУ истекло» → «◐ похоже»
+      // (больше ✓ — выше) → «не подходит» → прочие с отметкой → без отметки; внутри — у кого приём кончается раньше
+      const rank: Record<string, number> = { FITS: 5, FITS_NO_RU: 4, PARTIAL: 3, NOT_FIT: 2, NO_REQUIREMENTS: 1 };
+      const star = (t: any) => t.ourProduct?.level === 'COPIED' || t.ourProduct?.level === 'NAMED' ? 1 : 0;
+      const end = (t: any) => deadlineEnd(t, this.market.value) ?? Number.MAX_SAFE_INTEGER;
+      this.filteredTenders.sort((a, b) => {
+        const fa = a.ourProduct?.fit, fb = b.ourProduct?.fit;
+        return star(b) - star(a) || (rank[fb?.verdict] ?? 0) - (rank[fa?.verdict] ?? 0) || (fb?.met ?? -1) - (fa?.met ?? -1)
+          || (fa?.failed ?? 0) - (fb?.failed ?? 0) || (b.ourProduct ? 1 : 0) - (a.ourProduct ? 1 : 0) || end(a) - end(b);
       });
     } else {
       // «сначала новые»: по дате публикации DESC; без даты — вниз; при равенстве — новее по id

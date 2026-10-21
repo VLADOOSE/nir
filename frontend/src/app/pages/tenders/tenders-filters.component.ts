@@ -23,6 +23,7 @@ export interface TendersFilters {
       </select>
       <select class="f-sel" [(ngModel)]="filters.sortMode" (change)="emit()" title="Сортировка">
         <option value="published">Сначала новые</option><option value="deadline">Скоро дедлайн</option>
+        <option *ngIf="isKz" value="fit">Ближе к нашему товару</option>
       </select>
       <select class="f-sel" [(ngModel)]="filters.stage" (change)="emit()" title="Стадия">
         <option value="">Все стадии</option><option value="NOT_STARTED">Не начат</option>
@@ -63,7 +64,7 @@ export interface TendersFilters {
     <div class="fm-sheet" [class.open]="sheetOpen">
       <div class="fm-sheet-head"><b>Фильтры</b><button (click)="sheetOpen = false">✕</button></div>
       <label>Статус<select [(ngModel)]="filters.status" (change)="emit()"><option value="">Все</option><option value="DRAFT">Подготовка</option><option value="ACTIVE">Приём заявок</option><option value="COMPLETED">Завершён</option><option value="CANCELLED">Отменён</option></select></label>
-      <label>Сортировка<select [(ngModel)]="filters.sortMode" (change)="emit()"><option value="published">Сначала новые</option><option value="deadline">Скоро дедлайн</option></select></label>
+      <label>Сортировка<select [(ngModel)]="filters.sortMode" (change)="emit()"><option value="published">Сначала новые</option><option value="deadline">Скоро дедлайн</option><option *ngIf="isKz" value="fit">Ближе к нашему товару</option></select></label>
       <label>Стадия<select [(ngModel)]="filters.stage" (change)="emit()"><option value="">Все</option><option value="NOT_STARTED">Не начат</option><option value="REQUESTED">Запрос отправлен</option><option value="PRICED">Есть цены</option><option value="WINNER_SELECTED">Победитель выбран</option></select></label>
       <label *ngIf="isKz">Площадка<select [(ngModel)]="filters.platform" (change)="emit()"><option value="">Все</option><option value="GOSZAKUP">Госзакуп</option><option value="SK_PHARMACY">СК-Фармация</option></select></label>
       <label *ngIf="isKz">Регион<select [(ngModel)]="filters.region" (change)="emit()"><option value="">Все</option><option [value]="noRegionValue">Регион не указан</option><option *ngFor="let r of regions" [value]="r">{{ r }}</option></select></label>

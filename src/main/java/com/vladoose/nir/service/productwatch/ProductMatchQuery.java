@@ -23,8 +23,14 @@ import java.util.stream.Collectors;
 public class ProductMatchQuery {
 
     /** Итог сверки нашего лота — для чипа и сообщения (спека 2026-10-20-product-spec-fit §6.3, §7). */
-    public record FitSummary(FitVerdict verdict, String productName, String productSlug, int met, int total, int unknown,
-                             String reasonShort, String foreignBrand, String regStatus) {}
+    public record FitSummary(FitVerdict verdict, String productName, String productSlug, int met, int failed, int total, int unknown,
+                             String reasonShort, String foreignBrand, String regStatus) {
+        /** Без ✗ — как у «подходит» и «похоже» (✗ ставит «не подходит»). */
+        public FitSummary(FitVerdict verdict, String productName, String productSlug, int met, int total, int unknown,
+                          String reasonShort, String foreignBrand, String regStatus) {
+            this(verdict, productName, productSlug, met, 0, total, unknown, reasonShort, foreignBrand, regStatus);
+        }
+    }
 
     /** Наш лот: что за лот, уровень, группа и её слово, доказательство, товар каталога, похожие наши товары, сверка ТЗ. */
     public record LotLine(long lotId, String lotName, Integer qty, ProductMatchLevel level, String groupName, String word,
@@ -58,7 +64,8 @@ public class ProductMatchQuery {
     @Transactional(readOnly = true)
     public Map<Long, OurProductSummary> ourProduct(Collection<Long> tenderIds) {
         Map<Long, OurProductSummary> out = new HashMap<>();
-        summaries(tenderIds).forEach((id, s) -> out.put(id, new OurProductSummary(s.level().name(), s.label(), s.groups())));
+        summaries(tenderIds).forEach((id, s) -> out.put(id, new OurProductSummary(s.level().name(), s.label(), s.groups(),
+                fitBrief(s.lots()))));
         return out;
     }
 
@@ -134,16 +141,16 @@ public class ProductMatchQuery {
     /** Итог сверки из строки отметки; сверки не было — null. */
     static FitSummary fit(TenderLotProductMatch m) {
         if (m.getFit() == null || m.getFitCandidates() == null || m.getFitCandidates().isEmpty()) {
-            return m.getFit() == null ? null : new FitSummary(m.getFit(), null, null, 0, 0, 0, null, m.getForeignBrand(), null);
+            return m.getFit() == null ? null : new FitSummary(m.getFit(), null, null, 0, 0, 0, 0, null, m.getForeignBrand(), null);
         }
         FitCandidate b = m.getFitCandidates().get(0);
-        return new FitSummary(m.getFit(), b.name(), b.slug(), b.met(), b.total(), b.unknown(), b.reasonShort(), m.getForeignBrand(),
-                b.regStatus());
+        return new FitSummary(m.getFit(), b.name(), b.slug(), b.met(), b.failed(), b.total(), b.unknown(), b.reasonShort(),
+                m.getForeignBrand(), b.regStatus());
     }
 
     /**
      * Подпись чипа тендера (спека 2026-10-20-product-spec-fit §8.3): ★ — как было; «✓ подходит» — наш товар; у вида —
-     * вердикт сверки лучшего лота; сверки нет — слово группы.
+     * вердикт сверки лучшего лота ({@link #best}; «◐ похоже» — с ✓, ✗ и товаром); сверки нет — слово группы.
      */
     static String label(ProductMatchLevel level, List<LotLine> lines) {
         LotLine top = lines.get(0);
@@ -151,12 +158,26 @@ public class ProductMatchQuery {
         if (level == ProductMatchLevel.FITS) {
             return "✓ подходит: " + shortName(top.fit() != null && top.fit().productName() != null ? top.fit().productName() : top.word());
         }
-        FitSummary f = lines.stream().map(LotLine::fit).filter(Objects::nonNull).filter(x -> !unconfirmed(x))
-                .max(Comparator.comparingInt((FitSummary x) -> x.verdict().rank())).orElse(null);
+        FitSummary f = best(lines);
         if (f != null && f.verdict() == FitVerdict.FITS_NO_RU) return "подходит по ТЗ, " + noRu(f.regStatus());
-        if (f != null && f.verdict() == FitVerdict.PARTIAL) return "◐ похоже: " + top.word();
+        // цифры — первыми: в узком чипе многоточие съест товар, а не то, насколько похоже (отзыв оператора 2026-10-20)
+        if (f != null && f.verdict() == FitVerdict.PARTIAL) {
+            return "◐ похоже: ✓ " + f.met() + " · ✗ " + f.failed() + " · " + shortName(f.productName() != null ? f.productName() : top.word());
+        }
         if (f != null && f.verdict() == FitVerdict.NOT_FIT) return "✗ не подходит: " + Objects.toString(f.reasonShort(), top.word());
         return "🏷 наш вид: " + top.word();
+    }
+
+    /** Лучшая сверка тендера: установленные (не «◐ похоже» без ✓), по вердикту, при равном — где больше ✓. */
+    static FitSummary best(List<LotLine> lines) {
+        return lines.stream().map(LotLine::fit).filter(Objects::nonNull).filter(x -> !unconfirmed(x))
+                .max(Comparator.comparingInt((FitSummary x) -> x.verdict().rank()).thenComparingInt(FitSummary::met)).orElse(null);
+    }
+
+    /** Для сортировки списка «Ближе к нашему товару»: вердикт и цифры лучшей сверки; сверка ничего не установила — null. */
+    static OurProductSummary.Fit fitBrief(List<LotLine> lines) {
+        FitSummary f = best(lines);
+        return f == null ? null : new OurProductSummary.Fit(f.verdict().name(), f.met(), f.failed(), f.total());
     }
 
     /**
