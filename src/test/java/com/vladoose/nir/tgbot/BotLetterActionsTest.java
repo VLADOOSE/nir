@@ -27,12 +27,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Письма из бота (спека 2026-10-21-tender-telegram-bot §7): фото бланка, «✅ Отправить» с проверками (двойное нажатие,
@@ -282,6 +284,124 @@ class BotLetterActionsTest {
         PriceRequest pr = priceRequests.findById(prId).orElseThrow();
         assertThat(pr.getLetterStatus()).isEqualTo(LetterStatus.MANUAL);
         assertThat(pr.getStatus()).isEqualTo("CREATED");
+    }
+
+    /** Письмо ушло, а «✅ Письмо … отправлено» в Telegram — нет (сеть, 5xx): письмо остаётся отправленным, второе не уходит. */
+    @Test
+    void telegramFailsAfterEmail_staysSent_noSecondEmail() {
+        stub.on("sendMessage", TelegramStubServer.Reply.error(500, "Internal Server Error"));
+        assertThatThrownBy(() -> as(() -> actions.send(cb("s"), draft.getId()))).isInstanceOf(RuntimeException.class);
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.SENT);
+        as(() -> actions.send(cb("s"), draft.getId()));
+        assertThat(greenMail.getReceivedMessages()).as("повтор не шлёт второе").hasSize(1);
+    }
+
+    /** Процесс убит после письма, до записи исхода: при запуске письмо — отправленным (по запросу цен), не «⏳» навсегда. */
+    @Test
+    void interruptedAfterEmail_recoveredAsSent_noSecondEmail() {
+        as(() -> actions.send(cb("s"), draft.getId()));
+        Long prId = reload().getPriceRequestId();
+        interrupt();
+        actions.recoverInterrupted();
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.SENT);
+        assertThat(b.getPriceRequestId()).isEqualTo(prId);
+        as(() -> actions.send(cb("s"), draft.getId()));
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+        assertThat(stub.requests()).filteredOn(r -> r.path().endsWith("/editMessageReplyMarkup"))
+                .anySatisfy(r -> assertThat(r.body()).contains("✅ 1"));
+    }
+
+    /** Убит до записи запроса цен: письмо снова можно отправить. */
+    @Test
+    void interruptedBeforeRequest_recoveredAsFailed_thenSends() {
+        interrupt();
+        actions.recoverInterrupted();
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.FAILED);
+        assertThat(b.getError()).contains("прервалась");
+        as(() -> actions.send(cb("s"), draft.getId()));
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.SENT);
+    }
+
+    /** Убит после записи запроса, до письма: «Отправить» пересылает ЭТОТ запрос — не «уже отправлено из АИС». */
+    @Test
+    void interruptedAfterRequest_resendsSameRequest_notElsewhere() {
+        TenderLot l = lots.findById(lot.getId()).orElseThrow();
+        Long[] prId = new Long[1];
+        as(() -> prId[0] = writer.persist(l.getTender(), maker, List.of(new PriceRequestWriter.Line(l, l.getProposedEquipment(), 1))).getId());
+        interrupt();
+        actions.recoverInterrupted();
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.FAILED);
+        assertThat(reload().getPriceRequestId()).isEqualTo(prId[0]);
+        as(() -> actions.send(cb("s"), draft.getId()));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.SENT);
+        assertThat(reload().getPriceRequestId()).isEqualTo(prId[0]);
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+    }
+
+    /** Пока письмо висело в «⏳», запрос тому же заводу ушёл из АИС — он не приписывается боту: «уже отправлено из АИС». */
+    @Test
+    void interrupted_aisRequestMeanwhile_notTakenAsOwn() {
+        TenderLot l = lots.findById(lot.getId()).orElseThrow();
+        writer.persist(l.getTender(), maker, List.of(new PriceRequestWriter.Line(l, l.getProposedEquipment(), 1)));   // из АИС
+        interrupt();
+        actions.recoverInterrupted();
+        assertThat(reload().getPriceRequestId()).isNull();
+        as(() -> actions.send(cb("s"), draft.getId()));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.ELSEWHERE);
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+    }
+
+    /** «📱 Отправлю сам»: PDF с кнопками ушёл, а удалить прежнее фото Telegram не дал — запрос остаётся, «✅ Отправил» работает. */
+    @Test
+    void manual_telegramFailsAfterPdf_staysManual() {
+        as(() -> actions.view(cb("v"), draft.getId()));
+        stub.on("deleteMessage", TelegramStubServer.Reply.error(500, "Internal Server Error"));
+        assertThatThrownBy(() -> as(() -> actions.manual(cb("m"), draft.getId()))).isInstanceOf(RuntimeException.class);
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.MANUAL);
+        assertThat(priceRequests.findById(b.getPriceRequestId())).isPresent();
+        as(() -> actions.handed(cb("h"), draft.getId()));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.HANDED);
+    }
+
+    /** Сбой (Error) посреди отправки, после записи запроса цен: следующее «Отправить» пересылает этот запрос. */
+    @Test
+    void errorAfterRequest_nextPressResendsSameRequest() {
+        PriceRequestSendService broken = Mockito.mock(PriceRequestSendService.class);
+        Mockito.when(broken.send(Mockito.anyLong(), Mockito.anyList(), Mockito.anyList(), Mockito.any(), Mockito.any(), Mockito.any()))
+                .thenAnswer(inv -> {
+                    TenderLot l = lots.findById(lot.getId()).orElseThrow();
+                    writer.persist(l.getTender(), maker, List.of(new PriceRequestWriter.Line(l, l.getProposedEquipment(), 1)));
+                    throw new Boom();
+                });
+        Mockito.when(broken.resend(Mockito.anyLong())).thenAnswer(inv -> sendService.resend(inv.getArgument(0)));
+        BotLetterActions withBroken = new BotLetterActions(new TelegramBotApi(new TelegramSettings(true, stub.url(), "1:T", "-1001",
+                "77", "55", "95"), new ObjectMapper()), store, broken, documents, distributorService, tenderService, lots, priceRequests,
+                profiles, writer, "https://ais.westmed.kz");
+        assertThatThrownBy(() -> as(() -> withBroken.send(cb("s"), draft.getId()))).isInstanceOf(Boom.class);
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.FAILED);
+        assertThat(b.getPriceRequestId()).isNotNull();
+        as(() -> withBroken.send(cb("s"), draft.getId()));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.SENT);
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+    }
+
+    /** Ошибка не-Exception (как OutOfMemoryError внутри отправки) — без убийства воркера JUnit (CLAUDE.md §14). */
+    static class Boom extends Error {}
+
+    /** Как будто процесс убит между «взял в отправку» и записью исхода: SENDING, запроса у письма нет. */
+    private void interrupt() {
+        BotLetter b = reload();
+        b.setStatus(BotLetterStatus.SENDING);
+        b.setPriceRequestId(null);
+        b.setSentAt(null);
+        b.setSentBy(null);
+        letterRepo.saveAndFlush(b);
     }
 
     @Test

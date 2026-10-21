@@ -134,7 +134,6 @@ public class ProductWatchNotifier {
             return;
         }
         if (prepared == null) return;
-        prepared.silent().forEach(this::markQuietly);   // все наши лоты — «не наше» по ответу ИИ: молча сообщены
         List<ProductWatchComposer.Card> cards = prepared.cards();
         if (cards.isEmpty()) return;
         if (digest != null) {
@@ -185,16 +184,15 @@ public class ProductWatchNotifier {
         }
     }
 
-    /** Карточки сообщения и тендеры, у которых все наши лоты «не наше» по ответу ИИ (отмечаются сообщёнными молча). */
-    private record Prepared(List<ProductWatchComposer.Card> cards, Map<Long, ProductMatchLevel> silent) {}
+    /** Карточки сообщения. */
+    private record Prepared(List<ProductWatchComposer.Card> cards) {}
 
     private Prepared prepare() {
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), Market.KZ.zone());
         List<Long> ids = matches.findTendersToNotify();
-        if (ids.isEmpty()) return new Prepared(List.of(), Map.of());
+        if (ids.isEmpty()) return new Prepared(List.of());
         Map<Long, ProductMatchQuery.Summary> sums = query.summaries(ids);
         List<ProductWatchComposer.Card> out = new ArrayList<>();
-        Map<Long, ProductMatchLevel> silent = new LinkedHashMap<>();
         for (Tender t : tenders.findAllById(ids)) {
             if (t.getMarket() != Market.KZ || !"ACTIVE".equals(t.getStatus())) continue;
             // приём «до 09:00» в 09:10 закрыт, даже если площадка ещё не сменила статус (спека §9, Review Focus #3)
@@ -210,22 +208,21 @@ public class ProductWatchNotifier {
             List<ProductMatchQuery.LotLine> lots = (upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR
                     ? s.lots().stream().filter(l -> l.level().alert()).toList()
                     : s.lots()).stream().filter(l -> !notOurs.contains(l.lotId())).toList();
-            if (lots.isEmpty()) {
-                if (!notOurs.isEmpty() && s.lots().stream().allMatch(l -> notOurs.contains(l.lotId()))) silent.put(t.getId(), s.level());
-                continue;
-            }
+            if (lots.isEmpty()) continue;
             BigDecimal ourSum = OurLots.sum(t, lots.stream().map(ProductMatchQuery.LotLine::lotId).toList());
             if (!policy.sumPasses(ourSum)) continue;
+            // значок, звук и «сообщено» — по лотам сообщения: ★-лот «не наше» не делает тендер «★» со звуком
+            ProductMatchLevel level = lots.stream().map(ProductMatchQuery.LotLine::level).reduce(null, ProductMatchLevel::max);
             out.add(new ProductWatchComposer.Card(t.getId(), t.getTenderNumber(), platformLabel(t.getPlatform()),
                     t.getPurchaseType(), t.getDescription(), t.getCustomerName(), t.getRegion(), t.getTotalCost(),
-                    t.getDeadline(), t.getDeadlineAt(), s.level(), upgrade, lots, ourSum));
+                    t.getDeadline(), t.getDeadlineAt(), level, upgrade, lots, ourSum));
         }
         // сначала точнее, внутри — у кого приём кончается раньше
         out.sort(Comparator.comparing((ProductWatchComposer.Card c) -> -c.level().ordinal())
                 .thenComparing(c -> c.deadlineAt() != null ? c.deadlineAt()
                         : c.deadline() != null ? c.deadline().atTime(23, 59) : LocalDateTime.MAX)
                 .thenComparing(ProductWatchComposer.Card::tenderId));
-        return new Prepared(out, silent);
+        return new Prepared(out);
     }
 
     private static String platformLabel(TenderPlatform p) {

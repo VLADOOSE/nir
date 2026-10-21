@@ -17,6 +17,8 @@ public interface BotLetterRepository extends JpaRepository<BotLetter, Long> {
 
     Optional<BotLetter> findFirstByPriceRequestId(Long priceRequestId);
 
+    List<BotLetter> findByStatus(BotLetterStatus status);
+
     /** Перевод статуса «если сейчас один из from»: из одновременных «Отправить» 1 получит ровно одно (спека §7). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE BotLetter b SET b.status = :to WHERE b.id = :id AND b.status IN :from")

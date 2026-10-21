@@ -66,4 +66,10 @@ public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long
             + "AND p.distributor.id = :distId AND i.tenderLot.id IN :lotIds")
     OffsetDateTime lastCreatedAt(@Param("tenderId") Long tenderId, @Param("distId") Long distId,
                                  @Param("lotIds") Collection<Long> lotIds);
+
+    /** Запросы цен из бота («…, Telegram») по тем же тендеру, поставщику и лотам не раньше since — новые сверху. */
+    @Query("SELECT DISTINCT p FROM PriceRequest p JOIN p.items i WHERE p.tender.id = :tenderId AND p.distributor.id = :distId "
+            + "AND i.tenderLot.id IN :lotIds AND p.createdAt >= :since AND p.createdBy LIKE '%, Telegram' ORDER BY p.createdAt DESC")
+    List<PriceRequest> findBotRequestsSince(@Param("tenderId") Long tenderId, @Param("distId") Long distId,
+                                            @Param("lotIds") Collection<Long> lotIds, @Param("since") OffsetDateTime since);
 }

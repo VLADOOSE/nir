@@ -72,18 +72,19 @@ class ProductWatchNotifierDigestTest {
         assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
     }
 
+    /** Все наши лоты — «не наше»: пачки нет, тендер больше не выбирается к сообщению (решение принято). */
     @Test
-    void allLotsNotOurs_noChunk_markedSilently() {
+    void allLotsNotOurs_noChunk_notSelectedAgain() {
         TenderLot lot = marked("ZZ Халат");
         lot.setAiVerdict(AiVerdict.NO);
         lots.saveAndFlush(lot);
         notifier().afterRun(new ImportSummary());
         assertThat(published).isEmpty();
         em.flush(); em.clear();
-        assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
+        assertThat(matches.findTendersToNotify()).doesNotContain(lot.getTender().getId());
     }
 
-    /** «Аналог» — решение уже принято, как «не наше»: в пачку не идёт, тендер отмечается сообщённым молча. */
+    /** «Аналог» — решение уже принято, как «не наше»: в пачку не идёт, к сообщению больше не выбирается. */
     @Test
     void analogLots_notInDigest_likeNotOurs() {
         TenderLot lot = marked("ZZ Деструктор-аспиратор");
@@ -92,7 +93,38 @@ class ProductWatchNotifierDigestTest {
         notifier().afterRun(new ImportSummary());
         assertThat(published).isEmpty();
         em.flush(); em.clear();
-        assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
+        assertThat(matches.findTendersToNotify()).doesNotContain(lot.getTender().getId());
+    }
+
+    /**
+     * ★-лот — «не наше» по ответу ИИ, остался 🏷-лот: значок и звук пачки — по оставшимся лотам (🏷, тихо), сообщено — их
+     * уровнем; тендер не выбирается заново каждый прогон, а станет ★ другой лот — придёт уточнением.
+     */
+    @Test
+    void notOursStarLot_cardFromRemainingLots() {
+        TenderLot star = TgFixtures.lot(tenders, "ZZ Дефибриллятор", "ZZ ГБ");
+        Tender t = star.getTender();
+        TenderLot type = new TenderLot();
+        type.setTender(t);
+        type.setLotNumber(2);
+        type.setEquipName("ZZ Облучатель");
+        type.setQuantity(1);
+        t.getLots().add(type);
+        tenders.saveAndFlush(t);
+        type = t.getLots().get(1);
+        long g = TgFixtures.group(groupRepo).getId();
+        TgFixtures.match(matches, star, g, ProductMatchLevel.NAMED, null, List.of());
+        TgFixtures.match(matches, type, g, ProductMatchLevel.TYPE, null, List.of());
+        star.setAiVerdict(AiVerdict.NO);
+        lots.saveAndFlush(star);
+        notifier().afterRun(new ImportSummary());
+        assertThat(published).singleElement().satisfies(c -> {
+            assertThat(c.sound()).as("★-лот отвергнут ИИ — без звука").isFalse();
+            assertThat(c.html()).contains("🏷").doesNotContain("★").doesNotContain("ZZ Дефибриллятор");
+        });
+        em.flush(); em.clear();
+        assertThat(tenders.findById(t.getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
+        assertThat(matches.findTendersToNotify()).as("сообщённое не выбирается заново").doesNotContain(t.getId());
     }
 
     @Test

@@ -61,6 +61,18 @@ class TelegramBotPollerTest {
         assertThat(sleeps).containsExactly(600_000L);
     }
 
+    /** Перед опросом — сверка оборванных отправок писем; её сбой приём нажатий не останавливает. */
+    @Test
+    void onStart_runsBeforePolling_failureDoesNotStopLoop() {
+        stub.on("getUpdates", TelegramStubServer.Reply.json("[]"), TelegramStubServer.Reply.error(409, "Conflict"));
+        TelegramBotApi api = new TelegramBotApi(new TelegramSettings(true, stub.url(), "1:T", "-1001", "77", "55", "95"), new ObjectMapper());
+        List<String> starts = new ArrayList<>();
+        new TelegramBotPoller(api, handled::add, true, ms -> { throw new InterruptedException(); },
+                () -> { starts.add("x"); throw new IllegalStateException("база"); }).loop();
+        assertThat(starts).hasSize(1);
+        assertThat(stub.requests()).anySatisfy(r -> assertThat(r.path()).endsWith("/getUpdates"));
+    }
+
     @Test
     void tooMany_sleepsRetryAfter() {
         stub.on("getUpdates", TelegramStubServer.Reply.json("[]"), TelegramStubServer.Reply.tooMany(7));

@@ -53,6 +53,9 @@ public class BotLetterStore {
 
     public Optional<BotLetter> find(long id) { return repo.findById(id); }
 
+    /** Письма, оборванные посреди отправки: процесс убит между «взял в отправку» и записью исхода. */
+    public List<BotLetter> sending() { return repo.findByStatus(BotLetterStatus.SENDING); }
+
     public List<BotLetter> list(Long listMessageId) {
         return listMessageId == null ? List.of() : repo.findByListMessageIdOrderByLineNo(listMessageId);
     }

@@ -1,5 +1,6 @@
 package com.vladoose.nir.service.tgbot;
 
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.ImportDeadline;
@@ -71,6 +72,35 @@ public class BotLetterActions {
         this.base = publicUrl == null || publicUrl.isBlank() ? null : publicUrl.trim().replaceAll("/+$", "");
     }
 
+    /**
+     * При запуске бота (поток один — сейчас ничего не отправляется): письма, оборванные посреди отправки (процесс убит —
+     * деплой, нехватка памяти), — исход по своему запросу цен ({@link #settle}), список писем в чате — с новыми кнопками.
+     * Иначе такое письмо навсегда «⏳» и «Уже отправляется…».
+     */
+    public void recoverInterrupted() {
+        MarketContext.set(Market.KZ);
+        try {
+            List<BotLetter> cut = store.sending();
+            Set<Long> lists = new LinkedHashSet<>();
+            for (BotLetter b : cut) {
+                settle(b.getId(), b.getCreatedAt(), "отправка прервалась (перезапуск АИС) — нажмите «✅ Отправить» ещё раз");
+                if (b.getListMessageId() != null) lists.add(b.getListMessageId());
+            }
+            for (Long list : lists) {
+                try {
+                    api.editKeyboard(list, BotTexts.listKeyboard(store.list(list)));
+                } catch (RuntimeException e) {
+                    log.warn("Кнопки бота: список писем {} после сверки не обновлён: {}", list, e.getClass().getSimpleName());
+                }
+            }
+            if (!cut.isEmpty()) log.info("Кнопки бота: оборванных отправок писем — {}, исход сверен по запросам цен", cut.size());
+        } catch (RuntimeException e) {
+            log.warn("Кнопки бота: оборванные отправки писем не сверены: {}", e.getClass().getSimpleName());
+        } finally {
+            MarketContext.clear();
+        }
+    }
+
     public void view(BotUpdate.Callback c, long id) {
         BotLetter b = store.find(id).orElse(null);
         if (b == null) {
@@ -116,6 +146,7 @@ public class BotLetterActions {
             return;
         }
         api.answerCallback(c.id(), "Отправляю…", false);
+        OffsetDateTime started = OffsetDateTime.now();
         try {
             String problem = check(b);
             if (problem != null) {
@@ -139,8 +170,8 @@ public class BotLetterActions {
                 store.finish(id, BotLetterStatus.FAILED, r.priceRequestId(), null, why);
                 api.sendMessage(BotTexts.failed(d.getName(), why), true, null, b.getListMessageId());
             }
-        } catch (RuntimeException e) {
-            store.finish(id, BotLetterStatus.FAILED, null, null, ErrorText.of(e));
+        } catch (RuntimeException | Error e) {
+            settleQuietly(id, started, ErrorText.of(e));   // исход уже записан (сбой Telegram после письма) — не трогаем
             throw e;
         } finally {
             if (b.getListMessageId() != null) api.editKeyboard(b.getListMessageId(), BotTexts.listKeyboard(store.list(b.getListMessageId())));
@@ -184,9 +215,12 @@ public class BotLetterActions {
             store.finish(id, BotLetterStatus.MANUAL, prId, null, null);
             if (b.getPreviewMessageId() != null) api.deleteMessage(b.getPreviewMessageId());
             store.setPreview(id, mid);
-        } catch (RuntimeException e) {
-            if (created != null) writer.deletePendingManual(created);
-            store.finish(id, BotLetterStatus.FAILED, null, null, ErrorText.of(e));
+        } catch (RuntimeException | Error e) {
+            // исход уже записан (PDF с кнопками ушёл, упало после) — не трогаем; иначе запрос этой попытки убирается
+            if (store.find(id).map(x -> x.getStatus() == BotLetterStatus.SENDING).orElse(false)) {
+                if (created != null) writer.deletePendingManual(created);
+                store.finish(id, BotLetterStatus.FAILED, null, null, ErrorText.of(e));
+            }
             throw e;
         } finally {
             if (b.getListMessageId() != null) api.editKeyboard(b.getListMessageId(), BotTexts.listKeyboard(store.list(b.getListMessageId())));
@@ -285,6 +319,36 @@ public class BotLetterActions {
     private SendOptions manualOptions(Tender t) {
         SendOptions o = options(t);
         return new SendOptions(o.replyBy(), true, o.withStamp(), true, null, true, true);
+    }
+
+    /**
+     * Исход оборванной отправки — только пока письмо SENDING (исход не записан). Свой запрос цен: у письма уже есть (повтор —
+     * «↻ Переслать») или заведён ботом по тем же тендеру, поставщику и лотам не раньше {@code since}. Письмо по нему ушло —
+     * SENT (второго не будет); «передам сам», не подтверждённый, — убирается, письмо FAILED; иначе FAILED с этим запросом:
+     * «✅ Отправить» перешлёт его, а не ответит «уже отправлено из АИС» (ревью ветки 2026-10-21). Запроса нет — FAILED.
+     */
+    private void settle(long id, OffsetDateTime since, String error) {
+        BotLetter b = store.find(id).orElse(null);
+        if (b == null || b.getStatus() != BotLetterStatus.SENDING) return;
+        PriceRequest pr = b.getPriceRequestId() != null ? priceRequests.findById(b.getPriceRequestId()).orElse(null)
+                : priceRequests.findBotRequestsSince(b.getTenderId(), b.getDistributorId(),
+                        b.getItems().stream().map(BotLetterItem::lotId).toList(), since).stream().findFirst().orElse(null);
+        if (pr != null && pr.getLetterStatus() == LetterStatus.SENT) {
+            store.finish(id, BotLetterStatus.SENT, pr.getId(), pr.getCreatedBy(), null);
+        } else if (pr != null && pr.getLetterStatus() == LetterStatus.MANUAL && "CREATED".equals(pr.getStatus())) {
+            writer.deletePendingManual(pr.getId());
+            store.finish(id, BotLetterStatus.FAILED, null, null, error);
+        } else {
+            store.finish(id, BotLetterStatus.FAILED, pr == null ? null : pr.getId(), null, error);
+        }
+    }
+
+    private void settleQuietly(long id, OffsetDateTime since, String error) {
+        try {
+            settle(id, since, error);
+        } catch (RuntimeException e) {
+            log.warn("Кнопки бота: исход письма {} после сбоя не записан: {}", id, e.getClass().getSimpleName());
+        }
     }
 
     /** null — можно отправлять; иначе — причина, а статус письма уже переведён. */

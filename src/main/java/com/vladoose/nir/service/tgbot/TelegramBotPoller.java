@@ -33,21 +33,28 @@ public class TelegramBotPoller {
     private final Consumer<BotUpdate> handler;
     private final boolean enabled;
     private final Sleeper sleeper;
+    /** Перед первым опросом: сверка писем, оборванных посреди отправки ({@link BotLetterActions#recoverInterrupted}). */
+    private final Runnable onStart;
     private volatile boolean running;
     private Thread thread;
 
     @Autowired
-    public TelegramBotPoller(TelegramBotApi api, BotUpdateRouter router, TelegramSettings telegram,
+    public TelegramBotPoller(TelegramBotApi api, BotUpdateRouter router, BotLetterActions letters, TelegramSettings telegram,
                              @Value("${notify.telegram.bot-actions-enabled:false}") boolean botActions,
                              @Value("${product-watch.enabled:false}") boolean productWatch) {
-        this(api, router::handle, botActions && productWatch && telegram.isConfigured(), Thread::sleep);
+        this(api, router::handle, botActions && productWatch && telegram.isConfigured(), Thread::sleep, letters::recoverInterrupted);
     }
 
     public TelegramBotPoller(TelegramBotApi api, Consumer<BotUpdate> handler, boolean enabled, Sleeper sleeper) {
+        this(api, handler, enabled, sleeper, () -> { });
+    }
+
+    public TelegramBotPoller(TelegramBotApi api, Consumer<BotUpdate> handler, boolean enabled, Sleeper sleeper, Runnable onStart) {
         this.api = api;
         this.handler = handler;
         this.enabled = enabled;
         this.sleeper = sleeper;
+        this.onStart = onStart;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -68,6 +75,11 @@ public class TelegramBotPoller {
 
     public void loop() {
         running = true;
+        try {
+            onStart.run();
+        } catch (RuntimeException e) {
+            log.warn("Кнопки бота Telegram: сверка при запуске не удалась ({}) — приём нажатий идёт", e.getClass().getSimpleName());
+        }
         long offset = -1;
         long backoff = 0;
         while (running) {

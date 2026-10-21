@@ -33,11 +33,13 @@ public interface TenderLotProductMatchRepository extends JpaRepository<TenderLot
 
     /**
      * Тендеры KZ в статусе ACTIVE, у которых наибольший уровень отметки выше уже сообщённого (спека 2026-10-19-product-watch
-     * §9; пусто — ниже любого). Срок приёма сверяет уведомитель — по часам рынка.
+     * §9; пусто — ниже любого). Срок приёма сверяет уведомитель — по часам рынка. Лоты «не наше» и «аналог» по ответу ИИ
+     * не в счёт: решение по ним принято, их ★ не делает тендер «★» и не выбирает его заново каждый прогон.
      */
     @Query(value = """
             SELECT m.tender_id FROM tender_lot_product_match m JOIN tender t ON t.id = m.tender_id
-            WHERE t.market = 'KZ' AND t.status = 'ACTIVE'
+            JOIN tender_lot l ON l.id = m.lot_id
+            WHERE t.market = 'KZ' AND t.status = 'ACTIVE' AND (l.ai_verdict IS NULL OR l.ai_verdict NOT IN ('NO', 'ANALOG'))
             GROUP BY m.tender_id, t.product_notified_level
             HAVING MAX(CASE m.level WHEN 'COPIED' THEN 4 WHEN 'NAMED' THEN 3 WHEN 'FITS' THEN 2 ELSE 1 END)
                  > COALESCE(CASE t.product_notified_level WHEN 'COPIED' THEN 4 WHEN 'NAMED' THEN 3 WHEN 'FITS' THEN 2 WHEN 'TYPE' THEN 1 END, 0)
