@@ -17,6 +17,7 @@ public interface TenderLotMapper {
     @Mapping(target = "tender", source = "tender")
     @Mapping(target = "productMatches", ignore = true)
     @Mapping(target = "requirements", ignore = true)
+    @Mapping(target = "aiProductName", source = "aiProduct.name")
     TenderLotResponse toResponse(TenderLot entity);
 
     List<TenderLotResponse> toResponseList(List<TenderLot> entities);

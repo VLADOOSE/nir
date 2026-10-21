@@ -1,5 +1,6 @@
 package com.vladoose.nir.dto.response;
 
+import com.vladoose.nir.entity.AiVerdict;
 import com.vladoose.nir.entity.TechSpecStatus;
 import lombok.Data;
 
@@ -28,6 +29,13 @@ public class TenderLotResponse {
     private String modelNote;
     private String modelSetBy;
     private OffsetDateTime modelSetAt;
+    /** Последний вывод ИИ (спека 2026-10-21-tender-telegram-bot §10 п. 1). */
+    private AiVerdict aiVerdict;
+    private String aiProductName;
+    private String aiNote;
+    private String aiBy;
+    private OffsetDateTime aiAt;
+    private boolean modelByAi;
     /** Лота больше нет на площадке; остался, потому что на него есть запрос КП или позиция заявки (B5). */
     private OffsetDateTime sourceRemovedAt;
     /** Разбор ТЗ импортного лота (пусто — ручной лот): чип «Есть ТЗ» и шаг «Лоты и ТЗ» читают один признак. */

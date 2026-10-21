@@ -1,5 +1,6 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.dto.request.AiAnswerRequest;
 import com.vladoose.nir.dto.request.AiBriefRequest;
 import com.vladoose.nir.dto.request.TenderRequest;
 import com.vladoose.nir.dto.response.ActivityApplyResponse;
@@ -28,6 +29,8 @@ import com.vladoose.nir.mapper.TenderMapper;
 import com.vladoose.nir.service.ActivityApplyService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.aianswer.AiAnswerResult;
+import com.vladoose.nir.service.aianswer.AiAnswerService;
 import com.vladoose.nir.service.productwatch.ProductAiBrief;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import com.vladoose.nir.entity.TenderLot;
@@ -67,6 +70,7 @@ public class TenderController {
     private final TenderWorkStageService workStageService;
     private final ProductMatchQuery productQuery;
     private final ProductAiBrief aiBrief;
+    private final AiAnswerService aiAnswers;
     private final TenderLotRepository tenderLotRepository;
     private final LotModelViews lotModelViews;
 
@@ -85,7 +89,8 @@ public class TenderController {
                             ProductMatchQuery productQuery,
                             ProductAiBrief aiBrief,
                             TenderLotRepository tenderLotRepository,
-                            LotModelViews lotModelViews) {
+                            LotModelViews lotModelViews,
+                            AiAnswerService aiAnswers) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -102,6 +107,7 @@ public class TenderController {
         this.aiBrief = aiBrief;
         this.tenderLotRepository = tenderLotRepository;
         this.lotModelViews = lotModelViews;
+        this.aiAnswers = aiAnswers;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -222,6 +228,13 @@ public class TenderController {
     @PostMapping("/ai-brief")
     public AiBriefResponse aiBriefList(@RequestBody AiBriefRequest req) {
         return aiBrief.forTenders(req.ids());
+    }
+
+    /** «✍️ Вставить ответ ИИ» (спека 2026-10-21-tender-telegram-bot §6, §10 п. 3): разбор блока, модели, письма. */
+    @PostMapping("/ai-answer")
+    @PreAuthorize("hasRole('ADMIN')")
+    public AiAnswerResult aiAnswer(@Valid @RequestBody AiAnswerRequest req) {
+        return aiAnswers.apply(req.getText());
     }
 
     @GetMapping("/{id}/applies")
