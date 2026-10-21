@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
@@ -68,12 +69,17 @@ public class ProductSpecChecker {
     public int run(int limit, ImportSummary sum) {
         List<TenderLot> candidates = lots.findAllById(matches.findLotsForSpecCheckUnordered(goszakupConfigured.getAsBoolean()));
         if (candidates.isEmpty()) return 0;
-        // отметки кандидатов — одним запросом; порог — до предела пачки: дешёвый лот не занимает место дорогого
-        Map<Long, List<Long>> marked = matches.findByTenderIdIn(candidates.stream().map(l -> l.getTender().getId()).collect(Collectors.toSet()))
-                .stream().collect(Collectors.groupingBy(TenderLotProductMatch::getTenderId,
-                        Collectors.mapping(TenderLotProductMatch::getLotId, Collectors.toList())));
+        // отметки и все лоты тендеров-кандидатов — одним запросом каждое: поток product-watch без сессии, ленивую Tender.lots
+        // отсоединённого тендера не читаем (прод 2026-10-21: «failed to lazily initialize» обрывал каждый поиск до первого ТЗ);
+        // порог — до предела пачки: дешёвый лот не занимает место дорогого
+        Set<Long> tenderIds = candidates.stream().map(l -> l.getTender().getId()).collect(Collectors.toSet());
+        Map<Long, List<Long>> marked = matches.findByTenderIdIn(tenderIds).stream().collect(Collectors.groupingBy(
+                TenderLotProductMatch::getTenderId, Collectors.mapping(TenderLotProductMatch::getLotId, Collectors.toList())));
+        Map<Long, List<TenderLot>> tenderLots = lots.findByTenderIdIn(tenderIds).stream()
+                .collect(Collectors.groupingBy(l -> l.getTender().getId()));
         List<TenderLot> queue = candidates.stream()
-                .filter(l -> policy.sumPasses(OurLots.sum(l.getTender(), marked.getOrDefault(l.getTender().getId(), List.of()))))
+                .filter(l -> policy.sumPasses(OurLots.sum(l.getTender(), tenderLots.getOrDefault(l.getTender().getId(), List.of()),
+                        marked.getOrDefault(l.getTender().getId(), List.of()))))
                 .sorted(Comparator.comparing((TenderLot l) -> l.getTender().getDeadlineAt(), Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder())))
                 .limit(limit).toList();
         int done = 0, outages = 0;
