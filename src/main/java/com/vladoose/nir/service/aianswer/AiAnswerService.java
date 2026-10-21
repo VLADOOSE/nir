@@ -96,6 +96,7 @@ public class AiAnswerService {
             Outcome o;
             if (line.verdict() == AiVerdict.NO) o = Outcome.NOT_OURS;
             else if (line.verdict() == AiVerdict.UNSURE) o = Outcome.UNSURE;
+            else if (line.verdict() == AiVerdict.ANALOG) o = Outcome.ANALOG;   // наш не подходит — модель не ставим, писем нет
             else if (rejected != null) o = rejected;
             else if (product == null) o = Outcome.ADVICE;
             else if (closed) o = Outcome.CLOSED;
@@ -175,6 +176,7 @@ public class AiAnswerService {
             case SAME_MODEL -> "✅ " + head + " → " + model + " — уже в работе";
             case KEPT_MANUAL -> "⚠ " + head + " — у лота уже " + current(lot) + ", ИИ советует " + model + " — замените в АИС";
             case ADVICE -> "💬 " + head + " — ИИ советует не наш товар" + (why.isEmpty() ? "" : ": " + why) + "; закрепить можно в АИС";
+            case ANALOG -> "🔁 " + head + " — наше не подходит, можно аналогом" + (why.isEmpty() ? "" : ": " + why);
             case NOT_OURS -> "✕ " + head + " — не наше" + (why.isEmpty() ? "" : ": " + why);
             case UNSURE -> "❔ " + head + " — не ясно" + (why.isEmpty() ? "" : ": " + why);
             case CLOSED -> "⏹ " + head + " — приём закрыт, модель не закреплена";

@@ -6,6 +6,7 @@ import com.vladoose.nir.service.aianswer.AiAnswerParser.Line;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /** Разбор блока «Для АИС» (спека 2026-10-21-tender-telegram-bot §6) — любые формы, в которых ИИ его отдаёт. */
 class AiAnswerParserTest {
@@ -56,4 +57,17 @@ class AiAnswerParserTest {
         assertThat(AiAnswerParser.parse(null).lines()).isEmpty();
         assertThat(AiAnswerParser.parse("без блока").lines()).isEmpty();
     }
+
+    /** «Аналог» (решение оператора 2026-10-21): наш не подходит, подходит чужая модель с РУ в РК — «не наше» остаётся «не наше». */
+    @Test
+    void analogVerdict_words_notOursStaysNo() {
+        var p = AiAnswerParser.parse("L1 | аналог | — | CUSA Clarity, Integra, РУ РК-МТ-5№019119\nL2 | другой | — | x\n"
+                + "L3 | Чужой | — | y\nL4 | не наше, можно другой | — | z\nL5 | не наше | — | работы\nL6 | **Аналог** | — | w");
+        assertThat(p.lines()).extracting(Line::lotId, Line::verdict).containsExactly(
+                tuple(1L, AiVerdict.ANALOG), tuple(2L, AiVerdict.ANALOG), tuple(3L, AiVerdict.ANALOG),
+                tuple(4L, AiVerdict.ANALOG), tuple(5L, AiVerdict.NO), tuple(6L, AiVerdict.ANALOG));
+        assertThat(p.lines().get(0).reason()).isEqualTo("CUSA Clarity, Integra, РУ РК-МТ-5№019119");
+        assertThat(p.unparsed()).isEmpty();
+    }
+
 }

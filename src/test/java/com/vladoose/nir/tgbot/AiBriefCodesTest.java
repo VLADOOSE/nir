@@ -38,6 +38,6 @@ class AiBriefCodesTest {
 
         assertThat(text).contains("[L" + lot.getId() + "]: ZZ Дефибриллятор");
         assertThat(text).contains("* [P" + dki.getId() + "] ZZ Дефибриллятор ДКИ-Н-12");
-        assertThat(text).contains("Для АИС").contains("| идти / не наше / не ясно |");
+        assertThat(text).contains("Для АИС").contains("| идти / аналог / не наше / не ясно |").contains("«аналог»");
     }
 }

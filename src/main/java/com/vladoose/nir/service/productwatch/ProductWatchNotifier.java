@@ -202,8 +202,9 @@ public class ProductWatchNotifier {
             ProductMatchQuery.Summary s = sums.get(t.getId());
             if (s == null || s.level() == null) continue;
             boolean upgrade = t.getProductNotifiedLevel() != null;
-            // «не наше» по ответу ИИ (спека 2026-10-21-tender-telegram-bot §4): такие лоты — ни в сообщение, ни в сумму
-            Set<Long> notOurs = t.getLots().stream().filter(l -> l.getAiVerdict() == AiVerdict.NO).map(TenderLot::getId)
+            // «не наше» и «аналог» по ответу ИИ (спека 2026-10-21-tender-telegram-bot §4): решение принято — ни в сообщение, ни в сумму
+            Set<Long> notOurs = t.getLots().stream().filter(l -> l.getAiVerdict() == AiVerdict.NO || l.getAiVerdict() == AiVerdict.ANALOG)
+                    .map(TenderLot::getId)
                     .collect(Collectors.toSet());
             // «Уточнение» и режим «только ★» — только лоты «★» и «✓ подходит»; порог — по сумме тех лотов, о которых сообщение
             List<ProductMatchQuery.LotLine> lots = (upgrade || policy.mode() == ProductNotifyPolicy.Mode.STAR

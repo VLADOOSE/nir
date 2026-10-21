@@ -9,6 +9,7 @@ import com.vladoose.nir.dto.response.LotProductMatchDto;
 import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
+import com.vladoose.nir.entity.AiVerdict;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.exception.BadRequestException;
@@ -48,8 +49,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -152,6 +155,9 @@ public class TenderController {
             models.computeIfAbsent((Long) row[0], k -> new ArrayList<>()).add((String) row[1]);
         }
         for (TenderResponse r : list) r.setModelsInWork(models.getOrDefault(r.getId(), List.of()));
+        Set<Long> analog = new HashSet<>(tenderLotRepository.findTenderIdsByAiVerdict(list.stream().map(TenderResponse::getId).toList(),
+                AiVerdict.ANALOG));
+        for (TenderResponse r : list) r.setAiAnalog(analog.contains(r.getId()));
         return list;
     }
 

@@ -61,6 +61,24 @@ class AiAnswerApiTest {
                 .andExpect(jsonPath("$[0].aiBy").value("vlad"));
     }
 
+    /** Фильтр «🔁 Аналог (по ИИ)» в «Тендерах» — признак тендера aiAnalog. */
+    @Test
+    @WithMockUser(username = "vlad", roles = "ADMIN")
+    void analog_tenderFlagForFilter() throws Exception {
+        mvc.perform(get("/api/tenders/" + lot.getTender().getId()).header("X-Market", "KZ"))
+                .andExpect(jsonPath("$.aiAnalog").value(false));
+        MarketContext.set(Market.KZ);
+        mvc.perform(answer("L" + lot.getId() + " | аналог | — | CUSA Clarity, Integra"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lots[0].outcome").value("ANALOG"));
+        MarketContext.set(Market.KZ);   // запрос MockMvc чистит MarketContext потока (CLAUDE.md §14)
+        mvc.perform(get("/api/tenders/" + lot.getTender().getId()).header("X-Market", "KZ"))
+                .andExpect(jsonPath("$.aiAnalog").value(true));
+        MarketContext.set(Market.KZ);
+        mvc.perform(get("/api/tenders/" + lot.getTender().getId() + "/lots").header("X-Market", "KZ"))
+                .andExpect(jsonPath("$[0].aiVerdict").value("ANALOG"));
+    }
+
     @Test
     @WithMockUser(username = "op", roles = "USER")
     void operator_403() throws Exception {

@@ -132,6 +132,18 @@ class AiAnswerServiceTest {
         assertThat(reload().getAiNote()).isEqualTo(why);
     }
 
+    /** «Аналог»: вывод — у лота, модель не закрепляется, писем нет. */
+    @Test
+    void analog_recorded_noPin_noLetter() {
+        AiAnswerResult r = service.apply("L" + lot.getId() + " | аналог | — | CUSA Clarity, Integra, РУ РК-МТ-5№019119");
+        assertThat(r.lots().get(0).outcome()).isEqualTo(Outcome.ANALOG);
+        assertThat(r.lots().get(0).text()).contains("можно аналогом").contains("CUSA Clarity");
+        assertThat(r.letters()).isEmpty();
+        TenderLot l = reload();
+        assertThat(l.getAiVerdict()).isEqualTo(AiVerdict.ANALOG);
+        assertThat(l.getProposedEquipment()).isNull();
+    }
+
     @Test
     void closedTender_notPinned() {
         Tender t = lot.getTender();

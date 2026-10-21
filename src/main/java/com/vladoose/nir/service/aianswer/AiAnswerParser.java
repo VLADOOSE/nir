@@ -7,7 +7,8 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * Блок «Для АИС» из ответа ИИ (спека 2026-10-21-tender-telegram-bot §6): строки «L5826 | идти | P123 | почему» где угодно
+ * Блок «Для АИС» из ответа ИИ (спека 2026-10-21-tender-telegram-bot §6): строки «L5826 | идти | P123 | почему» (вердикты —
+ * идти / аналог / не наше / не ясно) где угодно
  * в тексте — в блоке кода, таблице Markdown, списке, с кодами в скобках и кириллическими «Л» / «Р»; рассуждение вокруг не
  * мешает. Повтор лота — последняя строка. Строка с кодом лота, которую не разобрать, — в unparsed. Чистая функция.
  */
@@ -63,6 +64,11 @@ public final class AiAnswerParser {
 
     static AiVerdict verdict(String cell) {
         String v = cell.toLowerCase(Locale.ROOT).replace('ё', 'е').replaceAll("[*_«»\"'.!:;]", "").replaceAll("\\s+", " ").strip();
+        // «аналог» — первым: «не наше, можно другой» — тоже аналог, а не «не наше»
+        if (v.contains("аналог") || v.startsWith("друг") || v.startsWith("чуж") || v.contains("можно друг") || v.contains("можно чуж")
+                || v.equals("analog") || v.equals("other")) {
+            return AiVerdict.ANALOG;
+        }
         if (v.startsWith("не наш") || v.equals("нет") || v.startsWith("не иди") || v.startsWith("не подход") || v.equals("no")) {
             return AiVerdict.NO;
         }

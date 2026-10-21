@@ -1,6 +1,7 @@
 package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.entity.AiVerdict;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.entity.TenderPlatform;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +21,10 @@ public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
     List<Object[]> findModelsByTenderIds(@Param("ids") Collection<Long> ids);
 
     List<TenderLot> findByTenderId(Long tenderId);
+
+    /** Тендеры списка, у лота которых этот вывод ИИ — одним запросом (фильтр «🔁 Аналог (по ИИ)»). */
+    @Query("SELECT DISTINCT l.tender.id FROM TenderLot l WHERE l.tender.id IN :ids AND l.aiVerdict = :verdict")
+    List<Long> findTenderIdsByAiVerdict(@Param("ids") Collection<Long> ids, @Param("verdict") AiVerdict verdict);
 
     /** Лоты нескольких тендеров одним запросом — для фоновых потоков без сессии (ленивую Tender.lots там не читать). */
     List<TenderLot> findByTenderIdIn(Collection<Long> tenderIds);

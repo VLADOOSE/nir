@@ -41,4 +41,6 @@ public class TenderResponse {
     private OurProductSummary ourProduct;
     /** Модели в работе лотов — для чипа «📌 …» и фильтра (спека 2026-10-20-lot-model-in-work §7). */
     private List<String> modelsInWork = new ArrayList<>();
+    /** У лота тендера вывод ИИ «аналог» (наш не подходит, можно чужой моделью) — фильтр «🔁 Аналог (по ИИ)». */
+    private boolean aiAnalog;
 }

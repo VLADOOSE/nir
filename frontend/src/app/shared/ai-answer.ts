@@ -1,7 +1,7 @@
 import { shortProduct } from './product-watch';
 
-export type AiVerdict = 'GO' | 'NO' | 'UNSURE';
-export type AiOutcome = 'PINNED' | 'SAME_MODEL' | 'KEPT_MANUAL' | 'ADVICE' | 'NOT_OURS' | 'UNSURE' | 'CLOSED'
+export type AiVerdict = 'GO' | 'NO' | 'UNSURE' | 'ANALOG';
+export type AiOutcome = 'PINNED' | 'SAME_MODEL' | 'KEPT_MANUAL' | 'ADVICE' | 'ANALOG' | 'NOT_OURS' | 'UNSURE' | 'CLOSED'
   | 'LOT_NOT_FOUND' | 'PRODUCT_NOT_CANDIDATE' | 'PRODUCT_REMOVED';
 export interface AiLotResult { lotId: number; tenderId: number | null; tenderNumber: string | null; lotName: string | null;
   customer: string | null; verdict: AiVerdict; outcome: AiOutcome; model: string | null; text: string; }
@@ -11,7 +11,8 @@ export interface AiAnswerResult { lots: AiLotResult[]; unparsed: string[]; lette
 
 /**
  * Строка вывода ИИ у лота (спека 2026-10-21-tender-telegram-bot §10 п. 1): «ИИ: идти — ДКИ-Н-12 · почему · vlad, Telegram,
- * 21.10», «не наше: …», «не ясно: …»; значок 🤖 ставит шаблон.
+ * 21.10», «аналог: CUSA Clarity, Integra, РУ …» (наш не подходит, можно чужой моделью), «не наше: …», «не ясно: …»; значок 🤖
+ * ставит шаблон.
  */
 export function aiLotLine(l: { aiVerdict?: AiVerdict | null; aiProductName?: string | null; aiNote?: string | null;
                                aiBy?: string | null; aiAt?: string | null }): string {
@@ -21,6 +22,6 @@ export function aiLotLine(l: { aiVerdict?: AiVerdict | null; aiProductName?: str
   if (l.aiVerdict === 'GO') {
     return ['ИИ: идти' + (l.aiProductName ? ' — ' + shortProduct(l.aiProductName) : ''), why, who].filter(s => !!s).join(' · ');
   }
-  const head = l.aiVerdict === 'NO' ? 'не наше' : 'не ясно';
+  const head = l.aiVerdict === 'NO' ? 'не наше' : l.aiVerdict === 'ANALOG' ? 'аналог' : 'не ясно';
   return (why ? head + ': ' + why : head) + (who ? ' · ' + who : '');
 }

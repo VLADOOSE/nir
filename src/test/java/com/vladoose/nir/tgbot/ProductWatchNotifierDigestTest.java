@@ -83,6 +83,18 @@ class ProductWatchNotifierDigestTest {
         assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
     }
 
+    /** «Аналог» — решение уже принято, как «не наше»: в пачку не идёт, тендер отмечается сообщённым молча. */
+    @Test
+    void analogLots_notInDigest_likeNotOurs() {
+        TenderLot lot = marked("ZZ Деструктор-аспиратор");
+        lot.setAiVerdict(AiVerdict.ANALOG);
+        lots.saveAndFlush(lot);
+        notifier().afterRun(new ImportSummary());
+        assertThat(published).isEmpty();
+        em.flush(); em.clear();
+        assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isEqualTo(ProductMatchLevel.TYPE);
+    }
+
     @Test
     void publishFails_notMarked_sideError() {
         TenderLot lot = marked("ZZ Аспиратор");

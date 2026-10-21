@@ -670,7 +670,7 @@ export class TendersComponent {
     // ?our= — фильтр «Наш товар» из ссылки Telegram: ставится один раз и убирается из адреса (иначе вернулся бы
     // при каждом открытии карточки — она тоже пишет адрес).
     const our = this.route.snapshot.queryParamMap.get('our');
-    if (our === 'ANY' || our === 'EXACT' || our === 'PINNED' || our?.startsWith('g:')) this.filterOur = our;
+    if (our === 'ANY' || our === 'EXACT' || our === 'PINNED' || our === 'ANALOG' || our?.startsWith('g:')) this.filterOur = our;
     // ?ids= — пачка из Telegram (спека 2026-10-21-tender-telegram-bot §4): только эти тендеры; ставится один раз, как ?our=
     const ids = this.route.snapshot.queryParamMap.get('ids');
     if (ids) this.filterIds = ids.split(',').map(Number).filter(n => n > 0);
@@ -1007,6 +1007,7 @@ export class TendersComponent {
       if (this.filterRegion === this.NO_REGION) { if (t.region) return false; }
       else if (this.filterRegion && t.region !== this.filterRegion) return false;
       if (this.filterOur === 'PINNED') { if (!t.modelsInWork?.length) return false; }
+      else if (this.filterOur === 'ANALOG') { if (!t.aiAnalog) return false; }   // ИИ: наш не подходит, можно чужой моделью
       else if (!ourMatches(t.ourProduct, this.filterOur)) return false;
       return true;
     });
@@ -1014,7 +1015,8 @@ export class TendersComponent {
     // «📋 Для ИИ» по списку (спека §9.1): открытые тендеры с нашей отметкой, ближайший срок — первым; сервер берёт первые 15
     const market = this.market.value;
     this.aiIds = this.filterOur || this.filterIds ? this.filteredTenders
-      .filter(t => (this.filterIds ? true : this.filterOur === 'PINNED' ? t.modelsInWork?.length : t.ourProduct) && !deadlinePassed(t, market))
+      .filter(t => (this.filterIds ? true : this.filterOur === 'PINNED' ? t.modelsInWork?.length
+        : this.filterOur === 'ANALOG' ? t.aiAnalog : t.ourProduct) && !deadlinePassed(t, market))
       .sort((a, b) => (deadlineEnd(a, market) ?? Number.MAX_SAFE_INTEGER) - (deadlineEnd(b, market) ?? Number.MAX_SAFE_INTEGER))
       .map(t => t.id) : [];
   }

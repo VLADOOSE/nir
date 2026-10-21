@@ -9,7 +9,7 @@ public record AiAnswerResult(List<LotResult> lots, List<String> unparsed, List<L
 
     public boolean isEmpty() { return lots.isEmpty() && unparsed.isEmpty(); }
 
-    public enum Outcome { PINNED, SAME_MODEL, KEPT_MANUAL, ADVICE, NOT_OURS, UNSURE, CLOSED, LOT_NOT_FOUND, PRODUCT_NOT_CANDIDATE, PRODUCT_REMOVED }
+    public enum Outcome { PINNED, SAME_MODEL, KEPT_MANUAL, ADVICE, ANALOG, NOT_OURS, UNSURE, CLOSED, LOT_NOT_FOUND, PRODUCT_NOT_CANDIDATE, PRODUCT_REMOVED }
 
     /** text — готовая строка для бота и экрана («✅ «Дефибриллятор» · ГБ №7 → ДКИ-Н-12 — закреплено»). */
     public record LotResult(long lotId, Long tenderId, String tenderNumber, String lotName, String customer, AiVerdict verdict,
