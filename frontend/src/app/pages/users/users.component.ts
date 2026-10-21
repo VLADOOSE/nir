@@ -30,6 +30,9 @@ import { ConfirmService } from '../../services/confirm.service';
         </select>
         <span class="field-error" *ngIf="validationErrors.role">{{ validationErrors.role }}</span>
       </label>
+      <label>Telegram ID — для кнопок бота
+        <input formControlName="telegramUserId" inputmode="numeric" autocomplete="off" placeholder="бот подскажет его по первому нажатию" />
+      </label>
       <label>{{ editingId ? 'Новый пароль (оставьте пустым чтобы не менять)' : 'Пароль *' }}
         <input type="password" formControlName="password" [class.input-error]="validationErrors.password" autocomplete="new-password" />
         <span class="field-error" *ngIf="validationErrors.password">{{ validationErrors.password }}</span>
@@ -46,7 +49,7 @@ import { ConfirmService } from '../../services/confirm.service';
       <thead><tr><th>Логин</th><th>ФИО</th><th>Роль</th><th>Действия</th></tr></thead>
       <tbody>
         <tr *ngFor="let u of users">
-          <td data-label="Логин">{{ u.username }}</td><td data-label="ФИО">{{ u.fullName }}</td><td data-label="Роль">{{ u.role === 'ROLE_ADMIN' ? 'Администратор' : 'Оператор' }}</td>
+          <td data-label="Логин">{{ u.username }}</td><td data-label="ФИО">{{ u.fullName }}<span class="tg" *ngIf="u.telegramUserId"> · TG {{ u.telegramUserId }}</span></td><td data-label="Роль">{{ u.role === 'ROLE_ADMIN' ? 'Администратор' : 'Оператор' }}</td>
           <td class="actions">
             <button class="btn btn-edit" (click)="onEdit(u)" title="Редактировать"><svg lucideIcon="pencil" [size]="14"></svg></button>
             <button class="btn btn-delete" (click)="onDelete(u.id)" title="Удалить"><svg lucideIcon="trash-2" [size]="14"></svg></button>
@@ -59,6 +62,7 @@ import { ConfirmService } from '../../services/confirm.service';
     h2 { margin: 0; font-size: 20px; }
     .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
     table { width: 100%; border-collapse: collapse; }
+    .tg { color: var(--text-muted); font-size: 12px; }
     /* Саму рамку и раскладку ячеек kit не задаёт (только border-color) — правило остаётся */
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
     th { font-weight: 600; }
@@ -122,7 +126,8 @@ export class UsersComponent {
     username: new FormControl('', Validators.required),
     fullName: new FormControl(''),
     role: new FormControl('ROLE_USER'),
-    password: new FormControl('')
+    password: new FormControl(''),
+    telegramUserId: new FormControl('')
   });
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
@@ -137,12 +142,13 @@ export class UsersComponent {
     });
   }
 
-  onAdd() { this.editingId = null; this.form.reset({ role: 'ROLE_USER', password: '' }); this.validationErrors = {}; this.showForm = true; }
-  onEdit(u: any) { this.editingId = u.id; this.form.patchValue({ ...u, password: '' }); this.validationErrors = {}; this.showForm = true; }
+  onAdd() { this.editingId = null; this.form.reset({ role: 'ROLE_USER', password: '', telegramUserId: '' }); this.validationErrors = {}; this.showForm = true; }
+  onEdit(u: any) { this.editingId = u.id; this.form.patchValue({ ...u, password: '', telegramUserId: u.telegramUserId ?? '' }); this.validationErrors = {}; this.showForm = true; }
   onCancel() { this.showForm = false; }
 
   onSave() {
-    const body = this.form.value;
+    // Telegram ID — строкой: пусто — снять, цифры — поставить (сервер проверяет и уникальность)
+    const body = { ...this.form.value, telegramUserId: String(this.form.value.telegramUserId ?? '').trim() };
     const req = this.editingId ? this.api.update('users', this.editingId, body) : this.api.create('users', body);
     const wasEditing = this.editingId !== null;
     req.subscribe({

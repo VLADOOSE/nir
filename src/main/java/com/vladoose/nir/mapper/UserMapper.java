@@ -25,6 +25,7 @@ public interface UserMapper {
      */
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
+    @Mapping(target = "telegramUserId", ignore = true)
     UserAccount toEntity(UserRequest request);
 
     /**
@@ -34,5 +35,6 @@ public interface UserMapper {
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
+    @Mapping(target = "telegramUserId", ignore = true)
     void updateEntity(UserRequest request, @MappingTarget UserAccount entity);
 }

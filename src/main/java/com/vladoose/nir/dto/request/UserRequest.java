@@ -22,4 +22,10 @@ public class UserRequest {
      * controller via {@link org.springframework.security.crypto.password.PasswordEncoder}.
      */
     private String password;
+
+    /**
+     * Telegram ID для кнопок бота (спека 2026-10-21-tender-telegram-bot §8): не прислан — не меняется, пусто — снять,
+     * иначе только цифры. Строкой: пустое поле формы — это «снять», а не ошибка разбора числа.
+     */
+    private String telegramUserId;
 }

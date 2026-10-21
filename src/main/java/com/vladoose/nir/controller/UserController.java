@@ -45,6 +45,7 @@ public class UserController {
         }
         UserAccount entity = mapper.toEntity(request);
         entity.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        applyTelegram(request, entity);
         return mapper.toResponse(service.save(entity));
     }
 
@@ -55,7 +56,25 @@ public class UserController {
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             existing.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }
+        applyTelegram(request, existing);
         return mapper.toResponse(service.save(existing));
+    }
+
+    /** Telegram ID из формы: не прислан — не трогаем, пусто — снять, иначе цифры и не у другого пользователя. */
+    private void applyTelegram(UserRequest request, UserAccount entity) {
+        String raw = request.getTelegramUserId();
+        if (raw == null) return;
+        String s = raw.strip();
+        if (s.isEmpty()) {
+            entity.setTelegramUserId(null);
+            return;
+        }
+        if (!s.matches("\\d{1,15}")) throw new BadRequestException("Telegram ID — только цифры (бот пишет его по первому нажатию)");
+        long id = Long.parseLong(s);
+        service.findByTelegramUserId(id).filter(u -> !u.getId().equals(entity.getId())).ifPresent(u -> {
+            throw new BadRequestException("Этот Telegram ID уже у пользователя «" + u.getUsername() + "»");
+        });
+        entity.setTelegramUserId(id);
     }
 
     @DeleteMapping("/{id}")
