@@ -44,9 +44,11 @@ public class PriceRequestSendService {
      * пустой список — письма нет (поле почты в окне очищено); иначе — вписанные адреса (у запроса email_override).
      * manual — «передам сам»: письма нет вовсе, запрос записывается «передан вручную», а его документ (PDF / Word)
      * пересылают руками — документ здесь и есть то, что уходит поставщику, поэтому он и печать по отметке есть всегда.
+     * awaitConfirm — «📱 Отправлю сам» в боте: запрос «передам сам» пока не отправлен (CREATED, без времени отправки) —
+     * его подтвердят кнопкой «✅ Отправил» или исходящим файлом в зеркале WhatsApp.
      */
     public record SendOptions(LocalDate replyBy, boolean withDocument, boolean withStamp, boolean discloseClient,
-                              List<String> emailTo, boolean manual) {
+                              List<String> emailTo, boolean manual, boolean awaitConfirm) {
 
         public static final SendOptions NONE = new SendOptions(null, false, false, false, null);
 
@@ -54,6 +56,12 @@ public class PriceRequestSendService {
             withDocument = withDocument || manual;
             withStamp = withDocument && withStamp;
             emailTo = manual || emailTo == null ? null : List.copyOf(emailTo);
+            awaitConfirm = manual && awaitConfirm;
+        }
+
+        public SendOptions(LocalDate replyBy, boolean withDocument, boolean withStamp, boolean discloseClient,
+                           List<String> emailTo, boolean manual) {
+            this(replyBy, withDocument, withStamp, discloseClient, emailTo, manual, false);
         }
 
         public SendOptions(LocalDate replyBy, boolean withDocument, boolean withStamp, boolean discloseClient,

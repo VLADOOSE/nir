@@ -67,6 +67,9 @@ public class BotUpdateRouter {
                 case "l:v" -> letters.view(c, target);
                 case "l:s" -> letters.send(c, target);
                 case "l:b" -> letters.back(c, target);
+                case "l:m" -> letters.manual(c, target);
+                case "l:h" -> letters.handed(c, target);
+                case "l:u" -> letters.undo(c, target);
                 case "l:x" -> api.answerCallback(c.id(), "Письмо уже обработано", false);
                 default -> api.answerCallback(c.id(), "Кнопка устарела", false);
             }

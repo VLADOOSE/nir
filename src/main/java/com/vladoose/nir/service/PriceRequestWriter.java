@@ -46,8 +46,8 @@ public class PriceRequestWriter {
         PriceRequest pr = PriceRequest.builder()
                 .tender(tender)
                 .distributor(dist)
-                .status("SENT")
-                .sentAt(OffsetDateTime.now())
+                .status(o.awaitConfirm() ? "CREATED" : "SENT")   // «📱 Отправлю сам» — ещё не отправлен
+                .sentAt(o.awaitConfirm() ? null : OffsetDateTime.now())
                 .createdAt(OffsetDateTime.now())
                 .replyBy(o.replyBy())
                 .discloseClient(o.discloseClient())
@@ -74,6 +74,25 @@ public class PriceRequestWriter {
      * Исход письма — своей короткой транзакцией после отправки (письмо идёт вне транзакции, §6). Ушедшее письмо
      * сдвигает sentAt на время этой отправки: после «↻ Переслать» таблица цен забывает возврат, пришедший раньше.
      */
+    /** «📱 Отправлю сам» у запроса, чьё письмо не ушло: тот же запрос — «передам сам», ждёт подтверждения. */
+    @Transactional
+    public boolean markManualPending(Long priceRequestId) {
+        return priceRequestRepository.markManualPending(priceRequestId, LetterStatus.MANUAL,
+                List.of(LetterStatus.FAILED, LetterStatus.NO_EMAIL)) == 1;
+    }
+
+    /** Передан сам (кнопка или зеркало WhatsApp): только запрос, ждущий подтверждения; одновременные — одно «да». */
+    @Transactional
+    public boolean confirmManual(Long priceRequestId, OffsetDateTime at) {
+        return priceRequestId != null && priceRequestRepository.confirmManual(priceRequestId, at, LetterStatus.MANUAL) == 1;
+    }
+
+    /** «✕ Не отправлял»: запрос, ждущий подтверждения, убирается (ничего не ушло); отмеченный переданным — нет. */
+    @Transactional
+    public boolean deletePendingManual(Long priceRequestId) {
+        return priceRequestId != null && priceRequestRepository.deletePendingManual(priceRequestId, LetterStatus.MANUAL) == 1;
+    }
+
     @Transactional
     public void markLetter(Long priceRequestId, LetterStatus status, String sentTo) {
         priceRequestRepository.findById(priceRequestId).ifPresent(pr -> {

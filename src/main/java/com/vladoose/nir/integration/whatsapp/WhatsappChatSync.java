@@ -12,6 +12,7 @@ import com.vladoose.nir.util.SiteCartMessageParser;
 import com.vladoose.nir.integration.http.FileTooLargeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +46,7 @@ public class WhatsappChatSync {
     private final WhatsappStatusHolder status;
     private final String siteUrl;
     private final long maxFileBytes;
+    private final OutgoingFileListener outgoing;
     /** id уведомления → сколько раз подряд не приняли. В памяти: после рестарта счёт с нуля — это ≤ 2 лишние попытки. */
     private final Map<Long, Integer> failures = new ConcurrentHashMap<>();
     /**
@@ -55,9 +57,16 @@ public class WhatsappChatSync {
     private boolean haltLogged;
 
     public WhatsappChatSync(WhatsappSource source, ChatIngestWriter writer, WestmedClient westmedClient,
+                            WhatsappStatusHolder status, String siteUrl, int maxFileMb) {
+        this(source, writer, westmedClient, status, siteUrl, maxFileMb, OutgoingFileListener.NONE);
+    }
+
+    @Autowired
+    public WhatsappChatSync(WhatsappSource source, ChatIngestWriter writer, WestmedClient westmedClient,
                             WhatsappStatusHolder status,
                             @Value("${leads.westmed.site-url:https://westmed.kz}") String siteUrl,
-                            @Value("${chats.whatsapp.max-file-mb:25}") int maxFileMb) {
+                            @Value("${chats.whatsapp.max-file-mb:25}") int maxFileMb, OutgoingFileListener outgoing) {
+        this.outgoing = outgoing;
         this.source = source;
         this.writer = writer;
         this.westmedClient = westmedClient;
@@ -147,6 +156,7 @@ public class WhatsappChatSync {
             IncomingFile file = fetchFile(m, attempt);
             writer.write(m, file, cartItems(m));
             status.messageSeen(m.sentAt());
+            afterOutgoingFile(m);
         } else if (p instanceof ParsedNotification.Delete d) {
             writer.applyDelete(d);
         } else if (p instanceof ParsedNotification.State s) {
@@ -155,6 +165,16 @@ public class WhatsappChatSync {
             status.quotaExceeded();
         }
         // Skip — только подтвердить
+    }
+
+    /** Исходящий файл (не правка) — слушателю, после записи; его сбой приём не ломает (запрос подтвердят кнопкой). */
+    private void afterOutgoingFile(ParsedNotification.Message m) {
+        if (m.direction() != LeadDirection.OUT || m.editOf() != null || m.file() == null || m.file().fileName() == null) return;
+        try {
+            outgoing.outgoingFile(m.file().fileName(), m.chatName(), m.phone(), m.sentAt());
+        } catch (RuntimeException e) {
+            log.warn("WhatsApp: исходящий файл не обработан: {}", e.getClass().getSimpleName());
+        }
     }
 
     private IncomingFile fetchFile(ParsedNotification.Message m, int attempt) {

@@ -43,7 +43,7 @@ function multipart(buf, boundary) {
 
 function buttons(markup) {
   const m = typeof markup === 'string' ? parseJson(Buffer.from(markup)) : markup;
-  return (m?.inline_keyboard || []).map(row => row.map(b => b.text + ' → ' + (b.callback_data ?? b.url)));
+  return (m?.inline_keyboard || []).map(row => row.map(b => b.text + ' → ' + (b.callback_data ?? b.url ?? ('copy: ' + b.copy_text?.text))));
 }
 
 function push(update) {

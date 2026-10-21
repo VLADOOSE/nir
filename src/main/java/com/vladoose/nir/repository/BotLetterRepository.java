@@ -9,10 +9,13 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface BotLetterRepository extends JpaRepository<BotLetter, Long> {
 
     List<BotLetter> findByListMessageIdOrderByLineNo(Long listMessageId);
+
+    Optional<BotLetter> findFirstByPriceRequestId(Long priceRequestId);
 
     /** Перевод статуса «если сейчас один из from»: из одновременных «Отправить» 1 получит ровно одно (спека §7). */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

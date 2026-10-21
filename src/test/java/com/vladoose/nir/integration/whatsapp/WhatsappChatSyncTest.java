@@ -304,6 +304,34 @@ class WhatsappChatSyncTest {
                 .singleElement().extracting(ChatAttachmentMeta::notStoredReason).isEqualTo(AttachmentNotStoredReason.TOO_LARGE);
     }
 
+    /** Исходящий файл с телефона — слушателю (запрос КП, переданный сам из бота); входящий — нет; сбой слушателя приём не ломает. */
+    @Test
+    void outgoingFileGoesToListener_incomingDoesNot_listenerFailureIgnored() {
+        List<String> got = new ArrayList<>();
+        OutgoingFileListener listener = (name, chatName, phone, at) -> got.add(name + " | " + chatName);
+        String chat = personal();
+        String file = "Запрос КП № 145 от 21.10.2026 – West-Med.pdf";
+        ParsedNotification.Message out = new ParsedNotification.Message(GreenApiJson.ACCOUNT, chat, ChatKind.PERSONAL,
+                "+" + chat.substring(0, 11), "ZZ Аксион", null, LeadDirection.OUT, id(), OffsetDateTime.now().minusMinutes(1),
+                ChatMessageType.DOCUMENT, null, new FileRef("loc-2", file, "application/pdf", 1000L), null, false);
+        new WhatsappChatSync(new SingleMessageSource(out), writer, westmed, status, "https://westmed.kz", 1, listener).drain(10);
+        assertThat(got).containsExactly(file + " | ZZ Аксион");
+
+        ParsedNotification.Message in = new ParsedNotification.Message(GreenApiJson.ACCOUNT, chat, ChatKind.PERSONAL,
+                "+" + chat.substring(0, 11), "ZZ Аксион", "ZZ Аксион", LeadDirection.IN, id(), OffsetDateTime.now().minusMinutes(1),
+                ChatMessageType.DOCUMENT, null, new FileRef("loc-3", file, "application/pdf", 1000L), null, false);
+        new WhatsappChatSync(new SingleMessageSource(in), writer, westmed, status, "https://westmed.kz", 1, listener).drain(10);
+        assertThat(got).hasSize(1);
+
+        ParsedNotification.Message out2 = new ParsedNotification.Message(GreenApiJson.ACCOUNT, chat, ChatKind.PERSONAL,
+                "+" + chat.substring(0, 11), "ZZ Аксион", null, LeadDirection.OUT, id(), OffsetDateTime.now().minusMinutes(1),
+                ChatMessageType.DOCUMENT, null, new FileRef("loc-4", file, "application/pdf", 1000L), null, false);
+        SingleMessageSource src = new SingleMessageSource(out2);
+        new WhatsappChatSync(src, writer, westmed, status, "https://westmed.kz", 1, (n, c, ph, at) -> { throw new IllegalStateException("x"); })
+                .drain(10);
+        assertThat(src.acked).isTrue();   // сообщение записано и подтверждено
+    }
+
     /** Источник из одного готового сообщения — для правил цикла, которые от шлюза не зависят. */
     static final class SingleMessageSource implements WhatsappSource {
         final ParsedNotification.Message message;

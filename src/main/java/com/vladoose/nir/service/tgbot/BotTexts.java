@@ -1,10 +1,14 @@
 package com.vladoose.nir.service.tgbot;
 
 import com.vladoose.nir.entity.BotLetter;
+import com.vladoose.nir.entity.Market;
+import com.vladoose.nir.integration.telegram.TelegramBotApi;
 import com.vladoose.nir.integration.telegram.TelegramBotApi.Button;
 import com.vladoose.nir.integration.telegram.TelegramText;
 import com.vladoose.nir.service.aianswer.AiAnswerResult;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntFunction;
@@ -19,6 +23,7 @@ public final class BotTexts {
     public static final String BRIEF_CAPTION = "Вставьте в Claude или Gemini. В конце ответа ИИ напишет блок «Для АИС» — "
             + "пришлите его мне ответом (кнопка «✍️ Ответ ИИ»).";
     private static final int MAX_VISIBLE = 3800;
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     /** Место под строку «…и ещё N …» у раздела итога. */
     private static final int MORE = 80;
     /** Строка письма в итоге — не длиннее (письма видны всегда). */
@@ -112,6 +117,8 @@ public final class BotTexts {
                 case SENT -> Button.cb("✅ " + n, "l:" + b.getId() + ":x");
                 case ELSEWHERE -> Button.cb("✅ " + n + " · АИС", "l:" + b.getId() + ":x");
                 case CANCELLED -> Button.cb("✕ " + n, "l:" + b.getId() + ":x");
+                case MANUAL -> Button.cb("⏳ " + n + " · сам", "l:" + b.getId() + ":x");
+                case HANDED -> Button.cb("✅ " + n + " · сам", "l:" + b.getId() + ":x");
             };
             row.add(btn);
             if (row.size() == 4) { rows.add(row); row = new ArrayList<>(); }
@@ -132,6 +139,43 @@ public final class BotTexts {
 
     public static String sent(String supplier, String user, String lots) {
         return TelegramText.html("✅ Письмо " + supplier + " отправлено · " + user + " (" + lots + ")");
+    }
+
+    /**
+     * Текст для получателя в WhatsApp («📋 Скопировать текст», не длиннее 256): номер запроса, позиции, больница, срок;
+     * длинные позиции режутся первыми.
+     */
+    public static String whatsappText(long number, List<String> positions, String customer, LocalDate replyBy) {
+        String company = brand(Market.KZ.companyShortName());   // «ТОО «West-Med»» → «West-Med»
+        String head = "Здравствуйте! Это " + company + ", запрос цены № " + number + ": ";
+        String who = customer == null || customer.isBlank() ? "" : " Конечный заказчик: " + TelegramText.oneLine(customer, 80) + ".";
+        String tail = "." + who + " Просим закрепить проект за " + company
+                + (replyBy == null ? "" : " и ответить до " + replyBy.format(DATE)) + ". Запрос во вложении.";
+        int room = TelegramBotApi.COPY_MAX - head.length() - tail.length();
+        // «… — 1 шт.» + «. Конечный заказчик…» — без двойной точки
+        String pos = TelegramText.oneLine(String.join("; ", positions), Math.max(10, room)).replaceAll("\\.+$", "");
+        return TelegramText.safeCut(head + pos + tail, TelegramBotApi.COPY_MAX);
+    }
+
+    private static String brand(String legal) {
+        int a = legal.indexOf('«'), b = legal.lastIndexOf('»');
+        return a >= 0 && b > a ? legal.substring(a + 1, b) : legal;
+    }
+
+    /** Подпись к PDF «📱 Отправлю сам»: как передать, текст для получателя, как подтвердить. */
+    public static String manualCaption(String supplier, String text) {
+        return TelegramText.html("📱 Передайте сами: нажмите на файл → «Поделиться» → WhatsApp → " + TelegramText.oneLine(supplier, 80)
+                + ". Текст для получателя — кнопкой «📋 Скопировать текст»:\n\n" + text
+                + "\n\nПотом нажмите «✅ Отправил». С рабочего номера, привязанного к АИС, отметится само.");
+    }
+
+    public static String handed(String supplier, String user, String lots) {
+        return TelegramText.html("✅ Запрос " + supplier + " передан вручную · " + user + " (" + lots + ")");
+    }
+
+    public static String handedInWhatsapp(long number, String supplier, String chat, String time) {
+        return TelegramText.html("✅ Запрос № " + number + " · " + supplier + " — передан в WhatsApp: "
+                + TelegramText.oneLine(chat == null ? "—" : chat, 80) + " · " + time);
     }
 
     public static String failed(String supplier, String why) {

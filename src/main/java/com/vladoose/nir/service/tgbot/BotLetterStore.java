@@ -68,7 +68,7 @@ public class BotLetterStore {
         repo.findById(id).ifPresent(b -> {
             b.setStatus(status);
             if (priceRequestId != null) b.setPriceRequestId(priceRequestId);
-            if (status == BotLetterStatus.SENT) {
+            if (status == BotLetterStatus.SENT || status == BotLetterStatus.HANDED) {
                 b.setSentAt(OffsetDateTime.now());
                 b.setSentBy(by);
             }
@@ -78,6 +78,20 @@ public class BotLetterStore {
 
     @Transactional
     public void setPreview(long id, Long messageId) { repo.findById(id).ifPresent(b -> b.setPreviewMessageId(messageId)); }
+
+    public Optional<BotLetter> findByPriceRequest(long priceRequestId) { return repo.findFirstByPriceRequestId(priceRequestId); }
+
+    /** «✕ Не отправлял»: MANUAL → DRAFT без запроса и фото; одновременные нажатия — одно true. */
+    @Transactional
+    public boolean undoManual(long id) {
+        if (repo.transition(id, List.of(BotLetterStatus.MANUAL), BotLetterStatus.DRAFT) != 1) return false;
+        repo.findById(id).ifPresent(b -> {
+            b.setPriceRequestId(null);
+            b.setPreviewMessageId(null);
+            b.setError(null);
+        });
+        return true;
+    }
 
     @Transactional
     public void updateItems(long id, List<BotLetterItem> items) {

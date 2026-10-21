@@ -76,7 +76,7 @@ class BotLetterActionsTest {
         TelegramBotApi api = new TelegramBotApi(new TelegramSettings(true, stub.url(), "1:T", "-1001", "77", "55", "95"), new ObjectMapper());
         store = new BotLetterStore(letterRepo, lots);
         actions = new BotLetterActions(api, store, sendService, documents, distributorService, tenderService, lots, priceRequests,
-                profiles, "https://ais.westmed.kz");
+                profiles, writer, "https://ais.westmed.kz");
         MarketContext.set(Market.KZ);
         templates.deleteAllInBatch();
         admin = TgFixtures.user(users, "zzbot", "ROLE_ADMIN", 111L);
@@ -198,4 +198,100 @@ class BotLetterActionsTest {
         assertThat(reload().getPriceRequestId()).isEqualTo(prId);   // тот же запрос, не второй
         assertThat(greenMail.getReceivedMessages()).hasSize(1);
     }
+
+    /** «📱 Отправлю сам»: запрос с номером, «ждём подтверждения» (CREATED, без времени отправки); PDF с этим номером и кнопками. */
+    @Test
+    void manual_createsPendingRequest_sendsPdfWithButtons_noEmail() throws Exception {
+        as(() -> actions.view(cb("v"), draft.getId()));
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.MANUAL);
+        PriceRequest pr = priceRequests.findById(b.getPriceRequestId()).orElseThrow();
+        assertThat(pr.getStatus()).isEqualTo("CREATED");
+        assertThat(pr.getSentAt()).isNull();
+        assertThat(pr.getLetterStatus()).isEqualTo(LetterStatus.MANUAL);
+        assertThat(pr.isDiscloseClient()).isTrue();
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+        TelegramStubServer.Request doc = stub.requests().stream().filter(r -> r.path().endsWith("/sendDocument")).reduce((a, c) -> c).orElseThrow();
+        assertThat(doc.body()).contains("Запрос КП № " + pr.getId()).contains("application/pdf")
+                .contains("copy_text").contains("Конечный заказчик: ZZ Горбольница №7")
+                .contains("l:" + draft.getId() + ":h").contains("l:" + draft.getId() + ":u");
+        // второе нажатие — второго запроса нет
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        assertThat(priceRequests.findAll().stream().filter(p -> p.getDistributor().getId().equals(maker.getId())).count()).isEqualTo(1);
+    }
+
+    @Test
+    void handed_confirmsSent_listShowsManual() {
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        as(() -> actions.handed(cb("h"), draft.getId()));
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.HANDED);
+        assertThat(b.getSentBy()).startsWith("zzbot").endsWith(", Telegram");
+        PriceRequest pr = priceRequests.findById(b.getPriceRequestId()).orElseThrow();
+        assertThat(pr.getStatus()).isEqualTo("SENT");
+        assertThat(pr.getSentAt()).isNotNull();
+        assertThat(stub.requests()).filteredOn(r -> r.path().endsWith("/editMessageReplyMarkup"))
+                .anySatisfy(r -> assertThat(r.body()).contains("✅ 1 · сам"));
+        assertThat(greenMail.getReceivedMessages()).isEmpty();
+    }
+
+    @Test
+    void undo_deletesPendingRequest_backToDraft() {
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        Long prId = reload().getPriceRequestId();
+        as(() -> actions.undo(cb("u"), draft.getId()));
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.DRAFT);
+        assertThat(b.getPriceRequestId()).isNull();
+        assertThat(priceRequests.findById(prId)).isEmpty();
+        as(() -> actions.send(cb("s"), draft.getId()));   // дальше — письмом, как обычно
+        assertThat(greenMail.getReceivedMessages()).hasSize(1);
+    }
+
+    /** Подтверждение из зеркала WhatsApp: исходящий файл «Запрос КП № N …» с рабочего номера АИС. */
+    @Test
+    void whatsappFile_confirmsPendingRequest() {
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        Long prId = reload().getPriceRequestId();
+        actions.confirmFromWhatsapp(prId, "ZZ Аксион (WhatsApp)", java.time.OffsetDateTime.now());
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.HANDED);
+        assertThat(priceRequests.findById(prId).orElseThrow().getStatus()).isEqualTo("SENT");
+        assertThat(stub.requests()).filteredOn(r -> r.path().endsWith("/sendMessage"))
+                .anySatisfy(r -> assertThat(r.body()).contains("передан в WhatsApp").contains("ZZ Аксион (WhatsApp)"));
+        java.time.OffsetDateTime sentAt = priceRequests.findById(prId).orElseThrow().getSentAt();
+        // повтор того же файла — ничего не меняет (и время передачи — первое)
+        actions.confirmFromWhatsapp(prId, "ZZ Аксион (WhatsApp)", java.time.OffsetDateTime.now().plusHours(2));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.HANDED);
+        assertThat(priceRequests.findById(prId).orElseThrow().getSentAt()).isEqualTo(sentAt);
+    }
+
+    /** Письмо не ушло (почта) — «📱 Отправлю сам» берёт тот же запрос, второго нет. */
+    @Test
+    void manualAfterFailedEmail_reusesRequest() {
+        maker.setEmail("не адрес");
+        distributors.saveAndFlush(maker);
+        as(() -> actions.send(cb("s"), draft.getId()));
+        Long prId = reload().getPriceRequestId();
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.FAILED);
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        BotLetter b = reload();
+        assertThat(b.getStatus()).isEqualTo(BotLetterStatus.MANUAL);
+        assertThat(b.getPriceRequestId()).isEqualTo(prId);
+        PriceRequest pr = priceRequests.findById(prId).orElseThrow();
+        assertThat(pr.getLetterStatus()).isEqualTo(LetterStatus.MANUAL);
+        assertThat(pr.getStatus()).isEqualTo("CREATED");
+    }
+
+    @Test
+    void manual_closedTender_cancelled_noRequest() {
+        Tender t = lot.getTender();
+        t.setDeadlineAt(LocalDateTime.now(Market.KZ.zone()).minusHours(1));
+        tenders.saveAndFlush(t);
+        as(() -> actions.manual(cb("m"), draft.getId()));
+        assertThat(reload().getStatus()).isEqualTo(BotLetterStatus.CANCELLED);
+        assertThat(reload().getPriceRequestId()).isNull();
+    }
+
 }

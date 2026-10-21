@@ -87,4 +87,23 @@ class BotTextsTest {
         assertThat(s.length()).isLessThan(4096);
     }
 
+
+    /** Текст для получателя в WhatsApp (кнопка copy_text — до 256 знаков): номер запроса, позиции, больница, срок. */
+    @Test
+    void whatsappText_fitsCopyButton() {
+        String t = BotTexts.whatsappText(145, List.of("Дефибриллятор автоматический наружный ДА-Н-01 «Аксион» — 1 шт."),
+                "Областная офтальмологическая больница", java.time.LocalDate.of(2026, 10, 22));
+        assertThat(t).contains("№ 145").contains("ДА-Н-01").contains("Конечный заказчик: Областная офтальмологическая больница")
+                .contains("22.10.2026").contains("West-Med").doesNotContain("..");   // «— 1 шт.» + «. Конечный…» — одна точка
+        String longOne = BotTexts.whatsappText(146, List.of("Очень длинная позиция ".repeat(20), "Ещё позиция ".repeat(10)),
+                "ГБ", java.time.LocalDate.of(2026, 10, 22));
+        assertThat(longOne).hasSizeLessThanOrEqualTo(256).contains("№ 146").contains("Конечный заказчик: ГБ").contains("22.10.2026");
+    }
+
+    @Test
+    void listKeyboard_manualStates() {
+        List<List<Button>> kb = BotTexts.listKeyboard(List.of(letter(20, 1, BotLetterStatus.MANUAL), letter(21, 2, BotLetterStatus.HANDED)));
+        assertThat(kb.get(0)).extracting(Button::text, Button::data).containsExactly(tuple("⏳ 1 · сам", "l:20:x"), tuple("✅ 2 · сам", "l:21:x"));
+    }
+
 }

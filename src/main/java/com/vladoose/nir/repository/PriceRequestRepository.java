@@ -1,9 +1,11 @@
 package com.vladoose.nir.repository;
 
+import com.vladoose.nir.entity.LetterStatus;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.PriceRequest;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +16,21 @@ import java.util.List;
 public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long> {
 
     List<PriceRequest> findByTenderId(Long tenderId);
+
+    /** Запрос «передам сам», ждущий подтверждения (бот, «📱 Отправлю сам»): CREATED, без времени отправки. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE PriceRequest p SET p.status = 'CREATED', p.sentAt = NULL, p.letterStatus = :manual "
+            + "WHERE p.id = :id AND p.letterStatus IN :failed")
+    int markManualPending(@Param("id") Long id, @Param("manual") LetterStatus manual, @Param("failed") Collection<LetterStatus> failed);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE PriceRequest p SET p.status = 'SENT', p.sentAt = :at WHERE p.id = :id AND p.status = 'CREATED' AND p.letterStatus = :manual")
+    int confirmManual(@Param("id") Long id, @Param("at") OffsetDateTime at, @Param("manual") LetterStatus manual);
+
+    /** Строки запроса и ссылки на него убирает база (ON DELETE CASCADE / SET NULL). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM PriceRequest p WHERE p.id = :id AND p.status = 'CREATED' AND p.letterStatus = :manual")
+    int deletePendingManual(@Param("id") Long id, @Param("manual") LetterStatus manual);
 
     /** Лента и этапы сделки: поставщик и строки — одним запросом (findByTenderId тянет их выборкой на каждый запрос). */
     @EntityGraph(attributePaths = {"distributor", "items", "items.tenderLot", "items.medEquipment"})

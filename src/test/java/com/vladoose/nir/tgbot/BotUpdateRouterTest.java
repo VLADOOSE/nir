@@ -38,6 +38,7 @@ class BotUpdateRouterTest {
     @Autowired UserAccountRepository users;
     @Autowired ProductDigestRepository digests;
     @Autowired BotLetterRepository letters;
+    @Autowired com.vladoose.nir.service.PriceRequestWriter writer;
     @Autowired ProductAiBrief brief;
     @Autowired AiAnswerService aiAnswers;
     @Autowired BotRunAs runAs;
@@ -64,7 +65,7 @@ class BotUpdateRouterTest {
         BotLetterStore store = new BotLetterStore(letters, lots);
         router = new BotUpdateRouter(api, users, runAs, new BotBriefSender(api, digests, brief, prompts),
                 new BotAnswerHandler(aiAnswers, store, api, prompts), new BotLetterActions(api, store, sendService, documents,
-                distributorService, tenderService, lots, priceRequests, profiles, null));
+                distributorService, tenderService, lots, priceRequests, profiles, writer, null));
         MarketContext.set(Market.KZ);
         lot = TgFixtures.lot(tenders, "ZZ Дефибриллятор", "ZZ Горбольница №7");
         dki = TgFixtures.product(products, "ZZ Дефибриллятор ДКИ-Н-12", "ZZQXW");
@@ -133,4 +134,20 @@ class BotUpdateRouterTest {
         router.handle(reply(111, 4242, "спасибо"));           // ответ на чужое сообщение бота — молча
         assertThat(stub.requests()).hasSize(before);
     }
+
+    /** «📱 Отправлю сам» → «✅ Отправил» — по кнопкам письма (l:<id>:m, l:<id>:h). */
+    @Test
+    void manualAndHandedButtons_route() {
+        router.handle(press(111, "d:" + digest.getId() + ":ans"));
+        router.handle(reply(111, 500, "L" + lot.getId() + " | идти | P" + dki.getId() + " | ТЗ совпадает"));
+        MarketContext.set(Market.KZ);
+        BotLetter b = letters.findAll().stream().filter(x -> x.getTenderId().equals(lot.getTender().getId())).findFirst().orElseThrow();
+        router.handle(press(111, "l:" + b.getId() + ":m"));
+        MarketContext.set(Market.KZ);
+        assertThat(letters.findById(b.getId()).orElseThrow().getStatus()).isEqualTo(BotLetterStatus.MANUAL);
+        router.handle(press(111, "l:" + b.getId() + ":h"));
+        MarketContext.set(Market.KZ);
+        assertThat(letters.findById(b.getId()).orElseThrow().getStatus()).isEqualTo(BotLetterStatus.HANDED);
+    }
+
 }

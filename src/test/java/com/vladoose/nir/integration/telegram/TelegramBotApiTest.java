@@ -45,6 +45,16 @@ class TelegramBotApiTest {
         assertThat(row.get(1).path("url").asText()).endsWith("ids=1,2");
     }
 
+    /** «📋 Скопировать текст» (Bot API copy_text, до 256 знаков) — текст для WhatsApp. */
+    @Test
+    void copyTextButton() throws Exception {
+        stub.on("sendMessage", TelegramStubServer.Reply.ok(502));
+        api().sendMessage("x", true, List.of(List.of(Button.copy("📋 Скопировать текст", "Здравствуйте! Запрос № 145"))), null);
+        JsonNode btn = lastJson().path("reply_markup").path("inline_keyboard").get(0).get(0);
+        assertThat(btn.path("copy_text").path("text").asText()).isEqualTo("Здравствуйте! Запрос № 145");
+        assertThat(btn.has("callback_data")).isFalse();
+    }
+
     @Test
     void forceReply_editKeyboard_delete_answer() throws Exception {
         TelegramBotApi api = api();

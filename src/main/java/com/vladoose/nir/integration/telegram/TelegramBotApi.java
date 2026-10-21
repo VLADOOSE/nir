@@ -28,13 +28,17 @@ public class TelegramBotApi {
     static final Duration DEADLINE = Duration.ofSeconds(30);
     /** long-poll getUpdates: Telegram держит запрос до 25 с, дедлайн всего обмена — на 10 с больше. */
     public static final int POLL_SECONDS = 25;
+    /** Предел текста кнопки «скопировать» (Bot API CopyTextButton). */
+    public static final int COPY_MAX = 256;
     /** 429 с ожиданием не дольше этого — повтор, дольше — ошибка действию. */
     static final int RETRY_MAX_SECONDS = 15;
 
     /** Кнопка: обратный вызов (data, до 64 байт) или ссылка. */
-    public record Button(String text, String data, String url) {
-        public static Button cb(String text, String data) { return new Button(text, data, null); }
-        public static Button link(String text, String url) { return new Button(text, null, url); }
+    public record Button(String text, String data, String url, String copy) {
+        public static Button cb(String text, String data) { return new Button(text, data, null, null); }
+        public static Button link(String text, String url) { return new Button(text, null, url, null); }
+        /** «Скопировать» (Bot API copy_text): текст до 256 знаков попадает в буфер обмена телефона. */
+        public static Button copy(String text, String value) { return new Button(text, null, null, value); }
     }
 
     private final TelegramSettings settings;
@@ -160,14 +164,16 @@ public class TelegramBotApi {
         }
     }
 
-    private static List<List<Map<String, String>>> markup(List<List<Button>> keyboard) {
-        List<List<Map<String, String>>> rows = new ArrayList<>();
+    private static List<List<Map<String, Object>>> markup(List<List<Button>> keyboard) {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
         for (List<Button> row : keyboard) {
-            List<Map<String, String>> r = new ArrayList<>();
+            List<Map<String, Object>> r = new ArrayList<>();
             for (Button btn : row) {
-                Map<String, String> m = new LinkedHashMap<>();
+                Map<String, Object> m = new LinkedHashMap<>();
                 m.put("text", btn.text());
-                if (btn.url() != null) m.put("url", btn.url()); else m.put("callback_data", btn.data());
+                if (btn.url() != null) m.put("url", btn.url());
+                else if (btn.copy() != null) m.put("copy_text", Map.of("text", TelegramText.safeCut(btn.copy(), COPY_MAX)));
+                else m.put("callback_data", btn.data());
                 r.add(m);
             }
             if (!r.isEmpty()) rows.add(r);
