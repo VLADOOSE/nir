@@ -52,7 +52,7 @@ class ProductAiBriefTest {
         em.flush();
         List<ProductGroup> groups = ProductFixtures.seedGroups().stream().peek(g -> g.setId(null)).map(groupRepo::save).toList();
         // признаки — характеристикой сайта, не в названии: фразы названий — правило «ТЗ списано» (COPIED поверх FITS)
-        SiteProduct omh = productRepo.save(SiteProduct.builder().market(Market.KZ).siteId(UUID.randomUUID())
+        omh = productRepo.save(SiteProduct.builder().market(Market.KZ).siteId(UUID.randomUUID())
                 .name("Отсасыватель медицинский хирургический ОМХ-5/80")
                 .brand("Аксион").slug("omh").registrationCert("РК-1").syncedAt(OffsetDateTime.now())
                 .attributes(new ArrayList<>(List.of(new SiteProductAttribute("Производительность по воздуху", "не менее 15 л/мин"),
@@ -66,6 +66,9 @@ class ProductAiBriefTest {
                 Map.of("РК-1", new RegistrationInfo("РК-1", RegStatus.ACTIVE, null, true, null, null, null, List.of())), Set.of());
         service = new ProductMatchService(tenders, matches, () -> snap);
     }
+
+    /** Наш товар-кандидат — его код [P…] в тексте для ИИ (спека 2026-10-21-tender-telegram-bot §5). */
+    SiteProduct omh;
 
     @AfterEach
     void clear() { MarketContext.clear(); }
@@ -94,12 +97,12 @@ class ProductAiBriefTest {
         assertThat(text).startsWith("Ты помогаешь компании West-Med")
                 .contains("Тендер № … — Лот № … — Требуется: …")          // формат ответа из запроса
                 .contains("=== Тендер № 17000001-1 (goszakup) — https://goszakup.gov.kz/ru/announce/index/17000001")
-                .contains("--- Лот № 170000011-ЗЦП1: Аспиратор — 2 шт., до 900")
+                .contains("--- Лот № 170000011-ЗЦП1 [L" + t.getLots().get(0).getId() + "]: Аспиратор — 2 шт., до 900")
                 .contains("Сверка АИС: ✓ подходит наш товар: Отсасыватель")
                 .contains("Требования ТЗ (")
                 .contains("производительность отсасывания")
                 .contains("Наши товары-кандидаты:")
-                .contains("* Отсасыватель медицинский хирургический ОМХ-5/80")
+                .contains("* [P" + omh.getId() + "] Отсасыватель медицинский хирургический ОМХ-5/80")
                 .contains("/product/omh")
                 .contains("РУ РК-1 — действует бессрочно")
                 .contains("Характеристики (сайт): Производительность по воздуху: не менее 15 л/мин")
@@ -164,7 +167,7 @@ class ProductAiBriefTest {
                 .contains("Модель в работе: ZZ Отсасыватель (ZZ Завод), РУ не указано; закрепил vlad")
                 .contains("почему: ИИ: подходит по 3 из 3")
                 .contains("Сверка АИС модели в работе: ✓ ")
-                .contains("--- Лот № 2: ZZ Шкаф")
+                .contains("--- Лот № 2 [L" + other.getId() + "]: ZZ Шкаф")
                 .contains("Модель в работе: ZZ Шкаф медицинский, РУ не указано; закрепил vlad");
     }
 

@@ -53,6 +53,12 @@ public class ProductAiBrief {
 
             Ответ — списком в формате:
             Тендер № … — Лот № … — Требуется: … — ТЗ похоже на: … — Наш товар: … (подходит / не подходит: причина / нет данных) — РУ в РК: …
+
+            В самом конце ответа — блок «Для АИС»: отдельным блоком кода, по строке на каждый лот из текста:
+            L<код лота> | идти / не наше / не ясно | P<код нашего товара> или — | коротко почему
+            Код лота — в квадратных скобках у заголовка лота [L…], код товара — у наших товаров-кандидатов этого лота [P…].
+            «идти» с кодом товара — только если этот наш товар подходит по ТЗ; если подходит не наш товар — «идти» без кода
+            (—), а модель и № РУ — в «почему».
             """;
 
     private final TenderService tenderService;
@@ -120,7 +126,7 @@ public class ProductAiBrief {
 
     private void lot(StringBuilder b, TenderLot l, List<TenderLotProductMatch> ms, int specChars) {
         String num = l.getSourceLotCode() != null ? l.getSourceLotCode() : Objects.toString(l.getLotNumber(), "—");   // № лота площадки
-        b.append("--- Лот № ").append(one(num)).append(": ").append(one(l.getEquipName()));
+        b.append("--- Лот № ").append(one(num)).append(" [L").append(l.getId()).append("]: ").append(one(l.getEquipName()));
         if (l.getQuantity() != null) b.append(" — ").append(l.getQuantity()).append(" шт.");
         if (l.getMaxCost() != null) b.append(", до ").append(DocFormat.money(l.getMaxCost())).append(" ₸ за ед.");
         b.append('\n');
@@ -207,7 +213,7 @@ public class ProductAiBrief {
     }
 
     private void product(StringBuilder b, SiteProduct p) {
-        b.append("* ").append(one(p.getName()));
+        b.append("* [P").append(p.getId()).append("] ").append(one(p.getName()));
         if (p.getSlug() != null) b.append(" — ").append(WestmedLeadMapper.productUrl(siteUrl, p.getSlug()));
         String reg = RegNumbers.normalize(p.getRegistrationCert());
         ProductRegistration r = reg == null ? null : registrations.findById(reg).orElse(null);
