@@ -33,6 +33,8 @@ import java.util.*;
 public class AiAnswerService {
 
     public static final int MAX_TEXT = 20_000;
+    /** Причина в строке итога (Telegram и окно АИС) — не длиннее; полная (≤ 500) — у лота. */
+    static final int REASON_SHOWN = 150;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd.MM");
 
     private final TenderLotRepository lots;
@@ -167,7 +169,7 @@ public class AiAnswerService {
 
     private static String text(Outcome o, TenderLot lot, AiAnswerParser.Line line, String model) {
         String head = "«" + lotName(lot) + "»" + who(lot.getTender());
-        String why = line.reason() == null ? "" : line.reason();
+        String why = line.reason() == null ? "" : TelegramText.oneLine(line.reason(), REASON_SHOWN);   // полная — у лота (ai_note)
         return switch (o) {
             case PINNED -> "✅ " + head + " → " + model + " — закреплено";
             case SAME_MODEL -> "✅ " + head + " → " + model + " — уже в работе";

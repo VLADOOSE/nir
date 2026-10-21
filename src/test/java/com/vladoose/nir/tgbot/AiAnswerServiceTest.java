@@ -123,6 +123,15 @@ class AiAnswerServiceTest {
         assertThat(r.letters()).isEmpty();
     }
 
+    /** Ревью ветки: в итоге (Telegram и окно АИС) причина короткая — полная остаётся у лота. */
+    @Test
+    void longReason_shortInResultLine_fullAtLot() {
+        String why = "нужен передвижной на колёсах ".repeat(15).strip();
+        AiAnswerResult r = service.apply("L" + lot.getId() + " | не наше | — | " + why);
+        assertThat(r.lots().get(0).text()).hasSizeLessThan(260).endsWith("…");
+        assertThat(reload().getAiNote()).isEqualTo(why);
+    }
+
     @Test
     void closedTender_notPinned() {
         Tender t = lot.getTender();

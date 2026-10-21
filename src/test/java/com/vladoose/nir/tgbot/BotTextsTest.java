@@ -12,6 +12,8 @@ import com.vladoose.nir.service.tgbot.BotTexts;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -59,4 +61,30 @@ class BotTextsTest {
                 tuple("✅ 2", "l:11:x"), tuple("✅ 3 · АИС", "l:12:x"), tuple("✕ 4", "l:13:x"));
         assertThat(kb.get(1)).extracting(Button::data).containsExactly("l:14:v");   // не ушло — посмотреть и отправить ещё раз
     }
+
+    /** Ревью ветки: ответ ИИ по пачке из 15 тендеров с причинами — список писем (подписи кнопок) не должен пропасть. */
+    @Test
+    void longAnswer_lettersAlwaysListed_lotsCutWithCount() {
+        String why = "длинная причина ".repeat(30);
+        List<LotResult> lots = LongStream.rangeClosed(1, 40).mapToObj(i -> new LotResult(i, 1L, "177-1", "Лот " + i, "ГБ",
+                AiVerdict.NO, Outcome.NOT_OURS, null, "✕ «Лот " + i + "» · ГБ — не наше: " + why)).toList();
+        List<LetterPlan> letters = List.of(
+                new LetterPlan(1, "177-1", "ГБ", 2, "ZZ Завод", true, List.of(5L), List.of("Дефибриллятор")),
+                new LetterPlan(1, "177-1", "ГБ", 3, "ZZ Доверенный", false, List.of(6L), List.of("Облучатель")));
+        String s = BotTexts.summary(new AiAnswerResult(lots, List.of(), letters, List.of("«Облучатель» — у ZZ уже запрошено 20.10")));
+        assertThat(s).contains("«Лот 1»").containsPattern("…и ещё \\d+ лот(а|ов)? — вывод ИИ у лотов в АИС")
+                .contains("1. ZZ Завод (завод) — Дефибриллятор · ГБ")
+                .contains("2. ZZ Доверенный (доверенный) — Облучатель · ГБ");
+        assertThat(s.length()).isLessThan(4096);
+    }
+
+    @Test
+    void manyLetters_cutWithCount_underTelegramLimit() {
+        List<LetterPlan> letters = IntStream.rangeClosed(1, 40).mapToObj(i -> new LetterPlan(i, "177-" + i, "ГБ", i,
+                "ZZ Поставщик " + i, true, List.of((long) i), List.of("Очень длинное наименование лота ".repeat(8)))).toList();
+        String s = BotTexts.summary(new AiAnswerResult(List.of(), List.of(), letters, List.of()));
+        assertThat(s).contains("1. ZZ Поставщик 1 (завод)").containsPattern("…и ещё \\d+ — номера на кнопках ниже");
+        assertThat(s.length()).isLessThan(4096);
+    }
+
 }

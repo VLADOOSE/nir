@@ -7,6 +7,7 @@ import com.vladoose.nir.service.aianswer.AiAnswerResult;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntFunction;
 
 /** Тексты бота (спека 2026-10-21-tender-telegram-bot §6–8), чистые функции; всё чужое — экранировано (HTML). */
 public final class BotTexts {
@@ -18,6 +19,10 @@ public final class BotTexts {
     public static final String BRIEF_CAPTION = "Вставьте в Claude или Gemini. В конце ответа ИИ напишет блок «Для АИС» — "
             + "пришлите его мне ответом (кнопка «✍️ Ответ ИИ»).";
     private static final int MAX_VISIBLE = 3800;
+    /** Место под строку «…и ещё N …» у раздела итога. */
+    private static final int MORE = 80;
+    /** Строка письма в итоге — не длиннее (письма видны всегда). */
+    private static final int LETTER_MAX = 200;
 
     private BotTexts() {}
 
@@ -31,32 +36,68 @@ public final class BotTexts {
         return n + " " + (d == 1 && h != 11 ? "тендер" : d >= 2 && d <= 4 && (h < 12 || h > 14) ? "тендера" : "тендеров");
     }
 
+    /**
+     * Итог разбора (≤ 3800 видимых знаков): письма видны всегда — это подписи кнопок «👁 N» (строка письма ≤ 200); лоты и
+     * пометки — сколько поместится, остальное — «…и ещё N» (вывод ИИ у лотов — в АИС).
+     */
     public static String summary(AiAnswerResult r) {
-        List<String> lines = new ArrayList<>();
-        lines.add("🤖 Разобрал ответ ИИ — лотов: " + r.lots().size());
-        r.lots().forEach(l -> lines.add(l.text()));
-        if (!r.unparsed().isEmpty()) lines.add("⚠ Не понял строк: " + r.unparsed().size() + " — «" + r.unparsed().get(0) + "»");
-        r.notes().forEach(n -> lines.add("• " + n));
-        lines.add("");
+        String head = "🤖 Разобрал ответ ИИ — лотов: " + r.lots().size();
+        List<String> letters = new ArrayList<>();
         if (r.letters().isEmpty()) {
-            lines.add("📨 Писем к отправке нет");
+            letters.add("📨 Писем к отправке нет");
         } else {
-            lines.add("📨 Письма к отправке:");
+            letters.add("📨 Письма к отправке:");
             for (int i = 0; i < r.letters().size(); i++) {
                 AiAnswerResult.LetterPlan p = r.letters().get(i);
-                lines.add((i + 1) + ". " + p.distributorName() + " (" + (p.manufacturer() ? "завод" : "доверенный") + ") — "
-                        + String.join(", ", p.lotNames()) + (p.customer() == null ? "" : " · " + TelegramText.oneLine(p.customer(), 60)));
+                letters.add(TelegramText.oneLine((i + 1) + ". " + p.distributorName() + " (" + (p.manufacturer() ? "завод" : "доверенный")
+                        + ") — " + String.join(", ", p.lotNames()) + (p.customer() == null ? "" : " · " + TelegramText.oneLine(p.customer(), 60)),
+                        LETTER_MAX));
             }
         }
-        StringBuilder out = new StringBuilder();
-        int visible = 0;
-        for (String line : lines) {
-            if (visible + line.length() + 1 > MAX_VISIBLE) { out.append("\n…"); break; }
-            if (!out.isEmpty()) out.append('\n');
-            out.append(TelegramText.html(line));
-            visible += line.length() + 1;
+        List<String> extra = new ArrayList<>();
+        if (!r.unparsed().isEmpty()) extra.add("⚠ Не понял строк: " + r.unparsed().size() + " — «" + r.unparsed().get(0) + "»");
+        r.notes().forEach(n -> extra.add("• " + n));
+        int room = MAX_VISIBLE - head.length() - 2;   // − перевод строки и пустая строка перед письмами
+        List<String> lettersOut = new ArrayList<>();
+        room -= fit(letters, room - 2 * MORE, lettersOut, k -> "…и ещё " + k + " — номера на кнопках ниже");
+        List<String> lotsOut = new ArrayList<>();
+        room -= fit(r.lots().stream().map(AiAnswerResult.LotResult::text).toList(), room - MORE, lotsOut,
+                k -> "…и ещё " + lots(k) + " — вывод ИИ у лотов в АИС");
+        List<String> extraOut = new ArrayList<>();
+        fit(extra, room, extraOut, k -> "…и ещё пометок: " + k);
+        List<String> all = new ArrayList<>();
+        all.add(head);
+        all.addAll(lotsOut);
+        all.addAll(extraOut);
+        all.add("");
+        all.addAll(lettersOut);
+        return String.join("\n", all.stream().map(TelegramText::html).toList());
+    }
+
+    /** Строки целиком, если влезают в room; иначе — сколько влезет и «…и ещё N». Возвращает занятое место. */
+    private static int fit(List<String> lines, int room, List<String> out, IntFunction<String> more) {
+        int total = lines.stream().mapToInt(l -> l.length() + 1).sum();
+        if (total <= room) {
+            out.addAll(lines);
+            return total;
         }
-        return out.toString();
+        int used = 0;
+        int i = 0;
+        for (; i < lines.size(); i++) {
+            int len = lines.get(i).length() + 1;
+            if (used + len > room - MORE) break;
+            out.add(lines.get(i));
+            used += len;
+        }
+        String m = more.apply(lines.size() - i);
+        out.add(m);
+        return used + m.length() + 1;
+    }
+
+    /** «1 лот», «3 лота», «5 лотов». */
+    static String lots(int n) {
+        int d = n % 10, h = n % 100;
+        return n + " " + (d == 1 && h != 11 ? "лот" : d >= 2 && d <= 4 && (h < 12 || h > 14) ? "лота" : "лотов");
     }
 
     /** Кнопки списка писем: «👁 N» — посмотреть; отправленные и закрытые — без действия. По 4 в ряд. */
