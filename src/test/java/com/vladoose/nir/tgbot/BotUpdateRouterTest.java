@@ -42,6 +42,12 @@ class BotUpdateRouterTest {
     @Autowired AiAnswerService aiAnswers;
     @Autowired BotRunAs runAs;
     @Autowired TenderLotRepository lots;
+    @Autowired com.vladoose.nir.service.PriceRequestSendService sendService;
+    @Autowired com.vladoose.nir.service.RfqDocumentService documents;
+    @Autowired com.vladoose.nir.service.DistributorService distributorService;
+    @Autowired com.vladoose.nir.service.TenderService tenderService;
+    @Autowired PriceRequestRepository priceRequests;
+    @Autowired com.vladoose.nir.service.CompanyProfileService profiles;
     TelegramStubServer stub;
     BotUpdateRouter router;
     BotPrompts prompts;
@@ -57,7 +63,8 @@ class BotUpdateRouterTest {
         prompts = new BotPrompts(digests);
         BotLetterStore store = new BotLetterStore(letters, lots);
         router = new BotUpdateRouter(api, users, runAs, new BotBriefSender(api, digests, brief, prompts),
-                new BotAnswerHandler(aiAnswers, store, api, prompts));
+                new BotAnswerHandler(aiAnswers, store, api, prompts), new BotLetterActions(api, store, sendService, documents,
+                distributorService, tenderService, lots, priceRequests, profiles, null));
         MarketContext.set(Market.KZ);
         lot = TgFixtures.lot(tenders, "ZZ Дефибриллятор", "ZZ Горбольница №7");
         dki = TgFixtures.product(products, "ZZ Дефибриллятор ДКИ-Н-12", "ZZQXW");

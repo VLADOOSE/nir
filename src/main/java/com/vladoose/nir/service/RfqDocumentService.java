@@ -151,4 +151,12 @@ public class RfqDocumentService {
     private static boolean blank(String s) {
         return s == null || s.isBlank();
     }
+
+    /** PDF и страницы картинками (не больше двух — понять, одна ли страница) — просмотр письма в боте (спека 2026-10-21 §7). */
+    public record PreviewFiles(byte[] pdf, String pdfName, List<byte[]> pages) {}
+
+    public PreviewFiles previewFiles(PriceRequest pr) {
+        RfqFile f = render(pr, Format.PDF);
+        return new PreviewFiles(f.bytes(), f.fileName(), previews.pages(f.bytes(), 2));
+    }
 }

@@ -27,14 +27,16 @@ public class BotUpdateRouter {
     private final BotRunAs runAs;
     private final BotBriefSender briefs;
     private final BotAnswerHandler answers;
+    private final BotLetterActions letters;
 
     public BotUpdateRouter(TelegramBotApi api, UserAccountRepository users, BotRunAs runAs, BotBriefSender briefs,
-                           BotAnswerHandler answers) {
+                           BotAnswerHandler answers, BotLetterActions letters) {
         this.api = api;
         this.users = users;
         this.runAs = runAs;
         this.briefs = briefs;
         this.answers = answers;
+        this.letters = letters;
     }
 
     public void handle(BotUpdate u) {
@@ -62,6 +64,10 @@ public class BotUpdateRouter {
             switch (p[0] + ":" + p[2]) {
                 case "d:ai" -> briefs.sendBrief(c, target);
                 case "d:ans" -> briefs.askAnswer(c, target);
+                case "l:v" -> letters.view(c, target);
+                case "l:s" -> letters.send(c, target);
+                case "l:b" -> letters.back(c, target);
+                case "l:x" -> api.answerCallback(c.id(), "Письмо уже обработано", false);
                 default -> api.answerCallback(c.id(), "Кнопка устарела", false);
             }
         });

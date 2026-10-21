@@ -2,13 +2,16 @@ package com.vladoose.nir.service.tgbot;
 
 import com.vladoose.nir.entity.BotLetter;
 import com.vladoose.nir.entity.BotLetterItem;
+import com.vladoose.nir.entity.BotLetterStatus;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.integration.telegram.TelegramText;
 import com.vladoose.nir.repository.BotLetterRepository;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.service.aianswer.AiAnswerResult.LetterPlan;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -52,5 +55,32 @@ public class BotLetterStore {
 
     public List<BotLetter> list(Long listMessageId) {
         return listMessageId == null ? List.of() : repo.findByListMessageIdOrderByLineNo(listMessageId);
+    }
+
+    /** Взять письмо в отправку: DRAFT или FAILED → SENDING; одновременные нажатия — одно получит true. */
+    @Transactional
+    public boolean claim(long id) {
+        return repo.transition(id, List.of(BotLetterStatus.DRAFT, BotLetterStatus.FAILED), BotLetterStatus.SENDING) == 1;
+    }
+
+    @Transactional
+    public void finish(long id, BotLetterStatus status, Long priceRequestId, String by, String error) {
+        repo.findById(id).ifPresent(b -> {
+            b.setStatus(status);
+            if (priceRequestId != null) b.setPriceRequestId(priceRequestId);
+            if (status == BotLetterStatus.SENT) {
+                b.setSentAt(OffsetDateTime.now());
+                b.setSentBy(by);
+            }
+            b.setError(error == null ? null : TelegramText.safeCut(error, 300));
+        });
+    }
+
+    @Transactional
+    public void setPreview(long id, Long messageId) { repo.findById(id).ifPresent(b -> b.setPreviewMessageId(messageId)); }
+
+    @Transactional
+    public void updateItems(long id, List<BotLetterItem> items) {
+        repo.findById(id).ifPresent(b -> b.setItems(new ArrayList<>(items)));
     }
 }

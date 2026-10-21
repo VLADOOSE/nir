@@ -78,4 +78,23 @@ public final class BotTexts {
         if (!row.isEmpty()) rows.add(row);
         return rows;
     }
+
+    /** Подпись к фото бланка (≤ 1024 знаков после разбора разметки): номер письма, кому, тема, начало текста. */
+    public static String caption(int n, int total, String supplier, boolean maker, String email, String subject, String body) {
+        String head = "Письмо " + n + " из " + total + " · " + supplier + " (" + (maker ? "завод" : "доверенный") + ")\n"
+                + "Кому: " + TelegramText.oneLine(email, 200) + "\n" + "Тема: " + TelegramText.oneLine(subject, 200) + "\n\n";
+        String rest = body == null ? "" : body.strip();
+        int room = 1000 - head.length();
+        if (rest.length() > room) rest = TelegramText.safeCut(rest, Math.max(0, room - 1)) + "…";
+        return TelegramText.html(head + rest);
+    }
+
+    public static String sent(String supplier, String user, String lots) {
+        return TelegramText.html("✅ Письмо " + supplier + " отправлено · " + user + " (" + lots + ")");
+    }
+
+    public static String failed(String supplier, String why) {
+        return TelegramText.html("⚠ Письмо " + supplier + " не ушло: " + why
+                + " — нажмите «✅ Отправить» ещё раз (уйдёт тот же запрос) или откройте в АИС");
+    }
 }
