@@ -388,3 +388,38 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090   # 200
 - **Модель в работе лота (V40; ветка `feature/lot-model-in-work`, 2026-10-21; механика — CLAUDE.md §8 «Модель в работе лота»).** Код приезжает обычным деплоем, **новых переменных нет**; V40 — только добавления (`med_equipment.site_product_id` с частичным уникальным индексом, `tender_lot.model_note` / `model_set_by` / `model_set_at`). Выключателя нет: «📌 Модель…» видит администратор на рынке KZ; сверка модели реестра при первом открытии берёт карточку РУ с ndda.kz (публично, без токена; сбой — «Карточка РУ недоступна — повторите позже»).
   - **Приёмка:** `cd /srv/ais && docker compose logs --since 30m ais-backend | grep -E 'Successfully applied|Current version|ERROR'` — V40 применена, ошибок нет. В карточке KZ-тендера у раскрытого лота — «📌 Модель…»; закрепить — в «Истории» тендера строка «Лот «…»: модель в работе — …» с автором.
   - **Откат кода ниже V40 — без SQL:** прежний код новых колонок не читает (модели лотов остаются «Предложено: …»), события `deal_event` с кодом `MODEL` показывает в «Истории» обычной строкой без ссылки; Flyway пропускает «будущую» V40.
+- **Кнопки бота: «наш тендер — с телефона за минуту» (V41; ветка `feature/tg-tender-bot`, 2026-10-21; механика — CLAUDE.md §8 «Кнопки бота Telegram»).** Вместо прежнего сообщения «🏷 Наш товар в тендерах» в теме 95 — сообщение-пачка «🔎 Потенциально наших тендеров: N» (до 15 тендеров) с кнопками «📋 Для ИИ» (файл текста для Claude / Gemini с кодами лотов и товаров) и «✍️ Ответ ИИ» (ответить боту блоком «Для АИС»): бот закрепляет модель в работе и готовит письма заводу бренда (нет завода с почтой — «Доверенным») со строкой «Конечный заказчик: <больница>. Просим закрепить проект за West-Med.»; «👁 N» — фото бланка, «✅ Отправить» — то же письмо, что панель «КП» в АИС. Нажимать могут только администраторы АИС с вписанным Telegram ID. Код приезжает обычным деплоем; V41 — только добавления (`user_account.telegram_user_id`, `price_request.created_by`, колонки вывода ИИ у `tender_lot`, таблицы `product_digest` и `bot_letter`). **Выключено по умолчанию (`TELEGRAM_BOT_ACTIONS_ENABLED=false`)** — до включения всё как раньше; работает только вместе с «нашей продукцией» (`PRODUCT_WATCH_ENABLED=true`) и настроенным Telegram (§8). Бот тот же (@West_Med_bot): сайт и medsite обновления бота не читают (в их коде нет `getUpdates` и вебхука; проверено 2026-10-21) — АИС единственный читатель. В АИС без флага: Telegram ID в «Пользователях», «✍️ Вставить ответ ИИ» в «Тендерах», завод бренда первым в панели «КП» и «👤 Указать клиента» у поставщика.
+  - **Включение** (агент — только после явного «да» оператора на SSH):
+    1. **Оператор:** `! git push origin main`. Агент проверяет: `cd /srv/ais && docker compose logs --since 10m ais-backend | grep -E 'Successfully applied|Current version|ERROR'` — V41 применена, ошибок нет.
+    2. **Первая пачка.** С `PRODUCT_WATCH_NOTIFY=ALL` первый поиск пришлёт все открытые тендеры с отметкой, о которых ещё не сообщали («🏷 наш вид» под правилом «только ★» не отмечались сообщёнными) — ≈ 2–4 сообщения по 15. Не нужно — **до** шага 3 пометить их сообщёнными (порядок уровней TYPE < FITS < NAMED < COPIED):
+       ```sql
+       update tender t set product_notified_level = x.lvl, product_notified_at = now()
+         from (select tender_id, (array['TYPE','FITS','NAMED','COPIED'])[max(array_position(array['TYPE','FITS','NAMED','COPIED'], level))] lvl
+                 from tender_lot_product_match group by tender_id) x
+        where x.tender_id = t.id
+          and coalesce(array_position(array['TYPE','FITS','NAMED','COPIED'], t.product_notified_level), 0)
+              < array_position(array['TYPE','FITS','NAMED','COPIED'], x.lvl);
+       ```
+    3. **`.env`** — копия и `set_env`, как в §8:
+       ```bash
+       cd /srv/ais && cp -p .env .env.bak-$(date +%F-%H%M)-bot && umask 077 && { [ -z "$(tail -c1 .env)" ] || echo >> .env; }
+       set_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi; }
+       set_env PRODUCT_WATCH_NOTIFY ALL
+       set_env TELEGRAM_BOT_ACTIONS_ENABLED true
+       docker compose up -d --force-recreate ais-backend
+       ```
+       ⚠️ Ключ не оставлять пустым (`TELEGRAM_BOT_ACTIONS_ENABLED=`) — пустой булев флаг роняет старт бэкенда (CLAUDE.md §14). Порог суммы (`PRODUCT_WATCH_NOTIFY_MIN_SUM`, 1 млн ₸) и тема (95) — прежние.
+    4. **Приёмка:** `docker compose logs --since 10m ais-backend | grep -E 'Кнопки бота|«Наш товар» в Telegram'` — `Кнопки бота Telegram: приём нажатий включён` и `«Наш товар» в Telegram: все отметки, наши лоты от 1000000 ₸, тема 95, сообщение-пачка с кнопками бота`. Пачка — на ближайшем поиске (:30 рабочего часа) или «Наша продукция → Искать сейчас».
+    5. **Telegram ID:** нажать в пачке «📋 Для ИИ» — бот ответит всплывающим окном «Ваш Telegram ID N — впишите его в «Пользователи» АИС» → «Система → Пользователи» → учётке администратора (оператор, отец) поле «Telegram ID». Учётка не администратора — окно «Нет доступа».
+    6. **Проверка на телефоне вместе с оператором** (спека §14): «📋 Для ИИ» → файл «Для ИИ — N тендеров, ДД.ММ ЧЧ:ММ.txt» открывается и уходит в Claude через «Поделиться» (иначе — «Выбрать всё» → скопировать); ответ ИИ — блоком «Для АИС» ответом на сообщение бота → итог «🤖 Разобрал ответ ИИ…» и кнопки «👁 N» → фото бланка (кириллица в имени файла, строка о больнице, «Ответить до») → «✅ Отправить» тестового письма — запрос, где поставщиком временно вписан свой адрес, или «⬅ Вернуться» без отправки.
+  - **Если кнопки не отвечают:** `docker compose logs --since 1h ais-backend | grep 'Кнопки бота'` — `…вебхук или его обновления читает другая программа` (409: кто-то включил вебхук или `getUpdates` того же бота — цикл остановлен до перезапуска; лечение — свой бот АИС), `… — повтор через 600 с` (401 / 404 — токен), «сбой приёма» (сеть до `api.telegram.org`; адрес закреплён в `extra_hosts`, §8). Нажатия, пришедшие пока АИС перезапускалась, не выполняются — нажать ещё раз.
+  - **Проверка с сервера:**
+    ```bash
+    docker compose exec -T ais-postgres sh -c 'psql -U "$POSTGRES_USER" -d nirdb -At' <<'SQL'
+    select status, count(*) from bot_letter group by 1;
+    select id, created_at, message_id, jsonb_array_length(tender_ids) from product_digest order by id desc limit 5;
+    select ai_verdict, count(*), count(*) filter (where model_by_ai) from tender_lot where ai_verdict is not null group by 1;
+    SQL
+    ```
+  - **Откат настройкой:** `TELEGRAM_BOT_ACTIONS_ENABLED=false` → `docker compose up -d --force-recreate ais-backend`: сообщения — прежнего вида, цикл нажатий не запускается; кнопки старых пачек больше ничего не делают (Telegram покрутит значок ожидания). Модели, закреплённые по ответу ИИ, вывод ИИ у лотов и отправленные запросы цен остаются. SQL не нужен.
+  - **Откат кода ниже V41 — без SQL:** прежний код новых колонок и таблиц не читает; авторы «vlad, Telegram» в «Истории» — обычный текст; Flyway пропускает «будущую» V41.
