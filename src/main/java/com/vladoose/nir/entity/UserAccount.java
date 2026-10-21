@@ -27,4 +27,8 @@ public class UserAccount {
 
     @Column(name = "password_hash", length = 255, nullable = false)
     private String passwordHash;
+
+    /** Telegram ID — для кнопок бота (спека 2026-10-21-tender-telegram-bot §8, V41); пусто — бот учётку не знает. */
+    @Column(name = "telegram_user_id", unique = true)
+    private Long telegramUserId;
 }

@@ -95,6 +95,29 @@ public class TenderLot {
     @Column(name = "model_set_at")
     private OffsetDateTime modelSetAt;
 
+    /** Последний вывод ИИ по лоту (спека 2026-10-21-tender-telegram-bot §6, V41). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ai_verdict", length = 10)
+    private AiVerdict aiVerdict;
+
+    /** Наш товар из совета ИИ — только из кандидатов этого лота. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ai_product_id")
+    private SiteProduct aiProduct;
+
+    @Column(name = "ai_note", length = 500)
+    private String aiNote;
+
+    @Column(name = "ai_by", length = 100)
+    private String aiBy;
+
+    @Column(name = "ai_at")
+    private OffsetDateTime aiAt;
+
+    /** Модель в работе закрепил ИИ по ответу: следующий ответ ИИ её заменит, ручную — нет. */
+    @Column(name = "model_by_ai", nullable = false)
+    private boolean modelByAi;
+
     /** Ед. изм. позиции частной заявки; пусто = «шт». */
     @Column(length = 30)
     private String unit;

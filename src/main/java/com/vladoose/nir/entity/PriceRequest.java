@@ -80,6 +80,10 @@ public class PriceRequest implements MarketScoped {
     @Column(name = "email_override", nullable = false)
     private boolean emailOverride;
 
+    /** Кто отправил: «vlad», из бота — «vlad, Telegram» (V41); у запросов до V41 — пусто. */
+    @Column(name = "created_by", length = 100)
+    private String createdBy;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
     private Market market;

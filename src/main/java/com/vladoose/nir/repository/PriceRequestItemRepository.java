@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -56,4 +57,9 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE PriceRequestItem i SET i.responseAuto = false WHERE i.priceRequest.id = :prId AND i.responseAuto = true")
     int clearAuto(@Param("prId") Long prId);
+
+    /** Когда этот поставщик последний раз получал запрос по лоту — письма из ответа ИИ (спека 2026-10-21 §6). */
+    @Query("SELECT max(i.priceRequest.sentAt) FROM PriceRequestItem i "
+            + "WHERE i.tenderLot.id = :lotId AND i.priceRequest.distributor.id = :distId")
+    OffsetDateTime lastRequestedAt(@Param("lotId") Long lotId, @Param("distId") Long distId);
 }

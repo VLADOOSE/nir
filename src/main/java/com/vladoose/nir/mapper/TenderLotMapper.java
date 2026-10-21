@@ -28,6 +28,12 @@ public interface TenderLotMapper {
     @Mapping(target = "modelNote", ignore = true)
     @Mapping(target = "modelSetBy", ignore = true)
     @Mapping(target = "modelSetAt", ignore = true)
+    @Mapping(target = "aiVerdict", ignore = true)
+    @Mapping(target = "aiProduct", ignore = true)
+    @Mapping(target = "aiNote", ignore = true)
+    @Mapping(target = "aiBy", ignore = true)
+    @Mapping(target = "aiAt", ignore = true)
+    @Mapping(target = "modelByAi", ignore = true)
     TenderLot toEntity(TenderLotRequest request);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -38,6 +44,12 @@ public interface TenderLotMapper {
     @Mapping(target = "modelNote", ignore = true)
     @Mapping(target = "modelSetBy", ignore = true)
     @Mapping(target = "modelSetAt", ignore = true)
+    @Mapping(target = "aiVerdict", ignore = true)
+    @Mapping(target = "aiProduct", ignore = true)
+    @Mapping(target = "aiNote", ignore = true)
+    @Mapping(target = "aiBy", ignore = true)
+    @Mapping(target = "aiAt", ignore = true)
+    @Mapping(target = "modelByAi", ignore = true)
     void updateEntity(TenderLotRequest request, @MappingTarget TenderLot entity);
 
     /** MedEquipment → компактное DTO предложенной модели (подхватывается MapStruct по типам). */

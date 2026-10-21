@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -42,4 +43,10 @@ public interface PriceRequestRepository extends JpaRepository<PriceRequest, Long
     /** Для этапа заявки: (заявка, поставщик, статус запроса). */
     @Query("SELECT pr.tender.id, pr.distributor.id, pr.status FROM PriceRequest pr WHERE pr.tender.id IN :ids")
     List<Object[]> findStageRows(@Param("ids") Collection<Long> ids);
+
+    /** Последний запрос цен поставщику по лотам тендера — «уже отправлено из АИС» у письма из бота (спека §7). */
+    @Query("SELECT max(p.createdAt) FROM PriceRequest p JOIN p.items i WHERE p.tender.id = :tenderId "
+            + "AND p.distributor.id = :distId AND i.tenderLot.id IN :lotIds")
+    OffsetDateTime lastCreatedAt(@Param("tenderId") Long tenderId, @Param("distId") Long distId,
+                                 @Param("lotIds") Collection<Long> lotIds);
 }
