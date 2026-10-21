@@ -37,7 +37,7 @@ public class DealEventService {
         String t = text == null ? "" : text.strip();
         if (t.isEmpty()) throw new BadRequestException("Текст пустой");
         if (t.length() > MAX_TEXT) throw new BadRequestException("Текст длиннее " + MAX_TEXT + " символов");
-        return repository.save(DealEvent.builder().tenderId(tenderId).type(type).text(t).author(CurrentUser.name()).build());
+        return repository.save(DealEvent.builder().tenderId(tenderId).type(type).text(t).author(CurrentUser.label()).build());
     }
 
     /** КП удалено — его события смены статуса не нужны: ссылка вела бы на «КП не найдено» (решение при планировании 10). */
@@ -63,6 +63,6 @@ public class DealEventService {
     @Transactional
     public DealEvent stage(Long tenderId, String code, String text, Long refId) {
         return repository.save(DealEvent.builder().tenderId(tenderId).type(DealEventType.STAGE).code(code).text(text)
-                .refId(refId).author(CurrentUser.name()).build());
+                .refId(refId).author(CurrentUser.label()).build());
     }
 }

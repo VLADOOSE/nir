@@ -223,7 +223,9 @@ public class DealTimelineService {
                             manual.isEmpty() ? null : "передан вручную — " + manual)
                     .filter(Objects::nonNull).collect(Collectors.joining("; "));
             boolean one = group.size() == 1;
-            all.add(item(group.get(0).getSentAt(), "RFQ_SENT", text, null, one ? "PRICE_REQUEST" : null,
+            // кто отправил (V41): одно окно запроса цен — один автор; у запросов до V41 — пусто
+            String author = group.stream().map(PriceRequest::getCreatedBy).filter(Objects::nonNull).findFirst().orElse(null);
+            all.add(item(group.get(0).getSentAt(), "RFQ_SENT", text, author, one ? "PRICE_REQUEST" : null,
                     one ? group.get(0).getId() : null));
         }
 

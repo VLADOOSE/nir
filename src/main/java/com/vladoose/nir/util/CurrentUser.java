@@ -15,4 +15,19 @@ public final class CurrentUser {
         String n = a.getName();
         return n == null || n.isBlank() ? null : n;
     }
+
+    private static final ThreadLocal<String> VIA = new ThreadLocal<>();
+
+    /** Откуда действие — «Telegram» у кнопок бота (спека 2026-10-21-tender-telegram-bot §8); null — снять. */
+    public static void setVia(String via) {
+        if (via == null) VIA.remove(); else VIA.set(via);
+    }
+
+    /** Автор для журналов: «vlad», из бота — «vlad, Telegram»; null — система (фоновый поток, аноним). */
+    public static String label() {
+        String n = name();
+        if (n == null) return null;
+        String v = VIA.get();
+        return v == null ? n : n + ", " + v;
+    }
 }

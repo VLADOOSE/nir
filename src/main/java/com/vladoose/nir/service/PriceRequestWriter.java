@@ -3,6 +3,7 @@ package com.vladoose.nir.service;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
+import com.vladoose.nir.util.CurrentUser;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +55,7 @@ public class PriceRequestWriter {
                 .withStamp(o.withStamp())
                 .emailOverride(o.emailTo() != null && !o.emailTo().isEmpty())
                 .letterStatus(o.manual() ? LetterStatus.MANUAL : null)   // «передам сам» — исход известен сразу
+                .createdBy(CurrentUser.label())
                 .build();
         pr = priceRequestService.save(pr); // штампует market
         for (Line line : lines) {

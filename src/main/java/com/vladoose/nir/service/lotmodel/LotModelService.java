@@ -60,19 +60,32 @@ public class LotModelService {
     /** Поставить модель: та же модель — только заметка (если прислана); новая модель без заметки заметку очищает. */
     @Transactional
     public TenderLot apply(TenderLot lot, MedEquipment eq, String note) {
+        return apply(lot, eq, note, false);
+    }
+
+    /** По ответу ИИ (спека 2026-10-21-tender-telegram-bot §6): пометка «закреплено ИИ», событие «… — по ответу ИИ». */
+    @Transactional
+    public TenderLot applyByAi(TenderLot lot, MedEquipment eq, String note) {
+        return apply(lot, eq, note, true);
+    }
+
+    private TenderLot apply(TenderLot lot, MedEquipment eq, String note, boolean byAi) {
         String n = note(note);
         boolean same = lot.getProposedEquipment() != null && Objects.equals(lot.getProposedEquipment().getId(), eq.getId());
         if (same) {
-            if (n == null) return lot;
-            lot.setModelNote(n);
+            boolean confirmedByHuman = !byAi && lot.isModelByAi();   // человек подтвердил модель ИИ — теперь она ручная
+            if (n == null && !confirmedByHuman) return lot;
+            if (n != null) lot.setModelNote(n);
+            if (confirmedByHuman) lot.setModelByAi(false);
             return lots.save(lot);
         }
         lot.setProposedEquipment(eq);
         lot.setModelNote(n);
+        lot.setModelByAi(byAi);
         stamp(lot);
         TenderLot saved = lots.save(lot);
         events.stage(lot.getTender().getId(), DealEventService.MODEL,
-                "Лот «" + lotName(lot) + "»: модель в работе — " + label(eq), lot.getId());
+                "Лот «" + lotName(lot) + "»: модель в работе — " + label(eq) + (byAi ? " — по ответу ИИ" : ""), lot.getId());
         return saved;
     }
 
@@ -81,6 +94,7 @@ public class LotModelService {
         if (lot.getProposedEquipment() == null) return lot;
         lot.setProposedEquipment(null);
         lot.setModelNote(null);
+        lot.setModelByAi(false);
         stamp(lot);
         TenderLot saved = lots.save(lot);
         events.stage(lot.getTender().getId(), DealEventService.MODEL, "Лот «" + lotName(lot) + "»: модель снята", lot.getId());
@@ -169,7 +183,7 @@ public class LotModelService {
     }
 
     private static void stamp(TenderLot lot) {
-        lot.setModelSetBy(CurrentUser.name());
+        lot.setModelSetBy(CurrentUser.label());
         lot.setModelSetAt(OffsetDateTime.now());
     }
 

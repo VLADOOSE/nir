@@ -23,7 +23,8 @@ class LotModelSchemaTest {
     @Test
     void v40Columns() {
         assertThat(jdbc.queryForList("select column_name from information_schema.columns where table_name = 'tender_lot' "
-                + "and column_name like 'model\\_%'", String.class)).containsExactlyInAnyOrder("model_note", "model_set_by", "model_set_at");
+                + "and column_name like 'model\\_%'", String.class))
+                .containsExactlyInAnyOrder("model_note", "model_set_by", "model_set_at", "model_by_ai");   // model_by_ai — V41
         assertThat(jdbc.queryForObject("select count(*) from information_schema.columns where table_name = 'med_equipment' "
                 + "and column_name = 'site_product_id'", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from pg_indexes where indexname = 'uq_med_equipment_site_product'",
