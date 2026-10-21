@@ -4,11 +4,11 @@ import { NgFor, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
-import { saveBlob } from '../../shared/client-offer';
+import { numText, saveBlob } from '../../shared/client-offer';
 import { responseFile } from '../../shared/share';
 import { errorText } from '../../shared/error-text';
 import { plural } from '../../shared/private-request';
-import { CURRENCY_CHOICES, REPLY_ROLE_OPTIONS, currencyName, sourceLabel } from '../../shared/supplier-reply';
+import { CURRENCY_CHOICES, REPLY_ROLE_OPTIONS, currencyLabel, currencyName, sourceLabel } from '../../shared/supplier-reply';
 import type { CurrencySource, ReplyColumn, ReplySource, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 
 /** Документ ответа (спека §4.1): источники, таблица файла с ролями колонок, страницы PDF, картинка, текст письма. */
@@ -72,6 +72,10 @@ import type { CurrencySource, ReplyColumn, ReplySource, SupplierReply, SupplierR
             </tbody>
           </table>
         </div>
+        <!-- итоговые строки файла, как в файле: «ИТОГО», «ВСЕГО : С учетом скидки…», абзацы «Всего к оплате …» -->
+        <div class="t-tot" *ngIf="t.totals?.length">Итоги в файле:
+          <ng-container *ngFor="let x of t.totals; let last = last">{{ x.label }} — {{ amount(x.amount, t.currency) }}<ng-container *ngIf="!last"> · </ng-container></ng-container>
+        </div>
       </div>
 
       <div class="pages" *ngIf="s.type === 'FILE' && s.kind === 'PDF'">
@@ -110,6 +114,7 @@ import type { CurrencySource, ReplyColumn, ReplySource, SupplierReply, SupplierR
     .tbl { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .t-cap { font-size: 12px; color: var(--text-muted); padding: 6px 10px; background: var(--surface-2); }
     .t-scroll { overflow: auto; max-height: 70vh; }
+    .t-tot { padding: 6px 10px; font-size: 12px; border-top: 1px solid var(--border); background: var(--surface-2); overflow-wrap: anywhere; }
     table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
     th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
     th { background: var(--surface-2); position: sticky; top: 0; }
@@ -260,6 +265,8 @@ export class ReplyDocumentComponent implements OnChanges, OnDestroy {
   }
 
   curSource(): CurrencySource | null { return this.view.table?.currencyOrigin?.source ?? null; }
+  /** Сумма итоговой строки с валютой файла (не названа — валюта запроса). */
+  amount(v: number, code: string | null) { return numText(v) + ' ' + currencyLabel(code ?? this.view.head.currency); }
   curTexts(): string[] { return this.view.table?.currencyOrigin?.texts || []; }
   quoted(texts: string[]) { return texts.map(t => `«${t}»`).join(', '); }
 

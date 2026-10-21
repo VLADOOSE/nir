@@ -92,6 +92,41 @@ class SupplierReplyApiTest {
                 .andExpect(jsonPath("$.sources[0].type").value("FILE"));
     }
 
+    /**
+     * Скидка только в итоге файла (КП «Рикты»): итог «со скидкой» меньше суммы строк — предупреждение на экране сверки;
+     * итог, равный сумме строк, — без предупреждения; итоговые строки — под таблицей файла.
+     */
+    @Test
+    void discountOnlyInTotal_shownWithRowsSum() throws Exception {
+        byte[] xlsx = ReplyTableReaderTest.xlsx(List.of(List.of("Наименование", "Кол-во", "Цена, тг", "Сумма, тг"),
+                List.of("Кушетка медицинская смотровая КМС-01", "2", "95 000", "190 000"),
+                List.of("Столик процедурный СП-02", "1", "48 500", "48 500"),
+                List.of("Итого", "", "", "238 500"),
+                List.of("Итого с учетом скидки 10%", "", "", "214 650")));
+        mvc.perform(multipart("/api/price-requests/" + pr.getId() + "/files")
+                        .file(new MockMultipartFile("file", "КП со скидкой.xlsx", "application/octet-stream", xlsx))
+                        .header("X-Market", "KZ").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.table.totals[0].label").value("Итого"))
+                .andExpect(jsonPath("$.table.totals[1].amount").value(214650.0))
+                .andExpect(jsonPath("$.table.discount.label").value("Итого с учетом скидки 10%"))
+                .andExpect(jsonPath("$.table.discount.amount").value(214650.0))
+                .andExpect(jsonPath("$.table.discount.rowsSum").value(238500.0));
+    }
+
+    @Test
+    void totalEqualsRows_noDiscountNotice() throws Exception {
+        byte[] xlsx = ReplyTableReaderTest.xlsx(List.of(List.of("Наименование", "Кол-во", "Цена, тг", "Сумма, тг"),
+                List.of("Кушетка медицинская смотровая КМС-01", "2", "95 000", "190 000"),
+                List.of("Итого (скидка учтена в ценах)", "", "", "190 000")));
+        mvc.perform(multipart("/api/price-requests/" + pr.getId() + "/files")
+                        .file(new MockMultipartFile("file", "КП.xlsx", "application/octet-stream", xlsx))
+                        .header("X-Market", "KZ").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.table.totals[0].amount").value(190000.0))
+                .andExpect(jsonPath("$.table.discount").doesNotExist());
+    }
+
     @Test
     void otherMarketIs404_operatorCannotWrite() throws Exception {
         mvc.perform(get("/api/price-requests/" + pr.getId() + "/reply").header("X-Market", "RF").with(user("op").roles("OPERATOR")))

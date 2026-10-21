@@ -3,6 +3,7 @@ package com.vladoose.nir.entity;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,17 +15,24 @@ import java.util.Map;
  * документа вне таблицы (вплотную к числу или явной фразой — MoneyText.textHits), или выбранная человеком на экране
  * сверки; MoneyText.MIXED — валюта не ясна (в тексте разные валюты или суммы в тысячах): цены сами не подставляются,
  * курс не применяется; null — не названа (считается валютой запроса). currencyFrom — откуда валюта (у таблиц,
- * разобранных до 2026-10-18, его нет — см. {@link #currencySource()}).
+ * разобранных до 2026-10-18, его нет — см. {@link #currencySource()}). totals — итоговые строки файла («Итого», «Всего с
+ * учётом скидки…», абзацы «Всего к оплате …»; у таблиц, разобранных до 2026-10-21, — нет, null).
  * Незнакомые поля JSON пропускаются: строка, записанная более новой версией, не должна мешать открыть файл после
  * отката (тот же урок, что у OfferColumn, CLAUDE.md §8 «КП клиенту»).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ReplyTable(String source, int headerRow, int score, String currency, List<Column> columns, List<Row> rows,
-                         CurrencyFrom currencyFrom) {
+                         CurrencyFrom currencyFrom, List<Total> totals) {
 
     /** Без источника валюты (тесты; так выглядят таблицы до 2026-10-18): источник выводится из currency. */
     public ReplyTable(String source, int headerRow, int score, String currency, List<Column> columns, List<Row> rows) {
-        this(source, headerRow, score, currency, columns, rows, null);
+        this(source, headerRow, score, currency, columns, rows, null, null);
+    }
+
+    /** Без итоговых строк (так выглядят таблицы до 2026-10-21). */
+    public ReplyTable(String source, int headerRow, int score, String currency, List<Column> columns, List<Row> rows,
+                      CurrencyFrom currencyFrom) {
+        this(source, headerRow, score, currency, columns, rows, currencyFrom, null);
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -32,6 +40,10 @@ public record ReplyTable(String source, int headerRow, int score, String currenc
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Row(int fileRow, List<String> cells) {}
+
+    /** Итоговая строка файла: подпись (как в файле) и её сумма. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Total(String label, BigDecimal amount) {}
 
     /**
      * Откуда валюта: kind; texts — фрагменты текста документа, где она нашлась (TEXT — один, MIXED — по одному на
@@ -55,11 +67,11 @@ public record ReplyTable(String source, int headerRow, int score, String currenc
     public ReplyTable withRoles(Map<Integer, LineField> roles) {
         List<Column> out = new ArrayList<>(columns.size());
         for (Column c : columns) out.add(roles.containsKey(c.index()) ? new Column(c.index(), c.header(), roles.get(c.index())) : c);
-        return new ReplyTable(source, headerRow, score, currency, out, rows, currencyFrom);
+        return new ReplyTable(source, headerRow, score, currency, out, rows, currencyFrom, totals);
     }
 
     /** Копия с другой валютой и её источником (валюта, выбранная на экране сверки). */
     public ReplyTable withCurrency(String code, CurrencyFrom from) {
-        return new ReplyTable(source, headerRow, score, code, columns, rows, from);
+        return new ReplyTable(source, headerRow, score, code, columns, rows, from, totals);
     }
 }

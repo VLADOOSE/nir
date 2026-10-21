@@ -272,6 +272,43 @@ class ReplyTableReaderTest {
         assertThat(t.currencyFrom().texts()).containsExactly("Общая стоимость предложения — 18 450,00 руб., НДС не облагается.");
     }
 
+    /**
+     * КП «Рикты» (11.12.2024): цены строк — без скидки, скидка только в итоге («ВСЕГО : С учетом скидки на основное
+     * оборудование 12%»). Итоговые строки файла сохраняются (экран сверки сравнит их с суммой строк): строки таблицы от
+     * «Итого» вниз — число в колонке суммы; абзацы «Итого / Всего …» — наибольшее число, не процент; прочий текст — нет.
+     */
+    @Test
+    void docx_totalRowsAndParagraphsKept() throws Exception {
+        XWPFDocument d = new XWPFDocument();
+        table(d, List.of(List.of("№№", "Наименование изделия", "Стоимость единицы товара", "НДС", "Коли-чество", "Сумма заказа позиции"),
+                List.of("1.", "Аппарат магнитоинфракрасный лазерный терапевтический", "52 800,00", "Не облагается", "1", "52 800,00"),
+                List.of("2.", "Аппарат электро-свето-магнито-инфракрасный", "47 790,00", "Не облагается", "1", "47 790,00"),
+                List.of("", "ИТОГО", "", "", "2", "100 590,00"),
+                List.of("", "ВСЕГО : С учетом скидки на основное оборудование 12%", "", "", "2", "88 519,20")));
+        d.createParagraph().createRun().setText("ВСЕГО К ОПЛАТЕ: 2 единицы товара на сумму 88 519,20 руб., НДС не облагается.");
+        d.createParagraph().createRun().setText("Гарантия 24 месяца, срок поставки 10 дней.");
+        ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
+        assertThat(t.rows()).hasSize(2);
+        assertThat(t.totals()).extracting(ReplyTable.Total::label).containsExactly("ИТОГО",
+                "ВСЕГО : С учетом скидки на основное оборудование 12%",
+                "ВСЕГО К ОПЛАТЕ: 2 единицы товара на сумму 88 519,20 руб., НДС не облагается.");
+        assertThat(t.totals()).extracting(x -> x.amount().stripTrailingZeros().toPlainString())
+                .containsExactly("100590", "88519.2", "88519.2");
+    }
+
+    /** Excel: строки под таблицей на листе — «Итого» и «Итого со скидкой 10%»; процент — не сумма. */
+    @Test
+    void excel_totalRowsUnderTable() throws Exception {
+        ReplyTable t = ReplyTableReader.read(xlsx(List.of(
+                List.of("Наименование", "Кол-во", "Цена, тг", "Сумма, тг"),
+                List.of("Кушетка медицинская смотровая", "2", "95 000", "190 000"),
+                List.of("Итого", "", "", "190 000"),
+                List.of("Итого со скидкой 10%", "", "", "171 000"),
+                List.of("Срок поставки — 10 дней", "", "", ""))), ReplyFileKind.EXCEL, Map.of()).orElseThrow();
+        assertThat(t.totals()).extracting(ReplyTable.Total::label).containsExactly("Итого", "Итого со скидкой 10%");
+        assertThat(t.totals()).extracting(x -> x.amount().stripTrailingZeros().toPlainString()).containsExactly("190000", "171000");
+    }
+
     /** В тексте документа разные валюты — не угадывать: таблица «валюта не ясна», цены сами не подставятся. */
     @Test
     void docx_differentCurrenciesInText_mixed() throws Exception {

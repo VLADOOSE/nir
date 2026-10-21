@@ -69,7 +69,11 @@ export function currencyLabel(code: string | null): string {
 export interface ReplyTableView {
   source: string; headerRow: number; currency: string | null; currencyOrigin: ReplyCurrencyOrigin | null;
   columns: ReplyColumn[]; rows: ReplyTableRow[];
+  /** Итоговые строки файла (под таблицей); discount — итог «со скидкой» меньше суммы строк: скидка только в итоге. */
+  totals?: ReplyTotal[]; discount?: ReplyDiscount | null;
 }
+export interface ReplyTotal { label: string; amount: number; }
+export interface ReplyDiscount { label: string; amount: number; rowsSum: number; }
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
 /** «в рублях»-форма после «в»: «Цены в файле — в руб.», «— в юанях». */
 export function currencyIn(code: string | null): string {

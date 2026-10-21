@@ -126,7 +126,10 @@ public class SupplierReplyViewBuilder {
                         v == null ? "" : v.displayText(), v == null ? null : v.price(), v == null ? null : v.currency(),
                         v == null ? null : converted(v, market, rate)));
             }
-            tbl = new Table(table.source(), table.headerRow(), table.currency(), origin(table), cols, rows);
+            List<Total> totals = table.totals() == null ? List.of()
+                    : table.totals().stream().map(x -> new Total(x.label(), x.amount())).toList();
+            tbl = new Table(table.source(), table.headerRow(), table.currency(), origin(table), cols, rows, totals,
+                    discount(table.totals(), values));
         }
         Tender t = pr.getTender();
         Head head = new Head(pr.getId(), pr.getStatus(), pr.getDistributor() == null ? "поставщик" : pr.getDistributor().getName(),
@@ -190,6 +193,34 @@ public class SupplierReplyViewBuilder {
         if (v instanceof OffsetDateTime o) return o;
         if (v instanceof Instant i) return i.atOffset(ZoneOffset.UTC);
         if (v instanceof java.sql.Timestamp ts) return ts.toInstant().atOffset(ZoneOffset.UTC);
+        return null;
+    }
+
+    /**
+     * Скидка только в итоге файла (КП «Рикты»: цены строк без скидки, «ВСЕГО : С учетом скидки на основное оборудование
+     * 12%» ниже «ИТОГО»): итоговая строка со «скидк…» в подписи меньше суммы строк (сумма строки, иначе цена × кол-во)
+     * больше чем на 0,5 % — её и сумму строк покажет экран. Прочие итоги (НДС, «без НДС») — только под таблицей: их
+     * расхождение с суммой строк скидки не значит.
+     */
+    static Discount discount(List<ReplyTable.Total> totals, List<ReplyRowValues> values) {
+        if (totals == null || totals.isEmpty()) return null;
+        BigDecimal sum = BigDecimal.ZERO;
+        boolean any = false;
+        for (ReplyRowValues r : values) {
+            BigDecimal s = r.sum() != null ? r.sum()
+                    : r.price() != null && r.quantity() != null ? r.price().multiply(r.quantity().value()) : null;
+            if (s == null) continue;
+            sum = sum.add(s);
+            any = true;
+        }
+        if (!any) return null;
+        BigDecimal tolerance = sum.multiply(new BigDecimal("0.005")).max(BigDecimal.ONE);
+        for (ReplyTable.Total t : totals) {
+            if (t.label() == null || t.amount() == null || !t.label().toLowerCase(Locale.ROOT).contains("скидк")) continue;
+            if (sum.subtract(t.amount()).compareTo(tolerance) > 0) {
+                return new Discount(t.label(), t.amount(), sum.setScale(2, java.math.RoundingMode.HALF_UP));
+            }
+        }
         return null;
     }
 

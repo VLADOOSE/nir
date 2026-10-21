@@ -35,10 +35,16 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
 
     /**
      * currency — валюта цен файла (код; MIXED — не ясна; null — не названа, считается валютой запроса); currencyOrigin —
-     * откуда она: строка над таблицей файла, если не из самой таблицы.
+     * откуда она: строка над таблицей файла, если не из самой таблицы; totals — итоговые строки файла (под таблицей);
+     * discount — итог «со скидкой» меньше суммы строк: скидка только в итоге, цены строк — без неё (иначе null).
      */
     public record Table(String source, int headerRow, String currency, CurrencyOrigin currencyOrigin, List<Col> columns,
-                        List<TRow> rows) {}
+                        List<TRow> rows, List<Total> totals, Discount discount) {}
+
+    public record Total(String label, BigDecimal amount) {}
+
+    /** label и amount — итоговая строка файла со скидкой; rowsSum — сумма строк таблицы (без скидки). */
+    public record Discount(String label, BigDecimal amount, BigDecimal rowsSum) {}
 
     /**
      * Откуда валюта цен файла: source — TABLE (шапка, колонка «Валюта», цены), TEXT (текст документа вне таблицы;

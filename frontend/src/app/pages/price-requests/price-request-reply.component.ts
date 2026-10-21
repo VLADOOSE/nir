@@ -57,6 +57,11 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
             </ng-container>
             <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
           </div>
+          <!-- скидка только в итоге файла (КП «Рикты»): цены строк — без неё; итог «со скидкой» с суммой строк сравнил сервер -->
+          <div class="rate disc" *ngIf="v.table?.discount as d">
+            <span class="rate-t">Скидка — только в итоге файла: «{{ d.label }}» — {{ foreignPrice(d.amount, fileCurrency()) }} при сумме строк {{ foreignPrice(d.rowsSum, fileCurrency()) }}</span>
+            <span class="rate-h">Цены строк в файле — без этой скидки{{ admin ? ': если она относится к позициям, впишите цены со скидкой' : '' }}.</span>
+          </div>
           <article class="pos" *ngFor="let p of v.positions; trackBy: byItem" [class.auto]="p.auto" [class.no-price]="p.price == null">
             <div class="p-head">
               <span class="p-name">{{ p.ordinal }}. {{ p.name }}<ng-container *ngIf="p.brand"> ({{ p.brand }})</ng-container><ng-container *ngIf="p.model"> · {{ p.model }}</ng-container></span>
@@ -120,7 +125,8 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
     .rate-in input { width: 110px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
                      font-size: 14px; font-variant-numeric: tabular-nums; }
     .rate-in input:disabled { background: var(--surface-2); }
-    .rate-h { color: var(--text); }   /* --text-muted на подсветке блока — меньше 4,5:1 */
+    .rate-h { color: var(--text); }
+    .rate.disc { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }   /* --text-muted на подсветке блока — меньше 4,5:1 */
     .pos { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
     .pos.auto { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .p-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
@@ -213,6 +219,8 @@ export class PriceRequestReplyComponent implements OnInit {
   label(code: string | null) { return currencyLabel(code); }
   inLabel(code: string | null) { return currencyIn(code); }
   foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
+  /** Валюта цен выбранного файла; не названа — валюта запроса. */
+  fileCurrency() { return this.view?.table?.currency ?? this.view?.head.currency ?? null; }
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */
   marketIn() { return this.view?.head.currency === 'RUB' ? 'в рублях' : 'в тенге'; }
   /** Пометка у цены строки файла не в валюте рынка, когда курса нет; валюта не ясна («(валюта?)») — сначала её выбирают. */

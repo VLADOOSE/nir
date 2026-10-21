@@ -54,6 +54,12 @@ public final class ReplyTableReader {
     static final int MAX_COLS = 40;
     private static final Pattern TOTAL = Pattern.compile("^(итого|всего|итог|total)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern LINE_BREAK = Pattern.compile("[\\r\\n\\u000B\\f]+");
+    /** Число в тексте: «171 343,00», «90 000», «4»; группы по три цифры через пробел — одно число. */
+    private static final Pattern TEXT_NUMBER = Pattern.compile(
+            "(?<![\\d.,])(?:\\d{1,3}(?:[ \\u00a0\\u202f]\\d{3})+|\\d+)(?:[.,]\\d{1,2})?(?!\\d)");
+    /** Итоговых строк файла — не больше; подпись — до TOTAL_LABEL символов. */
+    static final int MAX_TOTALS = 6;
+    static final int TOTAL_LABEL = 160;
     /** Фрагмент текста, где нашлась валюта, — до 120 символов («по тексту «…»»); при разных валютах — по 80 на каждую. */
     static final int FRAGMENT = 120;
     static final int MIXED_FRAGMENT = 80;
@@ -369,7 +375,8 @@ public final class ReplyTableReader {
                 from = new ReplyTable.CurrencyFrom(kind, tc.fragments(), null, null);
             }
         }
-        ReplyTable table = new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out, from);
+        ReplyTable table = new ReplyTable(g.source(), g.firstRow() + best, bestScore, currency, columns, out, from,
+                totals(rows, end, width, columns, g.text()));
         return Optional.of(new Parsed(table, totalRow == null ? null : total(totalRow, columns)));
     }
 
@@ -501,6 +508,51 @@ public final class ReplyTableReader {
             fragments.add(MoneyText.fragment(first.get(code), hits.get(code), MIXED_FRAGMENT));
         }
         return new TextCurrency(MoneyText.MIXED, fragments);
+    }
+
+    /**
+     * Итоговые строки файла (экран сверки: скидка только в итоге — КП «Рикты» 11.12.2024): строки сетки от «Итого» вниз,
+     * начинающиеся с «Итого / Всего / Итог / Total», — число в колонке суммы, иначе наибольшее; абзацы документа так же —
+     * наибольшее число, не процент («ВСЕГО К ОПЛАТЕ: 4 единицы товара на сумму 171 343,00 руб.»). Подпись — первая
+     * непустая ячейка (абзац — целиком), до {@link #TOTAL_LABEL} символов; строк — до {@link #MAX_TOTALS}.
+     */
+    static List<ReplyTable.Total> totals(List<List<String>> rows, int end, int width, List<ReplyTable.Column> columns,
+                                         List<String> text) {
+        List<ReplyTable.Total> out = new ArrayList<>();
+        for (int r = end; r < rows.size() && out.size() < MAX_TOTALS; r++) {
+            List<String> cells = pad(rows.get(r), width);
+            String first = cells.stream().filter(s -> !s.isBlank()).findFirst().orElse("");
+            if (!TOTAL.matcher(first).find()) continue;
+            BigDecimal v = total(cells, columns);
+            if (v != null) out.add(new ReplyTable.Total(label(first), v));
+        }
+        for (String line : text) {
+            if (out.size() >= MAX_TOTALS) break;
+            String l = clean(line);
+            if (!TOTAL.matcher(l).find()) continue;
+            BigDecimal v = largestAmount(l);
+            if (v != null) out.add(new ReplyTable.Total(label(l), v));
+        }
+        return out;
+    }
+
+    /** Наибольшее число строки текста, кроме процентов: «… на сумму 171 343,00 руб.», «Итого со скидкой 10%: 90 000». */
+    static BigDecimal largestAmount(String line) {
+        BigDecimal max = null;
+        java.util.regex.Matcher m = TEXT_NUMBER.matcher(line);
+        while (m.find()) {
+            int i = m.end();
+            while (i < line.length() && Character.isWhitespace(line.charAt(i))) i++;
+            if (i < line.length() && line.charAt(i) == '%') continue;
+            BigDecimal v = MoneyText.amount(m.group());
+            if (v != null && v.signum() > 0 && (max == null || v.compareTo(max) > 0)) max = v;
+        }
+        return max;
+    }
+
+    private static String label(String s) {
+        String t = s.strip();
+        return t.length() <= TOTAL_LABEL ? t : t.substring(0, TOTAL_LABEL - 1).strip() + "…";
     }
 
     /** Ячейки строки через пробел; объединённые (тот же текст подряд) — один раз. */
