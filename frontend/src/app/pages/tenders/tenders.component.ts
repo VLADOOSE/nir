@@ -11,6 +11,7 @@ import { AuthService } from '../../services/auth.service';
 import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { Deadlined, deadlineEnd, deadlinePassed, deadlineText } from '../../shared/deadline';
 import { AiBriefButtonComponent, tendersWord } from '../../shared/ai-brief-button.component';
+import { AiAnswerDialogComponent } from './ai-answer-dialog.component';
 import { SearchableSelectComponent } from '../../components/searchable-select/searchable-select.component';
 import { BulkPriceModalComponent } from './bulk-price-modal.component';
 import { OfferComparisonComponent } from './offer-comparison.component';
@@ -33,7 +34,7 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
   selector: 'app-tenders',
   standalone: true,
   imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent,
-            DealLayoutComponent, DealProgressComponent, DealTimelineComponent, AiBriefButtonComponent],
+            DealLayoutComponent, DealProgressComponent, DealTimelineComponent, AiBriefButtonComponent, AiAnswerDialogComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
     <ng-container *ngIf="!selectedTender">
@@ -78,8 +79,13 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
         </div>
         <span class="counter" *ngIf="filteredTenders.length">Найдено: {{ filteredTenders.length }} записей</span>
         <!-- «📋 Для ИИ» по списку (спека 2026-10-20-product-spec-fit §9.1): открытые тендеры с нашей отметкой под фильтром «Наш товар» -->
-        <app-ai-brief-button *ngIf="filterOur && aiIds.length" [ids]="aiIds" [label]="'📋 Для ИИ: ' + aiIds.length + ' ' + aiWord()"></app-ai-brief-button>
+        <app-ai-brief-button *ngIf="(filterOur || filterIds) && aiIds.length" [ids]="aiIds" [label]="'📋 Для ИИ: ' + aiIds.length + ' ' + aiWord()"></app-ai-brief-button>
+        <!-- «✍️ Вставить ответ ИИ» (спека 2026-10-21-tender-telegram-bot §10 п. 3): тот же разбор, что у бота -->
+        <button type="button" class="btn ai-answer-btn" *ngIf="isKz() && auth.isAdmin() && (filterOur || filterIds)" (click)="aiAnswerOpen = true">✍️ Вставить ответ ИИ</button>
       </div>
+      <!-- ?ids= — пачка из Telegram (спека §10 п. 3): только эти тендеры -->
+      <div class="pack-plaque" *ngIf="filterIds">Пачка из Telegram: {{ filterIds.length }} {{ tendersWordOf(filterIds.length) }} ·
+        <button type="button" class="btn btn-line" (click)="clearIds()">Показать все</button></div>
 
       <form *ngIf="showTenderForm" [formGroup]="tenderForm" (ngSubmit)="onSaveTender()" class="edit-form">
         <div *ngIf="validationErrors._general" class="error-banner">{{ validationErrors._general }}</div>
@@ -209,7 +215,8 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
             <span class="info-label">Наш товар</span>
             <span><span *ngIf="selectedTender.ourProduct" class="pw-chip" [class.pw-exact]="selectedTender.ourProduct.level !== 'TYPE'">{{ selectedTender.ourProduct.label }}</span>
               <span *ngIf="selectedTender.foundByProductSearch" class="pw-found">Найден поиском по нашей продукции</span>
-              <app-ai-brief-button *ngIf="selectedTender.ourProduct" [tenderId]="selectedTender.id"></app-ai-brief-button></span>
+              <app-ai-brief-button *ngIf="selectedTender.ourProduct" [tenderId]="selectedTender.id"></app-ai-brief-button>
+              <button type="button" class="btn ai-answer-btn" *ngIf="isKz() && auth.isAdmin() && selectedTender.ourProduct" (click)="aiAnswerOpen = true">✍️ Ответ ИИ</button></span>
           </div>
           <div class="info-item"><span class="info-label">Заказчик</span><span>{{ selectedTender.facility?.name || selectedTender.customerName || '—' }}</span></div>
           <div class="info-item" *ngIf="selectedTender.region"><span class="info-label">Регион</span><span>{{ selectedTender.region }}</span></div>
@@ -242,7 +249,8 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
         (lotsChanged)="loadLots()"
         (priceRequestsChanged)="loadPriceRequests()"
         (bulkPriceRequested)="bulkPriceTenderId = selectedTender.id"
-        (matchRequested)="onMatchRequested($event)">
+        (matchRequested)="onMatchRequested($event)"
+        [focusLotId]="focusLotId" [focusKpId]="focusKpId" (focusUsed)="clearFocus()">
       </app-tender-lots>
       </div>
 
@@ -345,10 +353,18 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
         <app-deal-timeline dealSide #tenderTimeline kind="tender" [dealId]="selectedTender.id" [canWrite]="auth.isAdmin()"></app-deal-timeline>
       </app-deal-layout>
     </ng-container>
+
+    @defer (when aiAnswerOpen) {
+      <app-ai-answer-dialog *ngIf="aiAnswerOpen" (closed)="aiAnswerOpen = false" (applied)="onAiApplied()"></app-ai-answer-dialog>
+    }
   `,
   styles: [`
     h2 { margin: 0; font-size: 20px; }
     h3 { margin: 24px 0 12px; font-size: 17px; }
+    .ai-answer-btn { padding: 4px 12px; font-size: 13px; }
+    .pack-plaque { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px;
+                   background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+                   font-size: 14px; }
     .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
 
     .tender-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s; }
@@ -551,6 +567,13 @@ export class TendersComponent {
   filterOur = '';
   /** Тендеры для «📋 Для ИИ» по списку — считаются в applyTendersFilter. */
   aiIds: number[] = [];
+  /** ?ids= — пачка из Telegram (спека 2026-10-21-tender-telegram-bot §10 п. 3); null — весь список. */
+  filterIds: number[] | null = null;
+  /** Окно «✍️ Вставить ответ ИИ». */
+  aiAnswerOpen = false;
+  /** ?lot=&kp= — из бота / окна ответа ИИ: раскрыть лот и открыть «КП» с этим поставщиком. */
+  focusLotId: number | null = null;
+  focusKpId: number | null = null;
   /** Группы «нашей продукции» на тендерах списка — для фильтра (считается при загрузке, не в шаблоне). */
   ourGroups: string[] = [];
   protected readonly NO_REGION = '__none__';
@@ -648,14 +671,21 @@ export class TendersComponent {
     // при каждом открытии карточки — она тоже пишет адрес).
     const our = this.route.snapshot.queryParamMap.get('our');
     if (our === 'ANY' || our === 'EXACT' || our === 'PINNED' || our?.startsWith('g:')) this.filterOur = our;
-    if (our !== null) {   // после текущей навигации: страница ещё создаётся
-      setTimeout(() => this.router.navigate([], { relativeTo: this.route, queryParams: { our: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    // ?ids= — пачка из Telegram (спека 2026-10-21-tender-telegram-bot §4): только эти тендеры; ставится один раз, как ?our=
+    const ids = this.route.snapshot.queryParamMap.get('ids');
+    if (ids) this.filterIds = ids.split(',').map(Number).filter(n => n > 0);
+    if (our !== null || ids !== null) {   // после текущей навигации: страница ещё создаётся
+      setTimeout(() => this.router.navigate([], { relativeTo: this.route, queryParams: { our: null, ids: null }, queryParamsHandling: 'merge', replaceUrl: true }));
     }
 
     // Открытая карточка — в адресе (?openId=): ссылку можно переслать, «Назад» браузера закрывает карточку.
     // Без detectChanges: первое значение приходит синхронно ещё в конструкторе (урок §14).
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(p => this.syncOpen(Number(p.get('openId')) || null));
+      .subscribe(p => {
+        this.focusLotId = Number(p.get('lot')) || null;
+        this.focusKpId = Number(p.get('kp')) || null;
+        this.syncOpen(Number(p.get('openId')) || null);
+      });
   }
 
   /** Адрес → экран: есть ?openId= — карточка этого тендера (уже открытую не грузим заново), нет — список. */
@@ -956,6 +986,7 @@ export class TendersComponent {
     const from = this.filterDeadlineFrom ? new Date(this.filterDeadlineFrom) : null;
     const to = this.filterDeadlineTo ? new Date(this.filterDeadlineTo) : null;
     this.filteredTenders = this.tenders.filter(t => {
+      if (this.filterIds && !this.filterIds.includes(t.id)) return false;
       if (q) {
         const num = (t.tenderNumber || '').toLowerCase();
         const desc = (t.description || '').toLowerCase();
@@ -982,8 +1013,8 @@ export class TendersComponent {
     this.sortTenders();
     // «📋 Для ИИ» по списку (спека §9.1): открытые тендеры с нашей отметкой, ближайший срок — первым; сервер берёт первые 15
     const market = this.market.value;
-    this.aiIds = this.filterOur ? this.filteredTenders
-      .filter(t => (this.filterOur === 'PINNED' ? t.modelsInWork?.length : t.ourProduct) && !deadlinePassed(t, market))
+    this.aiIds = this.filterOur || this.filterIds ? this.filteredTenders
+      .filter(t => (this.filterIds ? true : this.filterOur === 'PINNED' ? t.modelsInWork?.length : t.ourProduct) && !deadlinePassed(t, market))
       .sort((a, b) => (deadlineEnd(a, market) ?? Number.MAX_SAFE_INTEGER) - (deadlineEnd(b, market) ?? Number.MAX_SAFE_INTEGER))
       .map(t => t.id) : [];
   }
@@ -997,6 +1028,27 @@ export class TendersComponent {
 
   /** Склонение «тендер / тендера / тендеров» для кнопки «Для ИИ». */
   aiWord(): string { return tendersWord(this.aiIds.length); }
+  tendersWordOf(n: number): string { return tendersWord(n); }
+
+  /** «Показать все» у пачки из Telegram. */
+  clearIds() {
+    this.filterIds = null;
+    this.applyTendersFilter();
+    this.cdr.detectChanges();
+  }
+
+  /** Лот и «КП» из ?lot=&kp= открыты — убрать их из адреса (обновление страницы не откроет снова). */
+  clearFocus() {
+    this.focusLotId = null;
+    this.focusKpId = null;
+    this.router.navigate([], { relativeTo: this.route, queryParams: { lot: null, kp: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /** Ответ ИИ разобран — модели и вывод ИИ у лотов поменялись. */
+  onAiApplied() {
+    this.loadTenders();
+    if (this.selectedTender) this.loadLots();
+  }
 
   private sortTenders() {
     const ts = (d: any) => d ? new Date(d).getTime() : null;

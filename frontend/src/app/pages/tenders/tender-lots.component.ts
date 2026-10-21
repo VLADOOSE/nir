@@ -14,6 +14,7 @@ import { LotModelFitComponent } from './lot-model-fit.component';
 import { LotModelDialogComponent } from './lot-model-dialog.component';
 import { fitChip } from '../../shared/product-watch';
 import { MODEL_SOURCE, regShort } from '../../shared/lot-model';
+import { aiLotLine } from '../../shared/ai-answer';
 import type { LotProductMatch } from '../../shared/product-watch';
 
 /** Стадия работы по лоту — считается на клиенте из уже загруженных лотов и запросов КП. */
@@ -76,8 +77,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 
     <!-- мульти-лотовая панель КП относится не к одному лоту → живёт над списком -->
     <app-lot-kp-panel *ngIf="kpLots.length > 1"
-      [tenderId]="tender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypes"
-      (sent)="onKpSent()" (typeChanged)="lotsChanged.emit()" (close)="kpLots = []">
+      [tenderId]="tender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypes" [preselectId]="kpPreselectId"
+      (sent)="onKpSent()" (typeChanged)="lotsChanged.emit()" (close)="kpLots = []; kpPreselectId = null">
     </app-lot-kp-panel>
 
     <!-- «Нет лотов» не рисуем над открытой формой первого лота -->
@@ -144,6 +145,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             <div class="model-note" *ngIf="l.modelNote" [class.model-note-open]="noteOpen.has(l.id)" (click)="toggleNote(l, $event)"
                  [title]="noteOpen.has(l.id) ? '' : 'Показать заметку целиком'">{{ l.modelNote }}</div>
           </div>
+          <!-- вывод ИИ по ответу «Для АИС» (спека 2026-10-21-tender-telegram-bot §10 п. 1): две строки, целиком — по нажатию -->
+          <div class="lot-ai" *ngIf="l.aiVerdict" [class.lot-ai-open]="aiOpen.has(l.id)" [class.lot-ai-no]="l.aiVerdict === 'NO'"
+               (click)="toggleAi(l, $event)" [title]="aiOpen.has(l.id) ? '' : 'Показать вывод ИИ целиком'">🤖 {{ aiLine(l) }}</div>
           <div class="lot-kp" *ngIf="kpDistributorsFor(l.id).length">✉ КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
         </div>
       </div>
@@ -202,8 +206,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
         </app-lot-registry-panel>
 
         <app-lot-kp-panel *ngIf="kpLots.length === 1 && kpLots[0].id === l.id"
-          [tenderId]="tender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypes"
-          (sent)="onKpSent()" (typeChanged)="lotsChanged.emit()" (close)="kpLots = []">
+          [tenderId]="tender?.id ?? null" [lots]="kpLots" [equipmentTypes]="equipmentTypes" [preselectId]="kpPreselectId"
+          (sent)="onKpSent()" (typeChanged)="lotsChanged.emit()" (close)="kpLots = []; kpPreselectId = null">
         </app-lot-kp-panel>
       </div>
     </div>
@@ -239,6 +243,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-model { margin-top: 5px; font-size: 12px; color: var(--text); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline;
       overflow-wrap: anywhere; }
     .lot-model a { color: var(--accent); }
+    .lot-ai { margin-top: 4px; font-size: 13px; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; cursor: pointer; overflow-wrap: anywhere; }
+    .lot-ai-open { display: block; }
+    .lot-ai-no { color: var(--text-muted); }
     .badge-model { font-weight: 600; color: var(--accent); }
     .model-src { color: var(--text-muted); }
     .model-reg { padding: 0 8px; border-radius: 999px; color: var(--success-text); background: color-mix(in srgb, var(--success) 15%, transparent); }
@@ -329,6 +337,11 @@ export class TenderLotsComponent implements OnChanges {
   @Output() priceRequestsChanged = new EventEmitter<void>();
   @Output() bulkPriceRequested = new EventEmitter<void>();
   @Output() matchRequested = new EventEmitter<{ lotId: number; lotNumber: number }>();
+  /** ?lot=&kp= из бота / окна ответа ИИ (спека 2026-10-21-tender-telegram-bot §7, §10 п. 2): лот раскрыть, «КП» открыть. */
+  @Input() focusLotId: number | null = null;
+  @Input() focusKpId: number | null = null;
+  /** Переход выполнен — родитель убирает ?lot=&kp= из адреса. */
+  @Output() focusUsed = new EventEmitter<void>();
 
   showLotForm = false;
   editingLotId: number | null = null;
@@ -358,6 +371,10 @@ export class TenderLotsComponent implements OnChanges {
   kpLots: any[] = [];        // по каким лотам открыта панель «КП» (1 — внутри лота, >1 — над списком)
   /** Лот, по которому панель «КП» надо открыть, как только придут СВЕЖИЕ лоты (после «Взять в работу»). */
   private pendingKpLotId: number | null = null;
+  /** Поставщик, которого панель «КП» отмечает сама (переход из бота); null — отметки по подбору. */
+  kpPreselectId: number | null = null;
+  /** Лоты, у которых вывод ИИ раскрыт целиком. */
+  aiOpen = new Set<number>();
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
               private notify: NotificationService, private confirm: ConfirmService,
@@ -381,6 +398,22 @@ export class TenderLotsComponent implements OnChanges {
       // detectChanges тут НЕ звать: мы внутри прохода change detection, шаблон отрисуется сразу после хуков
       if (fresh) this.openKp([fresh]);
     }
+    // переход из бота / окна ответа ИИ (?lot=&kp=): раскрыть лот и открыть «КП» с этим поставщиком
+    if ((ch['lots'] || ch['focusLotId'] || ch['focusKpId']) && this.focusLotId != null) {
+      const lot = (this.lots || []).find((l: any) => l.id === this.focusLotId);
+      if (lot) {
+        this.kpPreselectId = this.focusKpId;
+        if (this.focusKpId != null) this.openKp([lot]); else this.expandedLotId = lot.id;
+        setTimeout(() => this.focusUsed.emit());   // после прохода: родитель правит адрес
+      }
+    }
+  }
+
+  aiLine(l: any): string { return aiLotLine(l); }
+
+  toggleAi(l: any, e: Event) {
+    e.stopPropagation();   // нажатие по строке не сворачивает лот
+    if (this.aiOpen.has(l.id)) this.aiOpen.delete(l.id); else this.aiOpen.add(l.id);
   }
 
   /**
@@ -597,6 +630,7 @@ export class TenderLotsComponent implements OnChanges {
   }
   onKpSent() {
     this.pendingKpLotId = null;
+    this.kpPreselectId = null;
     this.kpLots = []; this.lotSel.clear();
     this.priceRequestsChanged.emit();
     this.cdr.detectChanges();

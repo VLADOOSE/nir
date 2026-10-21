@@ -12,6 +12,7 @@ import type { ExecField, ExecFileCandidate, ExecMark, ExecStage, SupplierField, 
 import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeTarget, ReplyTemplate, ReplyTemplatesState } from '../shared/client-mail';
 import type { AnnouncementResult, PlanPoint, ProbeResult, ProductCatalogState, ProductGroup, ProductGroupsState, TenderSearchStatus, WatchStatus } from '../shared/product-watch';
 import type { LotModelFit, LotModelSearch } from '../shared/lot-model';
+import type { AiAnswerResult } from '../shared/ai-answer';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -238,6 +239,7 @@ export class ApiService {
     replyBy?: string | null;
     withDocument?: boolean;
     withStamp?: boolean;
+    discloseClientIds?: number[];
   }): Observable<any[]> {
     return this.http.post<any[]>(`${this.base}/price-requests/send`, body);
   }
@@ -250,6 +252,7 @@ export class ApiService {
     replyBy?: string | null;
     withDocument?: boolean;
     withStamp?: boolean;
+    discloseClientIds?: number[];
   }): Observable<{ subject: string; body: string }> {
     return this.http.post<{ subject: string; body: string }>(`${this.base}/price-requests/preview`, body);
   }
@@ -861,6 +864,10 @@ export class ApiService {
   }
   postAiBrief(ids: number[]): Observable<{ text: string; tenders: number; total: number }> {
     return this.http.post<{ text: string; tenders: number; total: number }>(`${this.base}/tenders/ai-brief`, { ids });
+  }
+  /** «✍️ Вставить ответ ИИ» (спека 2026-10-21-tender-telegram-bot §10 п. 3): разбор блока «Для АИС». */
+  postAiAnswer(text: string): Observable<AiAnswerResult> {
+    return this.http.post<AiAnswerResult>(`${this.base}/tenders/ai-answer`, { text });
   }
   getProcurementPlans(params: Record<string, string>): Observable<PlanPoint[]> {
     return this.http.get<PlanPoint[]>(`${this.base}/procurement-plans`, { params });

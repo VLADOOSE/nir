@@ -7,6 +7,7 @@ import { NotificationService } from '../../services/notification.service';
 import { CompanyProfileService } from '../../services/company-profile.service';
 import { readWithDocument, storeWithDocument, todayIso } from '../../shared/rfq-options';
 import { kpToastFromResults } from '../../shared/kp-toast';
+import { forkJoin, Observable } from 'rxjs';
 
 /** Панель «Запрос КП» по одному или нескольким лотам: подбор поставщиков, превью письма, отправка. */
 @Component({
@@ -44,7 +45,8 @@ import { kpToastFromResults } from '../../shared/kp-toast';
           Нужна техспецификация или вид МИ, чтобы подобрать по специализации.
         </div>
 
-        <label class="sup" *ngFor="let e of panel._relevant; let i = index" [class.sup-hit]="e.preselect" [class.sup-reco]="i === 0">
+        <ng-container *ngFor="let e of panel._relevant; let i = index">
+        <label class="sup" [class.sup-hit]="e.preselect" [class.sup-reco]="i === 0">
           <input type="checkbox" [(ngModel)]="e._checked" [ngModelOptions]="{standalone: true}" />
           <span class="sup-body">
             <span class="sup-name">
@@ -58,19 +60,26 @@ import { kpToastFromResults } from '../../shared/kp-toast';
             </span>
             <span class="sup-reasons">
               <span class="reason-chip" *ngFor="let r of e.reasons"
-                    [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'">
-                {{ r.kind === 'TYPE' ? '✓' : 'возит' }} {{ r.label }}
+                    [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'" [class.reason-maker]="r.kind === 'MAKER'">
+                {{ r.kind === 'TYPE' ? '✓ ' : r.kind === 'MAKER' ? '' : 'возит ' }}{{ r.label }}
               </span>
             </span>
           </span>
         </label>
+        <!-- «Указать клиента» по поставщику (спека 2026-10-21-tender-telegram-bot §10 п. 2): по умолчанию — завод и доверенные -->
+        <div class="sup-client" *ngIf="e._checked">
+          <label><input type="checkbox" [(ngModel)]="e._client" [ngModelOptions]="{standalone: true}" />
+            👤 Указать клиента — больница в письме и на бланке</label>
+        </div>
+        </ng-container>
 
         <div class="kp-nonrel" *ngIf="panel._nonrel.length">
           <button class="zero-toggle" (click)="panel._showNonrel = !panel._showNonrel">
             {{ panel._showNonrel ? '▴ скрыть нерелевантных' : '▾ ещё ' + panel._nonrel.length + ' нерелевантных' }}
           </button>
           <ng-container *ngIf="panel._showNonrel">
-            <label class="sup" *ngFor="let e of panel._nonrel">
+            <ng-container *ngFor="let e of panel._nonrel">
+            <label class="sup">
               <input type="checkbox" [(ngModel)]="e._checked" [ngModelOptions]="{standalone: true}" />
               <span class="sup-body">
                 <span class="sup-name">
@@ -81,6 +90,11 @@ import { kpToastFromResults } from '../../shared/kp-toast';
                 <span class="sup-mail">{{ e.distributor?.email || '—' }}</span>
               </span>
             </label>
+            <div class="sup-client" *ngIf="e._checked">
+              <label><input type="checkbox" [(ngModel)]="e._client" [ngModelOptions]="{standalone: true}" />
+                👤 Указать клиента — больница в письме и на бланке</label>
+            </div>
+            </ng-container>
           </ng-container>
         </div>
 
@@ -106,6 +120,7 @@ import { kpToastFromResults } from '../../shared/kp-toast';
       <div class="kp-preview" (click)="$event.stopPropagation()">
         <h3>Текст письма — проверьте перед отправкой</h3>
         <p class="kp-preview-note">Метка [КП-№] будет присвоена автоматически при отправке. Письмо уйдёт {{ preview.distributorIds.length }} поставщик(ам).<ng-container *ngIf="withDocument"> К письму приложится запрос на бланке (Word).</ng-container></p>
+        <p class="kp-preview-note" *ngIf="preview.mixed">Поставщикам с клиентом и без него уходят разные тексты: правка ниже — только для писем «{{ preview.sample ? 'с клиентом' : 'без клиента' }}», остальным — стандартный текст.</p>
         <label class="kp-preview-lbl">Тема</label>
         <input class="kp-preview-subject" [(ngModel)]="preview.subject" />
         <label class="kp-preview-lbl">Текст</label>
@@ -145,6 +160,9 @@ import { kpToastFromResults } from '../../shared/kp-toast';
     .reason-chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; }
     .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .reason-brand { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .reason-maker { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .sup-client { margin: -4px 0 6px 30px; font-size: 13px; }
+    .sup-client label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
     .zero-toggle:hover { color: var(--text); text-decoration: underline; }
     .kp-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
@@ -175,6 +193,8 @@ export class LotKpPanelComponent implements OnChanges {
   @Input() tenderId: number | null = null;
   @Input() lots: any[] = [];
   @Input() equipmentTypes: any[] = [];
+  /** Переход из бота / окна ответа ИИ (?kp=): отмечен ровно этот поставщик (спека 2026-10-21-tender-telegram-bot §7). */
+  @Input() preselectId: number | null = null;
   @Output() sent = new EventEmitter<void>();
   @Output() typeChanged = new EventEmitter<void>();
   @Output() close = new EventEmitter<void>();
@@ -189,7 +209,12 @@ export class LotKpPanelComponent implements OnChanges {
     lotId: number | null;
   } | null = null;
 
-  preview: { subject: string; body: string; sending: boolean; distributorIds: number[]; items: any[] } | null = null;
+  /**
+   * Предпросмотр письма: образец — первый поставщик; original* — текст сервера (правку видно сравнением), discloseClientIds —
+   * кому строка о больнице, sample — образец «с клиентом», mixed — среди отмеченных есть и с клиентом, и без.
+   */
+  preview: { subject: string; body: string; originalSubject: string; originalBody: string; sending: boolean;
+             distributorIds: number[]; items: any[]; discloseClientIds: number[]; sample: boolean; mixed: boolean } | null = null;
 
   /**
    * Значение селектора «Вид МИ» — ОТДЕЛЬНОЕ поле, а не выражение по `panel.detectedType`:
@@ -245,12 +270,15 @@ export class LotKpPanelComponent implements OnChanges {
     this.cdr.detectChanges();
     this.api.getLotSourcing(tenderId, lotIds, term).subscribe({
       next: (r) => {
-        const entries = (r?.distributors || []).map((e: any) => ({ ...e, _checked: !!e.preselect }));
+        // переход из бота (?kp=): отмечен ровно этот поставщик; «Указать клиента» — у завода и доверенных
+        const entries = (r?.distributors || []).map((e: any) => ({ ...e,
+          _checked: this.preselectId != null ? e.distributor?.id === this.preselectId : !!e.preselect,
+          _client: !!(e.distributor?.manufacturer || e.distributor?.trusted) }));
         this.panel = {
           loading: false, sending: false, entries,
           _relevant: entries.filter((e: any) => e.relevant),
           _nonrel: entries.filter((e: any) => !e.relevant),
-          _showNonrel: false,
+          _showNonrel: entries.some((e: any) => !e.relevant && e._checked),
           singleLot: !!r?.singleLot,
           detectedType: r?.detectedType || null,
           typeAlternatives: r?.typeAlternatives || [],
@@ -298,13 +326,17 @@ export class LotKpPanelComponent implements OnChanges {
     const tenderId = this.tenderId;
     if (!tenderId || !this.panel) return;
     const distributorIds = this.checkedSuppliers().map((e: any) => e.distributor.id);
+    const discloseClientIds = this.checkedSuppliers().filter((e: any) => e._client).map((e: any) => e.distributor.id);
     const items = this.lots
       .map((l: any) => ({ tenderLotId: l.id, medEquipmentId: l.proposedEquipment?.id ?? null, requestedQuantity: l.quantity ?? null }));   // нет количества — «кол-во уточняется» (B4)
     if (!distributorIds.length || !items.length) return;
     this.panel.sending = true;
-    this.api.previewKp({ tenderId, distributorIds, items, ...this.options() }).subscribe({
+    this.api.previewKp({ tenderId, distributorIds, discloseClientIds, items, ...this.options() }).subscribe({
       next: (p) => {
-        this.preview = { subject: p.subject, body: p.body, sending: false, distributorIds, items };
+        this.preview = { subject: p.subject, body: p.body, originalSubject: p.subject, originalBody: p.body, sending: false,
+          distributorIds, items, discloseClientIds,
+          sample: discloseClientIds.includes(distributorIds[0]),   // образец предпросмотра — первый поставщик
+          mixed: discloseClientIds.length > 0 && discloseClientIds.length < distributorIds.length };
         if (this.panel) this.panel.sending = false;
         this.cdr.detectChanges();
       },
@@ -318,17 +350,27 @@ export class LotKpPanelComponent implements OnChanges {
 
   confirmSendKp() {
     const tenderId = this.tenderId;
-    if (!tenderId || !this.preview) return;
-    this.preview.sending = true;
-    this.api.sendPriceRequests({
-      tenderId,
-      distributorIds: this.preview.distributorIds,
-      items: this.preview.items,
-      subjectOverride: this.subjectHuman(this.preview.subject),
-      bodyOverride: this.preview.body,
-      ...this.options(),
-    }).subscribe({
-      next: (results) => {
+    const p = this.preview;
+    if (!tenderId || !p) return;
+    p.sending = true;
+    // текст не правили — каждому поставщику свой (приветствие, строка о клиенте); правили — правка только поставщикам
+    // того же вида, что образец (с клиентом / без), остальным — стандартный текст: строка о больнице не уйдёт дилеру
+    const edited = p.subject !== p.originalSubject || p.body !== p.originalBody;
+    const withClient = new Set<number>(p.discloseClientIds);
+    const base = { tenderId, items: p.items, ...this.options() };
+    const calls: Observable<any[]>[] = [];
+    if (!edited) {
+      calls.push(this.api.sendPriceRequests({ ...base, distributorIds: p.distributorIds, discloseClientIds: [...withClient] }));
+    } else {
+      const same = p.distributorIds.filter((id: number) => withClient.has(id) === p.sample);
+      const other = p.distributorIds.filter((id: number) => withClient.has(id) !== p.sample);
+      calls.push(this.api.sendPriceRequests({ ...base, distributorIds: same, discloseClientIds: p.sample ? same : [],
+        subjectOverride: this.subjectHuman(p.subject), bodyOverride: p.body }));
+      if (other.length) calls.push(this.api.sendPriceRequests({ ...base, distributorIds: other, discloseClientIds: p.sample ? [] : other }));
+    }
+    forkJoin(calls).subscribe({
+      next: (rs) => {
+        const results = rs.flat();
         const t = kpToastFromResults(results);
         if (t.isError) this.notify.error(t.message); else this.notify.success(t.message);
         this.preview = null; this.panel = null;
