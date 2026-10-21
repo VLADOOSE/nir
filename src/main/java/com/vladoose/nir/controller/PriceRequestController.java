@@ -29,7 +29,10 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/price-requests")
@@ -69,29 +72,52 @@ public class PriceRequestController {
     @PostMapping("/send")
     @PreAuthorize("hasRole('ADMIN')")
     public List<PriceRequestSendService.SendResult> send(@Valid @RequestBody PriceRequestSendRequest req) {
-        var items = req.getItems().stream()
-                .map(i -> new PriceRequestSendService.SendItem(
-                        i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
-                .toList();
-        return sendService.send(req.getTenderId(), req.getDistributorIds(), items,
-                req.getSubjectOverride(), req.getBodyOverride(), options(req));
+        var items = items(req);
+        Set<Long> withClient = new HashSet<>(req.getDiscloseClientIds() == null ? List.of() : req.getDiscloseClientIds());
+        List<Long> yes = req.getDistributorIds().stream().filter(withClient::contains).toList();
+        List<Long> no = req.getDistributorIds().stream().filter(id -> !withClient.contains(id)).toList();
+        boolean edited = notBlank(req.getSubjectOverride()) || notBlank(req.getBodyOverride());
+        // правленый текст один на всех — у поставщиков с клиентом и без него тексты разные: строка о больнице ушла бы дилеру
+        if (edited && !yes.isEmpty() && !no.isEmpty()) {
+            throw new BadRequestException("Текст письма правился — поставщикам с клиентом и без него отправьте отдельно");
+        }
+        List<PriceRequestSendService.SendResult> out = new ArrayList<>();
+        if (!yes.isEmpty()) {
+            out.addAll(sendService.send(req.getTenderId(), yes, items, req.getSubjectOverride(), req.getBodyOverride(),
+                    options(req, true)));
+        }
+        if (!no.isEmpty()) {
+            out.addAll(sendService.send(req.getTenderId(), no, items, req.getSubjectOverride(), req.getBodyOverride(),
+                    options(req, false)));
+        }
+        return out;
     }
 
-    /** Опции панели КП тендера; клиента в тендерах не раскрываем (прежнее решение против утечки, спека §6.6). */
-    private static SendOptions options(PriceRequestSendRequest req) {
+    /**
+     * Опции панели КП тендера; «Указать клиента» — по поставщикам (discloseClientIds, спека 2026-10-21-tender-telegram-bot
+     * §10 п. 2): строка о больнице — заводу и доверенным, остальным письмо по-прежнему без клиента (CLAUDE.md §9).
+     */
+    private static SendOptions options(PriceRequestSendRequest req, boolean discloseClient) {
         return new SendOptions(req.getReplyBy(), Boolean.TRUE.equals(req.getWithDocument()),
-                Boolean.TRUE.equals(req.getWithStamp()), false, null);
+                Boolean.TRUE.equals(req.getWithStamp()), discloseClient, null);
     }
+
+    private static List<PriceRequestSendService.SendItem> items(PriceRequestSendRequest req) {
+        return req.getItems().stream()
+                .map(i -> new PriceRequestSendService.SendItem(i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
+                .toList();
+    }
+
+    private static boolean notBlank(String s) { return s != null && !s.isBlank(); }
 
     /** Черновой текст письма КП (образец) — без сохранения PriceRequest и без токена в теме. */
     @PostMapping("/preview")
     @PreAuthorize("hasRole('ADMIN')")
     public KpPreviewResponse preview(@Valid @RequestBody PriceRequestSendRequest req) {
-        var items = req.getItems().stream()
-                .map(i -> new PriceRequestSendService.SendItem(
-                        i.getTenderLotId(), i.getMedEquipmentId(), i.getRequestedQuantity()))
-                .toList();
-        return sendService.preview(req.getTenderId(), req.getDistributorIds(), items, options(req));
+        // образец — первый поставщик; строка о больнице — если его отметили «Указать клиента»
+        boolean client = req.getDiscloseClientIds() != null && !req.getDistributorIds().isEmpty()
+                && req.getDiscloseClientIds().contains(req.getDistributorIds().get(0));
+        return sendService.preview(req.getTenderId(), req.getDistributorIds(), items(req), options(req, client));
     }
 
     /** Переслать письмо существующего КП (повторно / после правки email поставщика). Новый PR не создаётся. */

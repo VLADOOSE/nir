@@ -172,7 +172,10 @@ public class LotSourcingService {
                 }
             }
             boolean brandHit = !brandHits.isEmpty();
-            double score = (brandHit ? 1.0 : 0.0) + (typeHit ? 0.7 : 0.0) + (brandHit && typeHit ? 0.3 : 0.0);
+            // завод бренда — первым, с меткой «завод» (спека 2026-10-21-tender-telegram-bot §10 п. 2; как частные заявки)
+            boolean maker = brandHit && d.isManufacturer();
+            if (maker) reasons.add(0, new LotSourcingResponse.Reason("MAKER", "завод"));
+            double score = (brandHit ? 1.0 : 0.0) + (typeHit ? 0.7 : 0.0) + (brandHit && typeHit ? 0.3 : 0.0) + (maker ? 0.5 : 0.0);
 
             LotSourcingResponse.Entry e = new LotSourcingResponse.Entry();
             e.setDistributor(distributorMapper.toResponse(d));
@@ -182,6 +185,10 @@ public class LotSourcingService {
             e.setScore(score);
             e.setPreselect(brandHit);
             entries.add(e);
+        }
+        // есть завод бренда с почтой — отмечен он, дилеры бренда — без отметки (письмо дилеру — решение оператора)
+        if (entries.stream().anyMatch(LotSourcingService::makerWithMail)) {
+            entries.forEach(x -> x.setPreselect(makerWithMail(x)));
         }
         entries.sort((a, b) -> {
             if (a.isRelevant() != b.isRelevant()) return a.isRelevant() ? -1 : 1;
@@ -195,5 +202,11 @@ public class LotSourcingService {
         resp.setTypeAlternatives(typeAlternatives);
         resp.setSourcingTerm(sourcingTerm);
         return resp;
+    }
+
+    /** Отмечен по бренду (preselect = попал бренд), завод и с почтой. */
+    private static boolean makerWithMail(LotSourcingResponse.Entry e) {
+        String mail = e.getDistributor().getEmail();
+        return e.isPreselect() && e.getDistributor().isManufacturer() && mail != null && !mail.isBlank();
     }
 }

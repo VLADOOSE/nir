@@ -25,10 +25,13 @@ public class PriceRequestSendRequest {
     private String subjectOverride; // человеческая часть темы; токен [КП-id] всегда добавляет сервер
     private String bodyOverride;    // если задан — уходит вместо скомпонованного тела
 
-    /** Опции панели КП тендера (спека 2026-10-12 §6.6); «Указать клиента» в тендерах нет. */
+    /** Опции панели КП тендера (спека 2026-10-12 §6.6); «Указать клиента» — по поставщикам, `discloseClientIds`. */
     private LocalDate replyBy;
     private Boolean withDocument;
     private Boolean withStamp;
+
+    /** Кому в письме и бланке — строка о больнице-заказчике (спека 2026-10-21-tender-telegram-bot §10 п. 2). */
+    private List<Long> discloseClientIds;
 
     @Data
     public static class Item {
