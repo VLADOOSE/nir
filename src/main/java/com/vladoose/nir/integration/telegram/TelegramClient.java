@@ -123,7 +123,7 @@ public class TelegramClient {
      * Токен заменяется на «***» целиком и отдельно его секретная часть после «:» — её символы в адресе не экранируются,
      * так что она уцелела бы и там, где двоеточие пришло как %3A.
      */
-    private static String maskToken(String text, String token) {
+    static String maskToken(String text, String token) {
         if (token.isEmpty()) return text;
         String out = text.replace(token, "***");
         String secret = token.substring(token.indexOf(':') + 1);

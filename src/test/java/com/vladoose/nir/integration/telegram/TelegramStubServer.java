@@ -8,6 +8,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -16,11 +18,15 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Заглушка Bot API на JDK HttpServer: записывает запросы, отвечает заданными ответами по очереди (по умолчанию — 200 ok). */
 public final class TelegramStubServer implements AutoCloseable {
 
-    public record Request(String path, String body) {}
+    public record Request(String path, String body, String contentType) {}
 
     public record Reply(int status, String body, long delayMs) {
         public static Reply ok(long messageId) {
             return new Reply(200, "{\"ok\":true,\"result\":{\"message_id\":" + messageId + "}}", 0);
+        }
+        /** Успех с произвольным result (массив обновлений, getMe…). */
+        public static Reply json(String resultJson) {
+            return new Reply(200, "{\"ok\":true,\"result\":" + resultJson + "}", 0);
         }
         public static Reply error(int status, String description) {
             return new Reply(status, "{\"ok\":false,\"error_code\":" + status + ",\"description\":\"" + description + "\"}", 0);
@@ -38,6 +44,8 @@ public final class TelegramStubServer implements AutoCloseable {
     private final HttpServer server;
     private final List<Request> requests = new CopyOnWriteArrayList<>();
     private final Deque<Reply> replies = new ConcurrentLinkedDeque<>();
+    /** Ответы для одного метода Bot API (sendMessage, getUpdates…) — раньше общей очереди. */
+    private final Map<String, Deque<Reply>> byMethod = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(100);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -48,8 +56,12 @@ public final class TelegramStubServer implements AutoCloseable {
         TelegramStubServer stub = new TelegramStubServer(s);
         s.createContext("/", ex -> {
             String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            stub.requests.add(new Request(ex.getRequestURI().getPath(), body));
-            Reply r = stub.replies.poll();
+            String path = ex.getRequestURI().getPath();
+            stub.requests.add(new Request(path, body, ex.getRequestHeaders().getFirst("Content-Type")));
+            String method = path.substring(path.lastIndexOf('/') + 1);
+            Deque<Reply> own = stub.byMethod.get(method);
+            Reply r = own == null ? null : own.poll();
+            if (r == null) r = stub.replies.poll();
             if (r == null) r = Reply.ok(stub.nextId.getAndIncrement());
             byte[] bytes = r.body().getBytes(StandardCharsets.UTF_8);
             ex.getResponseHeaders().add("Content-Type", "application/json");
@@ -71,6 +83,7 @@ public final class TelegramStubServer implements AutoCloseable {
     public String url() { return "http://127.0.0.1:" + server.getAddress().getPort(); }
     public int port() { return server.getAddress().getPort(); }
     public void enqueue(Reply... r) { replies.addAll(List.of(r)); }
+    public void on(String method, Reply... r) { byMethod.computeIfAbsent(method, k -> new ConcurrentLinkedDeque<>()).addAll(List.of(r)); }
     public List<Request> requests() { return requests; }
 
     /** Повторное закрытие — ничего не делает: тест может закрыть заглушку сам, а потом её закроет @AfterEach. */

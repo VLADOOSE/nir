@@ -36,4 +36,10 @@ public final class TelegramText {
         String t = SPACES.matcher(flat).replaceAll(" ").strip();
         return t.length() <= max ? t : safeCut(t, max - 1) + "…";
     }
+
+    /** Экранирование для разметки HTML Telegram (& < > и кавычка в атрибуте). */
+    public static String html(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
 }
