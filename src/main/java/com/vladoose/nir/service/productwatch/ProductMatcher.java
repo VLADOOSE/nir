@@ -2,6 +2,7 @@ package com.vladoose.nir.service.productwatch;
 
 import com.vladoose.nir.entity.ProductMatchLevel;
 import com.vladoose.nir.entity.SimilarProductRef;
+import com.vladoose.nir.integration.MedicalGoodsVocabulary;
 import com.vladoose.nir.util.TechSpecExtractor;
 
 import java.util.*;
@@ -13,6 +14,7 @@ import java.util.*;
  *       лота (у одно-лотового объявления — и в названии объявления) или в ТЗ;</li>
  *   <li>остальные — TYPE по {@link GroupRule#typeWord}; бренд или модель группы / общий список → NAMED; фразы каталога
  *       в ТЗ → COPIED (ТЗ есть только у разобранных лотов).</li>
+ *   <li>работа или услуга по названию лота ({@link #serviceLot}) — без отметок.</li>
  * </ul>
  */
 public final class ProductMatcher {
@@ -24,6 +26,8 @@ public final class ProductMatcher {
         String ann = ProductText.normalize(announcementName);
         boolean single = lots.size() == 1;
         for (LotInput lot : lots) {
+            if (serviceLot(lot.name(), lot.description())) continue;
+            String lotName = ProductText.normalize(lot.name());
             String lotText = ProductText.normalize(String.join(" ", Objects.toString(lot.name(), ""), Objects.toString(lot.description(), "")));
             String spec = lot.spec() == null || lot.spec().isBlank() ? null : ProductText.normalize(lot.spec());
             // «списано» — по телу ТЗ: закупочная шапка goszakup (название закупки, лота, места, сроки) — не текст товара
@@ -42,7 +46,7 @@ public final class ProductMatcher {
                     }
                     continue;
                 }
-                String word = r.typeWord(lotText, ann, single);
+                String word = r.typeWord(lotName, lotText, ann, single);
                 if (word == null) continue;
                 ProductMatchLevel level = ProductMatchLevel.TYPE;
                 String evidence = null;
@@ -73,6 +77,18 @@ public final class ProductMatcher {
             }
         }
         return out;
+    }
+
+    /**
+     * Работа или услуга по названию лота — не товар ни одной группы, и бренда тоже («Работы по ремонту/модернизации
+     * медицинского оборудования», «Услуги по техническому обслуживанию аппаратов ФОТЕК»). Маркеры работ и услуг импорта
+     * ({@link MedicalGoodsVocabulary#WORKS_SERVICES}; слабые — нет: «Светильник для осмотра» — товар; сварочное и дроны
+     * отсекают исключения групп); тара для сбора медотходов — товар, как у импорта.
+     */
+    public static boolean serviceLot(String name, String description) {
+        String n = Objects.toString(name, "");
+        return MedicalGoodsVocabulary.hasWorksServices(n)
+                && !MedicalGoodsVocabulary.isMedicalWasteContainer(n, Objects.toString(description, ""));
     }
 
     /** {текст для экрана, где: "name" / "spec"} первого бренда или кода, или null. */

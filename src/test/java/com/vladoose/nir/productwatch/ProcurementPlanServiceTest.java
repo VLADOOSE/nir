@@ -72,6 +72,16 @@ class ProcurementPlanServiceTest {
         assertThat(service.collect(new ImportSummary())).as("второй — не первый").isFalse();
     }
 
+    /** Пункт плана — то же правило, что у лота: слово группы в названии пункта; описание — только у родового названия. */
+    @Test
+    void wordOnlyInDescription_notOurs_genericNameCounts() {
+        search.plansByWord.put("электрокардиограф", List.of(
+                plan(8, "Электрод специализированный", "для электрокардиографа", "Штука", "г.Алматы"),
+                plan(9, "Изделия различные прочие, не включенные в другие группировки", "Электрокардиограф 12-канальный", "Штука", "г.Алматы")));
+        service.collect(new ImportSummary());
+        assertThat(points.findAll()).extracting(ProcurementPlanPoint::getExtId).containsExactly(9L);
+    }
+
     /** Модель из «Наших брендов и моделей» группы в тексте пункта — ★ (NAMED); одно слово группы на пункт — одна отметка. */
     @Test
     void namedModel_starLevel_repeatCollectKeepsOneMatch() {

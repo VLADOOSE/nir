@@ -99,7 +99,7 @@ public class ProcurementPlanService {
                 if (h != null) { groups.put(r.id(), h.label()); level = ProductMatchLevel.NAMED; }
                 continue;
             }
-            String word = r.typeWord(text, "", false);
+            String word = r.typeWord(ProductText.normalize(p.nameRu()), text, "", false);   // как у лота: слово — в названии пункта
             if (word == null) continue;
             groups.put(r.id(), word);
             boolean named = BrandModels.first(snap.groupCodes(r.id()), text) != null || BrandModels.first(snap.globalCodes(), text) != null;

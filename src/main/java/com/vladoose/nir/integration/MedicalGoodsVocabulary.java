@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Общий словарь медизделий для фильтров релевантности goszakup и СК-Фармации. Только термины — решения
@@ -82,13 +83,17 @@ public final class MedicalGoodsVocabulary {
             "кресл", "весы", "система", "набор", "комплект", "стол", "тележк", "штатив", "бахил", "маск", "халат",
             "салфетк", "шпател", "пинцет", "зажим", "ножниц");
 
+    /** Работы и услуги по названию лота: «Услуги по …», «Работы по …», ремонт, обслуживание, аренда, обучение, поверка. */
+    public static final List<String> WORKS_SERVICES = List.of(
+            "услуг", "работы по", "работ по", "обучен", "утилизац", "отход", "ремонт", "обслуживан", "аренд",
+            "страхован", "пошив", "стирк", "поверк", "метролог");
+
     /**
      * Лот — услуга/работа/не-медицина независимо от терминов изделий. Ищется только в НАЗВАНИИ лота.
      * «сварочн» — электроды и прочее сварочное: стем «электрод» иначе тянул бы их в медизделия.
      */
-    public static final List<String> SERVICE_STRONG = List.of(
-            "услуг", "работы по", "работ по", "обучен", "утилизац", "отход", "ремонт", "обслуживан", "аренд",
-            "страхован", "пошив", "стирк", "поверк", "метролог", "летательн", "беспилотн", "дрон", "сварочн");
+    public static final List<String> SERVICE_STRONG = Stream.concat(WORKS_SERVICES.stream(),
+            Stream.of("летательн", "беспилотн", "дрон", "сварочн")).toList();
 
     /** Маркер услуги, который проигрывает термину изделия в том же названии («Кушетка для осмотра»). */
     public static final List<String> SERVICE_WEAK = List.of("осмотр", "удален", "замер", "монтаж", "потолок");
@@ -126,6 +131,7 @@ public final class MedicalGoodsVocabulary {
     public static boolean hasDeviceStrong(String text) { return matchesAny(text, DEVICE_STRONG); }
     public static boolean hasDeviceWeak(String text)   { return matchesAny(text, DEVICE_WEAK); }
     public static boolean hasServiceStrong(String text) { return matchesAny(text, SERVICE_STRONG); }
+    public static boolean hasWorksServices(String text) { return matchesAny(text, WORKS_SERVICES); }
     public static boolean hasServiceWeak(String text)  { return matchesAny(text, SERVICE_WEAK); }
     public static boolean hasMedicine(String text)     { return text != null && MEDICINE.matcher(text).find(); }
 

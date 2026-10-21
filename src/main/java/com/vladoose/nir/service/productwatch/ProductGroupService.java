@@ -181,16 +181,20 @@ public class ProductGroupService {
         List<ProbeResponse.Lot> out = new ArrayList<>();
         int passed = 0;
         for (FoundLot l : lots.values()) {
+            String lotName = ProductText.normalize(l.nameRu());
             String lotText = ProductText.normalize(String.join(" ", Objects.toString(l.nameRu(), ""), Objects.toString(l.descriptionRu(), "")));
             String ann = ProductText.normalize(l.announcement().nameRu());
             String why;
             String word;
-            if (rule.brandGroup()) {   // слова группы — наши бренды и модели: площадка нашла по ним — значит назван наш
+            if (ProductMatcher.serviceLot(l.nameRu(), l.descriptionRu())) {   // то же, что отметки: работа или услуга — не товар
+                why = "работа или услуга (по названию лота)";
+                word = null;
+            } else if (rule.brandGroup()) {   // слова группы — наши бренды и модели: площадка нашла по ним — значит назван наш
                 why = null;
                 word = foundBy.get(l.id());
             } else {
-                why = rule.rejectReason(lotText, ann, false);
-                word = rule.typeWord(lotText, ann, false);
+                why = rule.rejectReason(lotName, lotText, ann, false);
+                word = rule.typeWord(lotName, lotText, ann, false);
             }
             if (why == null) passed++;
             out.add(new ProbeResponse.Lot(l.trdBuyNumberAnno(), l.nameRu(), l.announcement().nameRu(), l.customerNameRu(),

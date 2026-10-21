@@ -104,6 +104,22 @@ class ProductGroupServiceTest {
         assertThat(r.lots()).extracting(ProbeResponse.Lot::reason).containsExactly("прошёл — по слову «электрод»", "исключение «сварочн»");
     }
 
+    /** «Проверить» — то же правило, что отметки: слово в описании при «чужом» названии лота и работы / услуги не проходят. */
+    @Test
+    void probe_wordOnlyInDescription_andServices() {
+        FoundAnnouncement a = new FoundAnnouncement(1L, "1-1", "Закуп", "1", "Больница", BigDecimal.TEN, "2026-10-18 10:00:00",
+                "2026-10-21 10:00:00", 220, 2, null, 3);
+        search.lotsByWord.put("стойка", List.of(
+                new FoundLot(1L, "1", "Стойка инфузионная", "медицинская", BigDecimal.ONE, BigDecimal.TEN, 220, null, "1", "Больница", "1-1", a),
+                new FoundLot(2L, "2", "Халат медицинский одноразовый", "стойкий к жидкостям", BigDecimal.ONE, BigDecimal.TEN, 220, null, "1", "Больница", "1-1", a),
+                new FoundLot(3L, "3", "Услуги по ремонту стоек инфузионных", "медицинских", BigDecimal.ONE, BigDecimal.TEN, 220, null, "1", "Больница", "1-1", a)));
+        ProbeResponse r = service.probe(new ProductGroupDto(null, "Стойки", List.of("стойка"), List.of("инфузион", "медицин"),
+                List.of(), List.of(), true, false));
+        assertThat(r.passed()).isEqualTo(1);
+        assertThat(r.lots()).extracting(ProbeResponse.Lot::reason).containsExactly("прошёл — по слову «стойка»",
+                "слово поиска только в описании — в названии лота другой предмет", "работа или услуга (по названию лота)");
+    }
+
     /** «Проверить» у сохранённой группы (с id) — тоже проверка, а не «группа не найдена». */
     @Test
     void probe_existingGroupId_ok() {
