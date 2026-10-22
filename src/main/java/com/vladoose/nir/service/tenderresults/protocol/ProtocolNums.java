@@ -13,8 +13,9 @@ import java.util.regex.Pattern;
 /** Числа, время и причины провала в протоколах. */
 final class ProtocolNums {
 
-    private static final Pattern DATE_TIME = Pattern.compile("(\\d{2}\\.\\d{2}\\.\\d{4})\\s+(\\d{2}:\\d{2}:\\d{2})");
+    private static final Pattern DATE_TIME = Pattern.compile("(\\d{2}\\.\\d{2}\\.\\d{4}|\\d{4}-\\d{2}-\\d{2})\\s+(\\d{2}:\\d{2}:\\d{2})");
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+    private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Pattern COUNT = Pattern.compile(":\\s*(\\d+)\\s*$");
 
     private ProtocolNums() {}
@@ -26,12 +27,12 @@ final class ProtocolNums {
         return t.matches("\\d+(\\.\\d+)?") ? new BigDecimal(t) : null;
     }
 
-    /** «13.10.2026 17:42:30» (и с долями секунды) → время площадки. */
+    /** «13.10.2026 17:42:30» или «2026-10-05 17:57:53.501» (доли секунды отбрасываются) → время площадки. */
     static LocalDateTime dateTime(String s) {
         Matcher m = DATE_TIME.matcher(s == null ? "" : s);
         if (!m.find()) return null;
         try {
-            return LocalDateTime.parse(m.group(1) + " " + m.group(2), FMT);
+            return LocalDateTime.parse(m.group(1) + " " + m.group(2), m.group(1).contains("-") ? ISO : FMT);
         } catch (DateTimeParseException e) {
             return null;
         }

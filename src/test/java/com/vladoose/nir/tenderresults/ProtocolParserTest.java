@@ -161,4 +161,38 @@ class ProtocolParserTest {
         assertThat(ProtocolParser.parse("просто текст".getBytes(StandardCharsets.UTF_8)).format()).isEqualTo(ProtocolFormat.UNKNOWN);
         assertThat(ProtocolParser.parse(new byte[0]).format()).isEqualTo(ProtocolFormat.UNKNOWN);
     }
+
+    /**
+     * Живая проверка 2026-10-22 (17719756-1, обезличено): у другой версии протокола ЗЦП время подачи — «2026-10-05 17:57:53.501»,
+     * название поставщика переносится на три строки, между строками участника — номер страницы.
+     */
+    @Test
+    void zcp_isoDatesAndLongWrappedNames() throws Exception {
+        ProtocolResult r = text("zcp-iso-dates.txt");
+        assertThat(r.format()).isEqualTo(ProtocolFormat.ZCP);
+        LotProtocol l = r.lots().get("83002509-ЗЦП1");
+        assertThat(l.bids()).hasSize(4);
+        assertThat(l.winnerBin()).isEqualTo("900000000001");
+        assertThat(l.bids().get(0).name()).isEqualTo("Товарищество с ограниченной ответственностью \"Поставщик 1\"");
+        assertThat(l.bids().get(0).bin()).isEqualTo("900000000001");
+        assertThat(l.bids().get(0).unitPrice()).isEqualByComparingTo("855666");
+        assertThat(l.bids().get(0).total()).isEqualByComparingTo("8556660");
+        assertThat(l.bids().get(0).submittedAt()).isEqualTo(java.time.LocalDateTime.of(2026, 10, 5, 17, 57, 53));
+        assertThat(l.bids().get(3).name()).isEqualTo("Товарищество с ограниченной ответственностью \"\"Управляющая компания \"Поставщик 4\"\"");
+        assertThat(l.bids().get(3).unitPrice()).isEqualByComparingTo("1077600");
+        assertThat(l.secondBin()).isEqualTo("900000000002");
+        assertThat(l.bids().get(1).name()).as("номер страницы внутри строки участника — мимо")
+                .isEqualTo("Товарищество с ограниченной ответственностью \"Поставщик 2\"");
+    }
+
+    /** Строка участника без чисел (обрыв) не забирает следующего участника. */
+    @Test
+    void zcp_brokenRowDoesNotSwallowNext() {
+        LotProtocol l = ProtocolParser.parseLines(List.of(
+                "Протокол об итогах 5-ЗЦП1", "Лот № 5-ЗЦП1",
+                "Потенциальными поставщиками представлены следующие ценовые предложения: 2",
+                "1 Поставщик А",
+                "2 Поставщик Б 900000000002 100 0 100 13.10.2026 10:00:00")).lots().get("5-ЗЦП1");
+        assertThat(l.bids()).extracting(b -> b.place() + " " + b.name()).containsExactly("2 Поставщик Б");
+    }
 }
