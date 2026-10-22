@@ -118,6 +118,22 @@ public class TenderLot {
     @Column(name = "model_by_ai", nullable = false)
     private boolean modelByAi;
 
+    /** Площадка (спека 2026-10-22-tender-results-market-prices §12): id лота goszakup — ключ строк договора. */
+    @Column(name = "ext_lot_id")
+    private Long extLotId;
+
+    /** Пункт плана площадки — общий у всех попыток одной закупки (цепочка «запрос → повтор → из одного источника»). */
+    @Column(name = "plan_point_id")
+    private Long planPointId;
+
+    /** Код ЕНС ТРУ пункта плана — категория цен рынка. */
+    @Column(name = "enstru_code", length = 30)
+    private String enstruCode;
+
+    /** Единица измерения пункта плана («Штука», «Упаковка»). */
+    @Column(name = "plan_unit", length = 50)
+    private String planUnit;
+
     /** Ед. изм. позиции частной заявки; пусто = «шт». */
     @Column(length = 30)
     private String unit;

@@ -74,4 +74,23 @@ public interface TenderLotRepository extends JpaRepository<TenderLot, Long> {
     @Query("SELECT DISTINCT l.tender.id FROM TenderLot l WHERE l.tender.source = com.vladoose.nir.entity.Source.PRIVATE_REQUEST "
          + "AND (LOWER(l.equipName) LIKE :pattern ESCAPE '\\' OR LOWER(l.manufact) LIKE :pattern ESCAPE '\\')")
     List<Long> findPrivateTenderIdsByLineText(@Param("pattern") String pattern);
+
+    /** Лоты всех попыток закупок по пунктам плана (наследование «наш лот», спека §7). */
+    List<TenderLot> findByPlanPointIdIn(Collection<Long> planPointIds);
+
+    /**
+     * Наши лоты (спека 2026-10-22-tender-results-market-prices §7): модель в работе, запрос цен, позиция заявки на участие —
+     * или отметка «наш товар» в тендере, о котором была пачка, если ИИ не ответил «не наше» / «аналог».
+     */
+    @Query(value = """
+            SELECT l.id FROM tender_lot l JOIN tender t ON t.id = l.tender_id
+            WHERE l.id IN (:ids) AND (
+                l.proposed_equipment_id IS NOT NULL
+                OR EXISTS (SELECT 1 FROM price_request_item i WHERE i.tender_lot_id = l.id)
+                OR EXISTS (SELECT 1 FROM apply_item a WHERE a.tender_lot_id = l.id)
+                OR (t.product_notified_level IS NOT NULL
+                    AND EXISTS (SELECT 1 FROM tender_lot_product_match m WHERE m.lot_id = l.id)
+                    AND COALESCE(l.ai_verdict, '') NOT IN ('NO', 'ANALOG')))
+            """, nativeQuery = true)
+    List<Long> findOurLotIds(@Param("ids") Collection<Long> ids);
 }

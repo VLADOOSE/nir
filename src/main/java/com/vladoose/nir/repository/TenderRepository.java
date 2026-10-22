@@ -73,4 +73,20 @@ public interface TenderRepository extends JpaRepository<Tender, Long> {
     @Query("select l.requiredSpec from TenderLot l where l.tender.sourceExtId = :anno and l.sourceLotCode = :code"
             + " and l.techSpecStatus = com.vladoose.nir.entity.TechSpecStatus.OK")
     List<String> findParsedLotSpec(@Param("anno") String anno, @Param("code") String code);
+
+    /**
+     * Тендеры для прохода итогов (спека §4): KZ goszakup, срок прошёл (время площадки; только дата — весь день) не раньше
+     * from, есть лот без окончательного итога. Новые сроки — первыми.
+     */
+    @Query(value = """
+            SELECT t.id FROM tender t
+            WHERE t.market = 'KZ' AND t.platform = 'GOSZAKUP' AND t.source = 'PUBLIC_TENDER' AND t.source_ext_id IS NOT NULL
+              AND COALESCE(t.deadline_at, CAST(t.deadline + 1 AS timestamp)) <= :now
+              AND COALESCE(t.deadline_at, CAST(t.deadline + 1 AS timestamp)) >= :from
+              AND EXISTS (SELECT 1 FROM tender_lot l WHERE l.tender_id = t.id AND l.source_removed_at IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM tender_lot_result r WHERE r.tender_lot_id = l.id AND r.final_at IS NOT NULL))
+            ORDER BY COALESCE(t.deadline_at, CAST(t.deadline + 1 AS timestamp)) DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Long> findResultCandidates(@Param("now") LocalDateTime now, @Param("from") LocalDateTime from, @Param("limit") int limit);
 }
