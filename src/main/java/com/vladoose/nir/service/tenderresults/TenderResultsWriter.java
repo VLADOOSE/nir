@@ -337,7 +337,7 @@ public class TenderResultsWriter {
             case CANCELLED -> ResultEventKind.CANCELLED;
             case DONE -> oi ? ResultEventKind.OI_DONE : ResultEventKind.DONE;
             case FAILED -> oi ? ResultEventKind.OI_FAILED
-                    : r.getFailReason() == FailReason.ONE_BID ? ResultEventKind.ONE_BID
+                    : r.getFailReason() == FailReason.ONE_BID || r.getFailReason() == null && oiAfterOwn(r, lot) ? ResultEventKind.ONE_BID
                     : r.getFailReason() == FailReason.NO_BIDS ? ResultEventKind.NO_BIDS
                     : ResultEventKind.FAILED_OTHER;
             case PENDING -> throw new IllegalStateException("итог лота ещё не известен");
@@ -349,13 +349,140 @@ public class TenderResultsWriter {
         return switch (kind) {
             case DONE -> ResultTexts.done(r, unit, lot.getMaxCost());
             case NO_BIDS -> ResultTexts.noBids();
-            case ONE_BID -> ResultTexts.oneBid(first == null ? null : first.getSupplierName(), first == null ? null : first.getUnitPrice(), unit);
+            case ONE_BID -> first != null
+                    ? ResultTexts.oneBid(ResultTexts.who(first.getSupplierName(), first.getSupplierBin()), first.getUnitPrice(), unit)
+                    : ResultTexts.oneBid(oiSupplierAfterOwn(r, lot), null, unit);
             case FAILED_OTHER -> ResultTexts.failedOther(r.getFailText(), r.getProtocolStatus());
             case CANCELLED -> ResultTexts.cancelled();
             case OI_DONE -> ResultTexts.oiDone(r.getWinnerName() != null ? r.getWinnerName() : r.getWinnerBin() == null ? null : name(r.getWinnerBin()));
             case OI_FAILED -> ResultTexts.oiFailed(first == null ? null : ResultTexts.who(first.getSupplierName(), first.getSupplierBin()));
             default -> kind.name();
         };
+    }
+
+    public record ChainTask(long resultId, long lotId, long planPointId) {}
+
+    public record ChainOutcome(int events, List<String> toImport) {}
+
+    /** Не состоявшиеся лоты, цепочка которых не досмотрена (спека §6). */
+    @Transactional(readOnly = true)
+    public List<ChainTask> openChains(Long tenderId) {
+        List<TenderLotResult> open = results.findOpenFailed().stream()
+                .filter(r -> tenderId == null || r.getTenderId().equals(tenderId)).toList();
+        Map<Long, TenderLot> lotById = lots.findAllById(open.stream().map(TenderLotResult::getTenderLotId).toList()).stream()
+                .collect(Collectors.toMap(TenderLot::getId, Function.identity()));
+        List<ChainTask> out = new ArrayList<>();
+        for (TenderLotResult r : open) {
+            TenderLot lot = lotById.get(r.getTenderLotId());
+            if (lot != null && lot.getPlanPointId() != null) out.add(new ChainTask(r.getId(), lot.getId(), lot.getPlanPointId()));
+        }
+        return out;
+    }
+
+    /**
+     * Попытки пункта плана (спека §6): хранятся у итога; события — по попыткам ПОСЛЕ своей и только тем, которых нет в АИС
+     * (решение 3): «повтор объявлен», «из одного источника — состоялся / сорвалось». Поздняя попытка уже в АИС — дальше итоги
+     * ведёт она (ссылка, итог окончательный). Повтор запросом цен или конкурсом с идущим приёмом — кандидат «Завести в АИС».
+     */
+    @Transactional
+    public ChainOutcome applyChain(ChainTask task, List<AttemptLot> attempts, LocalDateTime nowLocal, OffsetDateTime now, boolean silent) {
+        TenderLotResult r = results.findById(task.resultId()).orElse(null);
+        TenderLot lot = lots.findById(task.lotId()).orElse(null);
+        if (r == null || lot == null || r.getFinalAt() != null || attempts.isEmpty()) return new ChainOutcome(0, List.of());
+        Tender t = lot.getTender();
+        List<AttemptLot> sorted = attempts.stream().filter(a -> a.anno() != null)
+                .sorted(Comparator.comparing((AttemptLot a) -> ImportDeadline.parse(a.publishDate()), Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(AttemptLot::lotId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        Map<String, Long> inAis = tenders.findBySourceExtIdIn(sorted.stream().map(AttemptLot::anno).distinct().toList()).stream()
+                .filter(x -> x.getMarket() == Market.KZ)
+                .collect(Collectors.toMap(Tender::getSourceExtId, Tender::getId, (a, b) -> a));
+        List<ResultAttempt> list = new ArrayList<>();
+        for (AttemptLot a : sorted) {
+            list.add(new ResultAttempt(a.anno(), a.lotNumber(), ResultTexts.method(a.lotNumber()), a.statusId(), cut(a.statusName(), 100),
+                    a.publishDate(), a.resultsAt(), a.supplierBin(), inAis.get(a.anno())));
+        }
+        r.setAttempts(list);
+        int own = -1;
+        for (int i = 0; i < sorted.size(); i++) {
+            AttemptLot a = sorted.get(i);
+            if (Objects.equals(a.lotId(), lot.getExtLotId()) || a.anno().equals(t.getSourceExtId())) {
+                own = i;
+                break;
+            }
+        }
+        if (own < 0) return new ChainOutcome(0, List.of());
+        for (int i = list.size() - 1; i > own; i--) {
+            Long id = list.get(i).tenderId();
+            if (id != null && !id.equals(t.getId())) {
+                r.setNextTenderId(id);
+                r.setFinalAt(now);
+                return new ChainOutcome(0, List.of());
+            }
+        }
+        boolean ours = events.ours(List.of(lot)).contains(lot.getId());
+        int n = 0;
+        List<String> toImport = new ArrayList<>();
+        for (int i = own + 1; i < sorted.size(); i++) {
+            AttemptLot a = sorted.get(i);
+            String m = ResultTexts.method(a.lotNumber());
+            if ("ОИ".equals(m)) {
+                LotOutcome o = LotOutcome.ofLotStatus(a.statusId());
+                String supplier = a.supplierBin() == null ? null : name(a.supplierBin());
+                LocalDateTime at = ImportDeadline.parse(a.resultsAt());
+                if (o == LotOutcome.DONE && events.add(t, lot, ResultEventKind.OI_DONE, a.anno(), at, ResultTexts.oiDone(supplier), null,
+                        ours, silent, nowLocal, now)) n++;
+                if (o == LotOutcome.FAILED && events.add(t, lot, ResultEventKind.OI_FAILED, a.anno(), at, ResultTexts.oiFailed(supplier), null,
+                        ours, silent, nowLocal, now)) n++;
+            } else {
+                LocalDateTime end = ImportDeadline.parse(a.endDate());
+                if (events.add(t, lot, ResultEventKind.REPEAT, a.anno(), ImportDeadline.parse(a.publishDate()),
+                        ResultTexts.repeat(a.anno(), ResultTexts.methodName(m), end), null, ours, silent, nowLocal, now)) n++;
+                if (("ЗЦП".equals(m) || "ОК".equals(m)) && end != null && end.isAfter(nowLocal)) toImport.add(a.anno());
+            }
+        }
+        LotOutcome last = LotOutcome.ofLotStatus(sorted.get(sorted.size() - 1).statusId());
+        if (sorted.size() - 1 > own && (last == LotOutcome.DONE || last == LotOutcome.CANCELLED)) r.setFinalAt(now);
+        return new ChainOutcome(n, toImport);
+    }
+
+    /** Повтор заведён в АИС: ссылка, номер тендера у попытки и у события «повтор» («История» ведёт на него), дальше итоги ведёт он. */
+    @Transactional
+    public void linkImported(long resultId, String anno, long tenderId, OffsetDateTime now) {
+        results.findById(resultId).ifPresent(r -> {
+            eventRepo.findFirstByTenderLotIdAndKindAndRefKey(r.getTenderLotId(), ResultEventKind.REPEAT, anno)
+                    .ifPresent(e -> e.setRefTenderId(tenderId));
+            List<ResultAttempt> list = new ArrayList<>();
+            for (ResultAttempt a : r.getAttempts()) {
+                list.add(anno.equals(a.anno()) ? new ResultAttempt(a.anno(), a.lotNumber(), a.method(), a.statusId(), a.status(),
+                        a.publishedAt(), a.resultsAt(), a.supplierBin(), tenderId) : a);
+            }
+            r.setAttempts(list);
+            r.setNextTenderId(tenderId);
+            r.setFinalAt(now);
+        });
+    }
+
+    /** Своя попытка не из одного источника, а следом в цепочке — закупка из одного источника. */
+    static boolean oiAfterOwn(TenderLotResult r, TenderLot lot) {
+        List<ResultAttempt> list = r.getAttempts();
+        for (int i = 0; i < list.size(); i++) {
+            if (!Objects.equals(list.get(i).lotNumber(), lot.getSourceLotCode())) continue;
+            for (int j = i + 1; j < list.size(); j++) if ("ОИ".equals(list.get(j).method())) return true;
+            return false;
+        }
+        return false;
+    }
+
+    /** Поставщик закупки из одного источника после своей попытки (для текста «1 заявка → …»). */
+    private String oiSupplierAfterOwn(TenderLotResult r, TenderLot lot) {
+        List<ResultAttempt> list = r.getAttempts();
+        boolean after = false;
+        for (ResultAttempt a : list) {
+            if (Objects.equals(a.lotNumber(), lot.getSourceLotCode())) { after = true; continue; }
+            if (after && "ОИ".equals(a.method()) && a.supplierBin() != null) return name(a.supplierBin());
+        }
+        return null;
     }
 
     /** Дальше не проверяем: прошло 30 дней от итогов (нет итогов — от срока приёма). */

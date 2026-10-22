@@ -3,12 +3,14 @@ package com.vladoose.nir.service.tenderresults;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.integration.goszakup.GoszakupResultsClient;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.integration.goszakup.dto.AttemptLot;
 import com.vladoose.nir.integration.goszakup.dto.ContractRow;
 import com.vladoose.nir.integration.goszakup.dto.ResultBuy;
 import com.vladoose.nir.integration.http.UpstreamRetry;
 import com.vladoose.nir.service.CompanyProfileService;
 import com.vladoose.nir.service.productwatch.ProductWatchService;
 import com.vladoose.nir.service.tenderresults.TenderResultsWriter.Candidate;
+import com.vladoose.nir.service.tenderresults.TenderResultsWriter.ChainTask;
 import com.vladoose.nir.service.tenderresults.TenderResultsWriter.ProtocolJob;
 import com.vladoose.nir.service.tenderresults.protocol.ProtocolParser;
 import com.vladoose.nir.service.tenderresults.protocol.ProtocolResult;
@@ -114,6 +116,7 @@ public class TenderResultsService {
             String our = ourBin.get();
             for (ProtocolJob j : jobs) protocol(j, our);
             events += contracts(tenderId, nowLocal, now, silent, sum);
+            events += chains(tenderId, nowLocal, now, silent, sum);
             events += writer.settle(tenderId, nowLocal, now, silent);
             if (tenderId == null) writer.closeStale(nowLocal, now);
             contacts();
@@ -191,6 +194,50 @@ public class TenderResultsService {
             n += writer.applyContracts(rows, nowLocal, now, silent);
         }
         return n;
+    }
+
+    static final int CHAIN_BATCH = 100;
+
+    /** Цепочки попыток — пачками по 100 пунктов плана; повтор с идущим приёмом заводится в АИС (спека §6, решение 5). */
+    private int chains(Long tenderId, LocalDateTime nowLocal, OffsetDateTime now, boolean silent, ImportSummary sum) {
+        Map<Long, List<ChainTask>> byPoint = writer.openChains(tenderId).stream()
+                .collect(Collectors.groupingBy(ChainTask::planPointId, LinkedHashMap::new, Collectors.toList()));
+        List<Long> points = new ArrayList<>(byPoint.keySet());
+        int n = 0;
+        for (int i = 0; i < points.size(); i += CHAIN_BATCH) {
+            List<Long> batch = points.subList(i, Math.min(points.size(), i + CHAIN_BATCH));
+            List<AttemptLot> attempts;
+            try {
+                attempts = call(() -> client.lotsByPlanPoints(batch));
+            } catch (RuntimeException e) {
+                if (ProductWatchService.stopping(e)) throw e;
+                sum.addError("цепочки: " + ErrorText.of(e));
+                continue;
+            }
+            subjects.names(attempts.stream().map(AttemptLot::supplierBin).filter(Objects::nonNull).toList(), NAMES_PER_PASS);
+            Map<Long, List<AttemptLot>> byPt = attempts.stream().filter(a -> a.planPointId() != null)
+                    .collect(Collectors.groupingBy(AttemptLot::planPointId));
+            for (Long p : batch) {
+                for (ChainTask task : byPoint.get(p)) {
+                    TenderResultsWriter.ChainOutcome o = writer.applyChain(task, byPt.getOrDefault(p, List.of()), nowLocal, now, silent);
+                    n += o.events();
+                    for (String anno : o.toImport()) importRepeat(task, anno, now);
+                }
+            }
+        }
+        return n;
+    }
+
+    private void importRepeat(ChainTask task, String anno, OffsetDateTime now) {
+        try {
+            long id = importer.importAnnouncement(anno);
+            writer.linkImported(task.resultId(), anno, id, now);
+        } catch (RuntimeException e) {
+            if (ProductWatchService.stopping(e)) throw e;
+            log.warn("Итоги тендеров: повтор {} не заведён: {}", anno, ErrorText.of(e));
+        } finally {
+            pause();
+        }
     }
 
     /** Телефон и почта заказчика — до сообщения «звонить» (справочник площадки, раз в 30 дней). */

@@ -3,6 +3,7 @@ package com.vladoose.nir.tenderresults;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.goszakup.dto.*;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.tenderresults.TenderResultsWriter;
 import org.apache.pdfbox.pdmodel.*;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
@@ -89,5 +90,13 @@ public final class ResultsFixtures {
             d.save(out);
             return out.toByteArray();
         }
+    }
+
+    /** Попытка закупки по пункту плана; способ — по номеру лота (ЗЦП / ОИ / ОК). */
+    public static AttemptLot attempt(long lotId, String lotNumber, int status, long point, String anno, String publish, String end,
+                                     String results, String supplierBin) {
+        String method = lotNumber.contains("-ОИ") ? "Из одного источника по несостоявшимся закупкам" : "Запрос ценовых предложений";
+        return new AttemptLot(lotId, lotNumber, status, status == 360 ? "Закупка состоялась" : status == 370 ? "Закупка не состоялась" : "Опубликован",
+                point, anno, TenderResultsWriter.buyId(anno), lotNumber.contains("-ОИ") ? 6 : 3, method, publish, end, results, supplierBin);
     }
 }

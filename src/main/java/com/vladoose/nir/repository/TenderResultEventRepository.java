@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface TenderResultEventRepository extends JpaRepository<TenderResultEvent, Long> {
 
@@ -24,4 +25,6 @@ public interface TenderResultEventRepository extends JpaRepository<TenderResultE
     boolean existsByTenderLotIdAndKind(Long tenderLotId, ResultEventKind kind);
 
     boolean existsByTenderLotIdAndKindAndRefKey(Long tenderLotId, ResultEventKind kind, String refKey);
+
+    Optional<TenderResultEvent> findFirstByTenderLotIdAndKindAndRefKey(Long tenderLotId, ResultEventKind kind, String refKey);
 }
