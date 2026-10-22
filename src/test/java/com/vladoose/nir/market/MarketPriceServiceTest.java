@@ -151,6 +151,11 @@ class MarketPriceServiceTest {
         assertThat(r.category().code()).isEqualTo(CODE);
         assertThat(r.alternatives()).extracting(c -> c.code()).containsExactly("266011.300.000000");
         assertThat(service.forText("Дефибриллятор", "266011.300.000000", null, null).stats().median()).isEqualByComparingTo("7500000");
+        // заказчик в строке — коротко (на телефоне карточка росла на десяток строк)
+        contracts.saveAndFlush(MarketContract.builder().lotExtId(nextLot++).enstruCode(CODE).name("Дефибриллятор").unit("Штука")
+                .customerName("Коммунальное государственное предприятие на праве хозяйственного ведения «Областная больница»")
+                .unitPrice(new BigDecimal("150")).signedAt(LocalDate.of(2026, 9, 1)).build());
+        assertThat(service.forText("Дефибриллятор", CODE, null, null).rows().get(0).customer()).isEqualTo("КГП на ПХВ «Областная больница»");
     }
 
     @Test

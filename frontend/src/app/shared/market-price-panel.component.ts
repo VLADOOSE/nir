@@ -56,7 +56,7 @@ import { announceUrl, instantText, plainDate } from './tender-results';
               <tr *ngFor="let r of d.rows">
                 <td data-label="Дата">{{ date(r.signedAt) || '—' }}</td>
                 <td data-label="Регион">{{ r.region || '—' }}</td>
-                <td data-label="Заказчик">{{ r.customer || '—' }}<a *ngIf="r.anno" class="mp-anno" [href]="url(r.anno)" target="_blank" rel="noopener">№ {{ r.anno }} ↗</a></td>
+                <td data-label="Заказчик"><span class="mp-cust" [title]="r.customer || ''">{{ r.customer || '—' }}</span><a *ngIf="r.anno" class="mp-anno" [href]="url(r.anno)" target="_blank" rel="noopener">№ {{ r.anno }} ↗</a></td>
                 <td data-label="Кол-во">{{ r.quantity ?? '—' }} {{ r.unit }}</td>
                 <td data-label="Цена договора">{{ r.unitPrice | money }}</td>
                 <td data-label="Бюджет">{{ r.budgetUnitPrice | money }}</td>
@@ -91,6 +91,8 @@ import { announceUrl, instantText, plainDate } from './tender-results';
     @media (max-width: 900px) {
       .mp-link, .mp-chip { min-height: 40px; }
       .mp-filter input { height: 40px; }
+      .mp-table td { border-bottom: none; padding: 2px 0; }
+      .mp-cust { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .mp-table tr { grid-template-columns: 1fr auto; grid-template-areas: "cust price" "reg date" "sup qty"; }
       .mp-table td[data-label="Заказчик"] { grid-area: cust; }
       .mp-table td[data-label="Цена договора"] { grid-area: price; text-align: right; font-weight: 600; }

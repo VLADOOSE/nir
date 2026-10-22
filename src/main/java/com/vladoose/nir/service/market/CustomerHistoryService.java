@@ -61,7 +61,8 @@ public class CustomerHistoryService {
                         .collect(Collectors.toSet())).stream().filter(s -> s.getNameRu() != null)
                 .collect(Collectors.toMap(GoszakupSubject::getBin, GoszakupSubject::getNameRu, (a, b) -> a));
         List<CustomerHistory.Row> rows = shown.stream().map(m -> new CustomerHistory.Row(m.getSignedAt(), m.getName(), m.getQuantity(),
-                m.getUnit(), m.getUnitPrice(), m.getSupplierBin() == null ? null : names.getOrDefault(m.getSupplierBin(), "БИН " + m.getSupplierBin()),
+                m.getUnit(), m.getUnitPrice(), m.getSupplierBin() == null ? null
+                        : com.vladoose.nir.service.tenderresults.ResultTexts.shortName(names.getOrDefault(m.getSupplierBin(), "БИН " + m.getSupplierBin())),
                 m.getRegion(), same.contains(m), m.getAnno())).toList();
         return new CustomerHistory(bin, rows, l.fetchedAt(), l.ok() ? null : l.error());
     }

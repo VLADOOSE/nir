@@ -260,9 +260,9 @@ public class MarketPriceService implements MarketLines {
         List<MarketPriceResponse.Row> out = same.stream()
                 .sorted(Comparator.comparing(MarketContract::getSignedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(ROWS)
-                .map(r -> new MarketPriceResponse.Row(r.getSignedAt(), r.getRegion(), r.getCustomerName(), r.getQuantity(), eff,
+                .map(r -> new MarketPriceResponse.Row(r.getSignedAt(), r.getRegion(), ResultTexts.shortName(r.getCustomerName()), r.getQuantity(), eff,
                         r.getUnitPrice(), r.getBudgetUnitPrice(),
-                        r.getSupplierBin() == null ? null : names.getOrDefault(r.getSupplierBin(), "БИН " + r.getSupplierBin()), r.getAnno(),
+                        r.getSupplierBin() == null ? null : ResultTexts.shortName(names.getOrDefault(r.getSupplierBin(), "БИН " + r.getSupplierBin())), r.getAnno(),
                         r.getName()))
                 .toList();
         Category shown = new Category(cat.code(), cat.name() != null ? cat.name() : rows.isEmpty() ? null : rows.get(0).getName(),

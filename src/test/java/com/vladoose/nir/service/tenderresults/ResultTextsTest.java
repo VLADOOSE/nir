@@ -89,5 +89,14 @@ class ResultTextsTest {
         assertThat(ResultTexts.who("АКЦИОНЕРНОЕ ОБЩЕСТВО «Медтехника»", null)).isEqualTo("АО «Медтехника»");
         assertThat(ResultTexts.who("ИП Әбдібай", null)).isEqualTo("ИП Әбдібай");
         assertThat(ResultTexts.who(null, "190140008213")).isEqualTo("БИН 190140008213");
+        // заказчики — те же сокращения, что пишут сами больницы
+        assertThat(ResultTexts.shortName("Коммунальное государственное предприятие на праве хозяйственного ведения \"Центр\""))
+                .isEqualTo("КГП на ПХВ \"Центр\"");
+        assertThat(ResultTexts.shortName("Государственное коммунальное предприятие на праве хозяйственного ведения «Больница»"))
+                .isEqualTo("ГКП на ПХВ «Больница»");
+        assertThat(ResultTexts.shortName("Коммунальное государственное учреждение \"Центр\"")).isEqualTo("КГУ \"Центр\"");
+        assertThat(ResultTexts.shortName("Республиканское государственное предприятие на праве хозяйственного ведения \"X\""))
+                .isEqualTo("РГП на ПХВ \"X\"");
+        assertThat(ResultTexts.shortName("Коммунальное государственное казенное предприятие «Ясли»")).isEqualTo("КГКП «Ясли»");
     }
 }
