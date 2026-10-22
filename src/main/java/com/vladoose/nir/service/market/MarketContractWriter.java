@@ -67,7 +67,7 @@ public class MarketContractWriter {
             MarketContract m = existing.getOrDefault(l.id(), MarketContract.builder().lotExtId(l.id()).build());
             m.setAnno(cut(l.anno(), 30));
             m.setLotNumber(cut(l.lotNumber(), 50));
-            m.setEnstruCode(cut(l.enstruCode(), 30));
+            m.setEnstruCode(cut(l.enstruCode() != null ? l.enstruCode() : p.unit().enstruCode(), 30));
             m.setName(cut(l.nameRu(), 500));
             m.setDescription(cut(l.descriptionRu(), 1000));
             m.setExtraDesc(l.extraDesc());

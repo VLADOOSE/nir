@@ -403,7 +403,7 @@ public class GoszakupHttpClient implements GoszakupClient {
     private static final String RESULT_BUY_FIELDS = "id numberAnno refBuyStatusId itogiDatePublic biinSupplier refTradeMethodsId "
             + "RefTradeMethods{ nameRu } Files{ nameRu originalName filePath } Lots{ " + RESULT_LOT_FIELDS + " }";
     private static final String CONTRACT_FIELDS = "id trdBuyId contractNumber signDate refContractStatusId supplierBiin "
-            + "contractSumWnds ContractUnits{ lotId itemPrice itemPriceWnds quantity totalSumWnds }";
+            + "contractSumWnds ContractUnits{ lotId itemPrice itemPriceWnds quantity totalSumWnds refEnstruCode }";
     private static final String ATTEMPT_FIELDS = "id lotNumber refLotStatusId pointList trdBuyId trdBuyNumberAnno "
             + "RefLotsStatus{ nameRu } TrdBuy{ id numberAnno publishDate endDate itogiDatePublic biinSupplier refTradeMethodsId "
             + "RefTradeMethods{ nameRu } }";
@@ -490,6 +490,12 @@ public class GoszakupHttpClient implements GoszakupClient {
         return out;
     }
 
+    /** Код ЕНС ТРУ строки договора — массивом («["309910.000.000002"]») или строкой. */
+    private static String firstText(JsonNode v) {
+        JsonNode x = v != null && v.isArray() ? (v.size() > 0 ? v.get(0) : null) : v;
+        return x == null || x.isMissingNode() || x.isNull() || x.asText().isBlank() ? null : x.asText().strip();
+    }
+
     private static Long firstLong(JsonNode arr) {
         return arr != null && arr.isArray() && arr.size() > 0 && arr.get(0).isNumber() ? arr.get(0).asLong() : null;
     }
@@ -520,7 +526,7 @@ public class GoszakupHttpClient implements GoszakupClient {
         for (JsonNode u : c.path("ContractUnits")) {
             java.math.BigDecimal withVat = dec(u, "itemPriceWnds");
             java.math.BigDecimal price = withVat != null && withVat.signum() > 0 ? withVat : dec(u, "itemPrice");
-            units.add(new ContractUnitRow(longer(u, "lotId"), price, dec(u, "quantity"), dec(u, "totalSumWnds")));
+            units.add(new ContractUnitRow(longer(u, "lotId"), price, dec(u, "quantity"), dec(u, "totalSumWnds"), firstText(u.path("refEnstruCode"))));
         }
         return new ContractRow(longer(c, "id"), longer(c, "trdBuyId"), text(c, "contractNumber"), text(c, "signDate"),
                 integer(c, "refContractStatusId"), text(c, "supplierBiin"), dec(c, "contractSumWnds"), units);

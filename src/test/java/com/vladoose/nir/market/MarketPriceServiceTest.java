@@ -179,4 +179,35 @@ class MarketPriceServiceTest {
         assertThat(resp.bids().count()).isEqualTo(2);
         assertThat(resp.bids().median()).isEqualByComparingTo("200");
     }
+
+    /**
+     * Строка без единицы (лот 2026 года без пункта плана): единица — та, что у всех строк категории с единицей;
+     * у категории с разными единицами — строка в числа не идёт (штуки не смешиваем с упаковками).
+     */
+    @Test
+    void rowWithoutUnit_soleUnitOfCategory_orNotCounted() {
+        row("50000", "Упаковка", null, null);
+        row("60000", null, null, null);
+        MarketPriceResponse one = service.forText("Дефибриллятор", CODE, null, null);
+        assertThat(one.stats().count()).isEqualTo(2);
+        assertThat(one.rows()).extracting(MarketPriceResponse.Row::unit).as("строка без единицы — в единице категории").containsOnly("уп");
+        row("1000000", "Штука", null, null);
+        MarketPriceResponse r = service.forText("Дефибриллятор", CODE, "уп", null);
+        assertThat(r.stats().count()).as("единицы разные — строка без единицы не в счёт").isEqualTo(1);
+        assertThat(r.units()).containsExactlyInAnyOrder("шт", "уп");
+    }
+
+    /** Лот без кода (площадка не отдала пункт плана) — строка «Рынок» по названию, как у сообщений Telegram. */
+    @Test
+    void lotWithoutCode_summaryByName() {
+        row("1340000", "Штука", null, null);
+        row("1340000", "Штука", null, null);
+        TenderLot l = lot("Штука", "1420000");
+        l.setEnstruCode(null);
+        lots.saveAndFlush(l);
+        var s = service.lotSummaries(List.of(l)).get(l.getId());
+        assertThat(s).isNotNull();
+        assertThat(s.count()).isEqualTo(2);
+        assertThat(s.code()).isEqualTo(CODE);
+    }
 }

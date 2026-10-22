@@ -113,15 +113,22 @@ public class MarketPriceService implements MarketLines {
     @Transactional(readOnly = true)
     public Map<Long, MarketLotSummary> lotSummaries(Collection<TenderLot> list) {
         Map<String, List<MarketContract>> byCode = new HashMap<>();
+        Map<String, List<Category>> cats = new HashMap<>();
         Map<Long, MarketLotSummary> out = new HashMap<>();
         for (TenderLot l : list) {
-            if (l.getEnstruCode() == null) continue;
-            List<MarketContract> rows = byCode.computeIfAbsent(l.getEnstruCode(), c -> contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(c, from()));
+            String code = l.getEnstruCode();
+            if (code == null) {   // у лотов 2026 года площадка часто не отдаёт пункт плана — категория по названию (как в панели)
+                String kw = MarketCategories.keyword(l.getEquipName());
+                Category cat = kw == null ? null : MarketCategories.pick(l.getEquipName(), cats.computeIfAbsent(kw, this::categories));
+                code = cat == null ? null : cat.code();
+            }
+            if (code == null) continue;
+            List<MarketContract> rows = byCode.computeIfAbsent(code, c -> contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(c, from()));
             if (rows.isEmpty()) continue;
             String unit = effectiveUnit(null, l.getUnit() != null && !l.getUnit().isBlank() ? l.getUnit() : l.getPlanUnit(), units(rows));
-            List<MarketContract> same = rows.stream().filter(r -> norm(r.getUnit()).equals(unit)).toList();
+            List<MarketContract> same = sameUnit(rows, unit);
             MarketStats st = MarketStats.of(prices(same), budgets(same), l.getMaxCost());
-            if (st.count() > 0) out.put(l.getId(), new MarketLotSummary(MarketTexts.lotLine(st, unit), st.count(), st.median(), l.getEnstruCode()));
+            if (st.count() > 0) out.put(l.getId(), new MarketLotSummary(MarketTexts.lotLine(st, unit), st.count(), st.median(), code));
         }
         return out;
     }
@@ -141,7 +148,7 @@ public class MarketPriceService implements MarketLines {
             }
             List<MarketContract> rows = rowsByCode.computeIfAbsent(cat.code(), c -> contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(c, from()));
             String unit = effectiveUnit(null, null, units(rows));
-            List<MarketContract> same = rows.stream().filter(r -> norm(r.getUnit()).equals(unit)).toList();
+            List<MarketContract> same = sameUnit(rows, unit);
             MarketStats st = MarketStats.of(prices(same), budgets(same), null);
             out.add(new MarketHint(text, MarketTexts.hintLine(st), st.count(), st.median(), cat.code()));
         }
@@ -212,7 +219,7 @@ public class MarketPriceService implements MarketLines {
         List<MarketContract> rows = rowsByCode.computeIfAbsent(code, c -> contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(c, from()));
         if (rows.isEmpty()) return null;
         String unit = effectiveUnit(null, i.unit(), units(rows));
-        List<MarketContract> same = rows.stream().filter(r -> norm(r.getUnit()).equals(unit)).toList();
+        List<MarketContract> same = sameUnit(rows, unit);
         return MarketTexts.telegramLine(MarketStats.of(prices(same), budgets(same), i.budget()));
     }
 
@@ -243,7 +250,7 @@ public class MarketPriceService implements MarketLines {
         List<MarketContract> rows = contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(cat.code(), from());
         List<String> units = units(rows);
         String eff = effectiveUnit(unit, lotUnit, units);
-        List<MarketContract> same = rows.stream().filter(r -> norm(r.getUnit()).equals(eff)).toList();
+        List<MarketContract> same = sameUnit(rows, eff);
         String f = filter == null ? "" : filter.strip().toLowerCase(Locale.ROOT);
         if (!f.isEmpty()) same = same.stream().filter(r -> text(r).contains(f)).toList();
         MarketStats st = MarketStats.of(prices(same), budgets(same), budget);
@@ -253,7 +260,7 @@ public class MarketPriceService implements MarketLines {
         List<MarketPriceResponse.Row> out = same.stream()
                 .sorted(Comparator.comparing(MarketContract::getSignedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(ROWS)
-                .map(r -> new MarketPriceResponse.Row(r.getSignedAt(), r.getRegion(), r.getCustomerName(), r.getQuantity(), norm(r.getUnit()),
+                .map(r -> new MarketPriceResponse.Row(r.getSignedAt(), r.getRegion(), r.getCustomerName(), r.getQuantity(), eff,
                         r.getUnitPrice(), r.getBudgetUnitPrice(),
                         r.getSupplierBin() == null ? null : names.getOrDefault(r.getSupplierBin(), "БИН " + r.getSupplierBin()), r.getAnno(),
                         r.getName()))
@@ -272,10 +279,31 @@ public class MarketPriceService implements MarketLines {
         return new MarketPriceResponse.Bids(st.count(), st.median());
     }
 
-    /** Единицы категории по числу строк (больше — первой). */
+    /** Единицы категории по числу строк (больше — первой); строка без единицы — по {@link #unitOf}. */
     private static List<String> units(List<MarketContract> rows) {
-        Map<String, Long> by = rows.stream().collect(Collectors.groupingBy(r -> norm(r.getUnit()), LinkedHashMap::new, Collectors.counting()));
+        String sole = soleUnit(rows);
+        Map<String, Long> by = rows.stream().map(r -> unitOf(r, sole)).filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(u -> u, LinkedHashMap::new, Collectors.counting()));
         return by.entrySet().stream().sorted(Map.Entry.<String, Long>comparingByValue().reversed()).map(Map.Entry::getKey).toList();
+    }
+
+    private static List<MarketContract> sameUnit(List<MarketContract> rows, String unit) {
+        String sole = soleUnit(rows);
+        return rows.stream().filter(r -> unit.equals(unitOf(r, sole))).toList();
+    }
+
+    /**
+     * Единица строки: своя; нет (лот 2026 года без пункта плана — живая проверка 2026-10-22) — единственная единица строк
+     * категории с единицей; единицы разные или их нет вовсе — неизвестна: штуки с упаковками не смешиваем (спека §9).
+     */
+    private static String unitOf(MarketContract r, String sole) {
+        return r.getUnit() != null && !r.getUnit().isBlank() ? norm(r.getUnit()) : sole;
+    }
+
+    private static String soleUnit(List<MarketContract> rows) {
+        Set<String> known = rows.stream().map(MarketContract::getUnit).filter(u -> u != null && !u.isBlank())
+                .map(MarketPriceService::norm).collect(Collectors.toSet());
+        return known.size() == 1 ? known.iterator().next() : null;
     }
 
     /** Выбранная → единица лота → единица большинства строк (спека §9). */

@@ -37,7 +37,7 @@ class GoszakupResultsClientTest {
     static final String CONTRACTS_PAGE1 = """
         {"data":{"Contract":[{"id":25969702,"trdBuyId":17752538,"contractNumber":"070740006294/260209/00","signDate":"2026-10-20 09:28:34",
           "refContractStatusId":190,"supplierBiin":"880808302714","contractSumWnds":43000,
-          "ContractUnits":[{"lotId":43533728,"itemPrice":40000,"itemPriceWnds":43000,"quantity":1,"totalSumWnds":43000}]}]},
+          "ContractUnits":[{"lotId":43533728,"itemPrice":40000,"itemPriceWnds":43000,"quantity":1,"totalSumWnds":43000,"refEnstruCode":["309910.000.000002"]}]}]},
          "extensions":{"pageInfo":{"hasNextPage":true,"lastId":25969702}}}""";
     static final String CONTRACTS_PAGE2 = """
         {"data":{"Contract":[{"id":25969800,"trdBuyId":17752539,"contractNumber":"2","signDate":"2026-10-21 10:00:00",
@@ -123,6 +123,10 @@ class GoszakupResultsClientTest {
         assertThat(rows.get(0).units().get(0).unitPrice()).isEqualByComparingTo("43000");
         assertThat(rows.get(1).units().get(0).unitPrice()).as("без цены с НДС — цена без НДС").isEqualByComparingTo("100");
         assertThat(rows.get(0).signDate()).startsWith("2026-10-20");
+        // у лотов 2026 года «Plans» пусты — код ЕНС ТРУ есть только в строке договора (живая проверка 2026-10-22)
+        assertThat(bodies.get(0)).contains("refEnstruCode");
+        assertThat(rows.get(0).units().get(0).enstruCode()).isEqualTo("309910.000.000002");
+        assertThat(rows.get(1).units().get(0).enstruCode()).isNull();
     }
 
     @Test

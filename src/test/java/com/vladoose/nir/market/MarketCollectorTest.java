@@ -133,4 +133,19 @@ class MarketCollectorTest {
         assertThat(collector.ensureWord("монитор", Duration.ofSeconds(20)).error()).contains("не удалось обновить");
         assertThat(fake.calls).as("в течение 10 мин после сбоя площадку не дёргаем").hasSize(afterFail);
     }
+
+    /** Живая проверка 2026-10-22: у лотов 2026 года «Plans» пусты — кода и единицы нет; код берём из строки договора. */
+    @Test
+    void codeFromContractUnit_whenLotHasNoPlan() {
+        ClosedLot noPlan = new ClosedLot(99000009L, "99000009-ЗЦП1", "Дефибриллятор", "для терапии нарушений сердечного ритма",
+                BigDecimal.ONE, new BigDecimal("1500000"), 99100009L, "99100009-1", "990240006109", "ГКП «Больница»",
+                null, null, null, null, "Запрос ценовых предложений");
+        fake.closed.put("дефибриллятор", List.of(noPlan));
+        fake.contracts.add(new ContractRow(9L, 99100009L, "Д-9", "2026-10-01 10:00:00", 190, "900000000001", new BigDecimal("1450000"),
+                List.of(new ContractUnitRow(99000009L, new BigDecimal("1450000"), BigDecimal.ONE, new BigDecimal("1450000"), CODE))));
+        collector.collectDaily(new ImportSummary());
+        MarketContract m = contracts.findByLotExtIdIn(List.of(99000009L)).get(0);
+        assertThat(m.getEnstruCode()).isEqualTo(CODE);
+        assertThat(m.getUnit()).isNull();
+    }
 }
