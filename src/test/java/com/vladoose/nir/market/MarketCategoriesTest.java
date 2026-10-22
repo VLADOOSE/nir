@@ -60,4 +60,29 @@ class MarketCategoriesTest {
         Category cart = new Category("325030.500.000010", "Тележка", "медицинская", 1);
         assertThat(MarketCategories.pick("Тележка", List.of(suitcase, cart))).isEqualTo(cart);
     }
+
+    /**
+     * Живая проверка 2026-10-22 на товарах сайта: слова сравнивались по первым 5 буквам — «электрохирургический» = «электрод»,
+     * «интерпретацией» = «интернет», «комплектация» = «комплектующие»; теперь слово целиком (окончание до 3 букв), и главное слово
+     * категории должно быть в тексте.
+     */
+    @Test
+    void pick_wholeWords_andMainWordOfCategoryInText() {
+        Category electrode = new Category("325013.700.000020", "Электрод", "нейтральный, электрохирургический, одноразовый", 1);
+        assertThat(MarketCategories.pick("ВЧ электрохирургический блок для аппарата ЭХВЧ-350-01-\"ФОТЕК\"", List.of(electrode))).isNull();
+        Category suction = new Category("325050.900.000026", "Отсасыватель", "для аспирации жидкого содержимого", 41);
+        assertThat(MarketCategories.pick("Блок управления ACTITON-A (с режимом аспирации жидкости)", List.of(suction))).isNull();
+        assertThat(MarketCategories.pick("Отсасыватель медицинский портативный ОМП-5/80", List.of(suction))).isEqualTo(suction);
+        Category parts = new Category("266012.100.000000", "Медицинские изделия", "Комплектующие для аппарата Электрокардиограф BTL", 2);
+        Category ecg = new Category("266012.100.000002", "Электрокардиограф", "12-канальный, встроенный термопринтер", 46);
+        Category telemetry = new Category("266012.100.000005", "Электрокардиограф", "12-канальный, с функцией интернет-телеметрии", 11);
+        assertThat(MarketCategories.pick("Электрокардиограф ЭК1Т-1/3-07 «Аксион» — простая комплектация", List.of(parts, telemetry, ecg)))
+                .isEqualTo(ecg);
+        assertThat(MarketCategories.pick("Электрокардиограф ЭК3ТЦ-3/6-04 «Аксион» — комплектация с интерпретацией", List.of(telemetry, ecg)))
+                .isEqualTo(ecg);
+        Category balloon = new Category("325021.800.000008", "Баллон", "кислородный", 3);
+        assertThat(MarketCategories.pick("Аппарат искусственной вентиляции легких для экстренной помощи А-ИВЛ-Э", List.of(balloon))).isNull();
+        // падежи и окончания — одно слово
+        assertThat(MarketCategories.pick("Отсасывателя медицинского", List.of(suction))).isEqualTo(suction);
+    }
 }

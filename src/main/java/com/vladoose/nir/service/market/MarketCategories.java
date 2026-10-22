@@ -29,14 +29,17 @@ public final class MarketCategories {
     }
 
     /**
-     * Лучшая категория: хотя бы одно слово текста — в её названии или описании (найденная только по доп. описанию пункта плана
-     * — не про этот товар: «Эндоскоп» → «Услуги по обучению» с «эндоскопической диагностикой»), услуги — только для услуги.
+     * Лучшая категория: её главное слово (первое значимое слово названия, у названия из общих слов — описания) есть в тексте,
+     * дальше — больше слов текста в её названии и описании, то же главное слово, больше договоров. Слова сравниваются целиком,
+     * окончание — до 3 букв (живая проверка 2026-10-22: по 5 буквам «электрохирургический» = «электрод», «интерпретацией» =
+     * «интернет»). Найденная только по доп. описанию пункта плана — не про этот товар («Эндоскоп» → «Услуги по обучению» с
+     * «эндоскопической диагностикой»); услуги — только для услуги.
      */
     public static Category pick(String text, List<Category> cats) {
-        Set<String> t = stems(text);
+        List<String> t = words(text);
         String kw = keyword(text);
-        return relevant(text, cats).stream().filter(c -> overlap(t, words(c)) > 0)
-                .max(Comparator.comparingInt((Category c) -> overlap(t, words(c)))
+        return relevant(text, cats).stream().filter(c -> mainWordIn(c, t)).filter(c -> overlap(t, catWords(c)) > 0)
+                .max(Comparator.comparingInt((Category c) -> overlap(t, catWords(c)))
                         .thenComparing(c -> kw != null && kw.equals(keyword(c.name())))   // «Тележка» — не «Чемодан-тележка»
                         .thenComparingInt(Category::count)).orElse(null);
     }
@@ -53,22 +56,53 @@ public final class MarketCategories {
                 && !MedicalGoodsVocabulary.isMedicalWasteContainer(n, Objects.toString(description, ""));
     }
 
-    private static Set<String> words(Category c) {
-        return stems(c.name() + " " + Objects.toString(c.description(), ""));
+    /** «Работы по ремонту …», «Услуги по …» — главное слово после них. */
+    private static final Set<String> SERVICE_HEAD = Set.of("работы", "работ", "работа", "услуги", "услуг", "услуга", "оказание", "выполнение");
+
+    private static boolean mainWordIn(Category c, List<String> text) {
+        String main = mainWord(c.name());
+        if (main == null) main = mainWord(c.description());
+        if (main == null) return false;
+        for (String w : text) if (same(w, main)) return true;
+        return false;
     }
 
-    static Set<String> stems(String s) {
-        Set<String> out = new HashSet<>();
+    private static String mainWord(String s) {
+        for (String w : words(s)) if (!SERVICE_HEAD.contains(w)) return w;
+        return null;
+    }
+
+    private static List<String> catWords(Category c) {
+        return words(c.name() + " " + Objects.toString(c.description(), ""));
+    }
+
+    /** Значимые слова: нижний регистр, от 3 букв, без общих. */
+    static List<String> words(String s) {
+        List<String> out = new ArrayList<>();
         if (s == null) return out;
         for (String w : s.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
-            if (w.length() >= 3 && !GENERIC.contains(w)) out.add(w.length() > 5 ? w.substring(0, 5) : w);
+            if (w.length() >= 3 && !GENERIC.contains(w)) out.add(w);
         }
         return out;
     }
 
-    private static int overlap(Set<String> a, Set<String> b) {
+    /** Одно слово с точностью до окончания: длины различаются не больше чем на 3, короче — без 2 последних букв (не короче 4) — начало длинного. */
+    static boolean same(String a, String b) {
+        String s = a.length() <= b.length() ? a : b;
+        String l = s == a ? b : a;
+        if (l.length() - s.length() > 3) return false;
+        int p = Math.min(s.length(), Math.max(4, s.length() - 2));
+        return l.startsWith(s.substring(0, p));
+    }
+
+    /** Сколько слов текста есть среди слов категории. */
+    private static int overlap(List<String> text, List<String> cat) {
         int n = 0;
-        for (String x : a) if (b.contains(x)) n++;
+        for (String x : text) {
+            for (String y : cat) {
+                if (same(x, y)) { n++; break; }
+            }
+        }
         return n;
     }
 }
