@@ -9,6 +9,7 @@ import com.vladoose.nir.integration.goszakup.dto.ContractRow;
 import com.vladoose.nir.integration.goszakup.dto.ContractUnitRow;
 import com.vladoose.nir.repository.MarketContractRepository;
 import com.vladoose.nir.repository.MarketLookupRepository;
+import com.vladoose.nir.repository.TenderLotRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,11 +34,14 @@ public class MarketContractWriter {
     private final MarketContractRepository contracts;
     private final MarketLookupRepository lookups;
     private final RegionResolver regions;
+    private final TenderLotRepository lots;
 
-    public MarketContractWriter(MarketContractRepository contracts, MarketLookupRepository lookups, RegionResolver regions) {
+    public MarketContractWriter(MarketContractRepository contracts, MarketLookupRepository lookups, RegionResolver regions,
+                                TenderLotRepository lots) {
         this.contracts = contracts;
         this.lookups = lookups;
         this.regions = regions;
+        this.lots = lots;
     }
 
     @Transactional
@@ -107,6 +111,15 @@ public class MarketContractWriter {
         l.setRowsCount(rows);
         l.setError(cut(error, 300));
         lookups.save(l);
+    }
+
+    /** Код ЕНС ТРУ и единица лота с площадки (живой запрос цены у лота, у которого их ещё нет). */
+    @Transactional
+    public void fillLot(long lotId, ClosedLot l) {
+        lots.findById(lotId).ifPresent(lot -> {
+            if (lot.getEnstruCode() == null && l.enstruCode() != null) lot.setEnstruCode(cut(l.enstruCode(), 30));
+            if (lot.getPlanUnit() == null && l.unit() != null) lot.setPlanUnit(cut(l.unit(), 50));
+        });
     }
 
     static String cut(String s, int max) {

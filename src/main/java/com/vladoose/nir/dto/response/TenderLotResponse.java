@@ -47,4 +47,7 @@ public class TenderLotResponse {
 
     /** Итог лота на площадке (спека 2026-10-22-tender-results-market-prices §11); пусто — итоги не проверялись. */
     private LotResultSummary result;
+
+    /** «Рынок: медиана … · N договоров · бюджет здесь …» (только KZ, только из набора). */
+    private MarketLotSummary market;
 }

@@ -7,11 +7,14 @@ import com.vladoose.nir.dto.response.ActivityApplyResponse;
 import com.vladoose.nir.dto.response.AiBriefResponse;
 import com.vladoose.nir.dto.response.LotProductMatchDto;
 import com.vladoose.nir.dto.response.LotResultSummary;
+import com.vladoose.nir.dto.response.MarketLotSummary;
 import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.dto.response.TenderResultSummary;
+import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.AiVerdict;
+import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TechSpecStatus;
 import com.vladoose.nir.exception.BadRequestException;
@@ -37,6 +40,7 @@ import com.vladoose.nir.service.aianswer.AiAnswerService;
 import com.vladoose.nir.service.productwatch.ProductAiBrief;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import com.vladoose.nir.service.tenderresults.TenderResultsQuery;
+import com.vladoose.nir.service.market.MarketPriceService;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.service.lotmodel.LotModelViews;
@@ -80,6 +84,7 @@ public class TenderController {
     private final TenderLotRepository tenderLotRepository;
     private final LotModelViews lotModelViews;
     private final TenderResultsQuery resultsQuery;
+    private final MarketPriceService marketPrices;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -98,7 +103,8 @@ public class TenderController {
                             TenderLotRepository tenderLotRepository,
                             LotModelViews lotModelViews,
                             AiAnswerService aiAnswers,
-                            TenderResultsQuery resultsQuery) {
+                            TenderResultsQuery resultsQuery,
+                            MarketPriceService marketPrices) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -117,6 +123,7 @@ public class TenderController {
         this.lotModelViews = lotModelViews;
         this.aiAnswers = aiAnswers;
         this.resultsQuery = resultsQuery;
+        this.marketPrices = marketPrices;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -232,6 +239,10 @@ public class TenderController {
         }
         Map<Long, LotResultSummary> results = resultsQuery.lotSummaries(entities.stream().map(TenderLot::getId).toList());
         for (TenderLotResponse l : lots) l.setResult(results.get(l.getId()));
+        if (MarketContext.get() == Market.KZ) {
+            Map<Long, MarketLotSummary> market = marketPrices.lotSummaries(entities);
+            for (TenderLotResponse l : lots) l.setMarket(market.get(l.getId()));
+        }
         return lots;
     }
 
