@@ -4,6 +4,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { CompanyProfileService } from '../../services/company-profile.service';
+import { MarketService } from '../../services/market.service';
 import {
   DocFormat, PrLine, RfqPreviewBody, SendResult, Sourcing, dateText, dispositionFileName, plural, sameEmails,
 } from '../../shared/private-request';
@@ -100,6 +101,10 @@ interface DlgPreview {
 
         <ng-container *ngIf="!done">
         <div class="empty" *ngIf="loading">Подбираю поставщиков…</div>
+        <div class="mkt" *ngIf="hints.length">
+          <div class="mkt-title">Госзакуп по позициям</div>
+          <div class="mkt-row" *ngFor="let h of hints"><span class="mkt-name">{{ h.name }}</span> — {{ h.line }}</div>
+        </div>
 
         <div class="sup" *ngFor="let s of suppliers; trackBy: trackSupplier" [class.on]="isOn(s)">
           <div class="sup-head">
@@ -213,6 +218,10 @@ interface DlgPreview {
     </div>
   `,
   styles: [`
+    .mkt { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 13px; }
+    .mkt-title { font-weight: 600; margin-bottom: 4px; color: var(--text); }
+    .mkt-row { color: var(--text-muted); overflow-wrap: anywhere; }
+    .mkt-name { color: var(--text); }
     .overlay { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1100; display: flex; align-items: center;
                justify-content: center; padding: 16px; }
     .modal { background: var(--surface); color: var(--text); border-radius: 12px; box-shadow: var(--shadow-lg); width: 100%;
@@ -308,6 +317,8 @@ export class PrRfqDialogComponent implements OnInit {
   @Output() sent = new EventEmitter<SendResult[]>();
 
   suppliers: DlgSupplier[] = [];
+  /** «Госзакуп по позициям» — медианы договоров goszakup (спека 2026-10-22-tender-results-market-prices §10). */
+  hints: { name: string; line: string }[] = [];
   unmatched: { lotId: number; name: string }[] = [];
   loading = true;
   error = '';
@@ -337,7 +348,7 @@ export class PrRfqDialogComponent implements OnInit {
   private destroyed = false;
 
   constructor(private api: ApiService, private profiles: CompanyProfileService, private cdr: ChangeDetectorRef,
-              private destroyRef: DestroyRef) {
+              private destroyRef: DestroyRef, private marketSvc: MarketService) {
     destroyRef.onDestroy(() => this.destroyed = true);
   }
 
@@ -363,6 +374,17 @@ export class PrRfqDialogComponent implements OnInit {
       },
       error: e => { this.loading = false; this.fail('Подбор поставщиков не загрузился: ' + errorText(e)); },
     });
+    // «Госзакуп по позициям» (решение 8 плана) — одним блоком над поставщиками, только из набора
+    if (this.marketSvc.value === 'KZ' && this.lines.length) {
+      const texts = this.lines.map(l => [l.name, l.brand].filter(x => !!x).join(' '));
+      this.api.marketHints(texts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: hs => {
+          this.hints = hs.map((h, i) => ({ name: this.lines[i]?.name || h.text, line: h.line || '' })).filter(h => !!h.line);
+          this.cdr.markForCheck();
+        },
+        error: () => { /* подсказка — не главное: окно работает и без неё */ },
+      });
+    }
   }
 
   /** Закрыть окно (фон, Esc, «Отмена»), но не во время отправки: ответ отписался бы, итога пользователь не увидел бы. */

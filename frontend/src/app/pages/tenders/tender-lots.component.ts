@@ -16,6 +16,7 @@ import { fitChip } from '../../shared/product-watch';
 import { MODEL_SOURCE, regShort } from '../../shared/lot-model';
 import { aiLotLine } from '../../shared/ai-answer';
 import { LotResultPanelComponent } from './lot-result-panel.component';
+import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
 import { resultTone } from '../../shared/tender-results';
 import type { LotProductMatch } from '../../shared/product-watch';
 
@@ -31,7 +32,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 @Component({
   selector: 'app-tender-lots',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent, LotResultPanelComponent,
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent, LotResultPanelComponent, MarketPricePanelComponent,
             LotModelFitComponent, LotModelDialogComponent],
   template: `
     <div class="lots-toolbar">
@@ -153,6 +154,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <div class="lot-kp" *ngIf="kpDistributorsFor(l.id).length">✉ КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
           <!-- итог на площадке (спека 2026-10-22-tender-results-market-prices §11): видно и у свёрнутого лота, по нажатию — панель -->
           <div *ngIf="l.result" [class]="'lot-res lot-res-' + resTone(l)" (click)="openResult(l, $event)" title="Итог лота — подробно">🏁 {{ l.result.text }}</div>
+          <div class="lot-mkt" *ngIf="l.market" (click)="openMarket(l, $event)" title="Цены договоров goszakup за 2 года — подробно">📊 {{ l.market.text }}</div>
         </div>
       </div>
 
@@ -174,6 +176,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <button class="btn btn-model" *ngIf="canModel" (click)="openModel(l)"
                   title="Закрепить за лотом наш товар или модель из реестра — например, по ответу ИИ">📌 Модель…</button>
           <button class="btn btn-kp" (click)="openKpFor(l)">КП</button>
+          <button class="btn btn-line" *ngIf="isKz()" (click)="openMarket(l)" title="Цены договоров goszakup за 2 года">Цены рынка</button>
           <!-- каталог-матч: только РФ (KZ-каталог наполняется из реестра, там подбор — через «Подбор») -->
           <button class="btn btn-match" *ngIf="lotHasCriteria(l) && !isKz()"
                   (click)="matchRequested.emit({ lotId: l.id, lotNumber: l.lotNumber })">Подобрать</button>
@@ -188,6 +191,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 
         @defer (when resultOpen.has(l.id)) {
           <app-lot-result-panel *ngIf="resultOpen.has(l.id)" [lotId]="l.id" (close)="resultOpen.delete(l.id)"></app-lot-result-panel>
+        }
+        @defer (when marketOpen.has(l.id)) {
+          <app-market-price-panel *ngIf="marketOpen.has(l.id)" [lotId]="l.id" (close)="marketOpen.delete(l.id)"></app-market-price-panel>
         }
 
         <!-- сверка ТЗ с нашим товаром и «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — отдельным чанком -->
@@ -267,6 +273,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-res-success { color: var(--success-text); }
     .lot-res-danger { color: var(--danger-text); }
     .lot-res-muted { color: var(--text-muted); }
+    .lot-mkt { margin-top: 3px; font-size: 13px; color: var(--text-muted); cursor: pointer; overflow-wrap: anywhere; }
     .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -375,6 +382,21 @@ export class TenderLotsComponent implements OnChanges {
   });
 
   expandedLotId: number | null = null;
+  /** Лоты, у которых открыта панель цен рынка. */
+  marketOpen = new Set<number>();
+
+  /** Строка «Рынок» (в шапке — без сворачивания лота) или кнопка «Цены рынка»: лот разворачивается, панель переключается. */
+  openMarket(l: any, e?: Event) {
+    e?.stopPropagation();
+    if (this.expandedLotId !== l.id) {
+      if (this.expandedLotId !== null) this.closePanelsOf(this.expandedLotId);
+      this.expandedLotId = l.id;
+      this.marketOpen.add(l.id);
+    } else if (this.marketOpen.has(l.id)) this.marketOpen.delete(l.id);
+    else this.marketOpen.add(l.id);
+    this.cdr.detectChanges();
+  }
+
   /** Лоты, у которых открыта панель итога. */
   resultOpen = new Set<number>();
 
@@ -471,6 +493,7 @@ export class TenderLotsComponent implements OnChanges {
 
     for (const id of Array.from(this.lotSel)) if (!alive.has(id)) this.lotSel.delete(id);
     for (const id of Array.from(this.resultOpen)) if (!alive.has(id)) this.resultOpen.delete(id);
+    for (const id of Array.from(this.marketOpen)) if (!alive.has(id)) this.marketOpen.delete(id);
     if (this.registryLot && !alive.has(this.registryLot.id)) this.registryLot = null;
     if (this.expandedLotId !== null && !alive.has(this.expandedLotId)) this.expandedLotId = null;
     if (this.specOpenLotId !== null && !alive.has(this.specOpenLotId)) this.specOpenLotId = null;
@@ -503,6 +526,7 @@ export class TenderLotsComponent implements OnChanges {
     if (this.kpLots.length === 1 && this.kpLots[0].id === lotId) this.kpLots = [];
     if (this.specOpenLotId === lotId) this.specOpenLotId = null;
     this.resultOpen.delete(lotId);
+    this.marketOpen.delete(lotId);
   }
 
   specOpenLotId: number | null = null;

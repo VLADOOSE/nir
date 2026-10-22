@@ -14,6 +14,7 @@ import type { AnnouncementResult, PlanPoint, ProbeResult, ProductCatalogState, P
 import type { LotModelFit, LotModelSearch } from '../shared/lot-model';
 import type { AiAnswerResult } from '../shared/ai-answer';
 import type { CustomerContacts, CustomerHistory, LotResultView, ResultsCheck } from '../shared/tender-results';
+import type { MarketHint, MarketPrice, MarketQuery } from '../shared/market-price';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -310,6 +311,22 @@ export class ApiService {
 
   getCustomerHistory(tenderId: number): Observable<CustomerHistory> {
     return this.http.get<CustomerHistory>(`${this.base}/tenders/${tenderId}/customer-history`);
+  }
+
+  /** Цены рынка (спека 2026-10-22-tender-results-market-prices §13): лот или текст; живой запрос — до 20 с. */
+  getMarketPrices(p: MarketQuery): Observable<MarketPrice> {
+    const params: Record<string, string> = {};
+    if (p.lotId != null) params['lotId'] = String(p.lotId);
+    if (p.q) params['q'] = p.q;
+    if (p.code) params['code'] = p.code;
+    if (p.unit) params['unit'] = p.unit;
+    if (p.filter) params['filter'] = p.filter;
+    return this.http.get<MarketPrice>(`${this.base}/market-prices`, { params });
+  }
+
+  /** Подсказки «госзакуп: медиана …» по текстам — только из набора, без площадки. */
+  marketHints(texts: string[]): Observable<MarketHint[]> {
+    return this.http.post<MarketHint[]>(`${this.base}/market-prices/hints`, { texts });
   }
 
   /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup. */

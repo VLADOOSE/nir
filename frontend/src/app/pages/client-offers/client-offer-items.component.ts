@@ -13,6 +13,7 @@ import { MarketService } from '../../services/market.service';
 import { RegistryChipComponent } from '../../shared/registry-chip.component';
 import { RegistryChipActions } from '../../shared/registry';
 import { AddPick, OfferAddItemDialogComponent } from './offer-add-item-dialog.component';
+import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
 import type { RegAction, RegistryRecord } from '../../shared/private-request';
 import {
   ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
@@ -51,7 +52,7 @@ function rowKey(it: OfferItem): string {
 @Component({
   selector: 'app-client-offer-items',
   standalone: true,
-  imports: [NgFor, NgIf, FormsModule, RouterLink, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent, OfferAddItemDialogComponent],
+  imports: [NgFor, NgIf, FormsModule, RouterLink, CdkDropList, CdkDrag, CdkDragHandle, LucideDynamicIcon, RegistryChipComponent, OfferAddItemDialogComponent, MarketPricePanelComponent],
   template: `
     <div class="toolbar" *ngIf="!readonly">
       <button type="button" class="btn btn-line" (click)="add('ITEM')">+ Позиция</button>
@@ -215,6 +216,14 @@ function rowKey(it: OfferItem): string {
               </button>
             </div>
           </div>
+          <div class="wide mkt" *ngIf="isKz">
+            <span class="mkt-hint" *ngIf="hintFor(it) as h">{{ h }}</span>
+            <button type="button" class="btn btn-line" (click)="marketFor = marketFor === it.key ? null : it.key; $event.stopPropagation()">Цены рынка</button>
+          </div>
+          @defer (when marketFor === it.key) {
+            <app-market-price-panel class="wide" *ngIf="marketFor === it.key" [lotId]="it.tenderLotId ?? null"
+              [query]="it.tenderLotId ? null : itemText(it)" (close)="marketFor = null"></app-market-price-panel>
+          }
           <label class="wide">Регистрация
             <span class="reg">
               <select [ngModel]="it.registrationStatus" (ngModelChange)="setRegStatus(it, $event)" [disabled]="readonly">
@@ -313,6 +322,8 @@ function rowKey(it: OfferItem): string {
     .details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
     .details label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-muted); }
     .details .wide { grid-column: 1 / -1; }
+    .mkt { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+    .mkt-hint { color: var(--text-muted); }
     .supplier { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; position: relative; }
     .supplier label { flex: 1 1 220px; }
     .reply-link { align-self: center; font-size: 13px; color: var(--accent); text-decoration: none; white-space: nowrap; }
@@ -430,6 +441,9 @@ export class ClientOfferItemsComponent {
   offersError = '';
   /** Реестр РУ — только Казахстан: на РФ меток и «Проверить регистрацию» нет (спека 2026-10-13 §3). */
   readonly isKz: boolean;
+  /** Строка, у которой открыта панель цен рынка; подсказки «госзакуп: …» — по тексту строки (спека 2026-10-22 §10). */
+  marketFor: string | null = null;
+  private hints = new Map<string, string | null>();
   checking = false;
   addOpen = false;
   private regActionsByKey = new Map<string, RegistryChipActions>();
@@ -682,7 +696,23 @@ export class ClientOfferItemsComponent {
 
   toggleOpen(it: OfferItem) {
     it._open = !it._open;
+    if (it._open && this.isKz) this.loadHint(it);
   }
+
+  /** «госзакуп: медиана …» — по тексту строки, один раз на текст (только из набора). */
+  private loadHint(it: OfferItem) {
+    const t = this.itemText(it);
+    if (!t || this.hints.has(t)) return;
+    this.hints.set(t, null);
+    this.api.marketHints([t]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: hs => { this.hints.set(t, hs[0]?.line ?? null); this.cdr.markForCheck(); },
+      error: () => { /* без подсказки */ },
+    });
+  }
+
+  hintFor(it: OfferItem): string | null { return this.hints.get(this.itemText(it)) ?? null; }
+
+  itemText(it: OfferItem): string { return [it.name, it.model].filter(x => !!x).join(' ').trim(); }
 
   move(i: number, delta: number) {
     const j = i + delta;

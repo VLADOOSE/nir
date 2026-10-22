@@ -10,6 +10,7 @@ import { RegistryChipActions } from '../../shared/registry';
 import { SiteProductSearchComponent } from '../../shared/site-product-search.component';
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
+import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
 import {
   LineInput, LinesMode, ParsedLine, PrLine, PrLineField, PrView, SaveState, SiteProduct, UNIT_SUGGESTIONS, nextSaveSeq,
 } from '../../shared/private-request';
@@ -25,7 +26,7 @@ interface ParsedRow extends ParsedLine { on: boolean; }
 @Component({
   selector: 'app-pr-lines',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RegistryChipComponent, SiteProductSearchComponent, ImportGridComponent],
+  imports: [NgIf, NgFor, FormsModule, RegistryChipComponent, SiteProductSearchComponent, ImportGridComponent, MarketPricePanelComponent],
   template: `
     <section class="card">
       <div class="sec-head">
@@ -78,11 +79,15 @@ interface ParsedRow extends ParsedLine { on: boolean; }
             </label>
             <div class="detail-actions">
               <a *ngIf="l.productUrl" [href]="l.productUrl" target="_blank" rel="noopener">на сайте ↗</a>
+              <button type="button" class="btn btn-line" *ngIf="isKz" (click)="marketFor = marketFor === l.lotId ? null : l.lotId">Цены рынка</button>
               <ng-container *ngIf="!readonly">
                 <button type="button" class="btn btn-line del" [disabled]="l.requested || busy" (click)="remove(l)">Удалить</button>
                 <span class="hint" *ngIf="l.requested">Удалить нельзя: по позиции есть запросы цен</span>
               </ng-container>
             </div>
+            @defer (when marketFor === l.lotId) {
+              <app-market-price-panel class="mkt-panel" *ngIf="marketFor === l.lotId" [lotId]="l.lotId" (close)="marketFor = null"></app-market-price-panel>
+            }
           </div>
         </li>
       </ol>
@@ -142,6 +147,7 @@ interface ParsedRow extends ParsedLine { on: boolean; }
   `,
   styles: [`
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .mkt-panel { grid-column: 1 / -1; display: block; }
     .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
     h3 { margin: 0; font-size: 15px; }
     .count { color: var(--text-muted); font-weight: 400; }
@@ -228,6 +234,8 @@ export class PrLinesComponent {
   @Input() view!: PrView;
   @Input() readonly = false;
   @Input() isKz = true;
+  /** Позиция, у которой открыта панель цен рынка (спека 2026-10-22-tender-results-market-prices §10). */
+  marketFor: number | null = null;
   @Output() viewChange = new EventEmitter<PrView>();
   @Output() saveState = new EventEmitter<SaveState>();
 

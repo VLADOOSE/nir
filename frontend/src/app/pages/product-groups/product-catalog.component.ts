@@ -38,6 +38,7 @@ type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
             <span class="pc-brand" *ngIf="p.brand">{{ p.brand }}</span>
           </div>
           <div class="pc-meta">
+            <span class="pc-mkt" *ngIf="hint(p) as h">{{ h }}</span>
             <span class="pc-ru" [class]="'pc-' + ruTone(p)" [title]="p.regNumber ? 'РУ ' + p.regNumber : 'Номер РУ на сайте не указан'">РУ {{ ruText(p) }}</span>
             <span class="pc-attr" [class.pc-attr-none]="!p.attributesCount">{{ p.attributesCount ? 'характеристик: ' + p.attributesCount : 'нет характеристик' }}</span>
           </div>
@@ -61,6 +62,7 @@ type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
     .pc-name a { color: var(--accent); }
     .pc-brand { margin-left: 8px; font-size: 12px; color: var(--text-muted); }
     .pc-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .pc-mkt { font-size: 12px; color: var(--text-muted); }
     .pc-ru { font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
     .pc-ok { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .pc-warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn-text); }
@@ -90,7 +92,17 @@ export class ProductCatalogComponent implements OnInit {
 
   ngOnInit() {
     this.api.getProductCatalog().subscribe({
-      next: s => { this.state = s; this.loading = false; this.cdr.detectChanges(); },
+      next: s => {
+        this.state = s;
+        this.loading = false;
+        this.cdr.detectChanges();
+        if (s.kz && s.items.length) {
+          this.api.marketHints(s.items.map(p => p.name)).subscribe({
+            next: hs => { hs.forEach(h => { if (h.line) this.hints.set(h.text, h.line); }); this.cdr.detectChanges(); },
+            error: () => { /* без подсказок */ },
+          });
+        }
+      },
       error: e => { this.loading = false; this.notify.error('Товары не загрузились: ' + errorText(e)); this.cdr.detectChanges(); },
     });
   }
@@ -100,6 +112,10 @@ export class ProductCatalogComponent implements OnInit {
     if (f === 'BAD_RU') return p.regStatus === 'EXPIRED' || p.regStatus === 'NOT_FOUND';
     return true;
   }
+
+  /** «госзакуп: медиана …» по названию товара (спека 2026-10-22-tender-results-market-prices §10). */
+  private hints = new Map<string, string>();
+  hint(p: ProductCatalogItem): string | null { return this.hints.get(p.name) ?? null; }
 
   shown(): ProductCatalogItem[] { return (this.state?.items || []).filter(p => this.passes(p, this.filter)); }
   count(f: Filter): number { return (this.state?.items || []).filter(p => this.passes(p, f)).length; }
