@@ -58,6 +58,9 @@ import { CustomerContacts, CustomerHistory, plainDate } from '../../shared/tende
               background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     @media (max-width: 900px) {
       .tc-link { min-height: 40px; }
+      .th-table td { border-bottom: none; padding: 2px 0; }
+      .th-same { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+      .th-same td { background: none; }
       .th-table tr { grid-template-columns: 1fr auto; grid-template-areas: "name price" "date sup" "qty qty"; }
       .th-table td[data-label="Что"] { grid-area: name; }
       .th-table td[data-label="Цена за ед."] { grid-area: price; text-align: right; font-weight: 600; }
