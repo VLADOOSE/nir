@@ -109,8 +109,13 @@ public class NewTenderNotifier {
         this.productMatches = productMatches;
     }
 
+    /** Регион из списка уведомлений; пустой список («*») — любой. */
+    public static boolean regionMatches(Set<String> regions, String region) {
+        return regions.isEmpty() || regions.contains(norm(region));
+    }
+
     /** Пусто (в т. ч. пустая переменная окружения) — ЗКО; «*» — все регионы. */
-    static Set<String> parseRegions(String csv) {
+    public static Set<String> parseRegions(String csv) {
         Set<String> out = Arrays.stream(csv == null ? new String[0] : csv.split(","))
                 .map(NewTenderNotifier::norm).filter(r -> !r.isEmpty()).collect(Collectors.toSet());
         if (out.contains("*")) return Set.of();
@@ -226,7 +231,7 @@ public class NewTenderNotifier {
         if (!"ACTIVE".equals(t.getStatus())) return false;
         // срок с временем (B2): приём «до 10:25» в 14:10 уже закрыт, даже если площадка ещё не сменила статус
         if (ImportDeadline.passed(t.getDeadline(), t.getDeadlineAt(), now)) return false;
-        return regions.isEmpty() || regions.contains(norm(t.getRegion()));
+        return regionMatches(regions, t.getRegion());
     }
 
     private static Card card(Tender t, ProductMatchQuery.Summary ours) {
