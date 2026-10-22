@@ -176,6 +176,9 @@ public class GoszakupTenderWriter {
             // B1: площадка присылает сумму лота, «Макс. цена» — за единицу
             lot.setMaxCost(ImportQuantity.unitPriceOrNull(d.getAmount(), d.getCount()));
             lot.setSourceRemovedAt(null);                        // лот есть на площадке (в том числе вернулся)
+            // площадка (спека 2026-10-22-tender-results-market-prices §12): ключ договора и цепочки попыток
+            if (d.getId() != null) lot.setExtLotId(d.getId());
+            if (d.getPointList() != null && !d.getPointList().isEmpty()) lot.setPlanPointId(d.getPointList().get(0));
             String note = d.getCount() != null && qty == null
                     ? ImportQuantity.note(d.getCount().stripTrailingZeros().toPlainString()) : null;
             // описание — только пока ТЗ не разобрано: разобранная техспека информативнее description_ru

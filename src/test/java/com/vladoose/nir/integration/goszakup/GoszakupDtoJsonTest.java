@@ -98,4 +98,13 @@ class GoszakupDtoJsonTest {
         LotDto lot = om.readValue(live, LotDto.class);
         assertThat(lot.getDescriptionRu()).startsWith("Работы по ремонту/модернизации медицинского/санитарного");
     }
+
+    /** Живой /v2/lots: id лота площадки и пункт плана — ключи договора и цепочки попыток (спека 2026-10-22 §12). */
+    @Test
+    void parsesLot_idAndPlanPoint() throws Exception {
+        LotDto lot = om.readValue("""
+            {"id":43546011,"lot_number":"88214663-ЗЦП2","count":3,"amount":1841700,"point_list":[88214663]}""", LotDto.class);
+        assertThat(lot.getId()).isEqualTo(43546011L);
+        assertThat(lot.getPointList()).containsExactly(88214663L);
+    }
 }

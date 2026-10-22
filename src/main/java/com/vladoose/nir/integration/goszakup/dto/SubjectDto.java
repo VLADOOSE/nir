@@ -11,6 +11,8 @@ import java.util.List;
 public class SubjectDto {
     private String bin;
     @JsonProperty("name_ru") private String nameRu;
+    private String phone;
+    private String email;
     /** Живой /v2/subject/biin/{биин}: адреса — массив объектов (КАТО и строка адреса внутри). */
     private List<SubjectAddressDto> address;
 

@@ -5,6 +5,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vladoose.nir.integration.goszakup.dto.AttemptLot;
+import com.vladoose.nir.integration.goszakup.dto.ClosedLot;
+import com.vladoose.nir.integration.goszakup.dto.ContractRow;
+import com.vladoose.nir.integration.goszakup.dto.ContractUnitRow;
 import com.vladoose.nir.integration.goszakup.dto.ContractInfo;
 import com.vladoose.nir.integration.goszakup.dto.FoundAnnouncement;
 import com.vladoose.nir.integration.goszakup.dto.FoundLot;
@@ -12,6 +16,9 @@ import com.vladoose.nir.integration.goszakup.dto.FoundPlanPoint;
 import com.vladoose.nir.integration.goszakup.dto.KatoRefPageDto;
 import com.vladoose.nir.integration.goszakup.dto.LotDto;
 import com.vladoose.nir.integration.goszakup.dto.LotTechSpecRef;
+import com.vladoose.nir.integration.goszakup.dto.ProtocolFileRef;
+import com.vladoose.nir.integration.goszakup.dto.ResultBuy;
+import com.vladoose.nir.integration.goszakup.dto.ResultLot;
 import com.vladoose.nir.integration.goszakup.dto.SearchPage;
 import com.vladoose.nir.integration.goszakup.dto.SubjectDto;
 import com.vladoose.nir.integration.goszakup.dto.TrdBuyDto;
@@ -387,6 +394,154 @@ public class GoszakupHttpClient implements GoszakupClient {
                 List.of(new F("trdBuyNumberAnno", "String", numberAnno)), 20, null, null),
                 c -> new ContractInfo(text(c, "supplierBiin"), dec(c, "contractSum"), dec(c, "contractSumWnds"),
                         text(c, "signDate"), integer(c, "refContractStatusId")));
+    }
+
+    // --- итоги, договоры, цепочки и цены рынка (спека 2026-10-22-tender-results-market-prices §3–§9) ---
+
+    private static final String RESULT_LOT_FIELDS = "id lotNumber refLotStatusId count amount pointList customerBin "
+            + "RefLotsStatus{ nameRu } Plans{ refEnstruCode RefUnits{ nameRu } }";
+    private static final String RESULT_BUY_FIELDS = "id numberAnno refBuyStatusId itogiDatePublic biinSupplier refTradeMethodsId "
+            + "RefTradeMethods{ nameRu } Files{ nameRu originalName filePath } Lots{ " + RESULT_LOT_FIELDS + " }";
+    private static final String CONTRACT_FIELDS = "id trdBuyId contractNumber signDate refContractStatusId supplierBiin "
+            + "contractSumWnds ContractUnits{ lotId itemPrice itemPriceWnds quantity totalSumWnds }";
+    private static final String ATTEMPT_FIELDS = "id lotNumber refLotStatusId pointList trdBuyId trdBuyNumberAnno "
+            + "RefLotsStatus{ nameRu } TrdBuy{ id numberAnno publishDate endDate itogiDatePublic biinSupplier refTradeMethodsId "
+            + "RefTradeMethods{ nameRu } }";
+    private static final String CLOSED_LOT_FIELDS = "id lotNumber nameRu descriptionRu count amount trdBuyId trdBuyNumberAnno "
+            + "customerBin customerNameRu RefTradeMethods{ nameRu } "
+            + "Plans{ refEnstruCode extraDescRu RefUnits{ nameRu } PlansKato{ fullDeliveryPlaceNameRu } }";
+    /** Предел файла протокола: протоколы — десятки и сотни КБ. */
+    static final long MAX_PROTOCOL_BYTES = 5L * 1024 * 1024;
+    private static final int MAX_PAGES = 10;
+
+    public List<ResultBuy> resultAnnouncements(List<Long> buyIds) {
+        if (buyIds == null || buyIds.isEmpty()) return List.of();
+        List<Integer> ids = buyIds.stream().map(Long::intValue).toList();
+        return map(v3("TrdBuy", RESULT_BUY_FIELDS, List.of(new F("id", "[Int]", ids)), Math.min(200, ids.size()), null, null),
+                GoszakupHttpClient::resultBuyOf);
+    }
+
+    public List<ContractRow> contractsByBuyIds(List<Long> buyIds) {
+        if (buyIds == null || buyIds.isEmpty()) return List.of();
+        return pages("Contract", CONTRACT_FIELDS,
+                List.of(new F("trdBuyId", "[Int]", buyIds.stream().map(Long::intValue).toList())), GoszakupHttpClient::contractOf);
+    }
+
+    public List<ContractRow> contractsByCustomer(String bin, LocalDate from, LocalDate to) {
+        if (bin == null || bin.isBlank()) return List.of();
+        return pages("Contract", CONTRACT_FIELDS,
+                List.of(new F("customerBin", "String", bin), new F("signDate", "[String]", range(from, to))), GoszakupHttpClient::contractOf);
+    }
+
+    public List<AttemptLot> lotsByPlanPoints(List<Long> pointIds) {
+        if (pointIds == null || pointIds.isEmpty()) return List.of();
+        return pages("Lots", ATTEMPT_FIELDS,
+                List.of(new F("pointList", "[Int]", pointIds.stream().map(Long::intValue).toList())), GoszakupHttpClient::attemptOf);
+    }
+
+    public SearchPage<ClosedLot> closedLots(String word, LocalDate from, LocalDate to, Long after) {
+        Long[] next = new Long[1];
+        JsonNode items = v3("Lots", CLOSED_LOT_FIELDS, List.of(new F("nameDescriptionRu", "String", word),
+                new F("refLotStatusId", "[Int]", List.of(360)), new F("lastUpdateDate", "[String]", range(from, to))),
+                SEARCH_PAGE, after, next);
+        return new SearchPage<>(map(items, GoszakupHttpClient::closedLotOf), next[0]);
+    }
+
+    public List<ClosedLot> lotsByIds(List<Long> lotIds) {
+        if (lotIds == null || lotIds.isEmpty()) return List.of();
+        List<Integer> ids = lotIds.stream().map(Long::intValue).toList();
+        return map(v3("Lots", CLOSED_LOT_FIELDS, List.of(new F("id", "[Int]", ids)), Math.min(200, ids.size()), null, null),
+                GoszakupHttpClient::closedLotOf);
+    }
+
+    /**
+     * Файл «Протокол итогов»: только с хоста площадки и только из /download/ (адрес — из её ответа, чужой хост — отказ без
+     * запроса), без токена (файл публичный), не больше 5 МБ. 404 — null.
+     */
+    public byte[] downloadProtocol(String url) {
+        if (url == null || !url.startsWith(origin() + "/download/")) {
+            throw new GoszakupCallException("goszakup: протокол не на площадке — не качаем", false, null);
+        }
+        HttpRequest req = requestFor(url).GET().timeout(FILE_DEADLINE).build();
+        HttpResponse<byte[]> resp;
+        try {
+            resp = UpstreamHttp.exchange(http, req, MAX_PROTOCOL_BYTES, FILE_DEADLINE);
+        } catch (UpstreamIoException e) {
+            throw new GoszakupCallException("goszakup: протокол не скачан: " + e.getMessage(), e.retryable(), e);
+        }
+        int code = resp.statusCode();
+        if (code == 404) return null;
+        if (code / 100 != 2) {
+            throw new GoszakupCallException("goszakup: протокол — HTTP " + code, code, UpstreamRetry.retryableStatus(code), null);
+        }
+        return resp.body();
+    }
+
+    /** Все страницы (не больше 10 по 200) — договоры и цепочки бывают длиннее одной страницы. */
+    private <T> List<T> pages(String root, String fields, List<F> filters, java.util.function.Function<JsonNode, T> f) {
+        List<T> out = new ArrayList<>();
+        Long after = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            Long[] next = new Long[1];
+            out.addAll(map(v3(root, fields, filters, SEARCH_PAGE, after, next), f));
+            after = next[0];
+            if (after == null) break;
+        }
+        return out;
+    }
+
+    private static Long firstLong(JsonNode arr) {
+        return arr != null && arr.isArray() && arr.size() > 0 && arr.get(0).isNumber() ? arr.get(0).asLong() : null;
+    }
+
+    private static JsonNode firstPlan(JsonNode lot) {
+        JsonNode plans = lot.path("Plans");
+        return plans.isArray() && plans.size() > 0 ? plans.get(0) : null;
+    }
+
+    private static ResultBuy resultBuyOf(JsonNode b) {
+        List<ProtocolFileRef> protocols = new ArrayList<>();
+        for (JsonNode f : b.path("Files")) {
+            if ("Протокол итогов".equals(text(f, "nameRu"))) protocols.add(new ProtocolFileRef(text(f, "originalName"), text(f, "filePath")));
+        }
+        List<ResultLot> lots = new ArrayList<>();
+        for (JsonNode l : b.path("Lots")) {
+            JsonNode plan = firstPlan(l);
+            lots.add(new ResultLot(longer(l, "id"), text(l, "lotNumber"), integer(l, "refLotStatusId"), text(l.path("RefLotsStatus"), "nameRu"),
+                    dec(l, "count"), dec(l, "amount"), firstLong(l.path("pointList")), plan == null ? null : text(plan, "refEnstruCode"),
+                    plan == null ? null : text(plan.path("RefUnits"), "nameRu"), text(l, "customerBin")));
+        }
+        return new ResultBuy(longer(b, "id"), text(b, "numberAnno"), integer(b, "refBuyStatusId"), text(b, "itogiDatePublic"),
+                text(b, "biinSupplier"), integer(b, "refTradeMethodsId"), text(b.path("RefTradeMethods"), "nameRu"), lots, protocols);
+    }
+
+    private static ContractRow contractOf(JsonNode c) {
+        List<ContractUnitRow> units = new ArrayList<>();
+        for (JsonNode u : c.path("ContractUnits")) {
+            java.math.BigDecimal withVat = dec(u, "itemPriceWnds");
+            java.math.BigDecimal price = withVat != null && withVat.signum() > 0 ? withVat : dec(u, "itemPrice");
+            units.add(new ContractUnitRow(longer(u, "lotId"), price, dec(u, "quantity"), dec(u, "totalSumWnds")));
+        }
+        return new ContractRow(longer(c, "id"), longer(c, "trdBuyId"), text(c, "contractNumber"), text(c, "signDate"),
+                integer(c, "refContractStatusId"), text(c, "supplierBiin"), dec(c, "contractSumWnds"), units);
+    }
+
+    private static AttemptLot attemptOf(JsonNode l) {
+        JsonNode b = l.path("TrdBuy");
+        return new AttemptLot(longer(l, "id"), text(l, "lotNumber"), integer(l, "refLotStatusId"), text(l.path("RefLotsStatus"), "nameRu"),
+                firstLong(l.path("pointList")), text(l, "trdBuyNumberAnno"), longer(l, "trdBuyId"), integer(b, "refTradeMethodsId"),
+                text(b.path("RefTradeMethods"), "nameRu"), text(b, "publishDate"), text(b, "endDate"), text(b, "itogiDatePublic"),
+                text(b, "biinSupplier"));
+    }
+
+    private static ClosedLot closedLotOf(JsonNode l) {
+        JsonNode plan = firstPlan(l);
+        JsonNode kato = plan == null ? null : plan.path("PlansKato");
+        String place = kato != null && kato.isArray() && kato.size() > 0 ? text(kato.get(0), "fullDeliveryPlaceNameRu") : null;
+        return new ClosedLot(longer(l, "id"), text(l, "lotNumber"), text(l, "nameRu"), text(l, "descriptionRu"), dec(l, "count"),
+                dec(l, "amount"), longer(l, "trdBuyId"), text(l, "trdBuyNumberAnno"), text(l, "customerBin"), text(l, "customerNameRu"),
+                plan == null ? null : text(plan, "refEnstruCode"), plan == null ? null : text(plan, "extraDescRu"),
+                plan == null ? null : text(plan.path("RefUnits"), "nameRu"), place, text(l.path("RefTradeMethods"), "nameRu"));
     }
 
     // --- helpers ---
