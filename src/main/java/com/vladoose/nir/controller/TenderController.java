@@ -6,9 +6,11 @@ import com.vladoose.nir.dto.request.TenderRequest;
 import com.vladoose.nir.dto.response.ActivityApplyResponse;
 import com.vladoose.nir.dto.response.AiBriefResponse;
 import com.vladoose.nir.dto.response.LotProductMatchDto;
+import com.vladoose.nir.dto.response.LotResultSummary;
 import com.vladoose.nir.dto.response.OurProductSummary;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
+import com.vladoose.nir.dto.response.TenderResultSummary;
 import com.vladoose.nir.entity.AiVerdict;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TechSpecStatus;
@@ -34,6 +36,7 @@ import com.vladoose.nir.service.aianswer.AiAnswerResult;
 import com.vladoose.nir.service.aianswer.AiAnswerService;
 import com.vladoose.nir.service.productwatch.ProductAiBrief;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.service.tenderresults.TenderResultsQuery;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.service.lotmodel.LotModelViews;
@@ -76,6 +79,7 @@ public class TenderController {
     private final AiAnswerService aiAnswers;
     private final TenderLotRepository tenderLotRepository;
     private final LotModelViews lotModelViews;
+    private final TenderResultsQuery resultsQuery;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -93,7 +97,8 @@ public class TenderController {
                             ProductAiBrief aiBrief,
                             TenderLotRepository tenderLotRepository,
                             LotModelViews lotModelViews,
-                            AiAnswerService aiAnswers) {
+                            AiAnswerService aiAnswers,
+                            TenderResultsQuery resultsQuery) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -111,6 +116,7 @@ public class TenderController {
         this.tenderLotRepository = tenderLotRepository;
         this.lotModelViews = lotModelViews;
         this.aiAnswers = aiAnswers;
+        this.resultsQuery = resultsQuery;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -158,6 +164,8 @@ public class TenderController {
         Set<Long> analog = new HashSet<>(tenderLotRepository.findTenderIdsByAiVerdict(list.stream().map(TenderResponse::getId).toList(),
                 AiVerdict.ANALOG));
         for (TenderResponse r : list) r.setAiAnalog(analog.contains(r.getId()));
+        Map<Long, TenderResultSummary> rs = resultsQuery.tenderSummaries(list.stream().map(TenderResponse::getId).toList());
+        for (TenderResponse r : list) r.setResult(rs.get(r.getId()));
         return list;
     }
 
@@ -222,6 +230,8 @@ public class TenderController {
                         .map(SpecRequirement::text).toList());
             }
         }
+        Map<Long, LotResultSummary> results = resultsQuery.lotSummaries(entities.stream().map(TenderLot::getId).toList());
+        for (TenderLotResponse l : lots) l.setResult(results.get(l.getId()));
         return lots;
     }
 

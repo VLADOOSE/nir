@@ -44,4 +44,7 @@ public class TenderLotResponse {
     private List<LotProductMatchDto> productMatches = new ArrayList<>();
     /** «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — только у лота с разобранным ТЗ. */
     private List<String> requirements = new ArrayList<>();
+
+    /** Итог лота на площадке (спека 2026-10-22-tender-results-market-prices §11); пусто — итоги не проверялись. */
+    private LotResultSummary result;
 }

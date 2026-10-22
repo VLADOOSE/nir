@@ -70,6 +70,11 @@ public class GoszakupSubjects {
         }
     }
 
+    /** Что есть у себя, без площадки (контакты в карточке при отказе площадки). */
+    public SubjectInfo cached(String bin) {
+        return bin == null ? null : repo.findById(bin).map(GoszakupSubjects::info).orElse(null);
+    }
+
     /** Названия: из справочника; без записи — с площадки, не больше fetchLimit за вызов (стоп-код — остальные без названий). */
     public Map<String, String> names(Collection<String> bins, int fetchLimit) {
         Set<String> want = bins.stream().filter(b -> b != null && b.matches("\\d{12}"))

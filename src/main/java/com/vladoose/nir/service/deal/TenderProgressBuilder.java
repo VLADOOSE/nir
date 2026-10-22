@@ -8,6 +8,8 @@ import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.repository.ActivityApplyRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
+import com.vladoose.nir.repository.TenderLotResultRepository;
+import com.vladoose.nir.service.tenderresults.ResultTexts;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,12 +27,14 @@ public class TenderProgressBuilder {
     private final PriceRequestRepository priceRequests;
     private final PriceRequestItemRepository items;
     private final ActivityApplyRepository applies;
+    private final TenderLotResultRepository results;
 
     public TenderProgressBuilder(PriceRequestRepository priceRequests, PriceRequestItemRepository items,
-                                 ActivityApplyRepository applies) {
+                                 ActivityApplyRepository applies, TenderLotResultRepository results) {
         this.priceRequests = priceRequests;
         this.items = items;
         this.applies = applies;
+        this.results = results;
     }
 
     @Transactional(readOnly = true)
@@ -108,6 +112,7 @@ public class TenderProgressBuilder {
                 contract(apply),
                 delivery(apply),
                 payment(apply)};
+        if (details[3] == null && apply == null) details[3] = platformResult(results.findByTenderId(t.getId()));
         boolean lostRun = ended && phase == 3;
         // отменён площадкой без заявки: «✓» — только у сделанного (цены запросили, цены есть), остальное до итога — «–»
         int reached = cancelled && apply == null ? (prs.isEmpty() ? 0 : priced == 0 ? 1 : 2) : phase;
@@ -169,5 +174,24 @@ public class TenderProgressBuilder {
 
     private static boolean blank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Итог площадки без нашей заявки (спека 2026-10-22-tender-results-market-prices §11): один лот — подробно, несколько — счётом. */
+    static String platformResult(List<TenderLotResult> list) {
+        List<TenderLotResult> known = list.stream().filter(r -> r.getOutcome() != LotOutcome.PENDING).toList();
+        if (known.isEmpty()) return null;
+        if (list.size() == 1) {
+            TenderLotResult r = known.get(0);
+            return switch (r.getOutcome()) {
+                case DONE -> r.getWinnerName() == null ? "состоялся"
+                        : "победил " + r.getWinnerName() + (r.getWinnerPrice() == null ? "" : " · " + ResultTexts.money(r.getWinnerPrice()));
+                case FAILED -> "не состоялся" + (r.getBidsCount() == null ? "" : " · " + ResultTexts.bids(r.getBidsCount()));
+                case CANCELLED -> "отменён";
+                case PENDING -> null;
+            };
+        }
+        long done = known.stream().filter(r -> r.getOutcome() == LotOutcome.DONE).count();
+        long failed = known.stream().filter(r -> r.getOutcome() == LotOutcome.FAILED).count();
+        return "состоялся " + done + " из " + list.size() + (failed > 0 ? " · не состоялся " + failed : "");
     }
 }

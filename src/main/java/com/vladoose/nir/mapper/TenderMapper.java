@@ -28,6 +28,7 @@ public interface TenderMapper {
 
     @Mapping(target = "facility", source = "facility")
     @Mapping(target = "lots", source = "lots")
+    @Mapping(target = "result", ignore = true)
     @Mapping(target = "ourProduct", ignore = true)
     TenderResponse toResponse(Tender entity);
 

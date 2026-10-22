@@ -176,6 +176,15 @@ public final class ResultTexts {
         return b.toString();
     }
 
+    /** Коротко для чипа: «251 тыс. ₸», «1,3 млн ₸», «950 ₸». */
+    public static String compact(BigDecimal v) {
+        if (v == null) return "";
+        BigDecimal abs = v.abs();
+        if (abs.compareTo(MILLION) >= 0) return num(v.divide(MILLION, 1, RoundingMode.HALF_UP)) + " млн ₸";
+        if (abs.compareTo(THOUSAND) >= 0) return v.divide(THOUSAND, 0, RoundingMode.HALF_UP).toPlainString() + " тыс. ₸";
+        return v.setScale(0, RoundingMode.HALF_UP).toPlainString() + " ₸";
+    }
+
     /** Название, иначе «БИН …». */
     public static String who(String name, String bin) {
         if (name != null && !name.isBlank()) return name.trim();

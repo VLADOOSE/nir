@@ -15,6 +15,7 @@ import com.vladoose.nir.service.execution.DealExecutionData;
 import com.vladoose.nir.service.execution.DealExecutionLoader;
 import com.vladoose.nir.service.execution.ExecutionTexts;
 import com.vladoose.nir.service.offer.OfferLabels;
+import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,13 +65,15 @@ public class DealTimelineService {
     private final DealExecutionLoader execution;
     private final DealFileRepository execFiles;
     private final ChatRepository chatRepository;
+    private final TenderResultEventRepository resultEvents;
 
     public DealTimelineService(PrivateRequestService privateRequests, TenderService tenders, LeadRepository leads,
                                ChatMessageRepository messages, ChatService chats, PriceRequestRepository priceRequests,
                                InboundEmailRepository inbound, SupplierReplyFileRepository replyFiles,
                                ClientOfferRepository offers, ActivityApplyRepository applies, DealEventRepository events,
                                ClientOfferFileRepository offerFiles, DealExecutionLoader execution,
-                               DealFileRepository execFiles, ChatRepository chatRepository) {
+                               DealFileRepository execFiles, ChatRepository chatRepository,
+                               TenderResultEventRepository resultEvents) {
         this.privateRequests = privateRequests;
         this.tenders = tenders;
         this.leads = leads;
@@ -86,6 +89,7 @@ public class DealTimelineService {
         this.execution = execution;
         this.execFiles = execFiles;
         this.chatRepository = chatRepository;
+        this.resultEvents = resultEvents;
     }
 
     @Transactional(readOnly = true)
@@ -122,6 +126,7 @@ public class DealTimelineService {
         addSupply(all, t, zone);
         addApplies(all, t.getId(), zone);
         addEvents(all, t.getId());
+        addResults(all, t);
         return page(all, cursor, clamp(limit));
     }
 
@@ -476,5 +481,32 @@ public class DealTimelineService {
 
     private static boolean blank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Строки итогов (спека 2026-10-22-tender-results-market-prices §11): время площадки, повтор — ссылкой на тендер в АИС. */
+    private void addResults(List<DealTimelineItem> all, Tender t) {
+        List<TenderResultEvent> list = resultEvents.findByTenderIdOrderByIdAsc(t.getId());
+        if (list.isEmpty()) return;
+        Map<Long, String> names = new HashMap<>();
+        for (TenderLot l : t.getLots()) names.put(l.getId(), ProductMatchQuery.shortName(l.getEquipName()));
+        boolean many = t.getLots().size() > 1;
+        for (TenderResultEvent e : list) {
+            OffsetDateTime at = e.getOccurredAt() != null ? e.getOccurredAt().atZone(Market.KZ.zone()).toOffsetDateTime() : e.getCreatedAt();
+            all.add(new DealTimelineItem(at, false, "RESULT", resultText(e.getKind(), many ? names.get(e.getTenderLotId()) : null, e.getText()),
+                    null, e.getRefTenderId() == null ? null : "TENDER", e.getRefTenderId(), null));
+        }
+    }
+
+    static String resultText(ResultEventKind kind, String lotName, String text) {
+        String lot = lotName == null ? null : "лот «" + lotName + "»";
+        return switch (kind) {
+            case OUR_BID -> lot == null ? text : text + " (" + lot + ")";
+            case CONTRACT, REPEAT -> lot == null ? capitalize(text) : capitalize(lot) + ": " + text;
+            default -> "Итоги" + (lot == null ? "" : ", " + lot) + ": " + text;
+        };
+    }
+
+    private static String capitalize(String s) {
+        return s == null || s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }

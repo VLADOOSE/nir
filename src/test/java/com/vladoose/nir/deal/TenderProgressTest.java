@@ -189,4 +189,20 @@ class TenderProgressTest {
         assertThat(states(p)).isEqualTo("LOTS:DONE PRICES:DONE APPLY:DONE RESULT:DONE CONTRACT:DONE DELIVERY:DONE PAYMENT:DONE");
         assertThat(p.next()).isEqualTo(new Next("Сделка закрыта: оплачено 10.11", null, null));
     }
+
+    /** Без нашей заявки этап «Итог» подписан итогом площадки (спека 2026-10-22-tender-results-market-prices §11). */
+    @Test
+    void resultStepShowsPlatformResult(@Autowired TenderLotResultRepository results) {
+        Tender t = tender(true);
+        results.saveAndFlush(TenderLotResult.builder().tenderLotId(t.getLots().get(0).getId()).tenderId(t.getId())
+                .outcome(LotOutcome.DONE).winnerName("ИП Әбдібай").winnerPrice(new BigDecimal("251000")).build());
+        results.saveAndFlush(TenderLotResult.builder().tenderLotId(t.getLots().get(1).getId()).tenderId(t.getId())
+                .outcome(LotOutcome.FAILED).bidsCount(0).build());
+        DealProgress p = builder.build(t, LocalDateTime.of(2026, 10, 25, 12, 0));
+        assertThat(p.steps().stream().filter(s -> s.key().equals("RESULT")).findFirst().orElseThrow().detail())
+                .isEqualTo("состоялся 1 из 2 · не состоялся 1");
+        results.deleteAllInBatch(results.findByTenderId(t.getId()).stream().filter(r -> r.getOutcome() == LotOutcome.FAILED).toList());
+        assertThat(builder.build(t, LocalDateTime.of(2026, 10, 25, 12, 0)).steps().stream().filter(s -> s.key().equals("RESULT"))
+                .findFirst().orElseThrow().detail()).isEqualTo("победил ИП Әбдібай · 251\u00A0000\u00A0₸");
+    }
 }

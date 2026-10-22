@@ -48,4 +48,8 @@ public interface TenderResultEventRepository extends JpaRepository<TenderResultE
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update TenderResultEvent e set e.digestedAt = :at where e.urgent = false and e.digestedAt is null and e.createdAt < :before")
     int markStaleDigested(@Param("before") OffsetDateTime before, @Param("at") OffsetDateTime at);
+
+    List<TenderResultEvent> findByTenderLotIdIn(Collection<Long> lotIds);
+
+    List<TenderResultEvent> findByTenderIdInAndKindIn(Collection<Long> tenderIds, Collection<ResultEventKind> kinds);
 }

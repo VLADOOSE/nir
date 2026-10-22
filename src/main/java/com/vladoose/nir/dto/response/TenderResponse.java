@@ -43,4 +43,7 @@ public class TenderResponse {
     private List<String> modelsInWork = new ArrayList<>();
     /** У лота тендера вывод ИИ «аналог» (наш не подходит, можно чужой моделью) — фильтр «🔁 Аналог (по ИИ)». */
     private boolean aiAnalog;
+
+    /** Итог тендера для чипа и фильтра «Итоги» (одним запросом на список). */
+    private TenderResultSummary result;
 }
