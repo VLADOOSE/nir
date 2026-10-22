@@ -190,6 +190,12 @@ product-watch:
   notify: ${PRODUCT_WATCH_NOTIFY:}                # ALL / STAR / OFF; пусто — STAR (только «★», решение оператора 2026-10-20)
   notify-min-sum: ${PRODUCT_WATCH_NOTIFY_MIN_SUM:}  # ₸, сумма наших лотов; пусто — 1000000, 0 — без порога
 
+tender-results:
+  enabled: ${TENDER_RESULTS_ENABLED:false}       # в .env пустым не оставлять — пустой булев флаг роняет старт
+  cron: ${TENDER_RESULTS_CRON:}                  # пусто — ежечасно в :50, 8–20, пн–сб; «-» выключает
+  digest-cron: ${TENDER_RESULTS_DIGEST_CRON:}    # пусто — 9:00, пн–сб
+  zone: ${TENDER_RESULTS_ZONE:}                  # пусто — Asia/Oral
+
 ndda:
   api:
     base-url: ${NDDA_BASE_URL:https://oldregister.ndda.kz/register-backend}
