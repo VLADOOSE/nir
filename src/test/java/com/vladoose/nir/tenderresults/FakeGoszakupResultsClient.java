@@ -55,7 +55,7 @@ public class FakeGoszakupResultsClient implements GoszakupResultsClient {
     }
 
     @Override public SearchPage<ClosedLot> closedLots(String w, LocalDate f, LocalDate t, Long a) {
-        call("closed:" + w);
+        call("closed:" + w + "@" + f);
         return new SearchPage<>(closed.getOrDefault(w, List.of()), null);
     }
 

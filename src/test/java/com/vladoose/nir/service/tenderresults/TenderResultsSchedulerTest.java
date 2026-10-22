@@ -4,6 +4,7 @@ import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.integration.goszakup.ImportSummary;
+import com.vladoose.nir.service.market.MarketCollector;
 import com.vladoose.nir.service.tendernotify.ImportOutageNotifier;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
@@ -24,19 +25,20 @@ class TenderResultsSchedulerTest {
     TenderResultsService results = mock(TenderResultsService.class);
     TenderResultsNotifier notifier = mock(TenderResultsNotifier.class);
     ImportOutageNotifier outage = mock(ImportOutageNotifier.class);
+    MarketCollector market = mock(MarketCollector.class);
 
     private TenderResultsScheduler scheduler(boolean enabled, String cron, String digest, Duration wait) {
-        return new TenderResultsScheduler(results, notifier, outage, enabled, cron, digest, "", wait);
+        return new TenderResultsScheduler(results, notifier, outage, market, enabled, cron, digest, "", "", wait);
     }
 
     @Test
     void registration_defaultsDashTypo() {
         ScheduledTaskRegistrar all = new ScheduledTaskRegistrar();
         scheduler(true, "", "", Duration.ofSeconds(1)).configureTasks(all);
-        assertThat(all.getCronTaskList()).hasSize(2);
+        assertThat(all.getCronTaskList()).hasSize(3);
         ScheduledTaskRegistrar part = new ScheduledTaskRegistrar();
         scheduler(true, "0 50 8-20 * *", "-", Duration.ofSeconds(1)).configureTasks(part);   // опечатка и «-» — оба выключены
-        assertThat(part.getCronTaskList()).isEmpty();
+        assertThat(part.getCronTaskList()).as("опечатка и «-» выключены, сбор цен — по умолчанию").hasSize(1);
         ScheduledTaskRegistrar off = new ScheduledTaskRegistrar();
         scheduler(false, "", "", Duration.ofSeconds(1)).configureTasks(off);
         assertThat(off.getCronTaskList()).isEmpty();
@@ -115,5 +117,15 @@ class TenderResultsSchedulerTest {
         off.startResults();
         verify(results, after(300).never()).run(any());
         assertThat(off.status().enabled()).isFalse();
+    }
+
+    @Test
+    void market_runsCollector_reportsOwnKey() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        doAnswer(inv -> { done.countDown(); return null; }).when(outage).afterProductRun(eq("market-prices"), any(), any());
+        scheduler(true, "", "", Duration.ofSeconds(1)).startMarket();
+        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        verify(market).collectDaily(any());
+        verify(outage).afterProductRun(eq("market-prices"), eq("Сбор цен рынка"), any());
     }
 }

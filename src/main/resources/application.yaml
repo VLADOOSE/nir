@@ -194,6 +194,7 @@ tender-results:
   enabled: ${TENDER_RESULTS_ENABLED:false}       # в .env пустым не оставлять — пустой булев флаг роняет старт
   cron: ${TENDER_RESULTS_CRON:}                  # пусто — ежечасно в :50, 8–20, пн–сб; «-» выключает
   digest-cron: ${TENDER_RESULTS_DIGEST_CRON:}    # пусто — 9:00, пн–сб
+  market-cron: ${TENDER_RESULTS_MARKET_CRON:}    # пусто — сбор цен рынка в 7:15 ежедневно
   zone: ${TENDER_RESULTS_ZONE:}                  # пусто — Asia/Oral
 
 ndda:

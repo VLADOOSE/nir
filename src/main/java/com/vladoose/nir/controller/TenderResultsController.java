@@ -1,6 +1,7 @@
 package com.vladoose.nir.controller;
 
 import com.vladoose.nir.dto.response.CustomerContacts;
+import com.vladoose.nir.dto.response.CustomerHistory;
 import com.vladoose.nir.dto.response.LotResultView;
 import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.Tender;
@@ -10,6 +11,7 @@ import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.integration.goszakup.dto.SubjectInfo;
 import com.vladoose.nir.repository.TenderLotRepository;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.market.CustomerHistoryService;
 import com.vladoose.nir.service.tenderresults.GoszakupSubjects;
 import com.vladoose.nir.service.tenderresults.TenderResultsQuery;
 import com.vladoose.nir.service.tenderresults.TenderResultsScheduler;
@@ -26,14 +28,17 @@ public class TenderResultsController {
     private final TenderResultsQuery query;
     private final TenderResultsScheduler scheduler;
     private final GoszakupSubjects subjects;
+    private final CustomerHistoryService history;
 
     public TenderResultsController(TenderService tenders, TenderLotRepository lots, TenderResultsQuery query,
-                                   TenderResultsScheduler scheduler, GoszakupSubjects subjects) {
+                                   TenderResultsScheduler scheduler, GoszakupSubjects subjects,
+                                   CustomerHistoryService history) {
         this.tenders = tenders;
         this.lots = lots;
         this.query = query;
         this.scheduler = scheduler;
         this.subjects = subjects;
+        this.history = history;
     }
 
     /** Полный итог лота; лот чужого рынка или частной заявки — 404 (гард по тендеру, §6 CLAUDE.md). */
@@ -66,6 +71,14 @@ public class TenderResultsController {
         }
         return s == null ? new CustomerContacts(bin, t.getCustomerName(), null, null)
                 : new CustomerContacts(bin, s.nameRu() != null ? s.nameRu() : t.getCustomerName(), s.phone(), s.email());
+    }
+
+    /** История заказчика по нажатию (спека §8): обновление его договоров на площадке — до нескольких секунд. */
+    @GetMapping("/tenders/{id}/customer-history")
+    public CustomerHistory customerHistory(@PathVariable Long id) {
+        Tender t = tenders.findPublic(id);
+        if (t.getMarket() != Market.KZ) throw new BadRequestException("Только для Казахстана");
+        return history.forTender(t);
     }
 
     @GetMapping("/tender-results/status")
