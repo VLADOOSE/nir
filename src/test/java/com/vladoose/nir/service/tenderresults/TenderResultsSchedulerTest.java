@@ -110,9 +110,13 @@ class TenderResultsSchedulerTest {
     }
 
     @Test
-    void digest_runsNotifier_disabledDoesNothing() {
+    void digest_runsNotifier_disabledDoesNothing() throws Exception {
+        // digest() — synchronized: verify(timeout) ждёт ВНУТРИ метода мока и держит его монитор, поток сводки входит
+        // в digest() только после конца проверки — и проверка его не видит (падало в полном прогоне). Ждём защёлкой.
+        CountDownLatch digested = new CountDownLatch(1);
+        doAnswer(inv -> { digested.countDown(); return null; }).when(notifier).digest(any());
         scheduler(true, "", "", Duration.ofSeconds(1)).startDigest();
-        verify(notifier, timeout(2000)).digest(any());
+        assertThat(digested.await(5, TimeUnit.SECONDS)).isTrue();
         TenderResultsScheduler off = scheduler(false, "", "", Duration.ofSeconds(1));
         off.startResults();
         verify(results, after(300).never()).run(any());
