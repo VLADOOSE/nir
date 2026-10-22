@@ -1,0 +1,100 @@
+package com.vladoose.nir.service.tenderresults.protocol;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Протокол открытого конкурса (HTML): перечень лотов (количество), раздел лота «№ лота …», таблицы «заявки», «отклонённые»,
+ * «расчёт условных цен» (цена поставщика — за лот), «Определить победителем по лоту …», «занявший второе место»; провал —
+ * «Признать … по лоту № … несостоявшейся в связи с …». Строки таблиц — ячейки через « | ».
+ */
+final class KonkursProtocolParser {
+
+    private static final Pattern LOT = Pattern.compile("^№ лота\\s+(\\S+)");
+    private static final Pattern WINNER_CAPTION = Pattern.compile("победителем по лоту №\\s*\\S+?\\s*:?$");
+    private static final Pattern FAILED_LOT = Pattern.compile("по лоту №\\s*(\\S+)\\s+несостоявшейся");
+    private static final Pattern LOT_CODE = Pattern.compile("\\d+-[А-ЯA-Z]+\\d+");
+
+    private enum Mode { NONE, APPS, REJECTED, PRICES, WINNER, SECOND }
+
+    private KonkursProtocolParser() {}
+
+    static Map<String, LotProtocol> parse(List<String> ru) {
+        Map<String, BigDecimal> qty = quantities(ru);
+        Map<String, ProtocolBuilder> lots = new LinkedHashMap<>();
+        Map<String, List<ProtocolBid>> apps = new LinkedHashMap<>();
+        ProtocolBuilder cur = null;
+        Mode mode = Mode.NONE;
+        for (String line : ru) {
+            Matcher lot = LOT.matcher(line);
+            if (lot.find()) {
+                cur = lots.computeIfAbsent(lot.group(1), ProtocolBuilder::new);
+                mode = Mode.NONE;
+                continue;
+            }
+            if (line.startsWith("Признать")) {
+                Matcher f = FAILED_LOT.matcher(line);
+                ProtocolBuilder b = f.find() ? lots.computeIfAbsent(f.group(1), ProtocolBuilder::new) : cur;
+                if (b != null) {
+                    b.failReason = ProtocolNums.reason(line);
+                    b.conclusion = line;
+                }
+                mode = Mode.NONE;
+                continue;
+            }
+            if (cur == null) continue;
+            if (!line.contains(" | ")) {
+                if (line.startsWith("Информация о представленных заявках")) { cur.bidsCount = ProtocolNums.count(line); mode = Mode.APPS; }
+                else if (line.startsWith("Отклоненные заявки")) { cur.rejectedCount = ProtocolNums.count(line); mode = Mode.REJECTED; }
+                else if (line.startsWith("Расчет условных цен")) mode = Mode.PRICES;
+                else if (WINNER_CAPTION.matcher(line).find()) mode = Mode.WINNER;
+                else if (line.contains("занявший второе место")) mode = Mode.SECOND;
+                else if (!line.startsWith("Решение конкурсной")) mode = Mode.NONE;
+                continue;
+            }
+            String[] c = line.split(" \\| ", -1);
+            if (c.length < 3 || !c[0].trim().matches("\\d+") || !ProtocolNums.isBin(c[2])) continue;
+            String name = c[1].trim();
+            String bin = c[2].trim();
+            switch (mode) {
+                case APPS -> apps.computeIfAbsent(cur.code, k -> new ArrayList<>())
+                        .add(new ProtocolBid(null, name, bin, null, null, ProtocolNums.dateTime(c[c.length - 1]), false, null));
+                case REJECTED -> cur.bids.add(new ProtocolBid(null, name, bin, null, null, null, true, c.length > 3 ? c[3].trim() : null));
+                case PRICES -> {
+                    BigDecimal total = c.length > 4 ? ProtocolNums.money(c[4]) : null;
+                    BigDecimal q = qty.get(cur.code);
+                    BigDecimal unit = total == null || q == null || q.signum() <= 0 ? null : total.divide(q, 2, RoundingMode.HALF_UP);
+                    cur.bids.add(new ProtocolBid(Integer.parseInt(c[0].trim()), name, bin, unit, total,
+                            ProtocolNums.dateTime(c[c.length - 1]), false, null));
+                }
+                case WINNER -> { if (cur.winnerBin == null) cur.winnerBin = bin; }
+                case SECOND -> { if (cur.secondBin == null) cur.secondBin = bin; }
+                default -> { }
+            }
+        }
+        // заявки есть, а расчёта цен нет (лот сорвался после рассмотрения) — участники без цен
+        apps.forEach((code, list) -> {
+            ProtocolBuilder b = lots.get(code);
+            if (b != null && b.bids.stream().allMatch(ProtocolBid::rejected)) b.bids.addAll(0, list);
+        });
+        Map<String, LotProtocol> out = new LinkedHashMap<>();
+        lots.forEach((code, b) -> out.put(code, b.build()));
+        return out;
+    }
+
+    /** Перечень лотов в начале протокола: «№ | № лота | Наименование | Количество | …» → количество по номеру лота. */
+    static Map<String, BigDecimal> quantities(List<String> ru) {
+        Map<String, BigDecimal> out = new HashMap<>();
+        for (String line : ru) {
+            String[] c = line.split(" \\| ", -1);
+            if (c.length >= 4 && c[0].trim().matches("\\d+") && LOT_CODE.matcher(c[1].trim()).matches()) {
+                BigDecimal q = ProtocolNums.money(c[3]);
+                if (q != null) out.putIfAbsent(c[1].trim(), q);
+            }
+        }
+        return out;
+    }
+}
