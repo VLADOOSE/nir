@@ -13,6 +13,7 @@ import type { ClientMailSendBody, ClientMailSendResult, ComposeContext, ComposeT
 import type { AnnouncementResult, PlanPoint, ProbeResult, ProductCatalogState, ProductGroup, ProductGroupsState, TenderSearchStatus, WatchStatus } from '../shared/product-watch';
 import type { LotModelFit, LotModelSearch } from '../shared/lot-model';
 import type { AiAnswerResult } from '../shared/ai-answer';
+import type { CustomerContacts, CustomerHistory, LotResultView, ResultsCheck } from '../shared/tender-results';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -292,6 +293,23 @@ export class ApiService {
   }
   getLotModelFit(lotId: number): Observable<LotModelFit> {
     return this.http.get<LotModelFit>(`${this.base}/lots/${lotId}/model-fit`);
+  }
+
+  /** Итоги тендеров (спека 2026-10-22-tender-results-market-prices §13). */
+  getLotResult(lotId: number): Observable<LotResultView> {
+    return this.http.get<LotResultView>(`${this.base}/lots/${lotId}/result`);
+  }
+
+  checkTenderResults(tenderId: number): Observable<ResultsCheck> {
+    return this.http.post<ResultsCheck>(`${this.base}/tenders/${tenderId}/results/check`, {});
+  }
+
+  getTenderCustomer(tenderId: number): Observable<CustomerContacts> {
+    return this.http.get<CustomerContacts>(`${this.base}/tenders/${tenderId}/customer`);
+  }
+
+  getCustomerHistory(tenderId: number): Observable<CustomerHistory> {
+    return this.http.get<CustomerHistory>(`${this.base}/tenders/${tenderId}/customer-history`);
   }
 
   /** Скачать и разобрать «Техническую спецификацию» импортного лота с goszakup. */

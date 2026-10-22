@@ -15,6 +15,8 @@ import { LotModelDialogComponent } from './lot-model-dialog.component';
 import { fitChip } from '../../shared/product-watch';
 import { MODEL_SOURCE, regShort } from '../../shared/lot-model';
 import { aiLotLine } from '../../shared/ai-answer';
+import { LotResultPanelComponent } from './lot-result-panel.component';
+import { resultTone } from '../../shared/tender-results';
 import type { LotProductMatch } from '../../shared/product-watch';
 
 /** Стадия работы по лоту — считается на клиенте из уже загруженных лотов и запросов КП. */
@@ -29,7 +31,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
 @Component({
   selector: 'app-tender-lots',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent,
+  imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent, LotResultPanelComponent,
             LotModelFitComponent, LotModelDialogComponent],
   template: `
     <div class="lots-toolbar">
@@ -149,6 +151,8 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <div class="lot-ai" *ngIf="l.aiVerdict" [class.lot-ai-open]="aiOpen.has(l.id)" [class.lot-ai-no]="l.aiVerdict === 'NO'"
                (click)="toggleAi(l, $event)" [title]="aiOpen.has(l.id) ? '' : 'Показать вывод ИИ целиком'">🤖 {{ aiLine(l) }}</div>
           <div class="lot-kp" *ngIf="kpDistributorsFor(l.id).length">✉ КП: {{ kpDistributorsFor(l.id).join(', ') }}</div>
+          <!-- итог на площадке (спека 2026-10-22-tender-results-market-prices §11): видно и у свёрнутого лота, по нажатию — панель -->
+          <div *ngIf="l.result" [class]="'lot-res lot-res-' + resTone(l)" (click)="openResult(l, $event)" title="Итог лота — подробно">🏁 {{ l.result.text }}</div>
         </div>
       </div>
 
@@ -181,6 +185,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
             </span>
           </span>
         </div>
+
+        @defer (when resultOpen.has(l.id)) {
+          <app-lot-result-panel *ngIf="resultOpen.has(l.id)" [lotId]="l.id" (close)="resultOpen.delete(l.id)"></app-lot-result-panel>
+        }
 
         <!-- сверка ТЗ с нашим товаром и «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — отдельным чанком -->
         @defer (on viewport) {
@@ -255,6 +263,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
       -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; cursor: pointer; }
     .model-note.model-note-open { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; cursor: auto; }
     .lot-kp { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+    .lot-res { margin-top: 4px; font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+    .lot-res-success { color: var(--success-text); }
+    .lot-res-danger { color: var(--danger-text); }
+    .lot-res-muted { color: var(--text-muted); }
     .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -363,6 +375,22 @@ export class TenderLotsComponent implements OnChanges {
   });
 
   expandedLotId: number | null = null;
+  /** Лоты, у которых открыта панель итога. */
+  resultOpen = new Set<number>();
+
+  resTone(l: any): string { return resultTone(l.result?.outcome); }
+
+  /** Нажатие по строке итога: лот разворачивается, панель — переключается (лот не сворачивается). */
+  openResult(l: any, e: Event) {
+    e.stopPropagation();
+    if (this.expandedLotId !== l.id) {
+      if (this.expandedLotId !== null) this.closePanelsOf(this.expandedLotId);
+      this.expandedLotId = l.id;
+      this.resultOpen.add(l.id);
+    } else if (this.resultOpen.has(l.id)) this.resultOpen.delete(l.id);
+    else this.resultOpen.add(l.id);
+    this.cdr.detectChanges();
+  }
   lotSel = new Set<number>();
   tzBusy = new Set<number>();
   openMenuLotId: number | null = null;
@@ -442,6 +470,7 @@ export class TenderLotsComponent implements OnChanges {
     if (wasMulti && this.kpLots.length === 1) this.expandedLotId = this.kpLots[0].id;
 
     for (const id of Array.from(this.lotSel)) if (!alive.has(id)) this.lotSel.delete(id);
+    for (const id of Array.from(this.resultOpen)) if (!alive.has(id)) this.resultOpen.delete(id);
     if (this.registryLot && !alive.has(this.registryLot.id)) this.registryLot = null;
     if (this.expandedLotId !== null && !alive.has(this.expandedLotId)) this.expandedLotId = null;
     if (this.specOpenLotId !== null && !alive.has(this.specOpenLotId)) this.specOpenLotId = null;
@@ -473,6 +502,7 @@ export class TenderLotsComponent implements OnChanges {
     if (this.registryLot?.id === lotId) this.registryLot = null;
     if (this.kpLots.length === 1 && this.kpLots[0].id === lotId) this.kpLots = [];
     if (this.specOpenLotId === lotId) this.specOpenLotId = null;
+    this.resultOpen.delete(lotId);
   }
 
   specOpenLotId: number | null = null;

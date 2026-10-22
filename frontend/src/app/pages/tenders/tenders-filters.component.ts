@@ -2,12 +2,15 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OUR_LABELS } from '../../shared/product-watch';
+import { RESULT_LABELS } from '../../shared/tender-results';
 
 export interface TendersFilters {
   query: string; status: string; sortMode: string; stage: string; platform: string;
   facilityId: number | null; deadlineFrom: string; deadlineTo: string; region: string;
   /** «Наш товар» (спека 2026-10-19-product-watch §12.2): '' — все, 'EXACT', 'ANY', 'PINNED' (модель в работе), 'ANALOG' (ИИ: можно чужой моделью), 'g:<группа>'. */
   our: string;
+  /** «Итоги» (спека 2026-10-22-tender-results-market-prices §11): '' — все, 'CALL', 'DONE', 'OURS'. */
+  result: string;
 }
 
 @Component({
@@ -46,6 +49,10 @@ export interface TendersFilters {
         <option value="">Наш товар: все</option><option value="EXACT">{{ ourLabels['EXACT'] }}</option><option value="PINNED">{{ ourLabels['PINNED'] }}</option><option value="ANALOG">{{ ourLabels['ANALOG'] }}</option><option value="ANY">Любой наш вид</option>
         <option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option>
       </select>
+      <select class="f-sel" *ngIf="isKz" [(ngModel)]="filters.result" (change)="emit()" title="Итоги">
+        <option value="">Итоги: все</option><option value="CALL">{{ resultLabels['CALL'] }}</option>
+        <option value="DONE">{{ resultLabels['DONE'] }}</option><option value="OURS">{{ resultLabels['OURS'] }}</option>
+      </select>
       <button class="f-reset" (click)="reset.emit()">Сбросить</button>
     </div>
 
@@ -69,6 +76,7 @@ export interface TendersFilters {
       <label *ngIf="isKz">Площадка<select [(ngModel)]="filters.platform" (change)="emit()"><option value="">Все</option><option value="GOSZAKUP">Госзакуп</option><option value="SK_PHARMACY">СК-Фармация</option></select></label>
       <label *ngIf="isKz">Регион<select [(ngModel)]="filters.region" (change)="emit()"><option value="">Все</option><option [value]="noRegionValue">Регион не указан</option><option *ngFor="let r of regions" [value]="r">{{ r }}</option></select></label>
       <label *ngIf="isKz">Наш товар<select [(ngModel)]="filters.our" (change)="emit()"><option value="">Все</option><option value="EXACT">{{ ourLabels['EXACT'] }}</option><option value="PINNED">{{ ourLabels['PINNED'] }}</option><option value="ANALOG">{{ ourLabels['ANALOG'] }}</option><option value="ANY">Любой наш вид</option><option *ngFor="let g of ourGroups" [value]="'g:' + g">{{ g }}</option></select></label>
+      <label *ngIf="isKz">Итоги<select [(ngModel)]="filters.result" (change)="emit()"><option value="">Все</option><option value="CALL">{{ resultLabels['CALL'] }}</option><option value="DONE">{{ resultLabels['DONE'] }}</option><option value="OURS">{{ resultLabels['OURS'] }}</option></select></label>
       <label>Учреждение<select [(ngModel)]="filters.facilityId" (change)="emit()"><option [ngValue]="null">Все</option><option *ngFor="let f of facilities" [ngValue]="f.id">{{ f.name }}</option></select></label>
       <label class="fm-dates">Дедлайн<span><input type="date" [(ngModel)]="filters.deadlineFrom" (change)="emit()" /><input type="date" [(ngModel)]="filters.deadlineTo" (change)="emit()" /></span></label>
       <div class="fm-sheet-actions"><button class="fm-apply" (click)="sheetOpen = false">Применить</button><button class="fm-clear" (click)="reset.emit(); sheetOpen = false">Сброс</button></div>
@@ -123,6 +131,7 @@ export class TendersFiltersComponent {
   @Input() noRegionValue = '__none__';
   /** Подписи вариантов «Наш товар» — из одного места (их же берёт чип активного фильтра). */
   readonly ourLabels = OUR_LABELS;
+  readonly resultLabels = RESULT_LABELS;
   /** Группы «нашей продукции», отмеченные на тендерах списка (для фильтра). */
   @Input() ourGroups: string[] = [];
   @Output() filtersChange = new EventEmitter<TendersFilters>();
@@ -146,6 +155,7 @@ export class TendersFiltersComponent {
     if (f.deadlineFrom) out.push({ label: 'от ' + f.deadlineFrom, key: 'deadlineFrom' });
     if (f.deadlineTo) out.push({ label: 'до ' + f.deadlineTo, key: 'deadlineTo' });
     if (f.our) out.push({ label: f.our.startsWith('g:') ? f.our.slice(2) : (OUR_LABELS[f.our] || f.our), key: 'our' });
+    if (f.result) out.push({ label: RESULT_LABELS[f.result] || f.result, key: 'result' });
     return out;
   }
   clear(key: keyof TendersFilters) {

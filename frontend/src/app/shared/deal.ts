@@ -26,7 +26,7 @@ export const KIND_ICONS: Record<string, string> = {
   LETTER_FAILED: '⚠', BOUNCED: '⚠', DELAYED: '⏳', REPLY: '📩', DECLINED: '⛔', REPLY_FILE: '📎', OFFER_CREATED: '📄',
   OFFER_SENT: '📄', NOTE: '📝', CALL: '📞', STAGE: '✓', APPLY_CREATED: '📋', CONTRACT: '✍', DELIVERED: '🚚', PAID: '💳',
   EXEC_CONTRACT: '✍', EXEC_PAY_CLIENT: '💳', EXEC_ORDER: '🛒', EXEC_PAY_SUPPLIER: '💸', EXEC_SHIPPED: '📦',
-  EXEC_DELIVERED: '🚚', EXEC_DOCS: '📑', EXEC_FILE: '📎',
+  EXEC_DELIVERED: '🚚', EXEC_DOCS: '📑', EXEC_FILE: '📎', RESULT: '🏁',
 };
 
 /** Куда ведёт строка ленты. */
@@ -38,6 +38,7 @@ export function timelineLink(i: DealTimelineItem): { path: any[]; query?: Record
     case 'CHAT': return { path: ['/chats'], query: { chatId: i.linkId } };
     case 'LEAD': return { path: ['/leads'], query: { openId: i.linkId } };
     case 'APPLY': return { path: ['/applies'], query: { openId: i.linkId } };
+    case 'TENDER': return { path: ['/tenders'], query: { openId: i.linkId } };
     default: return null;
   }
 }

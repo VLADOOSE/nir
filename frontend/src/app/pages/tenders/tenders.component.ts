@@ -29,11 +29,14 @@ import { DealProgressComponent } from '../../shared/deal-progress.component';
 import { DealTimelineComponent } from '../../shared/deal-timeline.component';
 import type { DealAction, DealProgress } from '../../shared/deal';
 import { ourMatches, shortProduct } from '../../shared/product-watch';
+import { TenderCustomerComponent } from './tender-customer.component';
+import { resultMatches } from '../../shared/tender-results';
+import { errorText } from '../../shared/error-text';
 
 @Component({
   selector: 'app-tenders',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent,
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, RouterLink, SearchableSelectComponent, BulkPriceModalComponent, OfferComparisonComponent, SmartMatchComponent, LucideDynamicIcon, MarketMoneyPipe, TendersFiltersComponent, TenderLotsComponent, TenderCustomerComponent,
             DealLayoutComponent, DealProgressComponent, DealTimelineComponent, AiBriefButtonComponent, AiAnswerDialogComponent],
   template: `
     <!-- ========== СПИСОК ТЕНДЕРОВ ========== -->
@@ -162,6 +165,7 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
             <span *ngIf="stageByTenderId[t.id]" [style]="stageChipStyle(stageByTenderId[t.id])">{{ stageLabel(stageByTenderId[t.id]) }}</span>
             <span *ngIf="t.ourProduct" class="pw-chip" [class.pw-exact]="t.ourProduct.level !== 'TYPE'" [title]="t.ourProduct.groups.join(', ')">{{ t.ourProduct.label }}</span>
             <span *ngIf="t.modelsInWork?.length" class="pw-chip" [title]="'Модель в работе: ' + t.modelsInWork.join(', ')">📌 {{ modelsChip(t.modelsInWork) }}</span>
+            <span *ngIf="t.result" class="res-chip" [class.res-call]="t.result.call" [class.res-done]="t.result.done && !t.result.call">{{ t.result.chip }}</span>
             <span class="purchase-type">{{ getPurchaseTypeLabel(t.purchaseType) }}</span>
           </div>
           <div class="tender-price">{{ t.totalCost | money }}</div>
@@ -225,6 +229,8 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
           <div class="info-item"><span class="info-label">Начальная цена (по лотам)</span><span class="price">{{ selectedTender.totalCost | money }}</span></div>
           <div class="info-item" *ngIf="selectedTender.publishDate"><span class="info-label">Дата публикации</span><span>{{ formatDate(selectedTender.publishDate) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.deadline"><span class="info-label">Окончание приёма заявок</span><span class="deadline" [class.overdue]="isOverdue(selectedTender)">{{ deadlineText(selectedTender) }}</span></div>
+          <div class="info-item" *ngIf="canCheckResults()"><span class="info-label">Итоги на площадке</span>
+            <span><button type="button" class="btn btn-check-res" [disabled]="checkingResults" (click)="checkResults()">{{ checkingResults ? 'Проверяю…' : 'Проверить итоги' }}</button></span></div>
           <div class="info-item" *ngIf="selectedTender.deliveryAddress"><span class="info-label">Адрес поставки</span><span>{{ selectedTender.deliveryAddress }}</span></div>
           <div class="info-item" *ngIf="hasContactPerson()"><span class="info-label">Контактное лицо</span><span>{{ formatContact(selectedTender) }}</span></div>
           <div class="info-item" *ngIf="selectedTender.contactPhone"><span class="info-label">Телефон</span><span>{{ selectedTender.contactPhone }}</span></div>
@@ -232,6 +238,12 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
           <!-- заявки на участие по тендеру — переход к ним (2026-10-16); нет заявок — строки нет -->
           <div class="info-item" *ngIf="tenderApplies.length"><span class="info-label">Заявки на участие</span><span><ng-container *ngFor="let a of tenderApplies; let last = last"><a class="xref" [routerLink]="['/applies']" [queryParams]="{ openId: a.id }">№ {{ a.id }} · {{ applyStatus(a.status) }}</a><ng-container *ngIf="!last">, </ng-container></ng-container></span></div>
         </div>
+        <!-- заказчик на площадке и его история (спека 2026-10-22-tender-results-market-prices §8) — отдельным чанком -->
+        @defer (on viewport) {
+          <app-tender-customer *ngIf="isKz() && selectedTender.customerBin" [tenderId]="selectedTender.id"></app-tender-customer>
+        } @placeholder {
+          <div class="tc-ph"></div>
+        }
         <p *ngIf="selectedTender.description" class="info-desc"><strong>Описание:</strong> {{ selectedTender.description }}</p>
       </div>
 
@@ -388,6 +400,12 @@ import { ourMatches, shortProduct } from '../../shared/product-watch';
                background: color-mix(in srgb, var(--accent) 15%, transparent); white-space: nowrap; max-width: 320px; overflow: hidden;
                text-overflow: ellipsis; }
     .pw-chip.pw-exact { color: var(--success-text); background: color-mix(in srgb, var(--success) 15%, transparent); font-weight: 600; }
+    .res-chip { display: inline-block; vertical-align: middle; font-size: 12px; padding: 2px 8px; border-radius: 10px; color: var(--text-muted);
+                background: var(--surface-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-chip.res-call { color: var(--danger-text); background: color-mix(in srgb, var(--danger) 15%, transparent); font-weight: 600; }
+    .res-chip.res-done { color: var(--success-text); background: color-mix(in srgb, var(--success) 15%, transparent); }
+    .btn-check-res { padding: 4px 12px; font-size: 13px; }
+    .tc-ph { min-height: 1px; }
     .pw-found { font-size: 13px; color: var(--success-text); margin-left: 6px; }
     .info-wide { grid-column: 1 / -1; }
     .tender-card-title { font-size: 14px; color: var(--text); margin-bottom: 12px; line-height: 1.5; }
@@ -582,15 +600,44 @@ export class TendersComponent {
   filterDeadlineFrom = '';
   filterDeadlineTo = '';
 
+  filterResult = '';
+  checkingResults = false;
+
+  /** «Проверить итоги» — админ, KZ, goszakup, срок прошёл (спека §11). */
+  canCheckResults(): boolean {
+    const t = this.selectedTender;
+    return !!t && this.isKz() && this.auth.isAdmin() && t.platform === 'GOSZAKUP' && deadlinePassed(t, this.market.value);
+  }
+
+  checkResults() {
+    if (!this.selectedTender || this.checkingResults) return;
+    const id = this.selectedTender.id;
+    this.checkingResults = true;
+    this.api.checkTenderResults(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => {
+        this.checkingResults = false;
+        if (this.selectedTender?.id !== id) return;
+        if (r.ok) this.notify.success(r.message || 'Итоги проверены');
+        else if (!r.done) this.notify.info(r.message || 'Проверка идёт — обновите карточку через минуту');
+        else this.notify.error(r.message || 'Проверка не удалась');
+        this.loadLots();
+        this.loadTenderProgress();
+        this.tenderTimeline?.refresh();
+        this.cdr.detectChanges();
+      },
+      error: e => { this.checkingResults = false; this.notify.error(errorText(e)); this.cdr.detectChanges(); },
+    });
+  }
+
   get filtersState(): TendersFilters {
     return { query: this.filterQuery, status: this.filterStatus, sortMode: this.sortMode, stage: this.filterStage,
       platform: this.filterPlatform, facilityId: this.filterFacilityId, deadlineFrom: this.filterDeadlineFrom,
-      deadlineTo: this.filterDeadlineTo, region: this.filterRegion, our: this.filterOur };
+      deadlineTo: this.filterDeadlineTo, region: this.filterRegion, our: this.filterOur, result: this.filterResult };
   }
   onFiltersChange(f: TendersFilters) {
     this.filterQuery = f.query; this.filterStatus = f.status; this.sortMode = f.sortMode as any; this.filterStage = f.stage;
     this.filterPlatform = f.platform; this.filterFacilityId = f.facilityId; this.filterDeadlineFrom = f.deadlineFrom;
-    this.filterDeadlineTo = f.deadlineTo; this.filterRegion = f.region; this.filterOur = f.our;
+    this.filterDeadlineTo = f.deadlineTo; this.filterRegion = f.region; this.filterOur = f.our; this.filterResult = f.result;
     this.applyTendersFilter();
   }
   allApplyItems: any[] = [];
@@ -1009,6 +1056,7 @@ export class TendersComponent {
       if (this.filterOur === 'PINNED') { if (!t.modelsInWork?.length) return false; }
       else if (this.filterOur === 'ANALOG') { if (!t.aiAnalog) return false; }   // ИИ: наш не подходит, можно чужой моделью
       else if (!ourMatches(t.ourProduct, this.filterOur)) return false;
+      if (!resultMatches(t.result, this.filterResult)) return false;
       return true;
     });
     this.sortTenders();
@@ -1157,6 +1205,7 @@ export class TendersComponent {
     this.filterPlatform = '';
     this.filterRegion = '';
     this.filterOur = '';
+    this.filterResult = '';
     this.filterFacilityId = null;
     this.filterDeadlineFrom = '';
     this.filterDeadlineTo = '';
