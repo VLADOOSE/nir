@@ -136,7 +136,7 @@ public class TenderResultsQuery {
         }
         Optional<TenderLotResult> won = list.stream().filter(r -> r.getOutcome() == LotOutcome.DONE && r.getWinnerName() != null).findFirst();
         if (won.isPresent()) {
-            String name = won.get().getWinnerName().trim();
+            String name = ResultTexts.shortName(won.get().getWinnerName());
             if (name.length() > 30) name = name.substring(0, 29).trim() + "…";
             String price = ResultTexts.compact(won.get().getWinnerPrice());
             return "итог: " + name + (price.isEmpty() ? "" : " " + price);

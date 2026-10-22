@@ -80,4 +80,14 @@ class ResultTextsTest {
         assertThat(ResultTexts.ourBid(false, 1, 1, new BigDecimal("100"), null, null, false, null, "шт"))
                 .isEqualTo("📋 Наша заявка: место 1 из 1, наша цена 100" + S + "₸ за шт");
     }
+
+    /** Живая проверка 2026-10-22: «победил Товарищество с ограниченной ответственностью "…"» — форма собственности коротко. */
+    @Test
+    void who_shortLegalForm() {
+        assertThat(ResultTexts.who("Товарищество с ограниченной ответственностью \"Братья\"", "190140008213")).isEqualTo("ТОО \"Братья\"");
+        assertThat(ResultTexts.who("Индивидуальный предприниматель Айя", null)).isEqualTo("ИП Айя");
+        assertThat(ResultTexts.who("АКЦИОНЕРНОЕ ОБЩЕСТВО «Медтехника»", null)).isEqualTo("АО «Медтехника»");
+        assertThat(ResultTexts.who("ИП Әбдібай", null)).isEqualTo("ИП Әбдібай");
+        assertThat(ResultTexts.who(null, "190140008213")).isEqualTo("БИН 190140008213");
+    }
 }

@@ -90,7 +90,7 @@ class TenderResultsQueryTest {
         assertThat(c.chip()).isEqualTo("не состоялся · 0 заявок");
         assertThat(c.call()).isTrue();
         TenderResultSummary w = s.get(won.getId());
-        assertThat(w.chip()).isEqualTo("итог: Индивидуальный предпринимател… 251 тыс. ₸");
+        assertThat(w.chip()).as("форма собственности коротко — иначе многоточие съедало имя").isEqualTo("итог: ИП Әбдібай Айдос 251 тыс. ₸");
         assertThat(w.done()).isTrue();
         assertThat(w.ours()).isTrue();
         assertThat(s.get(repeat.getId()).chip()).isEqualTo("объявлен повтор");

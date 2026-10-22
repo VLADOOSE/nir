@@ -185,10 +185,24 @@ public final class ResultTexts {
         return v.setScale(0, RoundingMode.HALF_UP).toPlainString() + " ₸";
     }
 
-    /** Название, иначе «БИН …». */
+    /** Название (форма собственности — коротко: ТОО, ИП, АО), иначе «БИН …». */
     public static String who(String name, String bin) {
-        if (name != null && !name.isBlank()) return name.trim();
+        if (name != null && !name.isBlank()) return shortName(name);
         return bin == null ? "участник" : "БИН " + bin;
+    }
+
+    private static final java.util.regex.Pattern[] FORMS = {
+            java.util.regex.Pattern.compile("(?iu)товарищество\\s+с\\s+ограниченной\\s+ответственностью"),
+            java.util.regex.Pattern.compile("(?iu)индивидуальный\\s+предприниматель"),
+            java.util.regex.Pattern.compile("(?iu)акционерное\\s+общество")};
+    private static final String[] SHORT_FORMS = {"ТОО", "ИП", "АО"};
+
+    /** «Товарищество с ограниченной ответственностью "X"» → «ТОО "X"» (протоколы и справочник площадки пишут полностью). */
+    public static String shortName(String name) {
+        if (name == null) return null;
+        String s = name.trim();
+        for (int i = 0; i < FORMS.length; i++) s = FORMS[i].matcher(s).replaceAll(SHORT_FORMS[i]);
+        return s;
     }
 
     private static String num(BigDecimal v) {

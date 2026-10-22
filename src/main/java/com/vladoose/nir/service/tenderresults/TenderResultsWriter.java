@@ -289,7 +289,8 @@ public class TenderResultsWriter {
     /** Название из справочника площадки (проход заполняет его заранее), иначе «БИН …». */
     public String name(String bin) {
         if (bin == null) return null;
-        return subjects.findById(bin).map(GoszakupSubject::getNameRu).filter(s -> !s.isBlank()).orElse("БИН " + bin);
+        return subjects.findById(bin).map(GoszakupSubject::getNameRu).filter(s -> !s.isBlank()).map(ResultTexts::shortName)
+                .orElse("БИН " + bin);
     }
 
     /** События итогов: итог известен, протокол разобран (или не будет), события ещё нет (спека §7). */
