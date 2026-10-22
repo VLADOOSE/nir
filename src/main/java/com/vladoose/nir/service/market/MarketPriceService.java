@@ -92,7 +92,7 @@ public class MarketPriceService implements MarketLines {
         }
         String kw = MarketCategories.keyword(lot.getEquipName());
         MarketCollector.Lookup l = kw == null ? NONE : collector.ensureWord(kw, LIVE_BUDGET);
-        List<Category> cats = categories(kw);
+        List<Category> cats = MarketCategories.relevant(lot.getEquipName(), categories(kw));
         String eff = code != null && !code.isBlank() ? code.strip() : lotCode;
         Category cat = eff != null ? category(eff, cats) : MarketCategories.pick(lot.getEquipName(), cats);
         BigDecimal budget = t.getSource() == Source.PUBLIC_TENDER ? lot.getMaxCost() : null;
@@ -104,7 +104,7 @@ public class MarketPriceService implements MarketLines {
     public MarketPriceResponse forText(String text, String code, String unit, String filter) {
         String kw = MarketCategories.keyword(text);
         MarketCollector.Lookup l = kw == null ? NONE : collector.ensureWord(kw, LIVE_BUDGET);
-        List<Category> cats = categories(kw);
+        List<Category> cats = MarketCategories.relevant(text, categories(kw));
         Category cat = code != null && !code.isBlank() ? category(code.strip(), cats) : MarketCategories.pick(text, cats);
         return build(cat, cats, unit, null, filter, null, l);
     }

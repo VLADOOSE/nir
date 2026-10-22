@@ -50,7 +50,7 @@ public class CustomerHistoryService {
         LocalDate from = LocalDate.now(clock.withZone(Market.KZ.zone())).minusYears(MarketCollector.YEARS);
         List<MarketContract> all = contracts.findByCustomerBinAndSignedAtGreaterThanEqualOrderBySignedAtDesc(bin, from);
         List<MarketContract> same = all.stream().filter(m -> m.getEnstruCode() != null && codes.contains(m.getEnstruCode())).toList();
-        List<MarketContract> medical = all.stream().filter(m -> !same.contains(m))
+        List<MarketContract> medical = all.stream().filter(m -> !same.contains(m)).filter(m -> !service(m))
                 .filter(m -> MedicalGoodsVocabulary.hasDeviceStrong(text(m))).toList();
         List<MarketContract> shown = Stream.concat(same.stream(), medical.stream()).limit(MAX_ROWS).toList();
         Map<String, String> names = subjects.findByBinIn(shown.stream().map(MarketContract::getSupplierBin).filter(Objects::nonNull)
@@ -60,6 +60,13 @@ public class CustomerHistoryService {
                 m.getUnit(), m.getUnitPrice(), m.getSupplierBin() == null ? null : names.getOrDefault(m.getSupplierBin(), "БИН " + m.getSupplierBin()),
                 m.getRegion(), same.contains(m), m.getAnno())).toList();
         return new CustomerHistory(bin, rows, l.fetchedAt(), l.ok() ? null : l.error());
+    }
+
+    /** Работа или услуга по названию («Услуги по обучению» с «эндоскопической диагностикой» в описании) — не медизделие. */
+    private static boolean service(MarketContract m) {
+        String name = Objects.toString(m.getName(), "");
+        return MedicalGoodsVocabulary.hasWorksServices(name)
+                && !MedicalGoodsVocabulary.isMedicalWasteContainer(name, Objects.toString(m.getDescription(), ""));
     }
 
     private static String text(MarketContract m) {

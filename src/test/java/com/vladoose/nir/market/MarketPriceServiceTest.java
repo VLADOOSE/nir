@@ -141,6 +141,12 @@ class MarketPriceServiceTest {
         contracts.saveAndFlush(MarketContract.builder().lotExtId(nextLot++).enstruCode("266011.300.000000").name("Дефибриллятор")
                 .description("имплантируемый кардиовертер").unit("Штука").unitPrice(new BigDecimal("7500000")).signedAt(LocalDate.of(2026, 3, 1))
                 .build());
+        // услуга со словом в названии — не категория цен товара и не вариант на выбор (живая проверка 2026-10-22)
+        for (int i = 0; i < 3; i++) {
+            contracts.saveAndFlush(MarketContract.builder().lotExtId(nextLot++).enstruCode("331312.200.000001")
+                    .name("Услуги по техническому обслуживанию дефибрилляторов").description("сервис").unit("Одна услуга")
+                    .unitPrice(new BigDecimal("50000")).signedAt(LocalDate.of(2026, 4, 1)).build());
+        }
         MarketPriceResponse r = service.forText("Дефибриллятор для терапии нарушений сердечного ритма", null, null, null);
         assertThat(r.category().code()).isEqualTo(CODE);
         assertThat(r.alternatives()).extracting(c -> c.code()).containsExactly("266011.300.000000");

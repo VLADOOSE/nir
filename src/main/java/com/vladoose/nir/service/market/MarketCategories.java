@@ -1,5 +1,7 @@
 package com.vladoose.nir.service.market;
 
+import com.vladoose.nir.integration.MedicalGoodsVocabulary;
+
 import java.util.*;
 
 /**
@@ -26,11 +28,30 @@ public final class MarketCategories {
         return null;
     }
 
+    /**
+     * Лучшая категория: хотя бы одно слово текста — в её названии или описании (найденная только по доп. описанию пункта плана
+     * — не про этот товар: «Эндоскоп» → «Услуги по обучению» с «эндоскопической диагностикой»), услуги — только для услуги.
+     */
     public static Category pick(String text, List<Category> cats) {
-        if (cats.isEmpty()) return null;
         Set<String> t = stems(text);
-        return cats.stream().max(Comparator.comparingInt((Category c) -> overlap(t, stems(c.name() + " " + Objects.toString(c.description(), ""))))
-                .thenComparingInt(Category::count)).orElse(null);
+        return relevant(text, cats).stream().filter(c -> overlap(t, words(c)) > 0)
+                .max(Comparator.comparingInt((Category c) -> overlap(t, words(c))).thenComparingInt(Category::count)).orElse(null);
+    }
+
+    /** Категории для товара — без работ и услуг по названию (тара для медотходов — товар); для услуги — все. */
+    public static List<Category> relevant(String text, List<Category> cats) {
+        if (service(text, null)) return cats;
+        return cats.stream().filter(c -> !service(c.name(), c.description())).toList();
+    }
+
+    private static boolean service(String name, String description) {
+        String n = Objects.toString(name, "");
+        return MedicalGoodsVocabulary.hasWorksServices(n)
+                && !MedicalGoodsVocabulary.isMedicalWasteContainer(n, Objects.toString(description, ""));
+    }
+
+    private static Set<String> words(Category c) {
+        return stems(c.name() + " " + Objects.toString(c.description(), ""));
     }
 
     static Set<String> stems(String s) {
