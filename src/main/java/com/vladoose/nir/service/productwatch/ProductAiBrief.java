@@ -56,7 +56,7 @@ public class ProductAiBrief {
 
             В самом конце ответа — блок «Для АИС»: отдельным блоком кода, по строке на каждый лот из текста:
             L<код лота> | идти / аналог / не наше / не ясно | P<код нашего товара> или — | коротко почему
-            Код лота — в квадратных скобках у заголовка лота [L…], код товара — у наших товаров-кандидатов этого лота [P…].
+            Код лота — в квадратных скобках у заголовка лота [L…], код товара — у наших товаров-кандидатов и похожих наших товаров этого лота [P…].
             «идти» — подходит наш товар по ТЗ, с его кодом; «аналог» — наш не подходит, но ТЗ подходит под чужую модель с РУ
             в РК: код товара — «—», модель, производитель и № РУ — в «почему»; «не наше» — ставить нечего (работы, услуги,
             лекарства, не наш профиль).
@@ -148,6 +148,20 @@ public class ProductAiBrief {
             b.append("Наши товары-кандидаты:\n");
             for (SiteProduct p : products.findAllById(ids)) product(b, p);
         }
+        // похожие наши товары — с кодом [P…], чтобы ИИ мог их назвать (прод 2026-10-22: L8375 — «электроды ФОТЕК, кода P нет»);
+        // короткой строкой, без характеристик: иначе текст из 15 тендеров не помещается в предел
+        Set<Long> similar = new LinkedHashSet<>();
+        ms.stream().filter(m -> m.getSimilar() != null).forEach(m -> m.getSimilar().forEach(p -> {
+            if (!ids.contains(p.productId())) similar.add(p.productId());
+        }));
+        if (!similar.isEmpty()) {
+            Map<Long, SiteProduct> found = products.findAllById(similar).stream().filter(p -> p.getRemovedAt() == null)
+                    .collect(Collectors.toMap(SiteProduct::getId, p -> p));
+            if (!found.isEmpty()) {
+                b.append("Похожие наши товары (без сверки АИС; характеристики — на сайте по ссылке):\n");
+                similar.stream().map(found::get).filter(Objects::nonNull).forEach(p -> productLine(b, p));
+            }
+        }
         try {
             LotRegistryMatchResponse rm = registryMatch.matchForLotUi(l.getId(), 3);
             if (rm.getCandidates() != null && !rm.getCandidates().isEmpty()) {
@@ -214,11 +228,7 @@ public class ProductAiBrief {
     }
 
     private void product(StringBuilder b, SiteProduct p) {
-        b.append("* [P").append(p.getId()).append("] ").append(one(p.getName()));
-        if (p.getSlug() != null) b.append(" — ").append(WestmedLeadMapper.productUrl(siteUrl, p.getSlug()));
-        String reg = RegNumbers.normalize(p.getRegistrationCert());
-        ProductRegistration r = reg == null ? null : registrations.findById(reg).orElse(null);
-        b.append(" — ").append(regText(reg, r)).append('\n');
+        ProductRegistration r = productLine(b, p);
         if (p.getAttributes() != null && !p.getAttributes().isEmpty()) {
             b.append("  Характеристики (сайт): ").append(p.getAttributes().stream()
                     .map(a -> one(a.name()) + ": " + one(a.value())).collect(Collectors.joining("; "))).append('\n');
@@ -229,6 +239,16 @@ public class ProductAiBrief {
             if (r.getTechChars() != null) b.append(" краткие характеристики — ").append(cut(one(r.getTechChars()), 800));
             b.append('\n');
         }
+    }
+
+    /** «* [P…] название — ссылка — РУ …»; запись РУ — для подробностей у кандидатов. */
+    private ProductRegistration productLine(StringBuilder b, SiteProduct p) {
+        b.append("* [P").append(p.getId()).append("] ").append(one(p.getName()));
+        if (p.getSlug() != null) b.append(" — ").append(WestmedLeadMapper.productUrl(siteUrl, p.getSlug()));
+        String reg = RegNumbers.normalize(p.getRegistrationCert());
+        ProductRegistration r = reg == null ? null : registrations.findById(reg).orElse(null);
+        b.append(" — ").append(regText(reg, r)).append('\n');
+        return r;
     }
 
     private static String regText(String reg, ProductRegistration r) {

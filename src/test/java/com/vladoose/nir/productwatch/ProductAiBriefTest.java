@@ -110,6 +110,32 @@ class ProductAiBriefTest {
                 .contains("очень длинное требование ".repeat(300));            // у одного тендера ТЗ — целиком
     }
 
+    /**
+     * Похожие наши товары отметки — с кодами [P…], короткой строкой без характеристик (текст не разрастается): ИИ может
+     * назвать их кодом (прод 2026-10-22: L8375 — «нейтральные электроды ФОТЕК, кода P в выгрузке нет»).
+     */
+    @Test
+    void similarProducts_listedWithCodes_withoutDuplicates() {
+        Tender t = ourTender("17000009-1", ProductFitEvaluateTest.ASPIRATOR_SPEC, 1);
+        SiteProduct kit = productRepo.save(SiteProduct.builder().market(Market.KZ).siteId(UUID.randomUUID())
+                .name("Набор канюль для отсасывателя").brand("Аксион").slug("kanyuli").registrationCert("РК-1")
+                .attributes(new ArrayList<>(List.of(new SiteProductAttribute("Длина канюли", "250 мм"))))
+                .syncedAt(OffsetDateTime.now()).build());
+        TenderLotProductMatch m = matches.findByLotId(t.getLots().get(0).getId()).get(0);
+        m.setSimilar(new ArrayList<>(List.of(
+                new SimilarProductRef(omh.getId(), omh.getName(), "Аксион", "omh", 0.9),   // уже кандидат — второй раз не печатается
+                new SimilarProductRef(kit.getId(), kit.getName(), "Аксион", "kanyuli", 0.5))));
+        matches.save(m);
+        em.flush();
+        String text = brief.forTender(t.getId());
+        assertThat(text).contains("у наших товаров-кандидатов и похожих наших товаров этого лота [P…]")
+                .contains("Похожие наши товары")
+                .contains("* [P" + kit.getId() + "] Набор канюль для отсасывателя")
+                .contains("/product/kanyuli")
+                .doesNotContain("Длина канюли");                                         // без характеристик
+        assertThat(text.split("\\[P" + omh.getId() + "]", -1)).hasSize(2);              // ОМХ — один раз, среди кандидатов
+    }
+
     @Test
     void list_capsAtFifteen_skipsOtherMarket_cutsLotSpec() {
         Tender rf = tenders.save(Tender.builder().tenderNumber("ZZ-AI-RF").status("ACTIVE").source(Source.PUBLIC_TENDER)

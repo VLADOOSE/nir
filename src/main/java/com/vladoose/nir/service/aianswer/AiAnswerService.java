@@ -14,6 +14,9 @@ import com.vladoose.nir.service.aianswer.AiAnswerResult.LetterPlan;
 import com.vladoose.nir.service.aianswer.AiAnswerResult.LotResult;
 import com.vladoose.nir.service.aianswer.AiAnswerResult.Outcome;
 import com.vladoose.nir.service.lotmodel.LotModelService;
+import com.vladoose.nir.service.productwatch.CatalogSnapshot;
+import com.vladoose.nir.service.productwatch.CatalogSource;
+import com.vladoose.nir.service.productwatch.GroupRule;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
 import com.vladoose.nir.util.CurrentUser;
 import org.springframework.stereotype.Service;
@@ -43,15 +46,18 @@ public class AiAnswerService {
     private final LotModelService models;
     private final DistributorService distributors;
     private final PriceRequestItemRepository items;
+    private final CatalogSource catalog;
 
     public AiAnswerService(TenderLotRepository lots, TenderLotProductMatchRepository matches, SiteProductRepository products,
-                           LotModelService models, DistributorService distributors, PriceRequestItemRepository items) {
+                           LotModelService models, DistributorService distributors, PriceRequestItemRepository items,
+                           CatalogSource catalog) {
         this.lots = lots;
         this.matches = matches;
         this.products = products;
         this.models = models;
         this.distributors = distributors;
         this.items = items;
+        this.catalog = catalog;
     }
 
     @Transactional
@@ -110,12 +116,22 @@ public class AiAnswerService {
         return new AiAnswerResult(results, parsed.unparsed(), letters, notes);
     }
 
-    /** Наши товары, что были у лота в тексте для ИИ: товар отметки и кандидаты сверки (как ProductAiBrief). */
+    /**
+     * Наши товары, которые ИИ мог назвать для лота: товар отметки, кандидаты сверки и похожие наши товары (с кодами в «Для ИИ»,
+     * как ProductAiBrief), а ещё любой наш товар того же вида, что лот, — товары группы отметки для сверки
+     * ({@link CatalogSnapshot#groupCards}). Сверку пересчитывают после текста «Для ИИ» — деплой и ночная загрузка каталога, —
+     * и товар выпадает из трёх кандидатов (прод 2026-10-22: L8334, «P24 не из кандидатов лота»). «Наши бренды и модели» вида
+     * не задают — у них только товар отметки. Выдуманный код и товар другого вида по-прежнему не принимаются.
+     */
     private Set<Long> candidates(long lotId) {
         Set<Long> ids = new HashSet<>();
+        CatalogSnapshot snap = catalog.get();
         for (TenderLotProductMatch m : matches.findByLotId(lotId)) {
             if (m.getProductId() != null) ids.add(m.getProductId());
             if (m.getFitCandidates() != null) m.getFitCandidates().forEach(c -> ids.add(c.productId()));
+            if (m.getSimilar() != null) m.getSimilar().forEach(p -> ids.add(p.productId()));
+            GroupRule rule = snap.group(m.getGroupId());
+            if (rule != null && !rule.brandGroup()) snap.groupCards(m.getGroupId()).forEach(c -> ids.add(c.productId()));
         }
         return ids;
     }
@@ -180,7 +196,7 @@ public class AiAnswerService {
             case NOT_OURS -> "✕ " + head + " — не наше" + (why.isEmpty() ? "" : ": " + why);
             case UNSURE -> "❔ " + head + " — не ясно" + (why.isEmpty() ? "" : ": " + why);
             case CLOSED -> "⏹ " + head + " — приём закрыт, модель не закреплена";
-            case PRODUCT_NOT_CANDIDATE -> "⚠ " + head + " — товар P" + line.productId() + " не из кандидатов лота — не закрепляю";
+            case PRODUCT_NOT_CANDIDATE -> "⚠ " + head + " — товар P" + line.productId() + " не из кандидатов и не того вида, что лот, — не закрепляю";
             case PRODUCT_REMOVED -> "⚠ " + head + " — товар P" + line.productId() + " снят с сайта — не закрепляю";
             case LOT_NOT_FOUND -> "⚠ лот L" + line.lotId() + " не найден";
         };

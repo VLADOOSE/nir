@@ -9,6 +9,7 @@ import com.vladoose.nir.service.aianswer.AiAnswerResult;
 import com.vladoose.nir.service.aianswer.AiAnswerResult.Outcome;
 import com.vladoose.nir.service.aianswer.AiAnswerService;
 import com.vladoose.nir.service.lotmodel.LotModelService;
+import com.vladoose.nir.service.productwatch.ProductCatalog;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +46,7 @@ class AiAnswerServiceTest {
     @Autowired DistributorRepository distributors;
     @Autowired LotModelService models;
     @Autowired PriceRequestWriter writer;
+    @Autowired ProductCatalog catalog;
     @Autowired EntityManager em;
     TenderLot lot;
     SiteProduct dki, other;
@@ -57,9 +60,10 @@ class AiAnswerServiceTest {
         other = TgFixtures.product(products, "ZZ Дефибриллятор ДКИ-Н-11", BRAND);
         TgFixtures.match(matches, lot, TgFixtures.group(groups).getId(), ProductMatchLevel.TYPE, null, List.of(dki.getId(), other.getId()));
         maker = TgFixtures.distributor(distributors, "ZZ Завод", "zz-maker@example.kz", true, false, BRAND);
+        catalog.invalidate();                       // снимок каталога — с товарами и группой теста
     }
 
-    @AfterEach void clear() { MarketContext.clear(); }
+    @AfterEach void clear() { MarketContext.clear(); catalog.invalidate(); }
 
     private String go(SiteProduct p) { return "L" + lot.getId() + " | идти | P" + p.getId() + " | ТЗ совпадает"; }
 
@@ -113,6 +117,45 @@ class AiAnswerServiceTest {
         assertThat(l.getProposedEquipment()).isNull();
         assertThat(l.getAiVerdict()).isEqualTo(AiVerdict.GO);
         assertThat(l.getAiProduct()).isNull();
+    }
+
+    /**
+     * Сверку лота пересчитали после «Для ИИ» (деплой, ночная загрузка каталога) и товар выпал из трёх кандидатов — он всё
+     * равно того же вида, что лот: закрепляется (прод 2026-10-22: L8334, «P24 не из кандидатов лота»).
+     */
+    @Test
+    void sameKindProductOutsideCandidates_isPinned() {
+        SiteProduct sameKind = TgFixtures.product(products, "ZZ Дефибриллятор ДКИ-Н-10", BRAND);
+        catalog.invalidate();
+        AiAnswerResult r = service.apply(go(sameKind));
+        assertThat(r.lots().get(0).outcome()).isEqualTo(Outcome.PINNED);
+        assertThat(reload().getProposedEquipment().getSiteProduct().getId()).isEqualTo(sameKind.getId());
+    }
+
+    /** Похожий наш товар отметки — в «Для ИИ» у него есть код [P…]: принимается, хоть вид и другой. */
+    @Test
+    void similarProductOfMatch_isPinned() {
+        SiteProduct electrode = TgFixtures.product(products, "ZZ Электрод нейтральный", BRAND);
+        TenderLotProductMatch m = matches.findByLotId(lot.getId()).get(0);
+        m.setSimilar(new ArrayList<>(List.of(new SimilarProductRef(electrode.getId(), electrode.getName(), BRAND, electrode.getSlug(), 0.5))));
+        matches.saveAndFlush(m);
+        AiAnswerResult r = service.apply(go(electrode));
+        assertThat(r.lots().get(0).outcome()).isEqualTo(Outcome.PINNED);
+        assertThat(reload().getProposedEquipment().getSiteProduct().getId()).isEqualTo(electrode.getId());
+    }
+
+    /** «Наши бренды и модели» вида не задают: товар того же бренда, но другого вида — не наш для лота. */
+    @Test
+    void brandGroupDoesNotWidenToTheWholeBrand() {
+        TenderLot named = TgFixtures.lot(tenders, "ZZ Дефибриллятор ZZQXW", "ZZ Горбольница №8");
+        ProductGroup brands = groups.saveAndFlush(ProductGroup.builder().market(Market.KZ).name("ZZ бренды " + System.nanoTime())
+                .searchWords(new ArrayList<>(List.of("zzqxw"))).brandGroup(true).position(991).build());
+        TgFixtures.match(matches, named, brands.getId(), ProductMatchLevel.NAMED, dki.getId(), List.of());
+        SiteProduct monitor = TgFixtures.product(products, "ZZQXW Монитор пациента", BRAND);
+        catalog.invalidate();
+        AiAnswerResult r = service.apply("L" + named.getId() + " | идти | P" + monitor.getId() + " | бренд тот же");
+        assertThat(r.lots().get(0).outcome()).isEqualTo(Outcome.PRODUCT_NOT_CANDIDATE);
+        assertThat(r.lots().get(0).text()).contains("не того вида, что лот");
     }
 
     @Test
