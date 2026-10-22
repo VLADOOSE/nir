@@ -31,7 +31,17 @@ final class NewTenderComposer {
      * «★ Назван наш товар: …» / «🏷 Наш вид: …»), null — нашего товара нет.
      */
     record Card(long tenderId, String platformLabel, String number, String customer, String region, String subject,
-                BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots, String ourProduct) {}
+                BigDecimal total, LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots, String ourProduct, String market) {
+        /** Без строки рынка — прежние вызовы. */
+        Card(long tenderId, String platformLabel, String number, String customer, String region, String subject, BigDecimal total,
+             LocalDate deadline, LocalDateTime deadlineAt, List<LotLine> lots, String ourProduct) {
+            this(tenderId, platformLabel, number, customer, region, subject, total, deadline, deadlineAt, lots, ourProduct, null);
+        }
+
+        Card withMarket(String m) {
+            return new Card(tenderId, platformLabel, number, customer, region, subject, total, deadline, deadlineAt, lots, ourProduct, m);
+        }
+    }
 
     /** Текст и сколько карточек в него вошло — по порядку (остальные — строкой «…и ещё N»). */
     record Composed(String text, int shown) {}
@@ -82,6 +92,7 @@ final class NewTenderComposer {
         }
         // наш товар — сразу под лотами: второго сообщения о новом тендере ЗКО не будет (спека 2026-10-19-product-watch §9)
         if (c.ourProduct() != null && !c.ourProduct().isBlank()) b.append('\n').append(TelegramText.oneLine(c.ourProduct(), 300));
+        if (c.market() != null && !c.market().isBlank()) b.append('\n').append(TelegramText.oneLine(c.market(), 200));
         String money = c.total() == null ? "" : "Сумма: " + DocFormat.money(c.total()) + " ₸";
         // время окончания приёма — если площадка его назвала (B2): тендеры ЗКО живут 2–4 дня
         String deadline = c.deadlineAt() != null ? c.deadlineAt().format(DATE_TIME)

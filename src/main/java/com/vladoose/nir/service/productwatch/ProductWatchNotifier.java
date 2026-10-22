@@ -12,6 +12,7 @@ import com.vladoose.nir.integration.telegram.TelegramClient;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.TenderLotProductMatchRepository;
 import com.vladoose.nir.repository.TenderRepository;
+import com.vladoose.nir.service.market.MarketLines;
 import com.vladoose.nir.util.ErrorText;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -64,6 +65,7 @@ public class ProductWatchNotifier {
     private final Clock clock;
     /** Кнопки бота включены (TELEGRAM_BOT_ACTIONS_ENABLED) — пачка вместо прежнего сообщения; null — прежний вид. */
     private final DigestPublisher digest;
+    private MarketLines marketLines;
 
     @Autowired
     public ProductWatchNotifier(TenderLotProductMatchRepository matches, TenderRepository tenders, ProductMatchQuery query,
@@ -161,10 +163,20 @@ public class ProductWatchNotifier {
      * пачку; не ушла — остальные ждут следующего прогона.
      */
     private void publishDigest(List<ProductWatchComposer.Card> cards, ImportSummary sum) {
+        Map<Long, String> market = Map.of();
+        if (marketLines != null) {
+            Map<Long, List<Long>> lotIds = new LinkedHashMap<>();
+            for (ProductWatchComposer.Card c : cards) lotIds.put(c.tenderId(), c.lots().stream().map(ProductMatchQuery.LotLine::lotId).toList());
+            try {
+                market = marketLines.lines(lotIds);
+            } catch (RuntimeException e) {
+                log.warn("«Наш товар»: строки цены рынка не собраны: {}", ErrorText.of(e));
+            }
+        }
         Map<Long, ProductWatchComposer.Card> byId = cards.stream()
                 .collect(Collectors.toMap(ProductWatchComposer.Card::tenderId, c -> c, (a, b) -> a));
         int sent = 0;
-        for (ProductDigestComposer.Chunk chunk : ProductDigestComposer.compose(cards, publicUrl)) {
+        for (ProductDigestComposer.Chunk chunk : ProductDigestComposer.compose(cards, publicUrl, market)) {
             if (!digest.publish(chunk)) {
                 sum.addSideError("уведомление «наш товар» с кнопками не ушло (повтор — со следующим прогоном)");
                 break;
@@ -173,6 +185,12 @@ public class ProductWatchNotifier {
             sent += chunk.tenderIds().size();
         }
         log.info("Telegram: «наш товар» — сообщение-пачка с кнопками, тендеров {} из {}", sent, cards.size());
+    }
+
+    /** Строка «рынок: …» в пачке (спека 2026-10-22-tender-results-market-prices §10); нет бина (тесты) — без строки. */
+    @Autowired(required = false)
+    public void setMarketLines(MarketLines marketLines) {
+        this.marketLines = marketLines;
     }
 
     /** Ушло, но не отмечено — следующий прогон пришлёт ещё раз (лучше повтор, чем потеря). */

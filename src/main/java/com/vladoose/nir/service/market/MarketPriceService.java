@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -30,12 +31,14 @@ import java.util.stream.Collectors;
  * набора. Метод не транзакционный: сеть — вне транзакций, чтение — репозиториями.
  */
 @Service
-public class MarketPriceService {
+public class MarketPriceService implements MarketLines {
 
     static final Duration LIVE_BUDGET = Duration.ofSeconds(20);
     static final int ROWS = 100;
     static final int ALTERNATIVES = 5;
     static final int MAX_HINTS = 200;
+    static final Duration TELEGRAM_BUDGET = Duration.ofSeconds(30);
+    static final int TELEGRAM_WORDS = 15;
     private static final MarketCollector.Lookup NONE = new MarketCollector.Lookup(false, null, "не из чего искать");
 
     private final MarketCollector collector;
@@ -143,6 +146,74 @@ public class MarketPriceService {
             out.add(new MarketHint(text, MarketTexts.hintLine(st), st.count(), st.median(), cat.code()));
         }
         return out;
+    }
+
+    @Override
+    public Map<Long, String> lines(Map<Long, List<Long>> lotIdsByTender) {
+        try {
+            return telegramLines(lotIdsByTender, TELEGRAM_BUDGET);
+        } catch (RuntimeException e) {
+            return Map.of();
+        }
+    }
+
+    /**
+     * Строки для сообщений: по тендеру — первый лот с данными. Живой запрос — по новым словам, не больше 15 и не дольше budget на
+     * всё (спека §10); время вышло — только набор. Код лота goszakup без кода — с площадки, пока есть время.
+     */
+    public Map<Long, String> telegramLines(Map<Long, List<Long>> lotIdsByTender, Duration budget) {
+        Instant deadline = clock.instant().plus(budget);
+        Set<Long> all = new HashSet<>();
+        lotIdsByTender.values().forEach(all::addAll);
+        if (all.isEmpty()) return Map.of();
+        Map<Long, MarketContractWriter.LotInfo> info = new HashMap<>();
+        for (MarketContractWriter.LotInfo i : writer.lotInfos(all)) info.put(i.lotId(), i);
+        Set<String> asked = new HashSet<>();
+        Map<String, List<MarketContract>> rowsByCode = new HashMap<>();
+        Map<Long, String> out = new LinkedHashMap<>();
+        for (Map.Entry<Long, List<Long>> e : lotIdsByTender.entrySet()) {
+            for (Long lotId : e.getValue()) {
+                MarketContractWriter.LotInfo i = info.get(lotId);
+                if (i == null) continue;
+                String line = telegramLine(i, deadline, asked, rowsByCode);
+                if (line != null) {
+                    out.put(e.getKey(), line);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    private String telegramLine(MarketContractWriter.LotInfo i, Instant deadline, Set<String> asked,
+                                Map<String, List<MarketContract>> rowsByCode) {
+        String code = i.code();
+        if (code == null && i.goszakup() && i.extLotId() != null && client.isConfigured() && clock.instant().isBefore(deadline)) {
+            try {
+                List<ClosedLot> found = client.lotsByIds(List.of(i.extLotId()));
+                if (!found.isEmpty()) {
+                    writer.fillLot(i.lotId(), found.get(0));
+                    code = found.get(0).enstruCode();
+                }
+            } catch (RuntimeException e) {
+                // по названию
+            }
+        }
+        String kw = MarketCategories.keyword(i.name());
+        if (kw != null && asked.size() < TELEGRAM_WORDS && asked.add(kw)) {
+            Duration left = Duration.between(clock.instant(), deadline);
+            if (!left.isNegative() && !left.isZero()) collector.ensureWord(kw, left);
+        }
+        if (code == null) {
+            Category cat = MarketCategories.pick(i.name(), categories(kw));
+            code = cat == null ? null : cat.code();
+        }
+        if (code == null) return null;
+        List<MarketContract> rows = rowsByCode.computeIfAbsent(code, c -> contracts.findByEnstruCodeAndSignedAtGreaterThanEqual(c, from()));
+        if (rows.isEmpty()) return null;
+        String unit = effectiveUnit(null, i.unit(), units(rows));
+        List<MarketContract> same = rows.stream().filter(r -> norm(r.getUnit()).equals(unit)).toList();
+        return MarketTexts.telegramLine(MarketStats.of(prices(same), budgets(same), i.budget()));
     }
 
     private List<Category> categories(String kw) {

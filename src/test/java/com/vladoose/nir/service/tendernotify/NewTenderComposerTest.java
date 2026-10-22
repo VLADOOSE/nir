@@ -131,4 +131,10 @@ class NewTenderComposerTest {
         assertThat(c.text()).contains("…и ещё " + (40 - c.shown()) + " — ");
         assertThat(NewTenderComposer.composeShown(List.of(card(1, "1-1", List.of())), URL).shown()).isEqualTo(1);
     }
+
+    @Test
+    void marketLine_underOurProduct() {
+        Card c = card(5, "1-1", List.of(new LotLine("Дефибриллятор", 1))).withMarket("рынок: медиана 1,34 млн ₸ (69 дог.)");
+        assertThat(NewTenderComposer.compose(List.of(c), URL)).contains("\nрынок: медиана 1,34 млн ₸ (69 дог.)\nСумма:");
+    }
 }

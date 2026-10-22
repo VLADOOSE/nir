@@ -77,4 +77,12 @@ class ProductDigestComposerTest {
         assertThat(chunks.get(0).html()).startsWith("🔎 Потенциально наших тендеров: 16 (часть 1 из 2)");
         assertThat(chunks.get(1).tenderIds()).containsExactly(16L);
     }
+
+    /** Строка рынка — третьей строкой блока, экранирована (спека 2026-10-22-tender-results-market-prices §10). */
+    @Test
+    void marketLine() {
+        var chunks = ProductDigestComposer.compose(List.of(card(7, ProductMatchLevel.TYPE, null, "П", null)), null,
+                java.util.Map.of(7L, "рынок: медиана 1,34 млн ₸ (69 дог.) · <бюджет>"));
+        assertThat(chunks.get(0).html()).contains("\n   рынок: медиана 1,34 млн ₸ (69 дог.) · &lt;бюджет&gt;");
+    }
 }

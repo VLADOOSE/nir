@@ -2,6 +2,8 @@ package com.vladoose.nir.service.market;
 
 import com.vladoose.nir.entity.MarketContract;
 import com.vladoose.nir.entity.MarketLookup;
+import com.vladoose.nir.entity.Source;
+import com.vladoose.nir.entity.TenderPlatform;
 import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.goszakup.RegionResolver;
 import com.vladoose.nir.integration.goszakup.dto.ClosedLot;
@@ -120,6 +122,17 @@ public class MarketContractWriter {
             if (lot.getEnstruCode() == null && l.enstruCode() != null) lot.setEnstruCode(cut(l.enstruCode(), 30));
             if (lot.getPlanUnit() == null && l.unit() != null) lot.setPlanUnit(cut(l.unit(), 50));
         });
+    }
+
+    /** Что нужно о лоте для строки рынка — одной транзакцией чтения (потоки уведомлений — без сессии). */
+    public record LotInfo(long lotId, String name, String code, Long extLotId, boolean goszakup, BigDecimal budget, String unit) {}
+
+    @Transactional(readOnly = true)
+    public List<LotInfo> lotInfos(Collection<Long> lotIds) {
+        return lots.findAllById(lotIds).stream().map(l -> new LotInfo(l.getId(), l.getEquipName(), l.getEnstruCode(), l.getExtLotId(),
+                l.getTender().getPlatform() == TenderPlatform.GOSZAKUP,
+                l.getTender().getSource() == Source.PUBLIC_TENDER ? l.getMaxCost() : null,
+                l.getUnit() != null && !l.getUnit().isBlank() ? l.getUnit() : l.getPlanUnit())).toList();
     }
 
     static String cut(String s, int max) {

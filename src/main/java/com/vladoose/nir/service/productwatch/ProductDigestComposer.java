@@ -31,6 +31,11 @@ public final class ProductDigestComposer {
     private ProductDigestComposer() {}
 
     public static List<Chunk> compose(List<ProductWatchComposer.Card> input, String publicUrl) {
+        return compose(input, publicUrl, java.util.Map.of());
+    }
+
+    /** То же со строкой «рынок: …» у тендера (спека 2026-10-22-tender-results-market-prices §10). */
+    public static List<Chunk> compose(List<ProductWatchComposer.Card> input, String publicUrl, java.util.Map<Long, String> market) {
         String base = publicUrl == null || publicUrl.isBlank() ? null : publicUrl.trim().replaceAll("/+$", "");
         // ★, ✅, ◐, 🏷 (спека §4); сортировка устойчивая — внутри значка остаётся порядок prepare(): срок приёма
         List<ProductWatchComposer.Card> cards = new ArrayList<>(input);
@@ -39,7 +44,7 @@ public final class ProductDigestComposer {
         List<ProductWatchComposer.Card> cur = new ArrayList<>();
         int visible = 80;
         for (ProductWatchComposer.Card c : cards) {
-            int len = visible(block(c, base, 99)) + 2;
+            int len = visible(block(c, base, 99, market.get(c.tenderId()))) + 2;
             if (!cur.isEmpty() && (cur.size() >= MAX_TENDERS || visible + len > MAX_VISIBLE)) {
                 groups.add(cur);
                 cur = new ArrayList<>();
@@ -55,7 +60,7 @@ public final class ProductDigestComposer {
             StringBuilder html = new StringBuilder("🔎 Потенциально наших тендеров: ").append(cards.size());
             if (groups.size() > 1) html.append(" (часть ").append(i + 1).append(" из ").append(groups.size()).append(')');
             int n = 1;
-            for (ProductWatchComposer.Card c : g) html.append("\n\n").append(block(c, base, n++));
+            for (ProductWatchComposer.Card c : g) html.append("\n\n").append(block(c, base, n++, market.get(c.tenderId())));
             out.add(new Chunk(html.toString(), g.stream().anyMatch(c -> c.level().alert()),
                     g.stream().map(ProductWatchComposer.Card::tenderId).toList()));
         }
@@ -63,6 +68,10 @@ public final class ProductDigestComposer {
     }
 
     static String block(ProductWatchComposer.Card c, String base, int n) {
+        return block(c, base, n, null);
+    }
+
+    static String block(ProductWatchComposer.Card c, String base, int n, String marketLine) {
         String names = lotNames(c.lots());
         String name = base == null ? esc(names)
                 : "<a href=\"" + esc(base + "/tenders?openId=" + c.tenderId() + "&market=KZ") + "\">" + esc(names) + "</a>";
@@ -77,6 +86,7 @@ public final class ProductDigestComposer {
         String mark = mark(c);
         if (!mark.isEmpty()) second.add(mark);
         if (!second.isEmpty()) b.append("\n   ").append(esc(String.join(" · ", second)));
+        if (marketLine != null && !marketLine.isBlank()) b.append("\n   ").append(esc(TelegramText.oneLine(marketLine, 200)));
         return b.toString();
     }
 

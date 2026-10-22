@@ -29,6 +29,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -365,5 +366,20 @@ class NewTenderNotifierTest {
         notifier(true, TG_ON, ZKO).afterImport(created("NT-NO-SUCH"));
 
         assertThat(sent).isEmpty();
+    }
+
+    /** Строки рынка — по лотам тендера, вне транзакции чтения, в текст «Нового тендера». */
+    @Test
+    void marketLineInMessage() {
+        Tender t = tender("ZZ-MKT-1", ZKO, "ACTIVE", TODAY.plusDays(2));
+        NewTenderNotifier n = notifier(true, TG_ON, "");
+        List<Map<Long, List<Long>>> asked = new ArrayList<>();
+        n.setMarketLines(byTender -> {
+            asked.add(byTender);
+            return Map.of(t.getId(), "рынок: медиана 1,34 млн ₸ (69 дог.)");
+        });
+        n.afterImport(created("ZZ-MKT-1"));
+        assertThat(asked.get(0).get(t.getId())).containsExactly(t.getLots().get(0).getId());
+        assertThat(sent.get(0)).contains("\nрынок: медиана 1,34 млн ₸ (69 дог.)");
     }
 }

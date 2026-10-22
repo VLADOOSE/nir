@@ -10,6 +10,7 @@ import com.vladoose.nir.integration.telegram.TelegramClient;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.productwatch.ProductMatchQuery;
+import com.vladoose.nir.service.market.MarketLines;
 import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.Card;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.LotLine;
@@ -30,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -71,6 +73,7 @@ public class NewTenderNotifier {
     private final TransactionTemplate readTx;
     private final TelegramSettings telegram;
     private final Sender sender;
+    private MarketLines marketLines;
     private final boolean enabled;
     /** Нормализованные имена регионов; пусто — все регионы (только по явной «*»). */
     private final Set<String> regions;
@@ -135,6 +138,12 @@ public class NewTenderNotifier {
         }
     }
 
+    /** Строка «рынок: …» в «🏥 Новый тендер» (спека 2026-10-22-tender-results-market-prices §10); нет бина (тесты) — без строки. */
+    @Autowired(required = false)
+    public void setMarketLines(MarketLines marketLines) {
+        this.marketLines = marketLines;
+    }
+
     /**
      * Зовётся в конце прогона из потока импорта (рынок KZ уже стоит, §6). Ничего не бросает: сбой уведомления
      * не должен ронять итог прогона. synchronized — goszakup и СК-Фармация заканчивают в разных потоках.
@@ -157,10 +166,29 @@ public class NewTenderNotifier {
             return;
         }
         pending.clear();
-        if (p == null || p.text() == null) return;   // никто не прошёл фильтр
+        if (p == null || p.cards().isEmpty()) return;   // никто не прошёл фильтр
+        Map<Long, String> market = Map.of();
+        if (marketLines != null) {
+            try {
+                market = marketLines.lines(p.lotIds());
+            } catch (RuntimeException e) {
+                log.warn("Telegram: строки цены рынка к новым тендерам не собраны: {}", ErrorText.of(e));
+            }
+        }
+        Map<Long, String> lines = market;
+        List<Card> cards = p.cards().stream().map(c -> c.withMarket(lines.get(c.tenderId()))).toList();
+        NewTenderComposer.Composed composed = NewTenderComposer.composeShown(cards, publicUrl);
+        Map<Long, ProductMatchLevel> shownOurs = new LinkedHashMap<>();
+        boolean sound = false;
+        for (Card c : cards.subList(0, composed.shown())) {
+            ProductMatchLevel level = p.levels().get(c.tenderId());
+            if (level == null) continue;
+            shownOurs.put(c.tenderId(), level);
+            sound |= level.alert();   // ★ и «✓ подходит» (спека 2026-10-20-product-spec-fit §6.4)
+        }
         try {
-            sender.send(p.text(), !p.sound());
-            log.info("Telegram: уведомление о новых тендерах отправлено ({}){}", p.extIds().size(), p.sound() ? " со звуком" : "");
+            sender.send(composed.text(), !sound);
+            log.info("Telegram: уведомление о новых тендерах отправлено ({}){}", p.extIds().size(), sound ? " со звуком" : "");
         } catch (RuntimeException e) {
             pending.addAll(p.extIds());
             log.warn("Telegram: уведомление о новых тендерах не ушло ({}), повтор — со следующим прогоном: {}",
@@ -169,7 +197,7 @@ public class NewTenderNotifier {
                     + ErrorText.of(e));
             return;
         }
-        markOurProducts(p.ours());
+        markOurProducts(shownOurs);
     }
 
     /** Наш товар, показанный в «🏥 Новый тендер», — сообщён: уведомитель нашей продукции о нём промолчит. */
@@ -191,7 +219,7 @@ public class NewTenderNotifier {
     }
 
     /** ours — показанные в тексте тендеры с нашим товаром и их уровень; sound — среди них есть ★. */
-    private record Prepared(String text, List<String> extIds, boolean sound, Map<Long, ProductMatchLevel> ours) {}
+    private record Prepared(List<Card> cards, List<String> extIds, Map<Long, ProductMatchLevel> levels, Map<Long, List<Long>> lotIds) {}
 
     private Prepared prepare(Collection<String> extIds) {
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZONE);
@@ -203,23 +231,24 @@ public class NewTenderNotifier {
                 used.add(extId);
             });
         }
-        if (found.isEmpty()) return new Prepared(null, used, false, Map.of());
+        if (found.isEmpty()) return new Prepared(List.of(), used, Map.of(), Map.of());
         Map<Long, ProductMatchQuery.Summary> ours = products.summaries(found.stream().map(Tender::getId).toList());
         // наш товар — первым: если сообщение придётся обрезать, в «…и ещё N» уйдут чужие тендеры, а не наши
         List<Tender> ordered = found.stream()
                 .sorted(Comparator.comparingInt((Tender t) -> rank(ours.get(t.getId()))).reversed())
                 .toList();
         List<Card> cards = ordered.stream().map(t -> card(t, ours.get(t.getId()))).toList();
-        NewTenderComposer.Composed c = NewTenderComposer.composeShown(cards, publicUrl);
-        Map<Long, ProductMatchLevel> shownOurs = new LinkedHashMap<>();
-        boolean sound = false;
-        for (Tender t : ordered.subList(0, c.shown())) {
+        Map<Long, ProductMatchLevel> levels = new HashMap<>();
+        Map<Long, List<Long>> lotIds = new LinkedHashMap<>();
+        for (Tender t : ordered) {
             ProductMatchQuery.Summary s = ours.get(t.getId());
-            if (s == null || s.level() == null) continue;
-            shownOurs.put(t.getId(), s.level());
-            sound |= s.level().alert();   // ★ и «✓ подходит» (спека 2026-10-20-product-spec-fit §6.4)
+            if (s != null && s.level() != null) levels.put(t.getId(), s.level());
+            lotIds.put(t.getId(), t.getLots().stream()
+                    .sorted(Comparator.comparing(TenderLot::getLotNumber, Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(TenderLot::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                    .map(TenderLot::getId).toList());
         }
-        return new Prepared(c.text(), used, sound, shownOurs);
+        return new Prepared(cards, used, levels, lotIds);
     }
 
     /** Порядок в сообщении: ★ (NAMED, COPIED), потом ✓ (FITS), потом 🏷, потом без нашего товара. */
