@@ -6,6 +6,7 @@ import com.vladoose.nir.integration.telegram.TelegramSettings;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
+import com.vladoose.nir.service.execution.ExecutionTexts;
 import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.service.supplierreply.PreparedFile;
 import com.vladoose.nir.service.supplierreply.SupplierReplyService;
@@ -161,6 +162,11 @@ public class MailIngestWriter {
             return o.manualKept() > 0
                     ? "Цены из файла «" + name + "» не подставлены: ручные цены не тронуты — " + o.manualKept()
                     : "Цены из файла «" + name + "» не сопоставились уверенно — сверьте вручную";
+        }
+        if (o.textPrices() != null && !o.textPrices().isEmpty()) {   // КП-буклет без таблицы: цены в тексте — подсказка
+            List<String> ps = o.textPrices().stream().limit(3).map(p -> ExecutionTexts.money(p.amount(), p.currency())).toList();
+            return "📄 Таблицы в файле «" + o.textPricesFile() + "» нет, в тексте цены: " + String.join(", ", ps)
+                    + (o.textPrices().size() > 3 ? " и ещё " + (o.textPrices().size() - 3) : "") + " — внесите цену по документу";
         }
         if (o.unreadable() != null) return "Файл «" + o.unreadable() + "» не разобран — введите цены вручную";
         if (o.viewOnly()) return o.image() ? "📄 КП картинкой — внесите цены по документу" : "📄 КП в PDF — внесите цены по документу";

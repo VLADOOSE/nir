@@ -10,7 +10,7 @@ import { MarketMoneyPipe } from '../../pipes/market-money.pipe';
 import { numText, parseNum } from '../../shared/client-offer';
 import { dateText, plural } from '../../shared/private-request';
 import { errorText } from '../../shared/error-text';
-import { MIXED_CURRENCY, backLink, currencyIn, currencyLabel } from '../../shared/supplier-reply';
+import { MIXED_CURRENCY, backLink, currencyIn, currencyLabel, currencyName } from '../../shared/supplier-reply';
 import type { ReplyPosition, ReplyTableRow, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
 
@@ -56,6 +56,13 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
               <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
             </ng-container>
             <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
+          </div>
+          <!-- КП-буклет без таблицы (АМИКО, Шармстар): цены в тексте документа — подсказка у запроса на одну позицию, не подстановка -->
+          <div class="rate tprices" *ngIf="v.textPrices?.length">
+            <span class="rate-t">Таблицы в файле «{{ cut(fileName()) }}» нет — в тексте документа цены:</span>
+            <ul class="tp"><li *ngFor="let p of v.textPrices"><b>{{ textPrice(p) }}</b> — «{{ p.text }}»</li></ul>
+            <span class="rate-h" *ngIf="admin">Впишите цену позиции по документу — из нескольких цен выберите ту, о которой запрос.<ng-container
+              *ngIf="textForeign() as cur"> Цены в документе — в {{ inLabel(cur) }}: пересчитайте в {{ nameOf(v.head.currency) }}.</ng-container></span>
           </div>
           <!-- скидка только в итоге файла (КП «Рикты»): цены строк — без неё; итог «со скидкой» с суммой строк сравнил сервер -->
           <div class="rate disc" *ngIf="v.table?.discount as d">
@@ -127,6 +134,7 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
     .rate-in input:disabled { background: var(--surface-2); }
     .rate-h { color: var(--text); }
     .rate.disc { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }   /* --text-muted на подсветке блока — меньше 4,5:1 */
+    .tp { flex: 1 1 100%; margin: 0; padding-left: 18px; display: grid; gap: 2px; overflow-wrap: anywhere; }
     .pos { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
     .pos.auto { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
     .p-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
@@ -218,7 +226,16 @@ export class PriceRequestReplyComponent implements OnInit {
   foreign(code: string | null): boolean { return !!code && !!this.view?.head.currency && code !== this.view.head.currency; }
   label(code: string | null) { return currencyLabel(code); }
   inLabel(code: string | null) { return currencyIn(code); }
+  nameOf(code: string | null) { return currencyName(code); }
   foreignPrice(v: number | null, code: string | null) { return numText(v) + ' ' + currencyLabel(code); }
+  /** Цена из текста буклета: «5 000 000 руб.»; валюта не названа рядом — без неё. */
+  textPrice(p: { amount: number; currency: string | null }) { return numText(p.amount) + (p.currency ? ' ' + currencyLabel(p.currency) : ''); }
+  /** Валюта цен буклета не та, что у запроса (рубли АМИКО на запрос West-Med): цену вписывают пересчитанной. */
+  textForeign(): string | null {
+    return (this.view?.textPrices ?? []).map(p => p.currency).find(c => this.foreign(c)) ?? null;
+  }
+  /** Имя выбранного файла (чьи цены в тексте буклета). */
+  fileName() { return this.view?.sources.find(s => s.type === 'FILE' && s.fileId === this.view?.fileId)?.name || 'файл'; }
   /** Валюта цен выбранного файла; не названа — валюта запроса. */
   fileCurrency() { return this.view?.table?.currency ?? this.view?.head.currency ?? null; }
   /** «в тенге» / «в рублях» — для пометки у цены в чужой валюте. */

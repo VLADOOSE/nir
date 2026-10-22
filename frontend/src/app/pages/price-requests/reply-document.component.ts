@@ -172,8 +172,12 @@ export class ReplyDocumentComponent implements OnChanges, OnDestroy {
   roleLabel(r: string) { return this.roles.find(o => o.v === r)?.l || r; }
 
   pick(s: ReplySource) {
-    // таблица и подсказки позиций считаются по выбранному файлу — разобранный файл перечитывает экран
-    if (s.type === 'FILE' && s.parseStatus === 'PARSED' && s.fileId !== this.view.fileId) { this.selectFile.emit(s.fileId!); return; }
+    // таблица и подсказки позиций считаются по выбранному файлу — разобранный файл перечитывает экран; файл без таблицы —
+    // тоже, когда таблицы нет и у вида (цены в тексте буклета — у выбранного файла), иначе подсказки по таблице остаются
+    if (s.type === 'FILE' && s.fileId !== this.view.fileId && (s.parseStatus === 'PARSED' || !this.view.table)) {
+      this.selectFile.emit(s.fileId!);
+      return;
+    }
     this.show(s);
   }
 

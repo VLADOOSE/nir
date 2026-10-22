@@ -40,6 +40,44 @@ class SupplierReplyFilesTest {
         assertThat(noTable.status()).isEqualTo(ReplyParseStatus.NO_TABLE);
     }
 
+    /**
+     * КП-буклет без таблицы (§16 «Примеры КП оператора», находка 4): цены из текста документа — Word (абзацы и ячейки
+     * таблицы без колонок цены) и PDF; у разобранной таблицы — нет (там цены — строки таблицы).
+     */
+    @Test
+    void bookletWithoutTable_textPrices_wordAndPdf() throws Exception {
+        org.apache.poi.xwpf.usermodel.XWPFDocument d = new org.apache.poi.xwpf.usermodel.XWPFDocument();
+        d.createParagraph().createRun().setText("Флюорограф малодозовый цифровой сканирующий ФМцс-«ПроСкан»");
+        ReplyTableReaderTest.table(d, List.of(List.of("Стоимость оборудования со скидкой – 5 000 000 рублей. Стоимость оборудования "
+                + "со скидкой (без АРМ врача) – 4 500 000 рублей. Ввод в эксплуатацию – 200 000 рублей.")));
+        PreparedFile word = replyFiles.prepare("ПроСкан-2000.docx", "x", ReplyTableReaderTest.docx(d));
+        assertThat(word.status()).isEqualTo(ReplyParseStatus.NO_TABLE);
+        assertThat(word.textPrices()).extracting(x -> x.amount().stripTrailingZeros().toPlainString() + " " + x.currency())
+                .containsExactly("5000000 RUB", "4500000 RUB", "200000 RUB");
+
+        PreparedFile pdf = replyFiles.prepare("КП прессо.pdf", "application/pdf",
+                ReplyFixtures.textPdf("Коммерческое предложение", "Аппарат электрический, косметический – Charmstar Super Slim – 110 000 рублей."));
+        assertThat(pdf.textPrices()).extracting(x -> x.amount().stripTrailingZeros().toPlainString() + " " + x.currency())
+                .containsExactly("110000 RUB");
+
+        byte[] xlsx = ReplyTableReaderTest.xlsx(List.of(List.of("Наименование", "Цена, тг"), List.of("Кушетка", "95 000")));
+        assertThat(replyFiles.prepare("kp.xlsx", "x", xlsx).textPrices()).isEmpty();
+    }
+
+    /**
+     * Цены в тексте PDF — с первых {@link ReplyPdfPages#MAX_PAGES} страниц (столько же показывает экран сверки): каталог
+     * на сотни страниц не держит единственный поток приёма почты zakup@.
+     */
+    @Test
+    void pdfTextPrices_firstPagesOnly() throws Exception {
+        String[] text = new String[ReplyPdfPages.MAX_PAGES + 1];
+        for (int i = 0; i < text.length; i++) text[i] = "Страница " + (i + 1);
+        text[ReplyPdfPages.MAX_PAGES] = "Стоимость 110 000 рублей";
+        assertThat(SupplierReplyFiles.pdfLines(ReplyFixtures.textPdfPages(text))).noneMatch(l -> l.contains("110 000"));
+        text[0] = "Стоимость 120 000 рублей";
+        assertThat(SupplierReplyFiles.pdfLines(ReplyFixtures.textPdfPages(text))).anyMatch(l -> l.contains("120 000"));
+    }
+
     @Autowired HeaderDictionary dictionary;
     @Autowired ReplyPdfPages pages;
 

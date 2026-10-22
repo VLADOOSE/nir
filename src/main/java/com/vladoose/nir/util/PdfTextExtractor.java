@@ -23,11 +23,16 @@ public final class PdfTextExtractor {
 
     /** Текст первой страницы (номер и дата КП — в бланке); нечитаемый или пустой — null. */
     public static String firstPage(byte[] pdf) {
+        return firstPages(pdf, 1);
+    }
+
+    /** Текст первых {@code max} страниц (каталог на сотни страниц целиком не читаем); нечитаемый или пустой — null. */
+    public static String firstPages(byte[] pdf, int max) {
         if (pdf == null || pdf.length == 0) return null;
         try (PDDocument doc = Loader.loadPDF(pdf)) {
             PDFTextStripper s = new PDFTextStripper();
             s.setStartPage(1);
-            s.setEndPage(1);
+            s.setEndPage(Math.max(1, max));
             String text = s.getText(doc);
             return (text == null || text.isBlank()) ? null : text;
         } catch (IOException e) {

@@ -4,9 +4,11 @@ import com.vladoose.nir.entity.LineField;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.entity.ReplyParseStatus;
 import com.vladoose.nir.entity.ReplyTable;
+import com.vladoose.nir.entity.TextPrice;
 import com.vladoose.nir.service.mail.MailFile;
 import com.vladoose.nir.service.mail.ParsedMail;
 import com.vladoose.nir.util.KpToken;
+import com.vladoose.nir.util.PdfTextExtractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,10 +82,12 @@ public class SupplierReplyFiles {
                     return t.isPresent()
                             ? file(n, mime, bytes, sha, kind, ReplyParseStatus.PARSED, null, t.get(), null)
                             : file(n, mime, bytes, sha, kind, ReplyParseStatus.NO_TABLE,
-                                    "Таблица с наименованием и ценой не найдена — введите цены по документу", null, null);
+                                    "Таблица с наименованием и ценой не найдена — введите цены по документу", null, null,
+                                    kind == ReplyFileKind.WORD ? textPrices(() -> ReplyTableReader.allLines(parse, kind)) : List.of());
                 }
                 case PDF -> {
-                    return file(n, mime, bytes, sha, kind, ReplyParseStatus.NOT_PARSED, null, null, pdf.pageCount(bytes));
+                    return file(n, mime, bytes, sha, kind, ReplyParseStatus.NOT_PARSED, null, null, pdf.pageCount(bytes),
+                            textPrices(() -> pdfLines(bytes)));
                 }
                 default -> {
                     return file(n, mime, bytes, sha, kind, ReplyParseStatus.NOT_PARSED, null, null, null);
@@ -100,7 +104,32 @@ public class SupplierReplyFiles {
     static PreparedFile tooLarge(MailFile f) {
         String n = fileName(f.name());
         return new PreparedFile(n, f.mimeType(), null, null, null, kind(n, f.mimeType(), new byte[0]),
-                ReplyParseStatus.TOO_LARGE, "Файл больше предела — откройте его в почте", null, null);
+                ReplyParseStatus.TOO_LARGE, "Файл больше предела — откройте его в почте", null, null, List.of());
+    }
+
+    /** Строки текста документа — источник цен КП-буклета; сбой — подсказки нет, файл остаётся как есть. */
+    interface Lines { List<String> get() throws Exception; }
+
+    /**
+     * Цены в тексте КП-буклета без таблицы (§16 «Примеры КП оператора», находка 4; {@link DocumentPrices}). Подсказка —
+     * не разбор файла: её сбой (повреждённый PDF, вёрстка) статус файла не меняет.
+     */
+    static List<TextPrice> textPrices(Lines lines) {
+        try {
+            return DocumentPrices.find(lines.get());
+        } catch (Exception | Error e) {
+            log.warn("Цены в тексте файла ответа не найдены: {}", e.getClass().getSimpleName());
+            return List.of();
+        }
+    }
+
+    /**
+     * Текст первых {@link ReplyPdfPages#MAX_PAGES} страниц PDF построчно (скан — пусто): столько же показывает экран сверки,
+     * а каталог на сотни страниц не держит единственный поток приёма почты zakup@.
+     */
+    static List<String> pdfLines(byte[] bytes) {
+        String t = PdfTextExtractor.firstPages(bytes, ReplyPdfPages.MAX_PAGES);
+        return t == null ? List.of() : List.of(t.split("\\R"));
     }
 
     /** Имя файла для хранения: без пути (старые браузеры шлют «C:\…\КП.xlsx»), без U+0000 (PostgreSQL его не хранит). */
@@ -128,7 +157,12 @@ public class SupplierReplyFiles {
 
     private static PreparedFile file(String n, String mime, byte[] b, String sha, ReplyFileKind kind, ReplyParseStatus st,
                                      String note, ReplyTable t, Integer pages) {
-        return new PreparedFile(n, mime == null ? null : cut(mime, 100), (long) b.length, b, sha, kind, st, note, t, pages);
+        return file(n, mime, b, sha, kind, st, note, t, pages, List.of());
+    }
+
+    private static PreparedFile file(String n, String mime, byte[] b, String sha, ReplyFileKind kind, ReplyParseStatus st,
+                                     String note, ReplyTable t, Integer pages, List<TextPrice> prices) {
+        return new PreparedFile(n, mime == null ? null : cut(mime, 100), (long) b.length, b, sha, kind, st, note, t, pages, prices);
     }
 
     static String cut(String s, int max) {

@@ -69,6 +69,11 @@ public class SupplierReplyFile {
     @Column(name = "page_count")
     private Integer pageCount;
 
+    /** Цены в тексте файла без таблицы (Word, PDF; V42) — подсказка экрана сверки; null — нет или файл старый. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "text_prices", columnDefinition = "jsonb")
+    private java.util.List<TextPrice> textPrices;
+
     /** Логин того, кто загрузил файл вручную; у файла из письма — пусто. */
     @Column(name = "uploaded_by", length = 100)
     private String uploadedBy;

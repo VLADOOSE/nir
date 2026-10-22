@@ -73,6 +73,7 @@ export interface ReplyTableView {
   totals?: ReplyTotal[]; discount?: ReplyDiscount | null;
 }
 export interface ReplyTotal { label: string; amount: number; }
+export interface ReplyTextPrice { amount: number; currency: string | null; text: string; }
 export interface ReplyDiscount { label: string; amount: number; rowsSum: number; }
 export interface ReplyCounts { unverified: number; noPrice: number; unassignedRows: number; }
 /** «в рублях»-форма после «в»: «Цены в файле — в руб.», «— в юанях». */
@@ -89,6 +90,8 @@ export interface SupplierReplyRateResult { view: SupplierReply; applied: number;
 export interface SupplierReply {
   head: ReplyHead; positions: ReplyPosition[]; sources: ReplySource[]; fileId: number | null; table: ReplyTableView | null; counts: ReplyCounts;
   rate: ReplyRate | null;
+  /** Цены в тексте файла без таблицы (КП-буклет) — подсказка у запроса на одну позицию. */
+  textPrices?: ReplyTextPrice[];
 }
 
 /** Куда вернуться из ответа: частная заявка или карточка тендера. */

@@ -42,13 +42,15 @@ public class SupplierReplyService {
     /**
      * Итог файлов письма — для строки уведомления (MailIngestWriter.fileLine). fileName — первый сохранённый файл,
      * parsedName — файл с разобранной таблицей (null — такого нет), unreadable — Excel / Word, который не разобрался,
-     * closed — запрос закрыт: файлы сохранены, цены не трогали; rate — курс запроса, по которому подставлены цены.
+     * closed — запрос закрыт: файлы сохранены, цены не трогали; rate — курс запроса, по которому подставлены цены;
+     * textPricesFile / textPrices — у запроса на одну позицию, когда цены из таблицы не подставлены: файл без таблицы и цены в
+     * его тексте (подсказка, не подстановка; §16 «Примеры КП оператора», находка 4).
      */
     public record ReplyOutcome(List<Long> fileIds, String fileName, String parsedName, int applied, int positions,
                                int manualKept, String foreignCurrency, boolean viewOnly, boolean image, String unreadable,
-                               boolean closed, BigDecimal rate) {
+                               boolean closed, BigDecimal rate, String textPricesFile, List<TextPrice> textPrices) {
         public static ReplyOutcome none() {
-            return new ReplyOutcome(List.of(), null, null, 0, 0, 0, null, false, false, null, false, null);
+            return new ReplyOutcome(List.of(), null, null, 0, 0, 0, null, false, false, null, false, null, null, List.of());
         }
     }
 
@@ -104,11 +106,15 @@ public class SupplierReplyService {
         for (SupplierReplyFile f : stored) inheritRate(pr, f);
         boolean closed = CLOSED.contains(pr.getStatus());
         if (best.isEmpty() || closed) {
-            return new ReplyOutcome(ids, name, parsedName, 0, pr.getItems().size(), 0, null, view, image, unreadable, closed, null);
+            // цены в тексте буклета — подсказка, когда позиция одна: у многих «Стоимость 1 390 000 тенге» не скажет, чья
+            Optional<SupplierReplyFile> text = pr.getItems().size() != 1 ? Optional.empty()
+                    : stored.stream().filter(f -> f.getTextPrices() != null && !f.getTextPrices().isEmpty()).findFirst();
+            return new ReplyOutcome(ids, name, parsedName, 0, pr.getItems().size(), 0, null, view, image, unreadable, closed, null,
+                    text.map(SupplierReplyFile::getFileName).orElse(null), text.map(SupplierReplyFile::getTextPrices).orElse(List.of()));
         }
         ApplyResult a = apply(pr, best.get());
         return new ReplyOutcome(ids, name, parsedName, a.applied(), a.positions(), a.manualKept(), a.foreignCurrency(),
-                view, image, unreadable, false, a.rate());
+                view, image, unreadable, false, a.rate(), null, List.of());
     }
 
     /**
@@ -491,6 +497,7 @@ public class SupplierReplyService {
         return SupplierReplyFile.builder().priceRequestId(prId).fileName(p.name()).mimeType(p.mimeType()).sizeBytes(p.size())
                 .sha256(p.sha256()).data(p.bytes()).kind(p.kind()).parseStatus(p.status())
                 .parseNote(p.note() == null ? null : (p.note().length() <= 300 ? p.note() : p.note().substring(0, 300)))
-                .parsed(p.table()).pageCount(p.pageCount()).uploadedBy(uploadedBy).build();
+                .parsed(p.table()).pageCount(p.pageCount()).uploadedBy(uploadedBy)
+                .textPrices(p.textPrices() == null || p.textPrices().isEmpty() ? null : new ArrayList<>(p.textPrices())).build();
     }
 }

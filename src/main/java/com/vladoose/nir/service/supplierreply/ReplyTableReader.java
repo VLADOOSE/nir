@@ -139,6 +139,22 @@ public final class ReplyTableReader {
         return document(content, kind).text();
     }
 
+    /**
+     * Весь текст документа: абзацы Word, затем все строки всех таблиц / листов (ячейки строки — через пробел, объединённые —
+     * один раз). Цены КП-буклета, у которого таблица без колонок «наименование / цена» (АМИКО — цены в ячейке).
+     */
+    public static List<String> allLines(byte[] content, ReplyFileKind kind) throws IOException {
+        Document d = document(content, kind);
+        List<String> out = new ArrayList<>(d.text());
+        for (Grid g : d.grids()) {
+            for (List<String> r : g.rows()) {
+                String line = joined(r);
+                if (!line.isEmpty()) out.add(line);
+            }
+        }
+        return out;
+    }
+
     /** Текст документа для номера и даты КП: абзацы Word, затем первые строки каждой таблицы / листа (бланк в таблице). */
     public static List<String> documentLines(byte[] content, ReplyFileKind kind) throws IOException {
         Document d = document(content, kind);

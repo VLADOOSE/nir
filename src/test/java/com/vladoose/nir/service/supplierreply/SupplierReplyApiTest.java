@@ -26,6 +26,7 @@ import static com.vladoose.nir.service.PrivateRequestService.input;
 import static com.vladoose.nir.service.supplierreply.ReplyFixtures.*;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -125,6 +126,70 @@ class SupplierReplyApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.table.totals[0].amount").value(190000.0))
                 .andExpect(jsonPath("$.table.discount").doesNotExist());
+    }
+
+    /** Запрос на одну позицию — как в КП-буклете АМИКО: цены из текста документа подсказкой, файл без таблицы выбран сам. */
+    PriceRequest singleRequest() {
+        MarketContext.set(Market.KZ);
+        Tender t = requests.createEmpty();
+        requests.addLines(t.getId(), List.of(input("Флюорограф цифровой", null, 1, null, null, null)), LinesMode.APPEND);
+        Distributor d = distributors.save(Distributor.builder().name("ZZ Буклет " + System.nanoTime()).build());
+        PriceRequest p = priceRequests.save(PriceRequest.builder().tender(t).distributor(d).status("SENT").sentAt(OffsetDateTime.now()).build());
+        for (TenderLot l : t.getLots()) p.getItems().add(items.save(PriceRequestItem.builder().priceRequest(p).tenderLot(l).requestedQuantity(1).build()));
+        MarketContext.clear();
+        return p;
+    }
+
+    static byte[] booklet() throws Exception {
+        org.apache.poi.xwpf.usermodel.XWPFDocument d = new org.apache.poi.xwpf.usermodel.XWPFDocument();
+        d.createParagraph().createRun().setText("Флюорограф малодозовый цифровой сканирующий ФМцс-«ПроСкан»");
+        d.createParagraph().createRun().setText("Стоимость оборудования со скидкой – 5 000 000 рублей. Ввод в эксплуатацию – 200 000 рублей.");
+        return ReplyTableReaderTest.docx(d);
+    }
+
+    @Test
+    void bookletWithoutTable_singlePosition_textPricesHint() throws Exception {
+        PriceRequest one = singleRequest();
+        mvc.perform(multipart("/api/price-requests/" + one.getId() + "/files")
+                        .file(new MockMultipartFile("file", "ПроСкан-2000.docx", "application/octet-stream", booklet()))
+                        .header("X-Market", "KZ").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk());
+        // без fileId экран сам выбирает файл без таблицы — иначе подсказку не видно, пока не нажать на чип
+        mvc.perform(get("/api/price-requests/" + one.getId() + "/reply").header("X-Market", "KZ").with(user("op").roles("OPERATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fileId").isNumber())
+                .andExpect(jsonPath("$.textPrices[0].amount").value(5000000.0))
+                .andExpect(jsonPath("$.textPrices[0].currency").value("RUB"))
+                .andExpect(jsonPath("$.textPrices[0].text").value("Стоимость оборудования со скидкой – 5 000 000 рублей"))
+                .andExpect(jsonPath("$.textPrices[1].amount").value(200000.0))
+                .andExpect(jsonPath("$.positions[0].price").doesNotExist());   // подсказка, не подстановка
+    }
+
+    @Autowired SupplierReplyFiles replyFiles;
+
+    /** Итог для Telegram: цены из текста буклета — только у запроса на одну позицию. */
+    @Test
+    void ingestOutcome_textPricesOnlyForSinglePosition() throws Exception {
+        PriceRequest one = singleRequest();
+        MarketContext.set(Market.KZ);
+        SupplierReplyService.ReplyOutcome single = replies.ingest(priceRequests.findById(one.getId()).orElseThrow(),
+                List.of(replyFiles.prepare("ПроСкан-2000.docx", "x", booklet())), null);
+        assertThat(single.textPricesFile()).isEqualTo("ПроСкан-2000.docx");
+        assertThat(single.textPrices()).hasSize(2);
+        SupplierReplyService.ReplyOutcome many = replies.ingest(priceRequests.findById(pr.getId()).orElseThrow(),
+                List.of(replyFiles.prepare("ПроСкан-2000.docx", "x", booklet())), null);
+        assertThat(many.textPrices()).isEmpty();
+        MarketContext.clear();
+    }
+
+    /** Запрос на несколько позиций: «Стоимость 1 390 000 тенге» в буклете не говорит, к какой позиции, — подсказки нет. */
+    @Test
+    void bookletWithoutTable_severalPositions_noHint() throws Exception {
+        mvc.perform(multipart("/api/price-requests/" + pr.getId() + "/files")
+                        .file(new MockMultipartFile("file", "ПроСкан-2000.docx", "application/octet-stream", booklet()))
+                        .header("X-Market", "KZ").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.textPrices").isEmpty());
     }
 
     @Test

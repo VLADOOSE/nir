@@ -2,6 +2,7 @@ package com.vladoose.nir.repository;
 
 import com.vladoose.nir.entity.ReplyTable;
 import com.vladoose.nir.entity.SupplierReplyFile;
+import com.vladoose.nir.entity.TextPrice;
 import com.vladoose.nir.service.supplierreply.ReplyFileInfo;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -41,6 +42,16 @@ public interface SupplierReplyFileRepository extends JpaRepository<SupplierReply
 
     default Optional<ReplyTable> findParsed(Long id) {
         return findParsedRaw(id).stream().filter(ReplyTable.class::isInstance).map(ReplyTable.class::cast).findFirst();
+    }
+
+    @Query("SELECT f.textPrices FROM SupplierReplyFile f WHERE f.id = :id")
+    List<Object> findTextPricesRaw(@Param("id") Long id);
+
+    /** Цены в тексте файла без таблицы (V42) — без байтов файла; нет — пусто. */
+    @SuppressWarnings("unchecked")
+    default List<TextPrice> findTextPrices(Long id) {
+        return findTextPricesRaw(id).stream().filter(List.class::isInstance)
+                .map(x -> (List<TextPrice>) x).findFirst().orElse(List.of());
     }
 
     /** Имена файлов по письмам — колонка «Входящих» (одним запросом на страницу). */

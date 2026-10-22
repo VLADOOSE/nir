@@ -1,6 +1,7 @@
 package com.vladoose.nir.dto.response;
 
 import com.vladoose.nir.entity.LineField;
+import com.vladoose.nir.entity.TextPrice;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -9,10 +10,11 @@ import java.util.List;
 
 /**
  * Экран «Ответ поставщика» (спека 2026-10-15 §4.1). fileId / table — выбранный файл с разобранной таблицей (или null);
- * rate — поле курса, когда цены выбранного файла не в валюте запроса (иначе null).
+ * rate — поле курса, когда цены выбранного файла не в валюте запроса (иначе null); textPrices — цены в тексте выбранного
+ * файла без таблицы (КП-буклет), только у запроса на одну позицию — подсказка (V42).
  */
 public record SupplierReplyView(Head head, List<Position> positions, List<Source> sources, Long fileId, Table table, Counts counts,
-                                Rate rate) {
+                                Rate rate, List<TextPrice> textPrices) {
 
     public record Head(Long id, String status, String supplierName, Long tenderId, String tenderNumber, boolean privateRequest,
                        OffsetDateTime sentAt, LocalDate responseDate, String currency) {}

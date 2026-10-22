@@ -10,6 +10,7 @@ import com.vladoose.nir.entity.ReplyParseStatus;
 import com.vladoose.nir.entity.ReplyTable;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.entity.TenderLot;
+import com.vladoose.nir.entity.TextPrice;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
@@ -142,8 +143,11 @@ public class SupplierReplyViewBuilder {
             rateView = new Rate(cur, rate == null ? null : rate.rate(), last.isEmpty() ? null : (BigDecimal) last.get(0)[0],
                     last.isEmpty() ? null : at(last.get(0)[1]));
         }
+        // цены в тексте буклета — подсказка, когда позиция одна (у многих «Стоимость 1 390 000 тенге» не скажет, чья)
+        List<TextPrice> textPrices = selected == null || table != null || its.size() != 1 ? List.of()
+                : files.findTextPrices(selected);
         return new SupplierReplyView(head, positions, sources(prId, infos), selected, tbl, new Counts(unverified, noPrice, unassigned),
-                rateView);
+                rateView, textPrices);
     }
 
     /** Откуда валюта цен файла — для строки над таблицей (у таблиц до 2026-10-18 источник выводится из валюты). */
@@ -168,9 +172,10 @@ public class SupplierReplyViewBuilder {
         Optional<Long> most = linked.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey);
         if (most.isPresent() && infos.stream().anyMatch(f -> f.id().equals(most.get()))) return most.get();
         for (int i = infos.size() - 1; i >= 0; i--) if (infos.get(i).parseStatus() == ReplyParseStatus.PARSED) return infos.get(i).id();
+        // файл без таблицы — тоже документ: Word-буклет (цены в тексте — подсказка), PDF, картинка
         for (int i = infos.size() - 1; i >= 0; i--) {
             ReplyFileKind k = infos.get(i).kind();
-            if (k == ReplyFileKind.PDF || k == ReplyFileKind.IMAGE) return infos.get(i).id();
+            if (k == ReplyFileKind.PDF || k == ReplyFileKind.IMAGE || k == ReplyFileKind.WORD) return infos.get(i).id();
         }
         return null;
     }

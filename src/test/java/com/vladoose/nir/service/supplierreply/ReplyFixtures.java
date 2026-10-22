@@ -40,6 +40,49 @@ public final class ReplyFixtures {
                 ReplyFileKind.PDF, ReplyParseStatus.NOT_PARSED, null, null, 2);
     }
 
+    /** PDF с текстом (шрифт Liberation Sans из ресурсов — кириллица): строки — сверху вниз на одной странице. */
+    public static byte[] textPdf(String... lines) throws Exception {
+        try (PDDocument d = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream();
+             java.io.InputStream font = ReplyFixtures.class.getResourceAsStream("/fonts/LiberationSans-Regular.ttf")) {
+            PDPage page = new PDPage();
+            d.addPage(page);
+            org.apache.pdfbox.pdmodel.font.PDType0Font f = org.apache.pdfbox.pdmodel.font.PDType0Font.load(d, font);
+            try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(d, page)) {
+                cs.beginText();
+                cs.setFont(f, 11);
+                cs.newLineAtOffset(50, 720);
+                for (String l : lines) {
+                    cs.showText(l);
+                    cs.newLineAtOffset(0, -16);
+                }
+                cs.endText();
+            }
+            d.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    /** PDF, у которого каждая строка — своя страница (текст на странице N). */
+    public static byte[] textPdfPages(String... pages) throws Exception {
+        try (PDDocument d = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream();
+             java.io.InputStream font = ReplyFixtures.class.getResourceAsStream("/fonts/LiberationSans-Regular.ttf")) {
+            org.apache.pdfbox.pdmodel.font.PDType0Font f = org.apache.pdfbox.pdmodel.font.PDType0Font.load(d, font);
+            for (String text : pages) {
+                PDPage page = new PDPage();
+                d.addPage(page);
+                try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(d, page)) {
+                    cs.beginText();
+                    cs.setFont(f, 11);
+                    cs.newLineAtOffset(50, 720);
+                    cs.showText(text);
+                    cs.endText();
+                }
+            }
+            d.save(out);
+            return out.toByteArray();
+        }
+    }
+
     public static byte[] pdfBytes(int pages) throws Exception {
         try (PDDocument d = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             for (int i = 0; i < pages; i++) d.addPage(new PDPage());
