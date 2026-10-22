@@ -84,5 +84,13 @@ class MarketCategoriesTest {
         assertThat(MarketCategories.pick("Аппарат искусственной вентиляции легких для экстренной помощи А-ИВЛ-Э", List.of(balloon))).isNull();
         // падежи и окончания — одно слово
         assertThat(MarketCategories.pick("Отсасывателя медицинского", List.of(suction))).isEqualTo(suction);
+        // родовое первое слово («Блок», «Кабель», «Комплекс») — главное слово следующее: блок питания ПК — не блок управления ACTITON
+        Category psu = new Category("262040.000.000130", "Блок питания", "для компьютера", 1);
+        assertThat(MarketCategories.pick("Блок управления ACTITON-A (с режимом аспирации жидкости)", List.of(psu))).isNull();
+        Category utp = new Category("273213.500.000002", "Кабель специализированный", "тип UTP", 2);
+        assertThat(MarketCategories.pick("Кабель нейтрального электрода с разъемом типа Valleylab", List.of(utp))).isNull();
+        Category cctv = new Category("264033.900.000000", "Комплекс оборудования", "для системы видеонаблюдения объекта", 3);
+        assertThat(MarketCategories.pick("Комплекс для проведения нагрузочных проб", List.of(cctv))).isNull();
+        assertThat(MarketCategories.pick("Блок питания для монитора пациента", List.of(psu))).isEqualTo(psu);
     }
 }

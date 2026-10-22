@@ -56,8 +56,12 @@ public final class MarketCategories {
                 && !MedicalGoodsVocabulary.isMedicalWasteContainer(n, Objects.toString(description, ""));
     }
 
-    /** «Работы по ремонту …», «Услуги по …» — главное слово после них. */
-    private static final Set<String> SERVICE_HEAD = Set.of("работы", "работ", "работа", "услуги", "услуг", "услуга", "оказание", "выполнение");
+    /**
+     * Главное слово — после них: «Работы по ремонту …», «Услуги по …» и родовые «Блок питания», «Кабель специализированный»,
+     * «Комплекс оборудования» (живая проверка 2026-10-22: блок питания ПК давал цену блоку управления ACTITON).
+     */
+    private static final Set<String> HEAD_WORDS = Set.of("работы", "работ", "работа", "услуги", "услуг", "услуга", "оказание",
+            "выполнение", "блок", "кабель", "комплекс", "модуль");
 
     private static boolean mainWordIn(Category c, List<String> text) {
         String main = mainWord(c.name());
@@ -68,7 +72,7 @@ public final class MarketCategories {
     }
 
     private static String mainWord(String s) {
-        for (String w : words(s)) if (!SERVICE_HEAD.contains(w)) return w;
+        for (String w : words(s)) if (!HEAD_WORDS.contains(w)) return w;
         return null;
     }
 
