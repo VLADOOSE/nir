@@ -34,8 +34,11 @@ public final class MarketCategories {
      */
     public static Category pick(String text, List<Category> cats) {
         Set<String> t = stems(text);
+        String kw = keyword(text);
         return relevant(text, cats).stream().filter(c -> overlap(t, words(c)) > 0)
-                .max(Comparator.comparingInt((Category c) -> overlap(t, words(c))).thenComparingInt(Category::count)).orElse(null);
+                .max(Comparator.comparingInt((Category c) -> overlap(t, words(c)))
+                        .thenComparing(c -> kw != null && kw.equals(keyword(c.name())))   // «Тележка» — не «Чемодан-тележка»
+                        .thenComparingInt(Category::count)).orElse(null);
     }
 
     /** Категории для товара — без работ и услуг по названию (тара для медотходов — товар); для услуги — все. */

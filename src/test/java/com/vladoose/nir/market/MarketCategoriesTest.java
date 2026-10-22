@@ -52,4 +52,12 @@ class MarketCategoriesTest {
         Category kbu = new Category("222219.000.000002", "Контейнер для сбора и утилизации медицинских отходов", "КБУ", 3);
         assertThat(MarketCategories.relevant("Контейнер КБУ", List.of(kbu))).containsExactly(kbu);
     }
+
+    /** Живая проверка 2026-10-22: «Тележка» уходила в «Чемодан-тележку» — при равном совпадении сперва категория с тем же главным словом. */
+    @Test
+    void pick_sameMainWordBeforeCount() {
+        Category suitcase = new Category("151212.100.000017", "Чемодан-тележка", "из пластмассы", 3);
+        Category cart = new Category("325030.500.000010", "Тележка", "медицинская", 1);
+        assertThat(MarketCategories.pick("Тележка", List.of(suitcase, cart))).isEqualTo(cart);
+    }
 }
