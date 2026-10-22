@@ -110,4 +110,22 @@ class CustomerHistoryServiceTest {
         assertThat(h.rows()).extracting(CustomerHistory.Row::name)
                 .containsExactly("Электрокардиограф 12-канальный", "Контейнер для сбора и утилизации медицинских отходов КБУ");
     }
+
+    /** Лот без кода (площадка не отдала пункт плана — живая проверка 2026-10-22): «та же категория» — по его названию. */
+    @Test
+    void lotWithoutCode_sameCategoryByName() {
+        Tender t = ResultsFixtures.tender(tenders, 970007003L, NOW.minusDays(3), "1-ЗЦП1", "Тележка");
+        FakeGoszakupResultsClient fake = new FakeGoszakupResultsClient();
+        fake.contracts.add(new ContractRow(21L, 99200021L, "Д-21", "2026-10-01 10:00:00", 190, "900000000001", new BigDecimal("200000"),
+                List.of(new ContractUnitRow(99300021L, new BigDecimal("200000"), BigDecimal.ONE, new BigDecimal("200000")))));
+        fake.contracts.add(new ContractRow(22L, 99200022L, "Д-22", "2026-09-01 10:00:00", 190, "900000000002", new BigDecimal("100000"),
+                List.of(new ContractUnitRow(99300022L, new BigDecimal("100000"), BigDecimal.ONE, new BigDecimal("100000")))));
+        fake.lotsById.put(99300021L, lot(99300021L, "Электрокардиограф 12-канальный", "266012.100.000000"));
+        fake.lotsById.put(99300022L, lot(99300022L, "Тележка медицинская", "309911.100.000001"));
+        GoszakupSubjects subjects = new GoszakupSubjects(fake, subjectRepo, CLOCK, ms -> { });
+        MarketCollector collector = new MarketCollector(fake, writer, subjects, List::of, CLOCK, ms -> { });
+        CustomerHistory h = new CustomerHistoryService(collector, contracts, subjectRepo, CLOCK).forTender(t);
+        assertThat(h.rows()).extracting(CustomerHistory.Row::name).containsExactly("Тележка медицинская", "Электрокардиограф 12-канальный");
+        assertThat(h.rows().get(0).sameCategory()).isTrue();
+    }
 }

@@ -46,8 +46,12 @@ public class CustomerHistoryService {
         String bin = t.getCustomerBin();
         if (bin == null || !bin.matches("\\d{12}")) return new CustomerHistory(bin, List.of(), null, "БИН заказчика неизвестен");
         MarketCollector.Lookup l = collector.ensureCustomer(bin);
-        Set<String> codes = t.getLots().stream().map(TenderLot::getEnstruCode).filter(Objects::nonNull).collect(Collectors.toSet());
         LocalDate from = LocalDate.now(clock.withZone(Market.KZ.zone())).minusYears(MarketCollector.YEARS);
+        Set<String> codes = new HashSet<>();
+        for (TenderLot lot : t.getLots()) {
+            String code = lot.getEnstruCode() != null ? lot.getEnstruCode() : codeByName(lot.getEquipName(), from);
+            if (code != null) codes.add(code);
+        }
         List<MarketContract> all = contracts.findByCustomerBinAndSignedAtGreaterThanEqualOrderBySignedAtDesc(bin, from);
         List<MarketContract> same = all.stream().filter(m -> m.getEnstruCode() != null && codes.contains(m.getEnstruCode())).toList();
         List<MarketContract> medical = all.stream().filter(m -> !same.contains(m)).filter(m -> !service(m))
@@ -60,6 +64,18 @@ public class CustomerHistoryService {
                 m.getUnit(), m.getUnitPrice(), m.getSupplierBin() == null ? null : names.getOrDefault(m.getSupplierBin(), "БИН " + m.getSupplierBin()),
                 m.getRegion(), same.contains(m), m.getAnno())).toList();
         return new CustomerHistory(bin, rows, l.fetchedAt(), l.ok() ? null : l.error());
+    }
+
+    /** Лот без кода (у лотов 2026 года площадка не отдаёт пункт плана) — категория по названию, как у цены рынка. */
+    private String codeByName(String name, LocalDate from) {
+        String kw = MarketCategories.keyword(name);
+        if (kw == null) return null;
+        List<MarketCategories.Category> cats = new ArrayList<>();
+        for (Object[] row : contracts.findCategories("%" + kw + "%", from)) {
+            cats.add(new MarketCategories.Category((String) row[0], (String) row[1], (String) row[2], ((Number) row[3]).intValue()));
+        }
+        MarketCategories.Category c = MarketCategories.pick(name, cats);
+        return c == null ? null : c.code();
     }
 
     /** Работа или услуга по названию («Услуги по обучению» с «эндоскопической диагностикой» в описании) — не медизделие. */
