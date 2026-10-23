@@ -74,6 +74,10 @@ public final class HeaderRoles {
         if (has(h, "кол-во", "количество", "кол.")) return LineField.QUANTITY;
         if (has(h, "ед. изм", "ед.изм", "единиц") || h.equals("ед") || h.equals("ед.")) return LineField.UNIT;
         if (has(h, "товар", "описание", "номенклат", "продукц", "комплектац")) return LineField.NAME;
+        // РУ (спека 2026-10-23 §5.2) — после наименования («Наименование … (по регистрационному удостоверению)» — наименование),
+        // но до «срок» и «№»: иначе «…(номер, срок действия)» ушло бы в примечание, а «№ РУ» — в номер
+        if (has(h, "регистрац", "разрешительн", "рег. уд", "рег.уд") || h.equals("ру") || h.equals("№ ру")
+                || h.startsWith("ру ") || h.endsWith(" ру")) return LineField.REG;
         if (has(h, "артикул", "модель", "каталож")) return LineField.ARTICLE;
         if (h.contains("страна")) return LineField.IGNORE;
         if (has(h, "производ", "бренд", "марка")) return LineField.MANUFACT;

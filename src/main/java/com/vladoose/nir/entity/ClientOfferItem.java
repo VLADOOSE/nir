@@ -74,6 +74,20 @@ public class ClientOfferItem {
     @Column(name = "price_request_item_id")
     private Long priceRequestItemId;
 
+    /** Закупка в чужой валюте (V44): purchasePrice = purchaseOriginal × purchaseRate (наш курс на момент ввода) считает сервер. */
+    @Column(name = "purchase_currency", length = 5)
+    private String purchaseCurrency;
+
+    @Column(name = "purchase_original", precision = 15, scale = 2)
+    private BigDecimal purchaseOriginal;
+
+    @Column(name = "purchase_rate", precision = 14, scale = 6)
+    private BigDecimal purchaseRate;
+
+    /** Строка прайса, из которой закупка (V44); ON DELETE SET NULL — прайс удалили, закупка остаётся. */
+    @Column(name = "price_list_item_id")
+    private Long priceListItemId;
+
     @Column(name = "med_equipment_id")
     private Long medEquipmentId;
 

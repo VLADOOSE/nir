@@ -90,8 +90,9 @@ class ReplyTableReaderTest {
                 List.of("1", "Электрокардиограф ЭК3ТЦ-3/6-04 (Аксион)", "", "1", "шт", "РК-МТ-5№017777", "1 382 400")));
         ReplyTable t = ReplyTableReader.read(docx(d), ReplyFileKind.WORD, Map.of()).orElseThrow();
         assertThat(t.source()).isEqualTo("таблица 3");
+        // «Регистрация в РК» — роль «РУ» (спека 2026-10-23 §5.2, решение плана 13): в цены не идёт
         assertThat(roles(t)).containsExactly(LineField.NUMBER, LineField.NAME, LineField.IGNORE, LineField.QUANTITY,
-                LineField.UNIT, LineField.IGNORE, LineField.PRICE);
+                LineField.UNIT, LineField.REG, LineField.PRICE);
         assertThat(t.currency()).isEqualTo("KZT");
         assertThat(t.rows()).singleElement().extracting(r -> r.cells().get(6)).isEqualTo("1 382 400");
     }

@@ -51,4 +51,14 @@ public class PriceRequestItem {
     /** Строка файла (с 1), из которой цена. */
     @Column(name = "response_file_row")
     private Integer responseFileRow;
+
+    /** Исходная валюта, цена и курс ответа в чужой валюте (V44): цена в рублях × курс → responsePrice; в валюте рынка — пусто. */
+    @Column(name = "response_currency", length = 5)
+    private String responseCurrency;
+
+    @Column(name = "response_original", precision = 15, scale = 2)
+    private BigDecimal responseOriginal;
+
+    @Column(name = "response_rate", precision = 14, scale = 6)
+    private BigDecimal responseRate;
 }
