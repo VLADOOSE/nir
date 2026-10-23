@@ -53,8 +53,9 @@ class PriceListServiceTest {
     /** Review Focus 4: тот же файл того же поставщика — прежний прайс; поставщик другого рынка — 400. */
     @Test
     void sameFile_returnsExisting_otherMarketSupplier_400() throws Exception {
-        Long a = service.upload(axion.getId(), "ZZ прайс.xlsx", null, PriceListFiles.axionLikeXlsx(), "vlad");
-        Long b = service.upload(axion.getId(), "копия.xlsx", null, PriceListFiles.axionLikeXlsx(), "vlad");
+        byte[] file = PriceListFiles.axionLikeXlsx();            // один раз: POI пишет в .xlsx время создания (до секунды)
+        Long a = service.upload(axion.getId(), "ZZ прайс.xlsx", null, file, "vlad");
+        Long b = service.upload(axion.getId(), "копия.xlsx", null, file, "vlad");
         assertThat(b).isEqualTo(a);
         Distributor rf = PriceListFixtures.supplier(distributors, Market.RF, "РФ");
         assertThatThrownBy(() -> service.upload(rf.getId(), "x.xlsx", null, PriceListFiles.axionLikeXlsx(), "vlad"))
