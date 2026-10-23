@@ -49,7 +49,11 @@ public class PriceListReader {
                     return fromText(PriceTextLines.read(all), fileName);
                 }
                 case PDF -> {
-                    return fromText(PriceTextLines.read(SupplierReplyFiles.pdfLines(bytes)), fileName);   // сетка — задача 6
+                    Optional<PdfTableReader.Result> g = PdfTableReader.read(bytes, learned);
+                    if (g.isPresent() && pricedRows(g.get().table()) > 0) {
+                        return fromTable(g.get().table(), g.get().outside(), false, fileName);
+                    }
+                    return fromText(PriceTextLines.read(SupplierReplyFiles.pdfLines(bytes)), fileName);
                 }
                 default -> {
                     return ParsedPriceList.failed(ReplyParseStatus.NOT_PARSED, "Прайс картинкой не разбирается — строки впишите вручную");
