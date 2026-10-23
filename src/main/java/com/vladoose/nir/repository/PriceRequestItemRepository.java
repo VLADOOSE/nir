@@ -62,4 +62,22 @@ public interface PriceRequestItemRepository extends JpaRepository<PriceRequestIt
     @Query("SELECT max(i.priceRequest.sentAt) FROM PriceRequestItem i "
             + "WHERE i.tenderLot.id = :lotId AND i.priceRequest.distributor.id = :distId")
     OffsetDateTime lastRequestedAt(@Param("lotId") Long lotId, @Param("distId") Long distId);
+
+    /**
+     * Ответы с ценой для истории цен (спека 2026-10-23 §7), рынок явно: [id строки, id запроса, поставщик, исходная цена,
+     * валюта (пусто — валюта рынка), дата ответа, наименование позиции, бренд, позиция каталога, наш товар].
+     */
+    @Query(value = """
+            SELECT i.id, pr.id, d.name, COALESCE(i.response_original, i.response_price), i.response_currency,
+                   COALESCE(pr.response_date, CAST(pr.sent_at AS date), CAST(pr.created_at AS date)),
+                   l.equip_name, l.manufact, e.id, e.site_product_id
+            FROM price_request_item i
+            JOIN price_request pr ON pr.id = i.price_request_id
+            JOIN distributor d ON d.id = pr.distributor_id
+            JOIN tender_lot l ON l.id = i.tender_lot_id
+            LEFT JOIN med_equipment e ON e.id = COALESCE(i.med_equipment_id, l.proposed_equipment_id)
+            WHERE pr.market = :market AND i.response_price IS NOT NULL
+            ORDER BY i.id DESC LIMIT 2000
+            """, nativeQuery = true)
+    List<Object[]> findPricedForHistory(@Param("market") String market);
 }

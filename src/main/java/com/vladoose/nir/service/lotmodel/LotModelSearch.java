@@ -65,7 +65,7 @@ public class LotModelSearch {
      * Наши товары: каждое слово запроса — начало слова в названии, бренде или артикуле («дефиб», «ог» + «10» у «ОГ-10/90»;
      * не кусок где угодно — «ог» не находит «многорозеточный»); снятые с сайта не ищутся.
      */
-    private List<LotModelSearchResponse.Our> ours(String q) {
+    public List<LotModelSearchResponse.Our> ours(String q) {
         List<String> words = ProductText.words(ProductText.normalize(q));
         if (words.isEmpty()) return List.of();
         CatalogSnapshot snap = catalog.get();

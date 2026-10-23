@@ -1,11 +1,13 @@
 package com.vladoose.nir.controller;
 
+import com.vladoose.nir.context.MarketContext;
+import com.vladoose.nir.dto.request.PriceHintsRequest;
 import com.vladoose.nir.dto.request.PriceListPatch;
-import com.vladoose.nir.dto.response.PriceListListItem;
-import com.vladoose.nir.dto.response.PriceListView;
+import com.vladoose.nir.dto.response.*;
 import com.vladoose.nir.entity.PriceList;
 import com.vladoose.nir.entity.ReplyFileKind;
 import com.vladoose.nir.exception.BadRequestException;
+import com.vladoose.nir.service.pricelist.PriceHints;
 import com.vladoose.nir.service.pricelist.PriceListService;
 import com.vladoose.nir.service.pricelist.PriceListViewBuilder;
 import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
@@ -26,15 +28,39 @@ public class PriceListController {
 
     private final PriceListService service;
     private final PriceListViewBuilder views;
+    private final PriceHints hints;
 
-    public PriceListController(PriceListService service, PriceListViewBuilder views) {
+    public PriceListController(PriceListService service, PriceListViewBuilder views, PriceHints hints) {
         this.service = service;
         this.views = views;
+        this.hints = hints;
     }
 
     @GetMapping
     public List<PriceListListItem> list(@RequestParam(required = false) Long supplier) {
         return views.list(supplier);
+    }
+
+    @GetMapping("/search")
+    public List<PriceHintRow> search(@RequestParam(required = false) String q, @RequestParam(defaultValue = "50") int limit) {
+        return hints.search(MarketContext.get(), q, limit);
+    }
+
+    @PostMapping("/hints")
+    public List<PriceHint> hints(@RequestBody PriceHintsRequest in) {
+        List<String> texts = in == null || in.texts() == null ? List.of() : in.texts();
+        if (texts.size() > PriceHints.TEXTS_MAX) throw new BadRequestException("Не больше 200 позиций за раз");
+        return hints.hints(MarketContext.get(), texts.stream().map(PriceHints.Target::text).toList());
+    }
+
+    @GetMapping("/rows/{rowId}/history")
+    public List<PriceHistoryEntry> history(@PathVariable Long rowId) {
+        return hints.history(rowId);
+    }
+
+    @GetMapping("/link-candidates")
+    public PriceLinkCandidates linkCandidates(@RequestParam(required = false) String q) {
+        return hints.linkCandidates(q);
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
