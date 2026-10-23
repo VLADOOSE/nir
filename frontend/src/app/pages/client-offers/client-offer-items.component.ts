@@ -342,7 +342,8 @@ function rowKey(it: OfferItem): string {
     .reply-link { align-self: center; font-size: 13px; color: var(--accent); text-decoration: none; white-space: nowrap; }
     .buy-row { display: flex; gap: 4px; align-items: center; min-width: 0; }
     .buy-row .buy-wrap { flex: 1 1 auto; min-width: 0; }
-    .buy-cur { width: auto; flex: none; padding: 4px 6px; }
+    /* .line select даёт width: 100% — валюта растягивалась и выдавливала поле закупки (живая проверка 2026-10-23) */
+    .line .buy-cur { width: auto; flex: none; max-width: 5.5em; padding: 6px 4px; }
     .buy-cur-ro { flex: none; font-size: 12px; color: var(--text-muted); }
     .buy-conv { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
     .buy-wrap { position: relative; display: block; }
@@ -407,7 +408,8 @@ function rowKey(it: OfferItem): string {
       .s-chev { margin-left: auto; color: var(--text-muted); }
       .nums { display: grid; grid-area: nums; gap: 6px; align-items: end;
               grid-template-columns: repeat(6, minmax(0, 1fr));
-              grid-template-areas: "qty qty buy buy mk mk" "price price price price vat vat" "sum sum sum sum sum sum"; }
+              /* «Закупка» — на всю строку: рядом с полем выбор валюты и «= … по курсу», в трети строки поле сжималось до 38 px */
+              grid-template-areas: "qty qty qty mk mk mk" "buy buy buy buy buy buy" "price price price price vat vat" "sum sum sum sum sum sum"; }
       .cap { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted); text-align: left; }
       .c-sum { text-align: left; padding-bottom: 0; }
       .c-wide { flex-direction: column; }

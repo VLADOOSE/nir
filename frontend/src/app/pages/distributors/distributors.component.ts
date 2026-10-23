@@ -83,7 +83,7 @@ import { RouterLink } from '@angular/router';
                показывает форма редактирования. -->
           <td data-label="Название">{{ d.name }} <span class="flag" *ngIf="d.manufacturer">производитель</span> <span class="flag" *ngIf="d.trusted">доверенный</span>
             <a class="xref pl-link" *ngIf="priceCounts[d.id]; else plAdd" [routerLink]="['/price-lists']" [queryParams]="{ supplier: d.id }">Прайсы: {{ priceCounts[d.id] }} ›</a>
-            <ng-template #plAdd><a class="xref pl-link" *ngIf="auth.isAdmin()" [routerLink]="['/price-lists']" [queryParams]="{ supplier: d.id }">+ прайс ›</a></ng-template></td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
+            <ng-template #plAdd><a class="xref pl-link pl-add" *ngIf="auth.isAdmin()" [routerLink]="['/price-lists']" [queryParams]="{ supplier: d.id }">+ прайс ›</a></ng-template></td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
           <td data-label="Контактное лицо">{{ d.lastName }} {{ d.firstName }}</td><td data-label="Телефон">{{ d.phone }}</td><td data-label="Эл. почта">{{ d.email }}</td>
           <td data-label="Специализация">
             <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
@@ -98,7 +98,9 @@ import { RouterLink } from '@angular/router';
     </table>
   `,
   styles: [`
-    .pl-link { margin-left: 6px; font-size: 12px; font-weight: 400; }
+    .pl-link { display: block; width: fit-content; margin-top: 2px; font-size: 12px; font-weight: 400; white-space: nowrap; }
+    .pl-link.pl-add { color: var(--text-muted); }
+    .pl-link.pl-add:hover { color: var(--accent); }
     h2 { margin: 0; font-size: 20px; }
     .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .search-input:focus { outline: none; border-color: var(--accent); }

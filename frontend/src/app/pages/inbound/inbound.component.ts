@@ -282,7 +282,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
       .inbound-list td[data-label="Ящик"] { display: none; }
       .inbound-list .box-ref { display: inline; white-space: nowrap; }
       /* имена файлов на карточке не помещаются (строка типа не переносится) — они на экране «Ответ поставщика» */
-      .inbound-list .files { display: none; }
+      .inbound-list .files, .inbound-list .pl-like { display: none; }   /* узкая ячейка типа; «Занести как прайс» — кнопкой справа */
       .inbound-list a.reply-link { min-height: 40px; }
       /* «КП #…» у возврата / задержки / автоответа — строчная ссылка: цель растят поля-невидимки .xref из kit,
          ячейка типа обрезает их по своей высоте (~38 px — метка и так в две строки). Кнопкой в 40 px метку не

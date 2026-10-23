@@ -135,6 +135,9 @@ import type { PriceLinkCandidates, PriceListField, PriceListRow, PriceListView, 
     .pp-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
     .pp-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-muted); }
     .pp-fields .wide { grid-column: 1 / -1; }
+    .pp-fields input, .pp-fields select, .pp-fields textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+              background: var(--surface); color: var(--text); font: inherit; font-size: 14px; min-width: 0; width: 100%; box-sizing: border-box; }
+    .pp-fields textarea { resize: vertical; }
     .pp-rows { display: flex; flex-direction: column; gap: 6px; }
     .pp-section { margin-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
     .pp-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px 12px; padding: 8px 12px;
@@ -156,11 +159,15 @@ import type { PriceLinkCandidates, PriceListField, PriceListRow, PriceListView, 
     .pp-cands { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
     .pp-cand { text-align: left; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
                color: var(--text); cursor: pointer; min-height: 36px; }
+    .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; }
+    .link:hover { text-decoration: underline; }
     .link.danger, .btn.danger { color: var(--danger-text); }
     @media (max-width: 900px) {
-      .pp-fields { grid-template-columns: 1fr; }
-      .pp-row { grid-template-columns: 1fr; }
-      .pp-in, .pp-prices input { font-size: 16px; min-height: 40px; }
+      /* minmax(0, …): длинный заголовок колонки цены в выборе иначе распирал колонку (живая проверка 390 px) */
+      .pp-fields { grid-template-columns: minmax(0, 1fr); }
+      .pp-row { grid-template-columns: minmax(0, 1fr); }
+      .pp-in, .pp-prices input, .pp-fields input, .pp-fields select, .pp-fields textarea { font-size: 16px; min-height: 40px; }
+      .link { min-height: 40px; }
     }
   `],
 })

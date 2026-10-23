@@ -58,6 +58,7 @@ import type { PriceHint, PriceHintRow, PriceHistoryEntry } from './price-hint';
     .ph-sup { font-weight: 600; }
     .ph-price { white-space: nowrap; }
     .ph-name, .ph-meta, .ph-terms { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+    .ph-terms { white-space: pre-line; }
     .ph-exp { color: var(--warn-text); }
     .ph-links { display: flex; gap: 12px; align-items: center; }
     .ph-hist { margin: 0; padding-left: 16px; font-size: 12px; color: var(--text-muted); }

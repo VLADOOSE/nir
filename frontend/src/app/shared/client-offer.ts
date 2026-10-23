@@ -317,6 +317,10 @@ export function toRequest(o: ClientOffer): any {
       id: it.id ?? null, key: it.key, kind: it.kind, name: it.name, model: it.model ?? null,
       manufacturer: it.manufacturer ?? null, country: it.country ?? null, unit: it.unit, quantity: it.quantity,
       purchasePrice: it.purchasePrice, purchaseVatSame: it.purchaseVatSame, purchaseVatRate: it.purchaseVatRate,
+      // закупка в чужой валюте и строка прайса (спека 2026-10-23 §4.5, §6.3): без них сервер считает строку в валюте рынка
+      // и снимает рубли, курс и ссылку при каждом автосохранении (живая проверка 2026-10-23)
+      purchaseCurrency: it.purchaseCurrency ?? null, purchaseOriginal: it.purchaseOriginal ?? null,
+      purchaseRate: it.purchaseRate ?? null, priceListItemId: it.priceListItemId ?? null,
       supplierName: it.supplierName ?? null, priceRequestItemId: it.priceRequestItemId ?? null,
       markupPct: it.markupPct, priceOverride: it.priceOverride, vatRate: it.vatRate,
       registrationStatus: it.registrationStatus, registrationText: it.registrationText ?? null,
