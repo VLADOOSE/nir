@@ -11,13 +11,16 @@ import { DocFormat, PriceCell, PriceLine, Prices, dateText } from '../../shared/
 import { money, numText, parseNum, saveBlob } from '../../shared/client-offer';
 import { canShareFiles, openShareSheet, responseFile } from '../../shared/share';
 import { errorText } from '../../shared/error-text';
+import { MarketService } from '../../services/market.service';
+import { curShort, ourRatesOf, priceCurrencies, rateText } from '../../shared/rates';
+import type { RatesView } from '../../shared/rates';
 
 /** «18 400» — целая цена без копеек, «17 950,50» — с копейками (а не «17 950,5»). */
 function priceText(v: number | null): string {
   return v == null ? '' : Number.isInteger(v) ? numText(v) : money(v);
 }
 
-interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: string; note: string; }
+interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: string; note: string; currency: string; }
 
 /**
  * Таблица цен (спека 2026-10-12 §7): позиции × поставщики, кому писали. Ячейка — цена (★ лучшая по позиции), «отказ»,
@@ -76,7 +79,13 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
         <p class="sub">{{ ed.line.name }} × {{ ed.line.quantity ?? '—' }} {{ ed.line.unit || 'шт' }}</p>
         <p class="hint">{{ stateHint(ed.cell) }}</p>
         <a class="link" *ngIf="ed.cell.priceRequestId" [routerLink]="['/price-requests', ed.cell.priceRequestId]" (click)="editing = null">Открыть ответ поставщика ›</a>
-        <label>Цена за единицу <input inputmode="decimal" [(ngModel)]="ed.price" [disabled]="readonly" placeholder="0" /></label>
+        <label>Цена за единицу
+          <span class="price-cur"><input inputmode="decimal" [(ngModel)]="ed.price" [disabled]="readonly" placeholder="0" />
+            <select *ngIf="!readonly && curs().length > 1" [(ngModel)]="ed.currency" aria-label="Валюта цены">
+              <option *ngFor="let c of curs()" [ngValue]="c">{{ short(c) }}</option>
+            </select></span></label>
+        <p class="hint" *ngIf="ed.cell.currency && ed.cell.original != null">= {{ ed.cell.price | money:2 }} по нашему курсу {{ rate(ed.cell.rate) }}<ng-container
+              *ngIf="ed.cell.today != null"> · сегодня {{ ed.cell.today | money:2 }}</ng-container></p>
         <label>Примечание <input [(ngModel)]="ed.note" maxlength="2000" [disabled]="readonly" placeholder="срок, модель, условия" /></label>
         <div class="doc" *ngIf="ed.cell.priceRequestId">
           <span class="doc-l">Запрос № {{ ed.cell.priceRequestId }}:</span>
@@ -123,6 +132,9 @@ interface Editing { line: PriceLine; cell: PriceCell; supplier: string; price: s
     .modal h3 { margin: 0; }
     .sub { margin: 0; font-size: 13px; color: var(--text-muted); }
     .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+    .price-cur { display: flex; gap: 4px; }
+    .price-cur input { flex: 1 1 auto; min-width: 0; }
+    .price-cur select { width: auto; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     .modal input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
                    color: var(--text); font: inherit; font-size: 14px; }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0; }
@@ -166,17 +178,29 @@ export class PrPricesComponent implements OnChanges {
   docBusy = false;
   private shareFileReady: File | null = null;
   private sub?: Subscription;
+  /** Курсы рынка — переключатель валюты цены в окне ячейки. */
+  rates: RatesView | null = null;
+  readonly short = curShort;
+  readonly rate = rateText;
 
   get shareReady(): boolean {
     return !!this.shareFileReady;
   }
 
   constructor(private api: ApiService, private notify: NotificationService, private cdr: ChangeDetectorRef,
-              private destroyRef: DestroyRef) {}
+              private destroyRef: DestroyRef, private market: MarketService) {}
 
   ngOnChanges(ch: SimpleChanges) {
     if (ch['requestId'] || ch['version']) this.load();
+    if (ch['requestId'] && !this.rates && !this.readonly) {
+      this.api.getCurrencyRates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: r => { this.rates = r; this.cdr.markForCheck(); }, error: () => {},
+      });
+    }
   }
+
+  get marketCode(): string { return this.market.value === 'KZ' ? 'KZT' : 'RUB'; }
+  curs(): string[] { return priceCurrencies(this.marketCode, ourRatesOf(this.rates)); }
 
   shortDate(iso: string | null): string {
     return dateText(iso).slice(0, 5);
@@ -198,7 +222,9 @@ export class PrPricesComponent implements OnChanges {
   cellText(c: PriceCell): string {
     switch (c.state) {
       // «💡» — цена распознана из ответа и ещё не сверена (признак строки ответа, V30)
-      case 'PRICE': return priceText(c.price) + (c.best ? ' ★' : '') + (c.auto ? ' 💡' : '');
+      // в чужой валюте — «150 000 руб. → 900 000»: исходная цена и она же в валюте рынка по нашему курсу
+      case 'PRICE': return (c.currency && c.original != null ? `${priceText(c.original)} ${curShort(c.currency)} → ` : '')
+        + priceText(c.price) + (c.best ? ' ★' : '') + (c.auto ? ' 💡' : '');
       case 'NO_PRICE': return 'нет цены';
       case 'DECLINED': return 'отказ';
       case 'BOUNCED': return 'не доставлено';
@@ -233,7 +259,10 @@ export class PrPricesComponent implements OnChanges {
     this.editError = '';
     // 💡 — признак строки ответа, а не текст примечания (V30): «Сохранить» снимает его; «Срок…» и «Контекст…» остаются
     const note = cell.note || '';
-    this.editing = { line, cell, supplier, price: cell.price == null ? '' : numText(cell.price), note };
+    const foreign = !!cell.currency && cell.original != null;
+    const shown = foreign ? cell.original : cell.price;
+    this.editing = { line, cell, supplier, price: shown == null ? '' : numText(shown), note,
+                     currency: foreign ? cell.currency! : this.marketCode };
     this.shareFileReady = null;
     this.sharePreparing = false;
   }
@@ -297,9 +326,13 @@ export class PrPricesComponent implements OnChanges {
       this.editError = 'Цена — число не меньше нуля';
       return;
     }
+    const market = this.marketCode;
+    // в чужой валюте — исходная цена: тенге считает сервер по нашему курсу (спека 2026-10-23 §4.4)
+    const body = ed.currency && ed.currency !== market && price != null
+      ? { itemId: ed.cell.itemId, responsePrice: null, responseNote: ed.note.trim() || null, responseCurrency: ed.currency, responseOriginal: price }
+      : { itemId: ed.cell.itemId, responsePrice: price, responseNote: ed.note.trim() || null, responseCurrency: market };
     this.busy = true;
-    this.api.updatePriceRequestResponses(ed.cell.priceRequestId,
-      [{ itemId: ed.cell.itemId, responsePrice: price, responseNote: ed.note.trim() || null }])
+    this.api.updatePriceRequestResponses(ed.cell.priceRequestId, [body])
       .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: () => { this.busy = false; this.editing = null; this.notify.success('Ответ сохранён'); this.load(); this.changed.emit(); },
         error: e => { this.busy = false; this.editError = errorText(e); this.cdr.markForCheck(); },

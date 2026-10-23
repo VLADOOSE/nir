@@ -24,11 +24,12 @@ import { ClientOfferItemsComponent } from './client-offer-items.component';
 import { ClientOfferPreviewComponent } from './client-offer-preview.component';
 import { OfferFileViewComponent } from './offer-file-view.component';
 import { EmailComposerComponent } from '../../shared/email-composer.component';
+import { curShort, dayMonth, rateText } from '../../shared/rates';
 
 /** Пределы общей наценки — те же, что проверяет сервер (ClientOfferUpdateRequest). */
 /** Закупка и ссылка строки на ответ — по ним «Подставить» отличает свои правки строк от набранного во время запроса. */
 function appliedKey(it: OfferItem): string {
-  return (it.purchasePrice ?? '') + '|' + (it.priceRequestItemId ?? '');
+  return (it.purchasePrice ?? '') + '|' + (it.priceRequestItemId ?? '') + '|' + (it.priceListItemId ?? '');
 }
 
 const MIN_MARKUP = -100;
@@ -89,6 +90,11 @@ const MAX_MARKUP = 1000;
           <div class="new-prices" *ngIf="auth.isAdmin() && o.status === 'DRAFT' && newPrices.length && !conflict" role="status">
             <span>Пришли новые цены по {{ newPrices.length }} {{ newPrices.length === 1 ? 'позиции' : 'позициям' }}</span>
             <button type="button" class="btn btn-line" [disabled]="busy || conflict || applying" (click)="applyNewPrices()">{{ applying ? 'Подставляю…' : 'Подставить' }}</button>
+          </div>
+          <!-- наш курс сменили — закупка строк в чужой валюте по прежнему курсу, пока не нажали «Пересчитать» (спека §4.5) -->
+          <div class="new-prices" *ngIf="auth.isAdmin() && o.status === 'DRAFT' && !conflict && staleRates(o) as st" role="status">
+            <span>Наш курс {{ st.label }} — в {{ st.count }} {{ st.count === 1 ? 'строке' : 'строках' }} закупка по прежнему курсу</span>
+            <button type="button" class="btn btn-line" [disabled]="busy || conflict || applying" (click)="recalcRates(o)">Пересчитать</button>
           </div>
           <fieldset [disabled]="!auth.isAdmin() || conflict">
             <div class="card">
@@ -178,8 +184,13 @@ const MAX_MARKUP = 1000;
                 <div><dt>Выручка без НДС</dt><dd>{{ money(o.totals.revenueNet) }}</dd></div>
                 <div><dt>НДС с продажи</dt><dd>{{ money(o.totals.vatTotal) }}</dd></div>
                 <div><dt>Прибыль</dt><dd [class.neg]="o.totals.profit < 0">{{ money(o.totals.profit) }}</dd></div>
+                <ng-container *ngIf="o.totals.purchaseToday != null">
+                  <div><dt>Закупка по курсу сегодня</dt><dd>{{ money(o.totals.purchaseToday) }}</dd></div>
+                  <div><dt>Прибыль по курсу сегодня</dt><dd [class.neg]="(o.totals.profitToday ?? 0) < 0">{{ money(o.totals.profitToday) }}</dd></div>
+                </ng-container>
                 <div><dt>Средняя наценка</dt><dd>{{ o.totals.markupAvg == null ? '—' : numText(o.totals.markupAvg) + '%' }}</dd></div>
               </dl>
+              <p class="hint" *ngIf="todayLine(o) as t">{{ t }}</p>
               <p class="hint warn" *ngIf="o.totals.noPurchaseCount">Строк без цены закупки: {{ o.totals.noPurchaseCount }} — их прибыль не посчитана</p>
               <label class="wide">Заметка для себя <textarea rows="2" maxlength="4000" [(ngModel)]="o.internalNote" (ngModelChange)="changed()"></textarea></label>
             </div>
@@ -384,6 +395,35 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   dateText = dateText;
   money = money;
   numText = numText;
+
+  /** «Курс сегодня (НБ РК): руб. 5,48 на 23.10» — у КП со строками в чужой валюте. */
+  todayLine(o: ClientOffer): string | null {
+    const used = new Set(o.items.filter(it => it.kind === 'ITEM' && it.purchaseCurrency).map(it => it.purchaseCurrency!));
+    const parts = [...used].map(c => o.todayRates?.[c] ? `${curShort(c)} ${rateText(o.todayRates[c].rate)} на ${dayMonth(o.todayRates[c].date)}` : null)
+      .filter((x): x is string => !!x);
+    return parts.length ? 'Курс сегодня (НБ РК): ' + parts.join(', ') : null;
+  }
+
+  /** Строки в чужой валюте, у которых курс строки ≠ нашему текущему (спека §4.5): сам курс без «Пересчитать» не меняется. */
+  staleRates(o: ClientOffer): { label: string; count: number } | null {
+    const ours = o.ourRates ?? {};
+    const stale = o.items.filter(it => it.kind === 'ITEM' && it.purchaseCurrency && it.purchaseRate != null
+      && ours[it.purchaseCurrency] != null && ours[it.purchaseCurrency] !== it.purchaseRate);
+    if (!stale.length) return null;
+    const c = stale[0].purchaseCurrency!;
+    return { label: `${curShort(c)} сменился: ${rateText(stale[0].purchaseRate)} → ${rateText(ours[c])}`, count: stale.length };
+  }
+
+  recalcRates(o: ClientOffer) {
+    const ours = o.ourRates ?? {};
+    for (const it of o.items) {
+      const r = it.purchaseCurrency ? ours[it.purchaseCurrency] : undefined;
+      if (it.kind !== 'ITEM' || r == null || it.purchaseOriginal == null || it.purchaseRate === r) continue;
+      it.purchaseRate = r;
+      it.purchasePrice = Math.round(it.purchaseOriginal * r * 100) / 100;
+    }
+    this.changed();   // обычное автосохранение: сервер примет текущий наш курс и пересчитает закупку
+  }
   vatLabel = vatLabel;
 
   private id = 0;
@@ -593,6 +633,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
     o.fileBaseName = r.fileBaseName;
     o.updatedAt = r.updatedAt;
     o.facilityName = r.facilityName;
+    o.ourRates = r.ourRates;
+    o.todayRates = r.todayRates;
     const byKey = new Map(r.items.map(it => [it.key, it]));
     for (const it of o.items) {
       const s = byKey.get(it.key);
@@ -604,6 +646,16 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         if ((it.priceRequestItemId ?? null) === (s.priceRequestItemId ?? null)) {
           it.purchaseUnverified = !!s.purchaseUnverified;
           it.replyRequestId = s.replyRequestId ?? null;
+        }
+        // закупку в чужой валюте считает сервер — берём его число, если экран не сменил исходную цену за время запроса
+        if ((it.purchaseCurrency ?? null) === (s.purchaseCurrency ?? null) && (it.purchaseOriginal ?? null) === (s.purchaseOriginal ?? null)
+            && s.purchaseCurrency) {
+          it.purchasePrice = s.purchasePrice;
+          it.purchaseRate = s.purchaseRate ?? null;
+        }
+        if ((it.priceListItemId ?? null) === (s.priceListItemId ?? null)) {
+          it.priceListId = s.priceListId ?? null;
+          it.priceListLabel = s.priceListLabel ?? null;
         }
         // регистрация, собранная сервером (текст подтверждённой, запись реестра), — только если экран её не сменил за время запроса
         if (it.registrationStatus === s.registrationStatus && (it.regNumber ?? null) === (s.regNumber ?? null)) {
@@ -631,7 +683,8 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
   /** Плашка новых цен — при открытии и после сохранения; сбой — без плашки (КП работает и без неё). */
   private checkNewPrices() {
     const o = this.offer;
-    if (!o || o.status !== 'DRAFT' || !o.tenderId || !this.auth.isAdmin()) { this.newPrices = []; return; }
+    // строки прайсов — у любого черновика (решение плана 17), не только у КП из заявки
+    if (!o || o.status !== 'DRAFT' || !this.auth.isAdmin()) { this.newPrices = []; return; }
     const gen = this.gen;
     const seq = ++this.newPricesSeq;
     this.api.getClientOfferNewPrices(o.id).subscribe({
@@ -705,6 +758,12 @@ export class ClientOfferEditorComponent implements OnInit, OnDestroy {
         it.distributorId = s.distributorId;
         it.purchaseUnverified = !!s.purchaseUnverified;
         it.replyRequestId = s.replyRequestId ?? null;
+        it.purchaseCurrency = s.purchaseCurrency ?? null;
+        it.purchaseOriginal = s.purchaseOriginal ?? null;
+        it.purchaseRate = s.purchaseRate ?? null;
+        it.priceListItemId = s.priceListItemId ?? null;
+        it.priceListId = s.priceListId ?? null;
+        it.priceListLabel = s.priceListLabel ?? null;
       }
     }
   }

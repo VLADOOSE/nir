@@ -19,6 +19,7 @@ import {
   ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
 } from '../../shared/client-offer';
 import { errorText } from '../../shared/error-text';
+import { curShort, priceCurrencies, rateText } from '../../shared/rates';
 
 /** Пределы наценки — те же, что проверяет сервер (ClientOfferService): вне них отказало бы всё автосохранение, а не одно поле. */
 const MIN_MARKUP = -100;
@@ -134,11 +135,18 @@ function rowKey(it: OfferItem): string {
               <!-- подсказка — на подписи, не на всей ячейке: title строки («Нет цены закупки…») над полем остаётся -->
               <label class="c-buy"><span class="cap" [title]="BUY_HINT">Закупка</span>
                 <!-- 💡 внутри поля справа: в широкой раскладке подпись скрыта, а значок после поля перенёс бы ряд -->
-                <span class="buy-wrap"><input inputmode="decimal" [value]="numText(it.purchasePrice)" (change)="setPurchase(it, $event)" [disabled]="readonly"
+                <span class="buy-row"><span class="buy-wrap"><input inputmode="decimal" [value]="numText(isForeign(it) ? it.purchaseOriginal : it.purchasePrice)"
+                       (change)="setPurchase(it, $event)" [disabled]="readonly"
                        placeholder="—" [class.with-unv]="it.purchaseUnverified"
                        [attr.title]="it.purchaseUnverified ? UNV_HINT : null"
                        [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1) + (it.purchaseUnverified ? ', не сверена' : '')" />
-                  <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span></span></label>
+                  <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span></span>
+                  <!-- валюта закупки: валюта рынка и валюты с нашим курсом (спека 2026-10-23 §4.5) -->
+                  <select class="buy-cur" *ngIf="!readonly && curs().length > 1" [value]="curOf(it)" (change)="setPurchaseCur(it, $event)"
+                          [attr.aria-label]="'Валюта закупки, строка ' + (i + 1)">
+                    <option *ngFor="let c of curs()" [value]="c" [selected]="c === curOf(it)">{{ short(c) }}</option>
+                  </select><span class="buy-cur-ro" *ngIf="(readonly || curs().length <= 1) && isForeign(it)">{{ short(curOf(it)) }}</span></span>
+                <span class="buy-conv" *ngIf="isForeign(it) && it.purchaseOriginal != null">= {{ numText(it.purchasePrice) }} по курсу {{ rateText(it.purchaseRate) }}</span></label>
               <label class="c-mk"><span class="cap">Наценка, %</span>
                 <input inputmode="decimal" [value]="markupText(it)" [placeholder]="it.priceOverride != null || fileMode ? '—' : numText(offer.defaultMarkupPct)"
                        [disabled]="readonly || fileMode || it.priceOverride != null" (change)="setMarkup(it, $event)"
@@ -327,6 +335,11 @@ function rowKey(it: OfferItem): string {
     .supplier { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; position: relative; }
     .supplier label { flex: 1 1 220px; }
     .reply-link { align-self: center; font-size: 13px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+    .buy-row { display: flex; gap: 4px; align-items: center; min-width: 0; }
+    .buy-row .buy-wrap { flex: 1 1 auto; min-width: 0; }
+    .buy-cur { width: auto; flex: none; padding: 4px 6px; }
+    .buy-cur-ro { flex: none; font-size: 12px; color: var(--text-muted); }
+    .buy-conv { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
     .buy-wrap { position: relative; display: block; }
     .buy-wrap input.with-unv { padding-right: 24px; }
     .unv { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none; }
@@ -430,6 +443,40 @@ export class ClientOfferItemsComponent {
    */
   readonly BUY_HINT = 'Цена закупки за единицу — как в счёте поставщика';
   readonly UNV_HINT = 'Цена закупки распознана из ответа поставщика и ещё не сверена — сверьте на экране «Ответ поставщика»';
+  readonly short = curShort;
+  readonly rateText = rateText;
+
+  private get market(): string { return this.offer.currency; }
+  curs(): string[] { return priceCurrencies(this.market, this.offer.ourRates); }
+  curOf(it: OfferItem): string { return it._cur ?? it.purchaseCurrency ?? this.market; }
+  isForeign(it: OfferItem): boolean { return this.curOf(it) !== this.market; }
+
+  /** Ручная правка закупки снимает ссылку на ответ и строку прайса — и 💡 вместе с ними (решение плана 6). */
+  private unlink(it: OfferItem) {
+    it.priceRequestItemId = null;
+    it.purchaseUnverified = false;
+    it.replyRequestId = null;
+    it.priceListItemId = null;
+    it.priceListId = null;
+    it.priceListLabel = null;
+  }
+
+  /** Смена валюты: в валюту рынка — рубли снимаются, закупка остаётся; в чужую — ждём цену (без неё сервер ответил бы 400). */
+  setPurchaseCur(it: OfferItem, ev: Event) {
+    const c = (ev.target as HTMLSelectElement).value;
+    if (c === this.market) {
+      it._cur = null;
+      if (it.purchaseCurrency) {
+        it.purchaseCurrency = null;
+        it.purchaseOriginal = null;
+        it.purchaseRate = null;
+        this.unlink(it);
+        this.emit();
+      }
+    } else {
+      it._cur = c;
+    }
+  }
   readonly units = UNIT_SUGGESTIONS;
   money = money;
   numText = numText;
@@ -728,6 +775,8 @@ export class ClientOfferItemsComponent {
     // Регистрация копируется как есть: «РУ ✓» и «РУ?» с № сервер перепроверит у новой строки (решение плана 3)
     copy.priceRequestItemId = null; copy.tenderLotId = null; copy.distributorId = null;   // у новой строки позиции нет: ссылка дала бы 400 на каждое автосохранение
     copy.purchaseUnverified = false; copy.replyRequestId = null;
+    // валюта, исходная цена и курс закупки — как у строки (сервер примет курс строки); ссылка на строку прайса — нет
+    copy.priceListItemId = null; copy.priceListId = null; copy.priceListLabel = null;
     // Ставку, которой больше нет в настройках рынка, сервер оставляет только уже сохранённой строке: копия — новая
     // строка, с такой ставкой каждое автосохранение получало бы 400. Пока профиль не пришёл, ставки не известны — не трогаем.
     if (copy.kind === 'ITEM' && this.profile && !this.hasRate(copy.vatRate)) copy.vatRate = this.profile.vatDefault ?? null;
@@ -822,11 +871,21 @@ export class ClientOfferItemsComponent {
       this.notify.error(v === undefined ? 'Цена закупки — числом' : 'Цена закупки не может быть отрицательной');
       return;
     }
-    if (v !== it.purchasePrice) {   // ручная правка снимает ссылку на ответ (решение плана 6) — и 💡 вместе с ней
-      it.priceRequestItemId = null;
-      it.purchaseUnverified = false;
-      it.replyRequestId = null;
+    if (this.isForeign(it)) {
+      // в чужой валюте — исходная цена и курс: строки (та же валюта), иначе наш; закупку в валюте рынка пересчитает сервер
+      const cur = this.curOf(it);
+      if (v !== it.purchaseOriginal || cur !== it.purchaseCurrency) this.unlink(it);
+      const rate = cur === it.purchaseCurrency && it.purchaseRate != null ? it.purchaseRate : this.offer.ourRates?.[cur] ?? null;
+      it.purchaseCurrency = v == null ? null : cur;
+      it.purchaseOriginal = v;
+      it.purchaseRate = v == null ? null : rate;
+      it.purchasePrice = v == null || rate == null ? null : Math.round(v * rate * 100) / 100;
+      it._cur = v == null ? cur : null;
+      input.value = numText(v);
+      this.emit();
+      return;
     }
+    if (v !== it.purchasePrice) this.unlink(it);   // ручная правка снимает ссылку на ответ (решение плана 6) — и 💡 вместе с ней
     it.purchasePrice = v;
     input.value = numText(v);
     this.emit();

@@ -62,6 +62,8 @@ export const routes: Routes = [
       { path: 'email-template', component: EmailTemplateComponent, canActivate: [adminGuard] },
       { path: 'reply-templates', canActivate: [adminGuard],
         loadComponent: () => import('./pages/reply-templates/reply-templates.component').then(m => m.ReplyTemplatesComponent) },
+      { path: 'currency-rates', canActivate: [adminGuard],
+        loadComponent: () => import('./pages/currency-rates/currency-rates.component').then(m => m.CurrencyRatesComponent) },
       { path: 'company-profile', canActivate: [adminGuard],
         loadComponent: () => import('./pages/company-profile/company-profile.component').then(m => m.CompanyProfileComponent) },
       { path: 'devices', component: DevicesComponent, canActivate: [adminGuard] },

@@ -57,6 +57,16 @@ export interface OfferItem {
   purchaseUnverified?: boolean;
   /** запрос цен ответа — ссылка «Ответ поставщика ›» */
   replyRequestId?: number | null;
+  /** Закупка в чужой валюте (спека 2026-10-23 §4.5): исходная цена и курс; закупку в валюте рынка считает сервер. */
+  purchaseCurrency?: string | null;
+  purchaseOriginal?: number | null;
+  purchaseRate?: number | null;
+  /** Строка прайса, из которой закупка (либо она, либо ответ поставщика); прайс и подпись — ставит сервер. */
+  priceListItemId?: number | null;
+  priceListId?: number | null;
+  priceListLabel?: string | null;
+  /** только экран: валюта, выбранная до ввода цены (на сервер не уходит — Jackson её пропустит) */
+  _cur?: string | null;
   markupPct: number | null;
   priceOverride: number | null;
   vatRate: number | null;
@@ -82,6 +92,8 @@ export interface VatLine { rate: number; amount: number; }
 export interface OfferTotals {
   sum: number; vat: VatLine[]; vatTotal: number; purchase: number; cost: number; revenueNet: number;
   profit: number; markupAvg: number | null; itemCount: number; noPurchaseCount: number; unconfirmedRegistrationCount: number;
+  /** Закупка и прибыль по курсу сегодня (спека 2026-10-23 §4.5); пусто — строк в чужой валюте нет или курса сегодня нет. */
+  purchaseToday: number | null; profitToday: number | null;
 }
 
 export interface ClientOffer {
@@ -98,6 +110,9 @@ export interface ClientOffer {
   signoff: Signoff; signoffContacts: boolean; withStamp: boolean; internalNote: string | null;
   version: number; currency: string; items: OfferItem[]; totals: OfferTotals; fileBaseName: string;
   createdBy: string | null; createdAt: string; updatedAt: string; sentAt: string | null;
+  /** Наш курс по валютам рынка и курс сегодня (спека 2026-10-23 §4.5). */
+  ourRates?: Record<string, number>;
+  todayRates?: Record<string, { rate: number; date: string }>;
 }
 
 export type OfferOrigin = 'BUILDER' | 'FILE';

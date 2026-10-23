@@ -1,10 +1,10 @@
 /** «Ответ поставщика» (спека 2026-10-15 §4.1): ответ GET /api/price-requests/{id}/reply. */
-export type ReplyRole = 'NUMBER' | 'NAME' | 'ARTICLE' | 'MANUFACT' | 'QUANTITY' | 'UNIT' | 'PRICE' | 'SUM' | 'VAT' | 'CURRENCY' | 'NOTE' | 'IGNORE';
+export type ReplyRole = 'NUMBER' | 'NAME' | 'ARTICLE' | 'MANUFACT' | 'QUANTITY' | 'UNIT' | 'PRICE' | 'SUM' | 'VAT' | 'CURRENCY' | 'REG' | 'NOTE' | 'IGNORE';
 
 export const REPLY_ROLE_OPTIONS: { v: ReplyRole; l: string }[] = [
   { v: 'NAME', l: 'Наименование' }, { v: 'ARTICLE', l: 'Артикул / модель' }, { v: 'MANUFACT', l: 'Бренд' },
   { v: 'QUANTITY', l: 'Кол-во' }, { v: 'UNIT', l: 'Ед. изм.' }, { v: 'PRICE', l: 'Цена' }, { v: 'SUM', l: 'Сумма' },
-  { v: 'VAT', l: 'НДС' }, { v: 'CURRENCY', l: 'Валюта' }, { v: 'NOTE', l: 'Примечание' }, { v: 'NUMBER', l: '№' },
+  { v: 'VAT', l: 'НДС' }, { v: 'CURRENCY', l: 'Валюта' }, { v: 'REG', l: 'РУ' }, { v: 'NOTE', l: 'Примечание' }, { v: 'NUMBER', l: '№' },
   { v: 'IGNORE', l: 'Игнорировать' },
 ];
 
@@ -24,6 +24,8 @@ export interface ReplyPosition {
   itemId: number; ordinal: number; name: string; brand: string | null; model: string | null; quantity: number | null;
   unit: string | null; price: number | null; auto: boolean; note: string | null; fileId: number | null; fileRow: number | null;
   row: ReplyRowRef | null; suggestion: ReplyRowRef | null; flags: string[];
+  /** Цена пришла в чужой валюте (V44): валюта, исходная цена, курс; today — она же по курсу НБ РК сегодня. */
+  currency: string | null; original: number | null; rate: number | null; today: number | null;
 }
 export interface ReplySource {
   type: 'FILE' | 'EMAIL'; fileId: number | null; inboundId: number | null; name: string; kind: string | null;
@@ -84,7 +86,11 @@ export function currencyIn(code: string | null): string {
  * Курс выбранного файла в чужой валюте: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на
  * рынке, suggestedAt — когда его вписали.
  */
-export interface ReplyRate { currency: string; value: number | null; suggestion: number | null; suggestedAt: string | null; }
+export interface ReplyRate {
+  currency: string; value: number | null; suggestion: number | null; suggestedAt: string | null;
+  /** Наш курс валюты и курс НБ РК сегодня (спека 2026-10-23 §4.4). */
+  our: number | null; today: number | null; todayDate: string | null;
+}
 /** Ответ на курс или валюту файла: вид и итог — подставлено, снято, ручных не тронуто; closed — запрос закрыт, цены не меняли. */
 export interface SupplierReplyRateResult { view: SupplierReply; applied: number; removed: number; keptManual: number; closed: boolean; }
 export interface SupplierReply {

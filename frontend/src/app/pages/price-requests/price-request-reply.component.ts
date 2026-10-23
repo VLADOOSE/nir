@@ -13,6 +13,8 @@ import { errorText } from '../../shared/error-text';
 import { MIXED_CURRENCY, backLink, currencyIn, currencyLabel, currencyName } from '../../shared/supplier-reply';
 import type { ReplyPosition, ReplyTableRow, SupplierReply, SupplierReplyRateResult } from '../../shared/supplier-reply';
 import { ReplyDocumentComponent } from './reply-document.component';
+import { curShort, dayMonth, ourRatesOf, priceCurrencies } from '../../shared/rates';
+import type { RatesView } from '../../shared/rates';
 
 const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGrouping: false });
 
@@ -53,9 +55,11 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
                        aria-label="Курс" (keydown.enter)="setRate(rateEl.value)" /> {{ label(v.head.currency) }}</label>
               <button type="button" class="btn btn-primary" [disabled]="busy" (click)="setRate(rateEl.value)">{{ rt.value == null ? 'Пересчитать' : 'Пересчитать заново' }}</button>
               <button type="button" class="btn btn-line" *ngIf="rt.value != null" [disabled]="busy" (click)="clearRate()">Снять курс</button>
-              <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
+              <span class="rate-h" *ngIf="rt.value == null && rt.suggestion != null && rt.our == null">в прошлый раз — {{ rateText(rt.suggestion) }}<ng-container *ngIf="rt.suggestedAt"> ({{ date(rt.suggestedAt) }})</ng-container></span>
             </ng-container>
             <ng-template #rateRead><span *ngIf="rt.value != null">1 {{ label(rt.currency) }} = {{ rateText(rt.value) }} {{ label(v.head.currency) }}</span></ng-template>
+            <span class="rate-h" *ngIf="rt.our != null">наш курс {{ rateText(rt.our) }}<ng-container *ngIf="rt.today != null">
+              · сегодня {{ rateText(rt.today) }}<ng-container *ngIf="rt.todayDate"> ({{ dm(rt.todayDate) }})</ng-container></ng-container></span>
           </div>
           <!-- КП-буклет без таблицы (АМИКО, Шармстар): цены в тексте документа — подсказка у запроса на одну позицию, не подстановка -->
           <div class="rate tprices" *ngIf="v.textPrices?.length">
@@ -85,8 +89,16 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
             <div class="p-flags" *ngIf="p.flags.length"><span class="flag" *ngFor="let f of p.flags">⚠ {{ f }}</span></div>
             <div class="p-ctl">
               <label>Цена за ед.
-                <input inputmode="decimal" [value]="num(p.price)" (change)="savePrice(p, $event)" [disabled]="!admin" placeholder="—" />
+                <span class="price-cur">
+                  <input inputmode="decimal" [value]="num(cur(p) === p.currency ? p.original : p.price)" (change)="savePrice(p, $event)"
+                         [disabled]="!admin" placeholder="—" />
+                  <select *ngIf="admin && curs().length > 1" [value]="cur(p)" (change)="setCur(p, $event)" aria-label="Валюта цены">
+                    <option *ngFor="let c of curs()" [value]="c" [selected]="c === cur(p)">{{ short(c) }}</option>
+                  </select>
+                </span>
               </label>
+              <span class="conv" *ngIf="p.currency && p.original != null">= {{ p.price | money:2 }} по нашему курсу {{ rateText(p.rate) }}<ng-container
+                    *ngIf="p.today != null"> · сегодня {{ p.today | money:2 }}</ng-container></span>
               <span class="mark" *ngIf="p.auto" title="Цена распознана из ответа и ещё не сверена">💡</span>
               <!-- поля и действия позиции не блокируются на время сохранения: каждое — запись одной позиции, а заблокированный
                    элемент на пути Tab ронял фокус (ввод цен по PDF подряд — живая проверка после ревью) -->
@@ -148,6 +160,9 @@ const RATE = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGroup
     .p-ctl label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-muted); }
     .p-ctl input { width: 150px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
     .p-ctl input:disabled { background: var(--surface-2); }
+    .price-cur { display: flex; gap: 4px; }
+    .price-cur select { width: auto; }
+    .conv { font-size: 12px; color: var(--text-muted); }
     .mark { font-size: 16px; padding-bottom: 6px; }
     .pick { max-width: 260px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 13px; }
     .p-note { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
@@ -187,6 +202,12 @@ export class PriceRequestReplyComponent implements OnInit {
   /** Номер загрузки и файл, который просили: ответ курса, обогнанный сменой файла, не подменяет выбранный файл. */
   private seq = 0;
   private target: number | null = null;
+  /** Курсы рынка — переключатель валюты цены (валюта рынка и валюты с нашим курсом). */
+  rates: RatesView | null = null;
+  /** Валюта, выбранная у позиции до ввода цены. */
+  private curFor = new Map<number, string>();
+  readonly short = curShort;
+  readonly dm = dayMonth;
 
   constructor(private route: ActivatedRoute, private api: ApiService, private auth: AuthService, private notify: NotificationService,
               private cdr: ChangeDetectorRef, private destroyRef: DestroyRef) {}
@@ -194,6 +215,10 @@ export class PriceRequestReplyComponent implements OnInit {
   get admin(): boolean { return this.auth.isAdmin(); }
 
   ngOnInit() {
+    // без курсов (ошибка, оператор) — переключатель только с валютой рынка
+    this.api.getCurrencyRates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: r => { this.rates = r; this.cdr.markForCheck(); }, error: () => {},
+    });
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p => {
       this.id = Number(p.get('id'));
       this.view = null;
@@ -295,12 +320,27 @@ export class PriceRequestReplyComponent implements OnInit {
 
   private prices(n: number) { return `${n} ${plural(n, 'цену', 'цены', 'цен')}`; }
 
+  cur(p: ReplyPosition): string { return this.curFor.get(p.itemId) ?? p.currency ?? this.view?.head.currency ?? ''; }
+  curs(): string[] { return priceCurrencies(this.view?.head.currency ?? '', ourRatesOf(this.rates)); }
+
+  setCur(p: ReplyPosition, ev: Event) {
+    this.curFor.set(p.itemId, (ev.target as HTMLSelectElement).value);
+    this.cdr.markForCheck();
+  }
+
+  /** Цена в чужой валюте — исходная цена, тенге считает сервер по нашему курсу (спека 2026-10-23 §4.4). */
   savePrice(p: ReplyPosition, ev: Event) {
     const input = ev.target as HTMLInputElement;
     const text = input.value.trim();
     const v = text === '' ? null : parseNum(text);
     if (text !== '' && v == null) { this.notify.error('Цена — число, например 45 000 или 45000,50'); input.value = numText(p.price); return; }
-    this.put([{ itemId: p.itemId, responsePrice: v, responseNote: p.note }]);
+    const market = this.view?.head.currency ?? null;
+    const cur = this.cur(p);
+    if (cur && market && cur !== market && v != null) {
+      this.put([{ itemId: p.itemId, responsePrice: null, responseNote: p.note, responseCurrency: cur, responseOriginal: v }]);
+    } else {
+      this.put([{ itemId: p.itemId, responsePrice: v, responseNote: p.note, responseCurrency: market }]);
+    }
   }
 
   pickRow(p: ReplyPosition, ev: Event) {

@@ -147,6 +147,11 @@ export interface PriceCell {
   manual: boolean;
   /** 💡 — цена из разбора ответа, ещё не сверена. */
   auto: boolean;
+  /** Цена пришла в чужой валюте (V44): исходная цена и курс; today — она же по курсу НБ РК сегодня. */
+  currency: string | null;
+  original: number | null;
+  rate: number | null;
+  today: number | null;
 }
 export interface PriceLine {
   lotId: number;

@@ -15,6 +15,7 @@ import type { LotModelFit, LotModelSearch } from '../shared/lot-model';
 import type { AiAnswerResult } from '../shared/ai-answer';
 import type { CustomerContacts, CustomerHistory, LotResultView, ResultsCheck } from '../shared/tender-results';
 import type { MarketHint, MarketPrice, MarketQuery } from '../shared/market-price';
+import type { RatesView } from '../shared/rates';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -793,6 +794,14 @@ export class ApiService {
   }
   saveReplyTemplates(body: { templates: ReplyTemplate[]; signature: string }): Observable<ReplyTemplatesState> {
     return this.http.put<ReplyTemplatesState>(`${this.base}/reply-templates`, body);
+  }
+
+  // === Курсы валют (спека 2026-10-23 §4) ===
+  getCurrencyRates(): Observable<RatesView> {
+    return this.http.get<RatesView>(`${this.base}/currency-rates`);
+  }
+  saveCurrencyRates(rates: { currency: string; ourRate: number | null }[]): Observable<RatesView> {
+    return this.http.put<RatesView>(`${this.base}/currency-rates`, { rates });
   }
 
   // === Готовое КП (спека 2026-10-19) ===
