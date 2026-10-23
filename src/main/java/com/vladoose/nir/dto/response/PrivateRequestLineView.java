@@ -18,4 +18,6 @@ public class PrivateRequestLineView {
     private RegistryCandidateResponse registry;
     /** по позиции есть запросы цен — удалить нельзя */
     private boolean requested;
+    /** «📒 по прайсу» (спека 2026-10-23 §6.2 п. 2): строки текущих прайсов поставщиков — лучшая первой; пусто — нет. */
+    private PriceHint priceList;
 }

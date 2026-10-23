@@ -15,6 +15,7 @@ import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.Card;
 import com.vladoose.nir.service.tendernotify.NewTenderComposer.LotLine;
 import com.vladoose.nir.util.ErrorText;
+import com.vladoose.nir.service.pricelist.PriceLines;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -144,6 +145,14 @@ public class NewTenderNotifier {
         this.marketLines = marketLines;
     }
 
+    private PriceLines priceLines;
+
+    /** Строка «закупка по прайсу ≈ …» в «🏥 Новый тендер» (спека 2026-10-23 §6.2 п. 4); нет бина (тесты) — без строки. */
+    @Autowired(required = false)
+    public void setPriceLines(PriceLines priceLines) {
+        this.priceLines = priceLines;
+    }
+
     /**
      * Зовётся в конце прогона из потока импорта (рынок KZ уже стоит, §6). Ничего не бросает: сбой уведомления
      * не должен ронять итог прогона. synchronized — goszakup и СК-Фармация заканчивают в разных потоках.
@@ -173,6 +182,13 @@ public class NewTenderNotifier {
                 market = marketLines.lines(p.lotIds());
             } catch (RuntimeException e) {
                 log.warn("Telegram: строки цены рынка к новым тендерам не собраны: {}", ErrorText.of(e));
+            }
+        }
+        if (priceLines != null) {   // «закупка по прайсу ≈ …» рядом со строкой рынка (спека 2026-10-23 §6.2 п. 4)
+            try {
+                market = PriceLines.merge(market, priceLines.lines(p.lotIds()));
+            } catch (RuntimeException e) {
+                log.warn("Telegram: строки закупки по прайсу к новым тендерам не собраны: {}", ErrorText.of(e));
             }
         }
         Map<Long, String> lines = market;

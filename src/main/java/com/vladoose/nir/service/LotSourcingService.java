@@ -2,20 +2,27 @@ package com.vladoose.nir.service;
 
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.response.LotSourcingResponse;
+import com.vladoose.nir.dto.response.PriceHint;
+import com.vladoose.nir.dto.response.PriceHintRow;
 import com.vladoose.nir.dto.response.RegistryCandidateResponse;
 import com.vladoose.nir.entity.Distributor;
 import com.vladoose.nir.entity.EquipmentType;
 import com.vladoose.nir.entity.TenderLot;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.mapper.DistributorMapper;
+import com.vladoose.nir.service.execution.ExecutionTexts;
+import com.vladoose.nir.service.pricelist.LotPriceHints;
 import com.vladoose.nir.util.BrandMatch;
 import com.vladoose.nir.util.ComplectTermExtractor;
 import com.vladoose.nir.util.LotQueryTokenizer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -60,6 +67,14 @@ public class LotSourcingService {
         this.registryMatchService = registryMatchService;
         this.distributorMapper = distributorMapper;
         this.classifier = classifier;
+    }
+
+    private LotPriceHints lotPriceHints;
+
+    /** Метка «прайс: …» у поставщика с товаром лота в прайсе; нет бина (тесты, собранные руками) — без метки. */
+    @Autowired(required = false)
+    public void setLotPriceHints(LotPriceHints lotPriceHints) {
+        this.lotPriceHints = lotPriceHints;
     }
 
     private record BrandSource(Long lotId, String text, String via) {}
@@ -144,6 +159,13 @@ public class LotSourcingService {
             }
         }
 
+        // поставщики с товаром лота в прайсе (спека 2026-10-23 §6.2 п. 3) — только одно-лотовый режим
+        Map<Long, PriceHintRow> priceRows = new HashMap<>();
+        if (singleLot && lotPriceHints != null) {
+            PriceHint h = lotPriceHints.forLots(MarketContext.get(), lots).get(lots.get(0).getId());
+            if (h != null) for (PriceHintRow r : h.rows()) priceRows.putIfAbsent(r.distributorId(), r);
+        }
+
         // скоринг
         List<LotSourcingResponse.Entry> entries = new ArrayList<>();
         for (Distributor d : distributorService.findAll()) {
@@ -175,13 +197,16 @@ public class LotSourcingService {
             // завод бренда — первым, с меткой «завод» (спека 2026-10-21-tender-telegram-bot §10 п. 2; как частные заявки)
             boolean maker = brandHit && d.isManufacturer();
             if (maker) reasons.add(0, new LotSourcingResponse.Reason("MAKER", "завод"));
-            double score = (brandHit ? 1.0 : 0.0) + (typeHit ? 0.7 : 0.0) + (brandHit && typeHit ? 0.3 : 0.0) + (maker ? 0.5 : 0.0);
+            PriceHintRow pr = priceRows.get(d.getId());
+            if (pr != null) reasons.add(new LotSourcingResponse.Reason("PRICE_LIST", "прайс: " + ExecutionTexts.money(pr.price(), pr.currency())));
+            double score = (brandHit ? 1.0 : 0.0) + (typeHit ? 0.7 : 0.0) + (brandHit && typeHit ? 0.3 : 0.0) + (maker ? 0.5 : 0.0)
+                    + (pr != null ? 0.4 : 0.0);
 
             LotSourcingResponse.Entry e = new LotSourcingResponse.Entry();
             e.setDistributor(distributorMapper.toResponse(d));
             e.setMatchedBrands(brandHits);
             e.setReasons(reasons);
-            e.setRelevant(brandHit || typeHit);
+            e.setRelevant(brandHit || typeHit || pr != null);   // товар в прайсе — среди релевантных; отметка — по бренду
             e.setScore(score);
             e.setPreselect(brandHit);
             entries.add(e);

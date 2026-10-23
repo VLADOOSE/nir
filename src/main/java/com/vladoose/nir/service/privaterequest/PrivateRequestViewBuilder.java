@@ -1,5 +1,6 @@
 package com.vladoose.nir.service.privaterequest;
 
+import com.vladoose.nir.dto.response.PriceHint;
 import com.vladoose.nir.dto.response.PrivateRequestLineView;
 import com.vladoose.nir.dto.response.PrivateRequestListItemResponse;
 import com.vladoose.nir.dto.response.PrivateRequestOfferRef;
@@ -14,6 +15,8 @@ import com.vladoose.nir.repository.MedRegistryRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.execution.DealExecutionData;
 import com.vladoose.nir.service.execution.DealExecutionViews;
+import com.vladoose.nir.service.pricelist.PriceHints;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -86,10 +89,32 @@ public class PrivateRequestViewBuilder {
         }
         List<TenderLot> lots = t.getLots().stream().sorted(BY_LINE).toList();
         Map<String, MedRegistry> records = records(lots);
+        Map<Long, PriceHint> prices = hints(t.getMarket(), lots);
         r.setLines(lots.stream()
-                .map(l -> line(l, requested.contains(l.getId()), records.get(l.getRegNumber())))
+                .map(l -> line(l, requested.contains(l.getId()), records.get(l.getRegNumber()), prices.get(l.getId())))
                 .toList());
         return r;
+    }
+
+    private PriceHints priceHints;
+
+    /**
+     * Подсказки «📒 по прайсу» (спека 2026-10-23 §6.2 п. 2) — сеттером, не конструктором: подсказки — необязательная часть
+     * вида, а сервис подсказок тянет поиск моделей; без бина (тесты, собранные руками) — подсказок нет.
+     */
+    @Autowired(required = false)
+    public void setPriceHints(PriceHints priceHints) {
+        this.priceHints = priceHints;
+    }
+
+    private Map<Long, PriceHint> hints(Market m, List<TenderLot> lots) {
+        Map<Long, PriceHint> out = new HashMap<>();
+        if (priceHints == null || lots.isEmpty() || m == null) return out;
+        List<PriceHint> found = priceHints.hints(m, lots.stream()
+                .map(l -> PriceHints.Target.text(String.join(" ", Objects.toString(l.getEquipName(), ""), Objects.toString(l.getManufact(), ""))))
+                .toList());
+        for (int i = 0; i < lots.size(); i++) out.put(lots.get(i).getId(), found.get(i));
+        return out;
     }
 
     /** Карточки списка: этап и число позиций — одним проходом калькулятора, обращения — одним запросом. */
@@ -120,10 +145,11 @@ public class PrivateRequestViewBuilder {
     /** Одна позиция — ответ на правку строки и на действие с РУ. */
     public PrivateRequestLineView line(TenderLot l) {
         MedRegistry rec = l.getRegNumber() == null ? null : registryRepository.findByRegNumber(l.getRegNumber()).orElse(null);
-        return line(l, l.getId() != null && itemRepository.existsByTenderLotId(l.getId()), rec);
+        return line(l, l.getId() != null && itemRepository.existsByTenderLotId(l.getId()), rec,
+                hints(l.getTender() == null ? null : l.getTender().getMarket(), List.of(l)).get(l.getId()));
     }
 
-    private PrivateRequestLineView line(TenderLot l, boolean requested, MedRegistry rec) {
+    private PrivateRequestLineView line(TenderLot l, boolean requested, MedRegistry rec, PriceHint hint) {
         PrivateRequestLineView v = new PrivateRequestLineView();
         v.setLotId(l.getId());
         v.setLineNo(l.getLotNumber());
@@ -136,6 +162,7 @@ public class PrivateRequestViewBuilder {
         v.setRegStatus(l.getRegStatus() == null ? null : l.getRegStatus().name());
         v.setRegistry(rec == null ? null : candidate(rec));
         v.setRequested(requested);
+        v.setPriceList(hint);
         return v;
     }
 

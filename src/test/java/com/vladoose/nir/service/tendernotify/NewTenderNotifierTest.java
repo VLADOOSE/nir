@@ -382,4 +382,15 @@ class NewTenderNotifierTest {
         assertThat(asked.get(0).get(t.getId())).containsExactly(t.getLots().get(0).getId());
         assertThat(sent.get(0)).contains("\nрынок: медиана 1,34 млн ₸ (69 дог.)");
     }
+
+    /** Строка «закупка по прайсу» — рядом со строкой рынка (спека 2026-10-23 §6.2 п. 4). */
+    @Test
+    void priceLineMergedWithMarketLine() {
+        Tender t = tender("ZZ-PRC-1", ZKO, "ACTIVE", TODAY.plusDays(2));
+        NewTenderNotifier n = notifier(true, TG_ON, "");
+        n.setMarketLines(byTender -> Map.of(t.getId(), "рынок: медиана 1,34 млн ₸ (69 дог.)"));
+        n.setPriceLines(byTender -> Map.of(t.getId(), "закупка по прайсу ≈ 900 000 ₸"));
+        n.afterImport(created("ZZ-PRC-1"));
+        assertThat(sent.get(0)).contains("\nрынок: медиана 1,34 млн ₸ (69 дог.) · закупка по прайсу ≈ 900 000 ₸");
+    }
 }

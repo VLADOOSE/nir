@@ -137,4 +137,16 @@ class ProductWatchNotifierDigestTest {
         em.flush(); em.clear();
         assertThat(tenders.findById(lot.getTender().getId()).orElseThrow().getProductNotifiedLevel()).isNull();
     }
+
+    /** Строка «закупка по прайсу» — в пачке рядом со строкой рынка (спека 2026-10-23 §6.2 п. 4). */
+    @Test
+    void priceLineInDigest() {
+        TenderLot lot = marked("ZZ Отсасыватель прайс");
+        ProductWatchNotifier n = notifier();
+        n.setMarketLines(byTender -> java.util.Map.of(lot.getTender().getId(), "рынок: медиана 1 ₸ (2 дог.)"));
+        n.setPriceLines(byTender -> java.util.Map.of(lot.getTender().getId(), "закупка по прайсу ≈ 900 000 ₸"));
+        n.afterRun(new ImportSummary());
+        assertThat(published).singleElement().satisfies(c ->
+                assertThat(c.html()).contains("рынок: медиана 1 ₸ (2 дог.) · закупка по прайсу ≈ 900 000 ₸"));
+    }
 }

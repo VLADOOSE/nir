@@ -9,6 +9,7 @@ import com.vladoose.nir.dto.response.LotProductMatchDto;
 import com.vladoose.nir.dto.response.LotResultSummary;
 import com.vladoose.nir.dto.response.MarketLotSummary;
 import com.vladoose.nir.dto.response.OurProductSummary;
+import com.vladoose.nir.dto.response.PriceHint;
 import com.vladoose.nir.dto.response.TenderLotResponse;
 import com.vladoose.nir.dto.response.TenderResponse;
 import com.vladoose.nir.dto.response.TenderResultSummary;
@@ -47,6 +48,7 @@ import com.vladoose.nir.service.lotmodel.LotModelViews;
 import com.vladoose.nir.service.productwatch.ProductMatchService;
 import com.vladoose.nir.service.productwatch.fit.SpecRequirement;
 import com.vladoose.nir.service.productwatch.fit.SpecRequirements;
+import com.vladoose.nir.service.pricelist.LotPriceHints;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -85,6 +87,7 @@ public class TenderController {
     private final LotModelViews lotModelViews;
     private final TenderResultsQuery resultsQuery;
     private final MarketPriceService marketPrices;
+    private final LotPriceHints lotPriceHints;
 
     public TenderController(TenderService service,
                             TenderLotService tenderLotService,
@@ -104,7 +107,8 @@ public class TenderController {
                             LotModelViews lotModelViews,
                             AiAnswerService aiAnswers,
                             TenderResultsQuery resultsQuery,
-                            MarketPriceService marketPrices) {
+                            MarketPriceService marketPrices,
+                            LotPriceHints lotPriceHints) {
         this.service = service;
         this.tenderLotService = tenderLotService;
         this.activityApplyService = activityApplyService;
@@ -124,6 +128,7 @@ public class TenderController {
         this.aiAnswers = aiAnswers;
         this.resultsQuery = resultsQuery;
         this.marketPrices = marketPrices;
+        this.lotPriceHints = lotPriceHints;
     }
 
     /** Подсказки поставщиков для запроса КП по выбранным лотам. */
@@ -242,6 +247,13 @@ public class TenderController {
         if (MarketContext.get() == Market.KZ) {
             Map<Long, MarketLotSummary> market = marketPrices.lotSummaries(entities);
             for (TenderLotResponse l : lots) l.setMarket(market.get(l.getId()));
+        }
+        Map<Long, PriceHint> prices = lotPriceHints.forLots(MarketContext.get(), entities);
+        for (TenderLotResponse l : lots) {
+            PriceHint h = prices.get(l.getId());
+            if (h == null || h.rows().isEmpty()) continue;
+            l.setPriceList(h);
+            l.setPriceBudgetPct(LotPriceHints.budgetPct(h, l.getMaxCost()));
         }
         return lots;
     }

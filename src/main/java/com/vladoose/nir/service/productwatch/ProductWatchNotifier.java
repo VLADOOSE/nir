@@ -14,6 +14,7 @@ import com.vladoose.nir.repository.TenderLotProductMatchRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.market.MarketLines;
 import com.vladoose.nir.util.ErrorText;
+import com.vladoose.nir.service.pricelist.PriceLines;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,13 +165,20 @@ public class ProductWatchNotifier {
      */
     private void publishDigest(List<ProductWatchComposer.Card> cards, ImportSummary sum) {
         Map<Long, String> market = Map.of();
+        Map<Long, List<Long>> lotIds = new LinkedHashMap<>();
+        for (ProductWatchComposer.Card c : cards) lotIds.put(c.tenderId(), c.lots().stream().map(ProductMatchQuery.LotLine::lotId).toList());
         if (marketLines != null) {
-            Map<Long, List<Long>> lotIds = new LinkedHashMap<>();
-            for (ProductWatchComposer.Card c : cards) lotIds.put(c.tenderId(), c.lots().stream().map(ProductMatchQuery.LotLine::lotId).toList());
             try {
                 market = marketLines.lines(lotIds);
             } catch (RuntimeException e) {
                 log.warn("«Наш товар»: строки цены рынка не собраны: {}", ErrorText.of(e));
+            }
+        }
+        if (priceLines != null) {   // «закупка по прайсу ≈ …» рядом со строкой рынка (спека 2026-10-23 §6.2 п. 4)
+            try {
+                market = PriceLines.merge(market, priceLines.lines(lotIds));
+            } catch (RuntimeException e) {
+                log.warn("«Наш товар»: строки закупки по прайсу не собраны: {}", ErrorText.of(e));
             }
         }
         Map<Long, ProductWatchComposer.Card> byId = cards.stream()
@@ -191,6 +199,14 @@ public class ProductWatchNotifier {
     @Autowired(required = false)
     public void setMarketLines(MarketLines marketLines) {
         this.marketLines = marketLines;
+    }
+
+    private PriceLines priceLines;
+
+    /** Строка «закупка по прайсу ≈ …» в пачке (спека 2026-10-23 §6.2 п. 4); нет бина (тесты) — без строки. */
+    @Autowired(required = false)
+    public void setPriceLines(PriceLines priceLines) {
+        this.priceLines = priceLines;
     }
 
     /** Ушло, но не отмечено — следующий прогон пришлёт ещё раз (лучше повтор, чем потеря). */

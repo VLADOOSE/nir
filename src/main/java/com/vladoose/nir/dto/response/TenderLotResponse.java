@@ -50,4 +50,9 @@ public class TenderLotResponse {
 
     /** «Рынок: медиана … · N договоров · бюджет здесь …» (только KZ, только из набора). */
     private MarketLotSummary market;
+
+    /** «📒 закупка по прайсу» (спека 2026-10-23 §6.2 п. 3); пусто — у лота нет нашего товара или его нет в прайсах. */
+    private PriceHint priceList;
+    /** Закупка лучшей строки в валюте рынка — процент от цены лота за единицу. */
+    private Integer priceBudgetPct;
 }
