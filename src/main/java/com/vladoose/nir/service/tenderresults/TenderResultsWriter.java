@@ -177,6 +177,38 @@ public class TenderResultsWriter {
         }
     }
 
+    private record ProtocolFile(long tenderId, String url) {}
+
+    /** Итоги, помеченные к переразбору протокола (V45), — задание на файл по каждому протоколу тендера. */
+    @Transactional(readOnly = true)
+    public List<ProtocolJob> reparseJobs(Long tenderId) {
+        List<TenderLotResult> marked = tenderId == null ? results.findByProtocolReparseTrueOrderById()
+                : results.findByTenderIdAndProtocolReparseTrueOrderById(tenderId);
+        Map<ProtocolFile, List<Long>> byFile = new LinkedHashMap<>();
+        for (TenderLotResult r : marked) {
+            if (r.getProtocolUrl() == null) continue;
+            byFile.computeIfAbsent(new ProtocolFile(r.getTenderId(), r.getProtocolUrl()), k -> new ArrayList<>()).add(r.getId());
+        }
+        List<ProtocolJob> out = new ArrayList<>();
+        byFile.forEach((f, ids) -> out.add(new ProtocolJob(f.tenderId(), f.url(), ids)));
+        return out;
+    }
+
+    /**
+     * Переразбор (V45): лот нашёлся в протоколе — итог из него; не нашёлся или файл не получен (parsed пусто) — прежний итог
+     * остаётся. Пометка снимается в любом случае — файл не качается каждый час; события второй раз не заводятся.
+     */
+    @Transactional
+    public void applyReparse(ProtocolJob job, ProtocolResult parsed, String ourBin) {
+        for (TenderLotResult r : results.findAllById(job.resultIds())) {
+            r.setProtocolReparse(false);
+            if (parsed == null || parsed.format() == ProtocolFormat.UNKNOWN) continue;
+            TenderLot lot = lots.findById(r.getTenderLotId()).orElse(null);
+            LotProtocol lp = lot == null || lot.getSourceLotCode() == null ? null : parsed.lots().get(lot.getSourceLotCode().trim());
+            if (lp != null) write(r, lot, lp, ourBin);
+        }
+    }
+
     private void write(TenderLotResult r, TenderLot lot, LotProtocol lp, String ourBin) {
         bids.deleteByResultId(r.getId());
         r.setWinnerName(null);
@@ -228,7 +260,7 @@ public class TenderResultsWriter {
         r.setProtocolNote(null);
     }
 
-    /** Цена за единицу: из протокола; у суммы (ОИ) — сумма / количество лота; нет количества — пусто (Review Focus 4). */
+    /** Цена за единицу: из протокола; в протоколе только сумма — сумма / количество лота; нет количества — пусто (Review Focus 4). */
     static BigDecimal unitPrice(ProtocolBid b, TenderLot lot) {
         if (b.unitPrice() != null) return b.unitPrice();
         if (b.total() == null || lot.getQuantity() == null || lot.getQuantity() <= 0) return null;

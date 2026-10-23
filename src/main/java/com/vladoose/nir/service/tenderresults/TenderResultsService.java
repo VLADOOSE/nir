@@ -115,6 +115,12 @@ public class TenderResultsService {
             List<ProtocolJob> jobs = buys(cands, now, sum);
             String our = ourBin.get();
             for (ProtocolJob j : jobs) protocol(j, our);
+            List<ProtocolJob> again = writer.reparseJobs(tenderId);
+            if (!again.isEmpty()) {
+                log.info("Итоги тендеров: переразбор протоколов — файлов {}, лотов {}", again.size(),
+                        again.stream().mapToInt(j -> j.resultIds().size()).sum());
+            }
+            for (ProtocolJob j : again) reparse(j, our);
             events += contracts(tenderId, nowLocal, now, silent, sum);
             events += chains(tenderId, nowLocal, now, silent, sum);
             events += writer.settle(tenderId, nowLocal, now, silent);
@@ -175,6 +181,21 @@ public class TenderResultsService {
             return;
         }
         writer.applyProtocol(job, parsed, our);
+    }
+
+    /** Переразбор записанного протокола (V45): сбой — прежний итог остаётся, пометка снимается; стоп-код — наверх, пометка ждёт. */
+    private void reparse(ProtocolJob job, String our) {
+        ProtocolResult parsed = null;
+        try {
+            byte[] bytes = call(() -> client.downloadProtocol(job.url()));
+            if (bytes == null) log.warn("Итоги тендеров: переразбор протокола тендера id={} — файла нет на площадке", job.tenderId());
+            else parsed = ProtocolParser.parse(bytes);
+        } catch (RuntimeException e) {
+            if (ProductWatchService.stopping(e)) throw e;
+            log.warn("Итоги тендеров: переразбор протокола тендера id={} не удался: {} — прежний итог остаётся", job.tenderId(),
+                    ErrorText.of(e));
+        }
+        writer.applyReparse(job, parsed, our);
     }
 
     private int contracts(Long tenderId, LocalDateTime nowLocal, OffsetDateTime now, boolean silent, ImportSummary sum) {

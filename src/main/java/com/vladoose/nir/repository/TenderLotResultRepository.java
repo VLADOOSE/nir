@@ -31,6 +31,11 @@ public interface TenderLotResultRepository extends JpaRepository<TenderLotResult
     @Query("select r from TenderLotResult r where r.eventAt is null and r.outcome <> com.vladoose.nir.entity.LotOutcome.PENDING order by r.id")
     List<TenderLotResult> findUnsettled();
 
+    /** Помечены к переразбору протокола (V45). */
+    List<TenderLotResult> findByProtocolReparseTrueOrderById();
+
+    List<TenderLotResult> findByTenderIdAndProtocolReparseTrueOrderById(Long tenderId);
+
     /** Не окончательные — для закрытия по сроку. */
     @Query("select r from TenderLotResult r where r.finalAt is null order by r.id")
     List<TenderLotResult> findOpen();

@@ -12,8 +12,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.vladoose.nir.tenderresults.ResultsFixtures.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,6 +75,37 @@ class TenderResultsSchemaTest {
         }
         assertThat(lots.findOurLotIds(List.of(a.getId(), b.getId(), c.getId(), d.getId())))
                 .containsExactlyInAnyOrder(a.getId(), b.getId());
+    }
+
+    /**
+     * V45 помечает к переразбору итоги лотов «из одного источника», у которых есть файл и протокол разобран или «лота нет / вид не
+     * знаком»; запрос цен, ОИ без файла и не скачанный (его повторяет обычный проход) — нет.
+     */
+    @Test
+    void v45_marksRecordedOiProtocolsOnly() throws Exception {
+        Tender t = ResultsFixtures.tender(tenders, 970000012L, NOW.minusDays(5), "1-ОИ2", "ОИ разобран", "2-ОИ2", "ОИ — лота нет",
+                "3-ЗЦП1", "Запрос цен", "4-ОИ2", "ОИ — файла нет", "5-ОИ2", "ОИ — не скачан");
+        ProtocolStatus[] status = {ProtocolStatus.PARSED, ProtocolStatus.UNKNOWN_FORMAT, ProtocolStatus.PARSED, ProtocolStatus.NO_FILE,
+                ProtocolStatus.FAILED};
+        for (int i = 0; i < status.length; i++) {
+            results.saveAndFlush(TenderLotResult.builder().tenderLotId(t.getLots().get(i).getId()).tenderId(t.getId())
+                    .outcome(LotOutcome.DONE).protocolStatus(status[i]).protocolUrl(i == 3 ? null : ResultsFixtures.URL + i).build());
+        }
+        jdbc.update(v45Update());
+        em.clear();
+        assertThat(t.getLots().stream().map(l -> results.findByTenderLotId(l.getId()).orElseThrow().isProtocolReparse()))
+                .containsExactly(true, true, false, false, false);
+    }
+
+    /** UPDATE из V45 — тот, что выполнил Flyway (колонка в nirdb уже есть). */
+    private String v45Update() throws IOException {
+        String sql;
+        try (InputStream in = getClass().getResourceAsStream("/db/migration/V45__protocol_reparse.sql")) {
+            sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        return Arrays.stream(sql.split(";"))
+                .map(s -> s.lines().filter(l -> !l.strip().startsWith("--")).collect(Collectors.joining("\n")).strip())
+                .filter(s -> s.startsWith("UPDATE")).findFirst().orElseThrow();
     }
 
     /** Кандидаты прохода: срок прошёл не раньше 45 дней назад, есть лот без окончательного итога (нет строки итога или она не окончательная); частные заявки и будущие — нет. */

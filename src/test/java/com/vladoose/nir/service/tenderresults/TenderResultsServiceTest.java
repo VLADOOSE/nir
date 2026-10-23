@@ -286,9 +286,12 @@ class TenderResultsServiceTest {
         assertThat(events.findByTenderIdOrderByIdAsc(t.getId())).isEmpty();
     }
 
-    /** ОИ, у лота нет количества — цены за единицу нет, сумма есть (Review Focus 4). */
+    /**
+     * ОИ: «Цена поставщика» в протоколе — за единицу (сверено с договорами 2026-10-23), поэтому цена за единицу есть и у лота без
+     * количества (дробное количество площадки). До 2026-10-23 её считали суммой лота и делили на количество — цена выходила в N раз меньше.
+     */
     @Test
-    void oiDone_noQuantity_unitPriceEmpty() throws Exception {
+    void oiDone_unitPriceFromProtocol_evenWithoutQuantity() throws Exception {
         notFirst();
         Tender t = zcp(970001013L, "88138321-ОИ2", 360, null, "Западно-Казахстанская область");
         t.getLots().get(0).setQuantity(null);
@@ -297,9 +300,148 @@ class TenderResultsServiceTest {
         check(t);
         TenderLotResult r = result(t);
         assertThat(r.getWinnerBin()).isEqualTo("900000000001");
-        assertThat(r.getWinnerPrice()).isNull();
+        assertThat(r.getWinnerPrice()).isEqualByComparingTo("43000");
         assertThat(bids.findByResultIdOrderByPlaceAscIdAsc(r.getId()).get(0).getTotal()).isEqualByComparingTo("43000");
         assertThat(events.findByTenderIdOrderByIdAsc(t.getId())).extracting(TenderResultEvent::getKind).containsExactly(ResultEventKind.OI_DONE);
+    }
+
+    /** Коды и наименования лотов обезличенного протокола 17821999-ИОИ1 (7 лотов, 84956065-ОИ2 не состоялся). */
+    private static final String[] OI_LOTS = {"84956222-ОИ2", "Индикатор", "84954657-ОИ2", "Среда питательная", "84954982-ОИ2",
+            "Добавка селективная", "84955582-ОИ2", "Диагностикум", "84956014-ОИ2", "Среда питательная", "84956065-ОИ2", "Диск",
+            "84956100-ОИ2", "Диск"};
+
+    /** Тендер ОИ на 7 лотов: объявление и файл протокола (PDF из текстовой фикстуры) — у фейка площадки. */
+    private Tender oiMultiLot(long buyId) throws Exception {
+        Tender t = ResultsFixtures.tender(tenders, buyId, NOW.minusDays(8), OI_LOTS);
+        List<com.vladoose.nir.integration.goszakup.dto.ResultLot> lotsOnPlatform = new ArrayList<>();
+        for (int i = 0; i < OI_LOTS.length; i += 2) {
+            lotsOnPlatform.add(lot(43600000L + i, OI_LOTS[i], OI_LOTS[i].equals("84956065-ОИ2") ? 370 : 360, 88100000L + i));
+        }
+        fake.buys.put(buyId, buy(buyId, "2026-10-21 09:41:07", URL + buyId,
+                lotsOnPlatform.toArray(com.vladoose.nir.integration.goszakup.dto.ResultLot[]::new)));
+        fake.files.put(URL + buyId, protocolPdf("oi-multi-lot.txt"));
+        return t;
+    }
+
+    private TenderLotResult result(Tender t, String code) {
+        TenderLot lot = t.getLots().stream().filter(l -> l.getSourceLotCode().equals(code)).findFirst().orElseThrow();
+        return results.findByTenderLotId(lot.getId()).orElseThrow();
+    }
+
+    /** Протокол из одного источника на несколько лотов — у каждого лота свой итог (живая проверка 2026-10-23). */
+    @Test
+    void oiMultiLot_everyLotParsed() throws Exception {
+        notFirst();
+        Tender t = oiMultiLot(970001016L);
+        check(t);
+        assertThat(results.findByTenderId(t.getId())).hasSize(7)
+                .allSatisfy(r -> assertThat(r.getProtocolStatus()).isEqualTo(ProtocolStatus.PARSED));
+        TenderLotResult twoPcs = result(t, "84954657-ОИ2");
+        assertThat(twoPcs.getWinnerName()).isEqualTo("Товарищество с ограниченной ответственностью \"Поставщик 1\"");
+        assertThat(twoPcs.getWinnerPrice()).isEqualByComparingTo("40200");
+        TenderLotResult failed = result(t, "84956065-ОИ2");
+        assertThat(failed.getOutcome()).isEqualTo(LotOutcome.FAILED);
+        assertThat(failed.getWinnerBin()).isNull();
+        assertThat(failed.getFailText()).contains("не предоставил в установленный срок ответ");
+        assertThat(fake.calls.stream().filter(c -> c.startsWith("file:")).count()).isEqualTo(1);
+    }
+
+    /**
+     * Итоги ОИ, записанные прежним разбором, как на проде до V45: первый лот разобран (цена — сумма, поделённая на количество),
+     * остальным — «лота нет в протоколе»; итоги окончательные, события заведены; пометка V45 — к переразбору.
+     */
+    private Tender oiRecordedByOldParser(long buyId) throws Exception {
+        Tender t = oiMultiLot(buyId);
+        OffsetDateTime at = OffsetDateTime.now(CLOCK).minusDays(1);
+        for (TenderLot l : t.getLots()) {
+            boolean first = l.getSourceLotCode().equals("84956222-ОИ2");
+            results.saveAndFlush(TenderLotResult.builder().tenderLotId(l.getId()).tenderId(t.getId())
+                    .outcome(l.getSourceLotCode().equals("84956065-ОИ2") ? LotOutcome.FAILED : LotOutcome.DONE)
+                    .protocolUrl(URL + buyId).protocolStatus(first ? ProtocolStatus.PARSED : ProtocolStatus.UNKNOWN_FORMAT)
+                    .protocolNote(first ? null : "лота нет в протоколе — откройте файл")
+                    .winnerBin(first ? "900000000001" : null).winnerPrice(first ? new BigDecimal("1933.33") : null)
+                    .finalAt(at).eventAt(at).protocolReparse(true).build());
+        }
+        return t;
+    }
+
+    private long downloads() {
+        return fake.calls.stream().filter(c -> c.startsWith("file:")).count();
+    }
+
+    /** V45: записанные итоги ОИ — проход один раз скачивает протокол и разбирает его заново, окончательные тоже. */
+    @Test
+    void reparse_recordedOiResults_rewrittenOnce() throws Exception {
+        notFirst();
+        Tender t = oiRecordedByOldParser(970001017L);
+        ImportSummary sum = check(t);
+        assertThat(sum.getErrors()).isZero();
+        assertThat(results.findByTenderId(t.getId())).hasSize(7).allSatisfy(r -> {
+            assertThat(r.getProtocolStatus()).isEqualTo(ProtocolStatus.PARSED);
+            assertThat(r.getProtocolNote()).isNull();
+            assertThat(r.isProtocolReparse()).isFalse();
+        });
+        TenderLotResult first = result(t, "84956222-ОИ2");
+        assertThat(first.getWinnerPrice()).isEqualByComparingTo("5800");
+        assertThat(first.getWinnerName()).isEqualTo("Товарищество с ограниченной ответственностью \"Поставщик 1\"");
+        TenderLotResult twoPcs = result(t, "84954657-ОИ2");
+        assertThat(twoPcs.getWinnerPrice()).isEqualByComparingTo("40200");
+        assertThat(bids.findByResultIdOrderByPlaceAscIdAsc(twoPcs.getId())).extracting(TenderLotBid::getTotal)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class).containsExactly(new BigDecimal("80400"));
+        assertThat(result(t, "84956065-ОИ2").getFailText()).contains("не предоставил в установленный срок ответ");
+        assertThat(events.findByTenderIdOrderByIdAsc(t.getId())).as("события уже были — второй раз не заводятся").isEmpty();
+        check(t);
+        assertThat(downloads()).as("протокол скачан один раз").isEqualTo(1);
+    }
+
+    /** Переразбор не удался — прежний итог остаётся, пометка снимается (файл не качается каждый час); не ошибка прохода. */
+    @Test
+    void reparse_downloadFails_oldResultKept_flagCleared() throws Exception {
+        notFirst();
+        Tender t = oiRecordedByOldParser(970001018L);
+        fake.downloadError = new GoszakupCallException("goszakup: протокол — HTTP 500", 500, true, null);
+        ImportSummary sum = check(t);
+        assertThat(sum.getErrors()).isZero();
+        TenderLotResult first = result(t, "84956222-ОИ2");
+        assertThat(first.getWinnerPrice()).isEqualByComparingTo("1933.33");
+        assertThat(first.getProtocolStatus()).isEqualTo(ProtocolStatus.PARSED);
+        assertThat(result(t, "84954657-ОИ2").getProtocolStatus()).isEqualTo(ProtocolStatus.UNKNOWN_FORMAT);
+        assertThat(result(t, "84954657-ОИ2").getProtocolNote()).isEqualTo("лота нет в протоколе — откройте файл");
+        assertThat(results.findByTenderId(t.getId())).allSatisfy(r -> assertThat(r.isProtocolReparse()).isFalse());
+        long before = downloads();
+        fake.downloadError = null;
+        check(t);
+        assertThat(downloads()).isEqualTo(before);
+    }
+
+    /** 403 при переразборе — проход стоп, пометка ждёт следующего прохода; он и разбирает. */
+    @Test
+    void reparse_forbidden_flagStaysForNextPass() throws Exception {
+        notFirst();
+        Tender t = oiRecordedByOldParser(970001019L);
+        fake.forbidFromCall = 2;                       // 1 — объявления, 2 — файл протокола
+        ImportSummary sum = check(t);
+        assertThat(sum.getLastError()).contains("403");
+        assertThat(results.findByTenderId(t.getId())).allSatisfy(r -> assertThat(r.isProtocolReparse()).isTrue());
+        fake.forbidFromCall = 0;
+        check(t);
+        assertThat(result(t, "84954657-ОИ2").getWinnerPrice()).isEqualByComparingTo("40200");
+        assertThat(results.findByTenderId(t.getId())).allSatisfy(r -> assertThat(r.isProtocolReparse()).isFalse());
+    }
+
+    /** Проход по расписанию переразбирает и итоги тендеров, которые уже не кандидаты (срок дальше 45 дней), — как на проде после V45. */
+    @Test
+    void reparse_scheduledPass_coversOldTenders() throws Exception {
+        notFirst();
+        Tender t = oiRecordedByOldParser(970001020L);
+        t.setDeadlineAt(NOW.minusDays(60));
+        t.setDeadline(NOW.minusDays(60).toLocalDate());
+        tenders.saveAndFlush(t);
+        ImportSummary sum = new ImportSummary();
+        service.run(sum);
+        assertThat(fake.calls).noneMatch(c -> c.startsWith("buys:") && c.contains("970001020"));
+        assertThat(result(t, "84954657-ОИ2").getWinnerPrice()).isEqualByComparingTo("40200");
+        assertThat(results.findByTenderId(t.getId())).allSatisfy(r -> assertThat(r.isProtocolReparse()).isFalse());
     }
 
     /** Проход по расписанию: свежий срок — в работе; итог, ждущий дольше 30 дней от срока, — закрыт. */

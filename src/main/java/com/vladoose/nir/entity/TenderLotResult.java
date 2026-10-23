@@ -73,6 +73,11 @@ public class TenderLotResult {
     @Builder.Default
     private int protocolAttempts = 0;
 
+    /** Протокол скачать и разобрать заново (V45 — исправленный разбор «из одного источника»); снимается после попытки. */
+    @Column(name = "protocol_reparse", nullable = false)
+    @Builder.Default
+    private boolean protocolReparse = false;
+
     @Column(name = "bids_count")
     private Integer bidsCount;
 
