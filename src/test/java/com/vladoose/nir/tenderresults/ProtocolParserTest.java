@@ -87,6 +87,76 @@ class ProtocolParserTest {
         assertThat(l.failReason()).isNull();
     }
 
+    /**
+     * Протокол из одного источника на несколько лотов (17637016-ИОИ1, обезличено): у каждого лота — свой раздел «№ лота: …»
+     * со своим поставщиком, ценой и решением. До 2026-10-23 разбирался только первый раздел — у остальных лотов «лота нет в протоколе».
+     */
+    @Test
+    void oi_multiLot_html_eachLotFromItsSection() throws IOException {
+        ProtocolResult r = ProtocolParser.parse(bytes("oi-multi-lot.html"));
+        assertThat(r.format()).isEqualTo(ProtocolFormat.OI);
+        assertThat(r.lots()).containsOnlyKeys("87906538-ОИ2", "87906588-ОИ2");
+        LotProtocol second = r.lots().get("87906588-ОИ2");
+        assertThat(second.winnerBin()).isEqualTo("900000000001");
+        assertThat(second.bids()).extracting(ProtocolBid::name).containsExactly("ТОО \"Поставщик 1\"");
+        assertThat(second.bids().get(0).unitPrice()).isEqualByComparingTo("23300");
+        assertThat(second.bids().get(0).submittedAt()).isEqualTo(LocalDateTime.of(2026, 9, 18, 12, 35, 55));
+        assertThat(second.conclusion()).startsWith("Решено заключить договор");
+    }
+
+    /**
+     * Цена в протоколе ОИ: первая колонка («Выделенная сумма») — сумма поставщика, вторая («Цена поставщика») — цена за единицу.
+     * Сверено с договорами площадки 2026-10-23: лот на 2 шт — «95238.08 | 47619.04», в договоре 47 619,04 за шт.
+     */
+    @Test
+    void oi_priceRow_totalThenUnitPrice() throws IOException {
+        ProtocolBid bid = ProtocolParser.parse(bytes("oi-multi-lot.html")).lots().get("87906538-ОИ2").bids().get(0);
+        assertThat(bid.unitPrice()).isEqualByComparingTo("47619.04");
+        assertThat(bid.total()).isEqualByComparingTo("95238.08");
+    }
+
+    /** PDF того же вида (17821999-ИОИ1, обезличено): семь лотов, один не состоялся — каждый со своим итогом. */
+    @Test
+    void oi_multiLot_pdf_sevenLots_oneFailed() throws IOException {
+        ProtocolResult r = text("oi-multi-lot.txt");
+        assertThat(r.format()).isEqualTo(ProtocolFormat.OI);
+        assertThat(r.lots()).containsOnlyKeys("84956222-ОИ2", "84954657-ОИ2", "84954982-ОИ2", "84955582-ОИ2", "84956014-ОИ2",
+                "84956065-ОИ2", "84956100-ОИ2");
+        LotProtocol failed = r.lots().get("84956065-ОИ2");
+        assertThat(failed.winnerBin()).isNull();
+        assertThat(failed.bidsCount()).isZero();
+        assertThat(failed.bids()).extracting(ProtocolBid::bin).containsExactly("900000000001");
+        assertThat(failed.failReason()).isEqualTo(FailReason.OTHER);
+        LotProtocol twoPcs = r.lots().get("84954657-ОИ2");
+        assertThat(twoPcs.winnerBin()).isEqualTo("900000000001");
+        assertThat(twoPcs.bids().get(0).unitPrice()).isEqualByComparingTo("40200");
+        assertThat(twoPcs.bids().get(0).total()).isEqualByComparingTo("80400");
+        assertThat(r.lots().get("84956100-ОИ2").bids().get(0).unitPrice()).isEqualByComparingTo("2250");
+    }
+
+    /** PDF: название поставщика перенесено на строки перед БИН, вывод — на следующую строку; аббревиатуры в вывод не попадают. */
+    @Test
+    void oi_pdf_wrappedSupplierNameAndConclusion() throws IOException {
+        ProtocolResult r = text("oi-multi-lot.txt");
+        LotProtocol first = r.lots().get("84956222-ОИ2");
+        assertThat(first.bids()).extracting(ProtocolBid::name)
+                .containsExactly("Товарищество с ограниченной ответственностью \"Поставщик 1\"");
+        assertThat(first.conclusion()).endsWith("с ограниченной ответственностью \"Поставщик 1\".");
+        assertThat(r.lots().get("84956065-ОИ2").conclusion()).contains("не предоставил в установленный срок ответ на участие");
+        assertThat(r.lots().get("84956100-ОИ2").conclusion()).endsWith("\"Поставщик 1\".").doesNotContain("Расшифровка");
+    }
+
+    /** Причина провала — по выводу целиком: «отказался» бывает на перенесённой строке. */
+    @Test
+    void oi_failReasonFromWrappedConclusion() {
+        LotProtocol l = ProtocolParser.parseLines(List.of(
+                "Протокол об итогах государственных закупок способом из одного источника по несостоявшимся закупкам №1-ИОИ1",
+                "№ лота: 5-ОИ2",
+                "Закупка способом из одного источника не состоялась в связи с тем, что приглашенный потенциальный поставщик Товарищество",
+                "с ограниченной ответственностью \"Поставщик 1\" отказался от участия в закупке способом из одного источника.")).lots().get("5-ОИ2");
+        assertThat(l.failReason()).isEqualTo(FailReason.REFUSED);
+    }
+
     @Test
     void konkurs_winnersAndFailedLots_html() throws IOException {
         ProtocolResult r = ProtocolParser.parse(bytes("konkurs-winners.html"));
