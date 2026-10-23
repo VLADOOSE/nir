@@ -61,4 +61,17 @@ class PdfTableReaderTest {
         assertThat(scan.note()).isEqualTo(PriceListReader.NO_ROWS);
         assertThat(PdfTableReader.read(ReplyFixtures.textPdf("просто текст"), Map.of())).isEmpty();
     }
+
+    /** Условия и срок — последней строкой самой сетки (настоящий прайс Аксиона): не строка таблицы, а текст шапки прайса. */
+    @Test
+    void notesRowInsideGrid_goToTermsAndDates() throws Exception {
+        PdfTableReader.Result r = PdfTableReader.read(PriceListFiles.notesInGridPdf(), Map.of()).orElseThrow();
+        assertThat(r.table().rows()).hasSize(1);
+        assertThat(r.outside()).contains("• Указанный прайс-лист актуален с 01 сентября 2026 года по 31 декабря 2026 года.");
+        ParsedPriceList p = PriceListReader.read("прайс.pdf", ReplyFileKind.PDF, PriceListFiles.notesInGridPdf(), Map.of());
+        assertThat(p.rows()).hasSize(1);
+        assertThat(p.terms()).contains("Предоплата 100%; отгрузка в течение 30 календарных дней");
+        assertThat(p.listDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(p.validTo()).isEqualTo(LocalDate.of(2026, 12, 31));
+    }
 }

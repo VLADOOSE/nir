@@ -149,6 +149,42 @@ public final class PriceListFiles {
         }
     }
 
+    /**
+     * PDF, у которого условия и срок — последней строкой самой сетки (так у настоящего прайса Аксиона): объединённая во
+     * всю ширину ячейка под строками, внутренних линий в её полосе нет, строки условий длиннее любой колонки.
+     */
+    public static byte[] notesInGridPdf() throws Exception {
+        try (org.apache.pdfbox.pdmodel.PDDocument d = new org.apache.pdfbox.pdmodel.PDDocument();
+             ByteArrayOutputStream out = new ByteArrayOutputStream();
+             java.io.InputStream fontIn = PriceListFiles.class.getResourceAsStream("/fonts/LiberationSans-Regular.ttf")) {
+            org.apache.pdfbox.pdmodel.font.PDType0Font f = org.apache.pdfbox.pdmodel.font.PDType0Font.load(d, fontIn);
+            org.apache.pdfbox.pdmodel.PDPage p1 = new org.apache.pdfbox.pdmodel.PDPage(org.apache.pdfbox.pdmodel.common.PDRectangle.A4);
+            d.addPage(p1);
+            float h = p1.getMediaBox().getHeight();
+            try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(d, p1)) {
+                float[] xs = {50, 70, 300, 350, 400, 540};
+                for (float y : new float[]{100, 130, 155, 200}) hline(cs, h, 50, 540, y);
+                vline(cs, h, 50, 100, 200);
+                vline(cs, h, 540, 100, 200);
+                for (int i = 1; i < xs.length - 1; i++) vline(cs, h, xs[i], 100, 155);
+                text(cs, f, h, 55, 118, "№");
+                text(cs, f, h, 120, 118, "Наименование");
+                text(cs, f, h, 303, 118, "Оптовая цена, RUB");
+                text(cs, f, h, 353, 118, "Цена дилера, RUB");
+                text(cs, f, h, 405, 118, "Разрешительные документы");
+                text(cs, f, h, 57, 145, "1");
+                text(cs, f, h, 75, 145, "Отсасыватель портативный ОМП-5/80-01");
+                text(cs, f, h, 310, 145, "66 800");
+                text(cs, f, h, 360, 145, "60 100");
+                text(cs, f, h, 405, 145, "Нет РУ в Казахстане");
+                text(cs, f, h, 75, 170, "• Предоплата 100%; отгрузка в течение 30 календарных дней со дня получения предоплаты;");
+                text(cs, f, h, 75, 180, "• Указанный прайс-лист актуален с 01 сентября 2026 года по 31 декабря 2026 года.");
+            }
+            d.save(out);
+            return out.toByteArray();
+        }
+    }
+
     private static void text(org.apache.pdfbox.pdmodel.PDPageContentStream cs, org.apache.pdfbox.pdmodel.font.PDType0Font f,
                              float pageHeight, float x, float yTop, String s) throws java.io.IOException {
         cs.beginText();

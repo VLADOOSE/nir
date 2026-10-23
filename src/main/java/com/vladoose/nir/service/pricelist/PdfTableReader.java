@@ -24,7 +24,9 @@ import java.util.*;
  * рамки ячеек: вертикальные линии — колонки, горизонтальные — строки; текст ячейки — символы внутри её прямоугольника.
  * Объединённая ячейка (раздел во всю ширину, РУ на несколько строк) — там, где линии нет; её текст получают все строки,
  * которые она накрывает. Колонки — по каждой странице, роли — по шапке первой страницы с шапкой, по порядку колонок.
- * Страница с другим числом колонок — не продолжение таблицы. Текст вне сетки — для шапки прайса и условий.
+ * Страница с другим числом колонок — не продолжение таблицы. Текст вне сетки — для шапки прайса и условий; туда же —
+ * строки сетки под последней строкой с ценой (у настоящего прайса Аксиона условия и срок — объединённой ячейкой внизу
+ * самой сетки), целыми строками текста, а не по колонкам.
  */
 public final class PdfTableReader {
 
@@ -52,6 +54,7 @@ public final class PdfTableReader {
             List<String> headers = null;
             List<LineField> roles = null;
             List<ReplyTable.Row> rows = new ArrayList<>();
+            List<List<String>> bands = new ArrayList<>();   // строки текста полосы каждой строки — для хвоста сетки
             List<String> outside = new ArrayList<>();
             int rowNo = 0;
             for (int p = 0; p < pages; p++) {
@@ -80,9 +83,17 @@ public final class PdfTableReader {
                     List<String> row = cells.get(r);
                     if (row.stream().allMatch(String::isBlank)) continue;
                     rows.add(new ReplyTable.Row(++rowNo, row));
+                    bands.add(lines(g.band(glyphs, r)));
                 }
             }
             if (headers == null) return Optional.empty();
+            // хвост сетки без цен (условия, срок, «больше информации на сайте») — текстом вне таблицы
+            int lastPriced = -1;
+            for (int i = 0; i < rows.size(); i++) if (priced(rows.get(i).cells(), roles)) lastPriced = i;
+            for (int i = rows.size() - 1; i > lastPriced; i--) {
+                outside.addAll(bands.get(i));
+                rows.remove(i);
+            }
             List<ReplyTable.Column> cols = new ArrayList<>();
             String currency = null;
             for (int c = 0; c < headers.size(); c++) {
@@ -94,6 +105,15 @@ public final class PdfTableReader {
             int score = (int) roles.stream().filter(x -> x != LineField.IGNORE).count();
             return Optional.of(new Result(new ReplyTable("PDF", 1, score, currency, cols, rows, from, null), outside));
         }
+    }
+
+    private static boolean priced(List<String> cells, List<LineField> roles) {
+        for (int c = 0; c < cells.size() && c < roles.size(); c++) {
+            if (roles.get(c) != LineField.PRICE) continue;
+            java.math.BigDecimal v = MoneyText.amount(cells.get(c));
+            if (v != null && v.signum() > 0) return true;
+        }
+        return false;
     }
 
     /** Шапка — среди первых 5 строк сетки: строка с наименованием и ценой (как у таблиц Excel), иначе −1. */
@@ -259,6 +279,12 @@ public final class PdfTableReader {
             }
             float[] all = cluster(ys);
             return all.length < 2 ? null : new Grid(xs, all, columnYs);
+        }
+
+        /** Символы полосы строки r (между её горизонталями, внутри сетки) — без деления на колонки. */
+        List<Glyph> band(List<Glyph> glyphs, int r) {
+            float y1 = ys[r], y2 = ys[r + 1], left = xs[0], right = xs[xs.length - 1];
+            return glyphs.stream().filter(g -> g.cy() > y1 && g.cy() < y2 && g.cx() > left && g.cx() < right).toList();
         }
 
         List<Glyph> outside(List<Glyph> glyphs) {
