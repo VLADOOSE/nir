@@ -3,6 +3,7 @@ package com.vladoose.nir.service.supplierreply;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.dto.request.LinesMode;
 import com.vladoose.nir.entity.*;
+import com.vladoose.nir.repository.CurrencyRateRepository;
 import com.vladoose.nir.repository.DistributorRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
@@ -41,11 +42,13 @@ class SupplierReplyApiTest {
     @Autowired PriceRequestRepository priceRequests;
     @Autowired PriceRequestItemRepository items;
     @Autowired SupplierReplyService replies;
+    @Autowired CurrencyRateRepository ours;
     MockMvc mvc;
     PriceRequest pr;
 
     @BeforeEach
     void setUp() {
+        ours.deleteAllInBatch();   // тесты курса — без нашего курса; живая проверка оставляет его строки в nirdb
         mvc = MockMvcBuilders.webAppContextSetup(wac).apply(SecurityMockMvcConfigurers.springSecurity()).build();
         pr = newRequest();
     }

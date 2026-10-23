@@ -16,4 +16,8 @@ public class PriceRequestItemResponse {
     private boolean responseAuto;
     private Long responseFileId;
     private Integer responseFileRow;
+    /** Цена пришла в чужой валюте (V44): валюта, исходная цена и курс, по которому она пересчитана. */
+    private String responseCurrency;
+    private BigDecimal responseOriginal;
+    private BigDecimal responseRate;
 }

@@ -36,6 +36,7 @@ class PrivateRequestPricesTest {
     @Autowired PriceRequestItemRepository itemRepository;
     @Autowired InboundEmailRepository inboundRepository;
     @Autowired EntityManager em;
+    @Autowired OfficialRateRepository official;
 
     @BeforeEach void kz() { MarketContext.set(Market.KZ); }
     @AfterEach void clear() { MarketContext.clear(); }
@@ -252,5 +253,33 @@ class PrivateRequestPricesTest {
 
         assertThat(r.suppliers()).singleElement().extracting(PrivateRequestPricesResponse.Supplier::manual).isEqualTo(true);
         assertThat(cell(r, 0, d).manual()).isFalse();   // ячейка — по последнему запросу: он ушёл письмом
+    }
+
+    /** Цена в рублях (V44): у ячейки — исходная цена, курс и она же по курсу НБ РК сегодня; лучшая — по цене в тенге. */
+    @Test
+    void foreignPrice_cellHasOriginalAndToday() {
+        official.deleteAllInBatch();
+        official.saveAndFlush(OfficialRate.builder().source(com.vladoose.nir.service.rates.CurrencyRates.NBRK).currency("RUB")
+                .rateDate(java.time.LocalDate.now(Market.KZ.zone())).rate(new BigDecimal("5.48")).fetchedAt(OffsetDateTime.now()).build());
+        Tender t = service.createEmpty();
+        service.addLines(t.getId(), List.of(input("ZZ Цены рубли", null, 1, null, null, null)), LinesMode.APPEND);
+        TenderLot lot = t.getLots().get(0);
+        Distributor rub = dist("ZZ Цены Рубли");
+        Distributor kzt = dist("ZZ Цены Тенге");
+        PriceRequestItem i = ask(t, rub, lot, "RESPONDED", LetterStatus.SENT, "900000.00");
+        i.setResponseCurrency("RUB");
+        i.setResponseOriginal(new BigDecimal("150000.00"));
+        i.setResponseRate(new BigDecimal("6"));
+        ask(t, kzt, lot, "RESPONDED", LetterStatus.SENT, "950000.00");
+        em.flush();
+
+        PrivateRequestPricesResponse r = prices.build(t.getId());
+        Cell c = cell(r, 0, rub);
+        assertThat(c.currency()).isEqualTo("RUB");
+        assertThat(c.original()).isEqualByComparingTo("150000");
+        assertThat(c.rate()).isEqualByComparingTo("6");
+        assertThat(c.today()).isEqualByComparingTo("822000");
+        assertThat(c.best()).isTrue();
+        assertThat(cell(r, 0, kzt).today()).isNull();
     }
 }

@@ -7,6 +7,7 @@ import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.service.execution.ExecutionTexts;
+import com.vladoose.nir.service.rates.RateMath;
 import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.service.supplierreply.PreparedFile;
 import com.vladoose.nir.service.supplierreply.SupplierReplyService;
@@ -148,8 +149,7 @@ public class MailIngestWriter {
         String name = o.parsedName() != null ? o.parsedName() : o.fileName();
         if (o.closed()) return "Файл «" + name + "» сохранён — запрос закрыт, цены не меняли";
         if (o.applied() > 0) {
-            return "💡 Цены из файла «" + name + "»: подставлено " + o.applied() + " из " + o.positions()
-                    + (o.rate() != null ? " по курсу " + SupplierReplyService.rateText(o.rate()) : "") + " — сверьте"
+            return "💡 Цены из файла «" + name + "»: подставлено " + o.applied() + " из " + o.positions() + rateLine(o) + " — сверьте"
                     + (o.manualKept() > 0 ? "; ручные цены не тронуты: " + o.manualKept() : "");
         }
         if (MoneyText.MIXED.equals(o.foreignCurrency())) {
@@ -171,6 +171,13 @@ public class MailIngestWriter {
         if (o.unreadable() != null) return "Файл «" + o.unreadable() + "» не разобран — введите цены вручную";
         if (o.viewOnly()) return o.image() ? "📄 КП картинкой — внесите цены по документу" : "📄 КП в PDF — внесите цены по документу";
         return "📎 Файл «" + name + "» — в ответе поставщика в АИС";
+    }
+
+    /** « по нашему курсу 6 (сегодня 5,48)» / « по курсу 5,9»; без курса — пусто (спека 2026-10-23 §4.4). */
+    static String rateLine(SupplierReplyService.ReplyOutcome o) {
+        if (o.rate() == null) return "";
+        return " по " + (o.ourRate() ? "нашему " : "") + "курсу " + RateMath.text(o.rate())
+                + (o.today() == null ? "" : " (сегодня " + RateMath.text(o.today()) + ")");
     }
 
     /** Письмо, которое не разобралось или не записалось: короткая строка, курсор дальше (спека §3.4). */

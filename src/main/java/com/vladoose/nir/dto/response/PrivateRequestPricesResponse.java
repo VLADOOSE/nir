@@ -21,8 +21,18 @@ public record PrivateRequestPricesResponse(List<Supplier> suppliers, List<Line> 
      * state: PRICE | DECLINED | BOUNCED | NOT_SENT | NO_PRICE (поставщик ответил, цены по позиции нет) | WAITING |
      * NONE (позицию у поставщика не запрашивали).
      * emailOverride — письмо ушло на адрес, вписанный в окне запроса: у «не доставлено» подсказка — запросить заново.
-     * auto — 💡: цена из разбора письма или файла и ещё не сверена.
+     * auto — 💡: цена из разбора письма или файла и ещё не сверена. currency / original / rate — цена пришла в чужой
+     * валюте (V44): исходная цена и курс; today — она же по курсу НБ РК сегодня (нет курса сегодня — null).
      */
     public record Cell(Long distributorId, String state, BigDecimal price, String note, Long priceRequestId,
-                       Long itemId, boolean best, boolean emailOverride, boolean manual, boolean auto) {}
+                       Long itemId, boolean best, boolean emailOverride, boolean manual, boolean auto,
+                       String currency, BigDecimal original, BigDecimal rate, BigDecimal today) {
+        public Cell withBest() {
+            return new Cell(distributorId, state, price, note, priceRequestId, itemId, true, emailOverride, manual, auto, currency, original, rate, today);
+        }
+
+        public Cell withToday(BigDecimal t) {
+            return new Cell(distributorId, state, price, note, priceRequestId, itemId, best, emailOverride, manual, auto, currency, original, rate, t);
+        }
+    }
 }

@@ -34,10 +34,12 @@ class SupplierReplyServiceTest {
     @Autowired DistributorRepository distributors;
     @Autowired HeaderSynonymRepository synonyms;
     @Autowired EntityManager em;
+    @Autowired CurrencyRateRepository ours;
     PriceRequest pr;
 
     @BeforeEach
     void setUp() {
+        ours.deleteAllInBatch();   // курсы файла — без нашего курса (V44): живая проверка оставляет его строки в nirdb
         pr = request(Market.KZ);
     }
 

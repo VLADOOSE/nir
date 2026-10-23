@@ -6,6 +6,7 @@ import com.vladoose.nir.dto.request.ReplyColumnRole;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.service.rates.CurrencyRates;
 import com.vladoose.nir.service.rates.RateMath;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
@@ -34,7 +35,6 @@ public class SupplierReplyService {
 
     static final Set<String> CLOSED = Set.of("ACCEPTED", "REJECTED", "CLOSED");
     static final Set<String> RESPONDABLE = Set.of("CREATED", "SENT", "DECLINED", "RESPONDED");
-    /** Курс — не больше 100 000 валюты запроса за единицу валюты файла (USD → KZT ≈ 500; колонка — NUMERIC(14,6)). */
 
     /** Курс файла к валюте запроса: 1 currency = rate валюты рынка. */
     public record FileRate(String currency, BigDecimal rate) {}
@@ -44,11 +44,20 @@ public class SupplierReplyService {
      * parsedName — файл с разобранной таблицей (null — такого нет), unreadable — Excel / Word, который не разобрался,
      * closed — запрос закрыт: файлы сохранены, цены не трогали; rate — курс запроса, по которому подставлены цены;
      * textPricesFile / textPrices — у запроса на одну позицию, когда цены из таблицы не подставлены: файл без таблицы и цены в
-     * его тексте (подсказка, не подстановка; §16 «Примеры КП оператора», находка 4).
+     * его тексте (подсказка, не подстановка; §16 «Примеры КП оператора», находка 4); ourRate — rate — наш курс (спека
+     * 2026-10-23 §4.4), today — курс НБ РК сегодня для той же валюты (для строки уведомления).
      */
     public record ReplyOutcome(List<Long> fileIds, String fileName, String parsedName, int applied, int positions,
                                int manualKept, String foreignCurrency, boolean viewOnly, boolean image, String unreadable,
-                               boolean closed, BigDecimal rate, String textPricesFile, List<TextPrice> textPrices) {
+                               boolean closed, BigDecimal rate, String textPricesFile, List<TextPrice> textPrices,
+                               boolean ourRate, BigDecimal today) {
+        public ReplyOutcome(List<Long> fileIds, String fileName, String parsedName, int applied, int positions, int manualKept,
+                            String foreignCurrency, boolean viewOnly, boolean image, String unreadable, boolean closed,
+                            BigDecimal rate, String textPricesFile, List<TextPrice> textPrices) {
+            this(fileIds, fileName, parsedName, applied, positions, manualKept, foreignCurrency, viewOnly, image, unreadable,
+                    closed, rate, textPricesFile, textPrices, false, null);
+        }
+
         public static ReplyOutcome none() {
             return new ReplyOutcome(List.of(), null, null, 0, 0, 0, null, false, false, null, false, null, null, List.of());
         }
@@ -71,15 +80,17 @@ public class SupplierReplyService {
     private final PriceRequestRepository requests;
     private final SupplierReplyFiles replyFiles;
     private final PrivateRequestImportService importService;
+    private final CurrencyRates rates;
 
     public SupplierReplyService(SupplierReplyFileRepository files, PriceRequestItemRepository items,
                                 PriceRequestRepository requests, SupplierReplyFiles replyFiles,
-                                PrivateRequestImportService importService) {
+                                PrivateRequestImportService importService, CurrencyRates rates) {
         this.files = files;
         this.items = items;
         this.requests = requests;
         this.replyFiles = replyFiles;
         this.importService = importService;
+        this.rates = rates;
     }
 
     /** Письмо: сохранить новые файлы и подставить цены из лучшей таблицы. */
@@ -113,24 +124,35 @@ public class SupplierReplyService {
                     text.map(SupplierReplyFile::getFileName).orElse(null), text.map(SupplierReplyFile::getTextPrices).orElse(List.of()));
         }
         ApplyResult a = apply(pr, best.get());
+        String rateCur = best.get().getRateCurrency();
+        boolean ourRate = a.rate() != null && rates.our(pr.getMarket(), rateCur).map(o -> o.compareTo(a.rate()) == 0).orElse(false);
+        BigDecimal today = a.rate() == null ? null : rates.today(pr.getMarket(), rateCur).map(CurrencyRates.Today::rate).orElse(null);
         return new ReplyOutcome(ids, name, parsedName, a.applied(), a.positions(), a.manualKept(), a.foreignCurrency(),
-                view, image, unreadable, false, a.rate(), null, List.of());
+                view, image, unreadable, false, a.rate(), null, List.of(), ourRate, today);
     }
 
     /**
      * Исправленное КП в той же чужой валюте (второе письмо, загрузка вручную) берёт курс, уже вписанный в этом запросе
-     * (последний): иначе оператор вписывал бы его заново на каждое письмо (решение ревью ветки курса).
+     * (последний): иначе оператор вписывал бы его заново на каждое письмо (решение ревью ветки курса). Курса в запросе
+     * нет — наш курс валюты (спека 2026-10-23 §4.4: вписывать курс у каждого файла больше не нужно).
      */
     private void inheritRate(PriceRequest pr, SupplierReplyFile f) {
         if (f.getParsed() == null || f.getRate() != null) return;
         String market = pr.getMarket() == null ? null : pr.getMarket().currencyCode();
         String cur = tableCurrency(ReplyRowValues.of(f.getParsed()), f.getParsed());
         if (cur == null || market == null || cur.equals(market) || MoneyText.MIXED.equals(cur)) return;
-        List<Object[]> rates = files.findRatesOfRequest(pr.getId(), cur);
-        if (rates.isEmpty()) return;
-        f.setRate((BigDecimal) rates.get(0)[0]);
-        f.setRateCurrency(cur);
-        f.setRateSetAt((OffsetDateTime) rates.get(0)[1]);
+        List<Object[]> requestRates = files.findRatesOfRequest(pr.getId(), cur);
+        if (!requestRates.isEmpty()) {
+            f.setRate((BigDecimal) requestRates.get(0)[0]);
+            f.setRateCurrency(cur);
+            f.setRateSetAt((OffsetDateTime) requestRates.get(0)[1]);
+            return;
+        }
+        rates.our(pr.getMarket(), cur).ifPresent(r -> {
+            f.setRate(r);
+            f.setRateCurrency(cur);
+            f.setRateSetAt(OffsetDateTime.now());
+        });
     }
 
     /** Письмо записано — файлам ставится ссылка на строку «Входящих». */
@@ -293,6 +315,9 @@ public class SupplierReplyService {
             it.setResponsePrice(next);
             it.setResponseAuto(true);
             it.setResponseNote(note(f.getFileName(), r, next, now, market));
+            it.setResponseCurrency(r.currency());
+            it.setResponseOriginal(r.price());
+            it.setResponseRate(now.rate());
             moved++;
         }
         return new Follow(skip, moved, removed, kept);
@@ -383,11 +408,15 @@ public class SupplierReplyService {
                 continue;
             }
             it.setResponsePrice(price);
+            boolean conv = converted(r, market, rate);
+            it.setResponseCurrency(conv ? r.currency() : null);
+            it.setResponseOriginal(conv ? r.price() : null);
+            it.setResponseRate(conv ? rate.rate() : null);
             it.setResponseAuto(true);
             it.setResponseFileId(f.getId());
             it.setResponseFileRow(r.fileRow());
-            it.setResponseNote(note(f.getFileName(), r, price, converted(r, market, rate) ? rate : null, market));
-            byRate |= converted(r, market, rate);
+            it.setResponseNote(note(f.getFileName(), r, price, conv ? rate : null, market));
+            byRate |= conv;
             applied++;
         }
         return new ApplyResult(applied, its.size(), manual, null, byRate ? rate.rate() : null);
@@ -415,6 +444,9 @@ public class SupplierReplyService {
         it.setResponseAuto(false);
         it.setResponseFileId(null);
         it.setResponseFileRow(null);
+        it.setResponseCurrency(null);
+        it.setResponseOriginal(null);
+        it.setResponseRate(null);
     }
 
     /** Наименование, бренд позиции и предложенная модель — то, что видит поставщик в письме. */
@@ -427,7 +459,7 @@ public class SupplierReplyService {
     }
 
     /** Валюта таблицы: самая частая у строк с ценой, иначе по шапке. */
-    static String tableCurrency(List<ReplyRowValues> rows, ReplyTable t) {
+    public static String tableCurrency(List<ReplyRowValues> rows, ReplyTable t) {
         return rows.stream().filter(r -> r.price() != null && r.currency() != null)
                 .collect(Collectors.groupingBy(ReplyRowValues::currency, Collectors.counting()))
                 .entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(t.currency());
@@ -467,6 +499,25 @@ public class SupplierReplyService {
         if (r.price() == null) return null;
         if (r.currency() == null || market == null || r.currency().equals(market)) return r.price();
         return converted(r, market, rate) ? convert(r.price(), rate.rate()) : null;
+    }
+
+    /**
+     * Цена из строки файла в чужой валюте (решение плана 4): исходная цена, валюта и курс — из самой строки и курса файла,
+     * цена в валюте запроса — пересчётом. Строка в валюте запроса или без курса — ничего не меняет.
+     */
+    public static void foreignFromRow(PriceRequestItem it, SupplierReplyFile f, int fileRow, String market) {
+        if (f.getParsed() == null || market == null) return;
+        List<ReplyRowValues> rows = ReplyRowValues.of(f.getParsed());
+        ReplyRowValues r = rows.stream().filter(x -> x.fileRow() == fileRow).findFirst().orElse(null);
+        if (r == null || r.price() == null) return;
+        FileRate rate = fileRate(f.getRate(), f.getRateCurrency(), tableCurrency(rows, f.getParsed()), market);
+        if (!converted(r, market, rate)) return;
+        BigDecimal price = RateMath.convert(r.price(), rate.rate());
+        if (price == null) return;
+        it.setResponsePrice(price);
+        it.setResponseCurrency(r.currency());
+        it.setResponseOriginal(r.price());
+        it.setResponseRate(rate.rate());
     }
 
     /** Цена × курс до тиына / копейки (HALF_UP); не помещается в NUMERIC(15,2) — null (не подставлять). */

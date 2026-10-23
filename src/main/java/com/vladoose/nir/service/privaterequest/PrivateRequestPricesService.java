@@ -8,6 +8,8 @@ import com.vladoose.nir.entity.*;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.PrivateRequestService;
+import com.vladoose.nir.service.rates.CurrencyRates;
+import com.vladoose.nir.service.rates.RateMath;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,12 +32,14 @@ public class PrivateRequestPricesService {
     private final PrivateRequestService privateRequestService;
     private final PriceRequestItemRepository itemRepository;
     private final InboundEmailRepository inboundRepository;
+    private final CurrencyRates rates;
 
     public PrivateRequestPricesService(PrivateRequestService privateRequestService, PriceRequestItemRepository itemRepository,
-                                       InboundEmailRepository inboundRepository) {
+                                       InboundEmailRepository inboundRepository, CurrencyRates rates) {
         this.privateRequestService = privateRequestService;
         this.itemRepository = itemRepository;
         this.inboundRepository = inboundRepository;
+        this.rates = rates;
     }
 
     @Transactional(readOnly = true)
@@ -69,13 +73,17 @@ public class PrivateRequestPricesService {
             Cell best = null;
             for (Supplier s : suppliers.values()) {
                 Cell c = cell(s.distributorId(), latest.get(key(lot.getId(), s.distributorId())), bounced);
+                if (c.currency() != null && c.original() != null) {
+                    Cell plain = c;
+                    c = c.withToday(rates.today(t.getMarket(), c.currency())
+                            .map(td -> RateMath.convert(plain.original(), td.rate())).orElse(null));
+                }
                 cells.add(c);
                 if ("PRICE".equals(c.state()) && (best == null || c.price().compareTo(best.price()) < 0)) best = c;
             }
             final Cell winner = best;
             List<Cell> marked = cells.stream()
-                    .map(c -> c == winner ? new Cell(c.distributorId(), c.state(), c.price(), c.note(), c.priceRequestId(),
-                            c.itemId(), true, c.emailOverride(), c.manual(), c.auto()) : c)
+                    .map(c -> c == winner ? c.withBest() : c)
                     .toList();
             BigDecimal bestPrice = winner == null ? null : winner.price();
             String bestName = winner == null ? null : suppliers.get(winner.distributorId()).name();
@@ -118,7 +126,7 @@ public class PrivateRequestPricesService {
     }
 
     static Cell cell(Long distributorId, PriceRequestItem i, Map<Long, Instant> bounced) {
-        if (i == null) return new Cell(distributorId, "NONE", null, null, null, null, false, false, false, false);
+        if (i == null) return new Cell(distributorId, "NONE", null, null, null, null, false, false, false, false, null, null, null, null);
         PriceRequest pr = i.getPriceRequest();
         String state;
         // цена — сильнейший факт: отказ письмом, а потом цена по телефону — это цена (и лучшая, если ниже других)
@@ -130,7 +138,8 @@ public class PrivateRequestPricesService {
         else if (pr.getResponseDate() != null && ("RESPONDED".equals(pr.getStatus()) || "ACCEPTED".equals(pr.getStatus()))) state = "NO_PRICE";
         else state = "WAITING";
         return new Cell(distributorId, state, i.getResponsePrice(), i.getResponseNote(), pr.getId(), i.getId(), false,
-                pr.isEmailOverride(), pr.getLetterStatus() == LetterStatus.MANUAL, i.isResponseAuto());
+                pr.isEmailOverride(), pr.getLetterStatus() == LetterStatus.MANUAL, i.isResponseAuto(),
+                i.getResponseCurrency(), i.getResponseOriginal(), i.getResponseRate(), null);
     }
 
     private static String key(Long lotId, Long distributorId) {

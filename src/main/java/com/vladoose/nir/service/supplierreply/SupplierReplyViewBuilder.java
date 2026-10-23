@@ -14,6 +14,8 @@ import com.vladoose.nir.entity.TextPrice;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
+import com.vladoose.nir.service.rates.CurrencyRates;
+import com.vladoose.nir.service.rates.RateMath;
 import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.EmailReplyText;
 import org.springframework.stereotype.Service;
@@ -30,7 +32,8 @@ import java.util.*;
  * подсказки для позиций без цены (сопоставление считается заново из таблицы выбранного файла), источники (файлы и
  * письма), таблица выбранного файла, счётчики. Выбранный файл: присланный fileId этого запроса → файл, к строкам
  * которого привязано больше всего цен → последний разобранный → последний PDF / картинка → нет. Файл в чужой валюте —
- * блок курса (вписанный курс и подсказка — последний курс этой валюты на рынке), у строк — цена, пересчитанная по курсу.
+ * блок курса (вписанный курс, наш курс и курс сегодня; подсказка — наш курс, иначе последний курс этой валюты на рынке),
+ * у строк — цена, пересчитанная по курсу; у позиции в чужой валюте — исходная цена и она же по курсу сегодня.
  */
 @Service
 public class SupplierReplyViewBuilder {
@@ -39,13 +42,15 @@ public class SupplierReplyViewBuilder {
     private final PriceRequestItemRepository items;
     private final SupplierReplyFileRepository files;
     private final InboundEmailRepository inbound;
+    private final CurrencyRates rates;
 
     public SupplierReplyViewBuilder(SupplierReplyService service, PriceRequestItemRepository items,
-                                    SupplierReplyFileRepository files, InboundEmailRepository inbound) {
+                                    SupplierReplyFileRepository files, InboundEmailRepository inbound, CurrencyRates rates) {
         this.service = service;
         this.items = items;
         this.files = files;
         this.inbound = inbound;
+        this.rates = rates;
     }
 
     @Transactional(readOnly = true)
@@ -109,10 +114,16 @@ public class SupplierReplyViewBuilder {
                     usedRows.add(r.fileRow());
                 }
             }
+            BigDecimal todayPrice = null;
+            if (it.getResponseCurrency() != null && it.getResponseOriginal() != null) {
+                todayPrice = rates.today(pr.getMarket(), it.getResponseCurrency())
+                        .map(td -> RateMath.convert(it.getResponseOriginal(), td.rate())).orElse(null);
+            }
             positions.add(new Position(it.getId(), i + 1, l == null ? "" : l.getEquipName(), l == null ? null : l.getManufact(),
                     e == null ? null : e.getName(), it.getRequestedQuantity(), l == null ? null : l.getUnit(),
                     it.getResponsePrice(), it.isResponseAuto(), it.getResponseNote(), it.getResponseFileId(),
-                    it.getResponseFileRow(), row, suggestion, flags));
+                    it.getResponseFileRow(), row, suggestion, flags, it.getResponseCurrency(), it.getResponseOriginal(),
+                    it.getResponseRate(), todayPrice));
         }
         int unassigned = 0;
         for (ReplyRowValues r : values) if (r.price() != null && !usedRows.contains(r.fileRow())) unassigned++;
@@ -139,9 +150,13 @@ public class SupplierReplyViewBuilder {
         Rate rateView = null;
         // «валюта не ясна» — без поля курса: пересчитывать нечего, сначала валюту выбирают над таблицей файла
         if (table != null && cur != null && market != null && !cur.equals(market) && !MoneyText.MIXED.equals(cur)) {
-            List<Object[]> last = files.findLastRate(pr.getMarket().name(), cur);
-            rateView = new Rate(cur, rate == null ? null : rate.rate(), last.isEmpty() ? null : (BigDecimal) last.get(0)[0],
-                    last.isEmpty() ? null : at(last.get(0)[1]));
+            BigDecimal our = rates.our(pr.getMarket(), cur).orElse(null);
+            CurrencyRates.Today td = rates.today(pr.getMarket(), cur).orElse(null);
+            List<Object[]> last = our != null ? List.of() : files.findLastRate(pr.getMarket().name(), cur);
+            rateView = new Rate(cur, rate == null ? null : rate.rate(),
+                    our != null ? our : last.isEmpty() ? null : (BigDecimal) last.get(0)[0],
+                    our != null || last.isEmpty() ? null : at(last.get(0)[1]),
+                    our, td == null ? null : td.rate(), td == null ? null : td.date());
         }
         // цены в тексте буклета — подсказка, когда позиция одна (у многих «Стоимость 1 390 000 тенге» не скажет, чья)
         List<TextPrice> textPrices = selected == null || table != null || its.size() != 1 ? List.of()

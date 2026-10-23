@@ -37,6 +37,7 @@ class MailIngestWriterTest {
     @Autowired EntityManager em;
     @Autowired SupplierReplyService replies;
     @Autowired SupplierReplyFileRepository replyFiles;
+    @Autowired CurrencyRateRepository ours;
 
     static final TelegramSettings TG_ON = new TelegramSettings(true, "http://127.0.0.1:1", "123:SECRET", "-1001", "77");
     static final TelegramSettings TG_OFF = new TelegramSettings(false, "", "", "", "");
@@ -50,7 +51,11 @@ class MailIngestWriterTest {
 
     MailIngestWriter writer() { return writer(TG_ON, false); }
 
-    @BeforeEach void kz() { MarketContext.set(Market.KZ); }
+    @BeforeEach
+    void kz() {
+        ours.deleteAllInBatch();   // строки о курсе — без нашего курса (V44): живая проверка оставляет его строки в nirdb
+        MarketContext.set(Market.KZ);
+    }
     @AfterEach void clear() { MarketContext.clear(); }
 
     /** Запрос КП: lots — число лотов (0 — без строк), source — тендер или частная заявка. */

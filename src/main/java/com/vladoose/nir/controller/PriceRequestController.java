@@ -5,6 +5,7 @@ import com.vladoose.nir.dto.request.PriceRequestRequest;
 import com.vladoose.nir.dto.request.PriceRequestSendRequest;
 import com.vladoose.nir.dto.response.KpPreviewResponse;
 import com.vladoose.nir.dto.response.PriceRequestResponse;
+import com.vladoose.nir.entity.Market;
 import com.vladoose.nir.entity.PriceRequest;
 import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.entity.SupplierReplyFile;
@@ -21,6 +22,10 @@ import com.vladoose.nir.service.PriceRequestService;
 import com.vladoose.nir.service.RfqDocumentService;
 import com.vladoose.nir.service.TenderLotService;
 import com.vladoose.nir.service.TenderService;
+import com.vladoose.nir.service.rates.CurrencyRates;
+import com.vladoose.nir.service.rates.RateMath;
+import com.vladoose.nir.service.supplierreply.MoneyText;
+import com.vladoose.nir.service.supplierreply.SupplierReplyService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,10 +33,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @RestController
@@ -47,6 +54,7 @@ public class PriceRequestController {
     private final PriceRequestMapper mapper;
     private final PriceRequestSendService sendService;
     private final SupplierReplyFileRepository fileRepository;
+    private final CurrencyRates rates;
 
     public PriceRequestController(PriceRequestService service,
                                   TenderService tenderService,
@@ -56,7 +64,8 @@ public class PriceRequestController {
                                   PriceRequestItemRepository itemRepository,
                                   PriceRequestMapper mapper,
                                   PriceRequestSendService sendService,
-                                  SupplierReplyFileRepository fileRepository) {
+                                  SupplierReplyFileRepository fileRepository,
+                                  CurrencyRates rates) {
         this.service = service;
         this.tenderService = tenderService;
         this.tenderLotService = tenderLotService;
@@ -66,6 +75,7 @@ public class PriceRequestController {
         this.mapper = mapper;
         this.sendService = sendService;
         this.fileRepository = fileRepository;
+        this.rates = rates;
     }
 
     /** Единый канал: создать КП на каждого поставщика и отправить письмо с токеном [КП-id]. */
@@ -220,7 +230,8 @@ public class PriceRequestController {
             if (item.getPriceRequest() == null || !item.getPriceRequest().getId().equals(id)) {
                 throw new BadRequestException("Позиция " + u.itemId() + " не из этого запроса КП");
             }
-            item.setResponsePrice(u.responsePrice());
+            Market market = pr.getMarket() == null ? MarketContext.get() : pr.getMarket();
+            setPrice(item, u, market);
             item.setResponseNote(u.responseNote());
             item.setResponseAuto(false);                    // ручное сохранение = сверено (спека §3.4)
             if (Boolean.TRUE.equals(u.clearFile())) {
@@ -233,9 +244,10 @@ public class PriceRequestController {
                         .orElseThrow(() -> new BadRequestException("Файл " + u.fileId() + " не из этого запроса цен"));
                 item.setResponseFileId(f.getId());
                 item.setResponseFileRow(u.fileRow());
+                SupplierReplyService.foreignFromRow(item, f, u.fileRow(), market.currencyCode());
             }
             itemRepository.save(item);
-            if (u.responsePrice() != null) anyPriceSet = true;
+            if (u.responsePrice() != null || (u.responseOriginal() != null && item.getResponsePrice() != null)) anyPriceSet = true;
         }
         if (anyPriceSet && "SENT".equals(pr.getStatus())) {
             pr.setStatus("RESPONDED");
@@ -273,13 +285,54 @@ public class PriceRequestController {
     }
 
     /**
+     * Цена ответа (спека 2026-10-23 §4.4, решения плана 4–5): валюта не рынка — исходная цена × наш курс (нет курса — 400);
+     * валюта рынка — цена как есть, рубли снимаются; валюты нет — цена та же — рубли остаются («Сохранить ответы» карточки
+     * тендера шлёт все строки), другая — снимаются.
+     */
+    private void setPrice(PriceRequestItem item, ItemResponseDto u, Market market) {
+        String cur = u.responseCurrency() == null || u.responseCurrency().isBlank() ? null : u.responseCurrency().trim().toUpperCase(Locale.ROOT);
+        if (cur != null && !cur.equals(market.currencyCode())) {
+            if (!CurrencyRates.currencies(market).contains(cur)) {
+                throw new BadRequestException("Неизвестная валюта цены: «" + cur + "» (позиция " + u.itemId() + ")");
+            }
+            if (u.responseOriginal() == null || u.responseOriginal().signum() < 0) {
+                throw new BadRequestException("Цена в " + MoneyText.label(cur) + " — число не меньше нуля (позиция " + u.itemId() + ")");
+            }
+            BigDecimal rate = rates.our(market, cur).orElseThrow(() -> new BadRequestException(
+                    "Впишите наш курс для " + MoneyText.label(cur) + " в «Система → Курсы валют»"));
+            BigDecimal original = u.responseOriginal().setScale(2, RoundingMode.HALF_UP);
+            BigDecimal price = RateMath.convert(original, rate);
+            if (price == null) throw new BadRequestException("Цена слишком большая (позиция " + u.itemId() + ")");
+            item.setResponsePrice(price);
+            item.setResponseCurrency(cur);
+            item.setResponseOriginal(original);
+            item.setResponseRate(rate);
+            return;
+        }
+        BigDecimal before = item.getResponsePrice();
+        boolean same = before != null && u.responsePrice() != null && before.compareTo(u.responsePrice()) == 0;
+        item.setResponsePrice(u.responsePrice());
+        if (cur != null || !same) {
+            item.setResponseCurrency(null);
+            item.setResponseOriginal(null);
+            item.setResponseRate(null);
+        }
+    }
+
+    /**
      * Ответ по строке: цена, примечание и, по желанию, строка файла ответа (fileId + fileRow — выбрать, clearFile —
-     * снять). Тело вкладки, открытой до V30, полей файла не несёт — связь остаётся как была.
+     * снять). Тело вкладки, открытой до V30, полей файла не несёт — связь остаётся как была. responseCurrency /
+     * responseOriginal — цена в чужой валюте (V44): сервер пересчитывает её по нашему курсу.
      */
     public record ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote,
-                                  Long fileId, Integer fileRow, Boolean clearFile) {
+                                  Long fileId, Integer fileRow, Boolean clearFile,
+                                  String responseCurrency, BigDecimal responseOriginal) {
         public ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote) {
-            this(itemId, responsePrice, responseNote, null, null, null);
+            this(itemId, responsePrice, responseNote, null, null, null, null, null);
+        }
+
+        public ItemResponseDto(Long itemId, BigDecimal responsePrice, String responseNote, Long fileId, Integer fileRow, Boolean clearFile) {
+            this(itemId, responsePrice, responseNote, fileId, fileRow, clearFile, null, null);
         }
     }
 }

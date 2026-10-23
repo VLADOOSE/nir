@@ -19,10 +19,15 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
     public record Head(Long id, String status, String supplierName, Long tenderId, String tenderNumber, boolean privateRequest,
                        OffsetDateTime sentAt, LocalDate responseDate, String currency) {}
 
-    /** row — строка файла, из которой цена (у выбранного файла); suggestion — подсказка для позиции без цены. */
+    /**
+     * row — строка файла, из которой цена (у выбранного файла); suggestion — подсказка для позиции без цены; currency /
+     * original / rate — исходная цена в чужой валюте и курс, по которому она пересчитана (V44); today — она же по курсу
+     * НБ РК сегодня (нет курса сегодня или цена в валюте рынка — null).
+     */
     public record Position(Long itemId, int ordinal, String name, String brand, String model, Integer quantity, String unit,
                            BigDecimal price, boolean auto, String note, Long fileId, Integer fileRow, RowRef row,
-                           RowRef suggestion, List<String> flags) {}
+                           RowRef suggestion, List<String> flags, String currency, BigDecimal original, BigDecimal rate,
+                           BigDecimal today) {}
 
     /**
      * currency — валюта строки файла (код): экран сравнивает с валютой рынка и чужую цену не выдаёт за свою; converted —
@@ -64,8 +69,10 @@ public record SupplierReplyView(Head head, List<Position> positions, List<Source
     public record Counts(int unverified, int noPrice, int unassignedRows) {}
 
     /**
-     * Курс выбранного файла: 1 currency = value валюты запроса; suggestion — последний курс этой валюты на рынке,
-     * suggestedAt — когда его вписали (курс меняется — оператор видит, насколько подсказка старая).
+     * Курс выбранного файла: 1 currency = value валюты запроса; suggestion — наш курс, иначе последний вписанный курс
+     * этой валюты на рынке (suggestedAt — когда его вписали; у нашего курса — пусто); our — наш курс; today / todayDate —
+     * курс НБ РК сегодня и его дата (спека 2026-10-23 §4.4).
      */
-    public record Rate(String currency, BigDecimal value, BigDecimal suggestion, OffsetDateTime suggestedAt) {}
+    public record Rate(String currency, BigDecimal value, BigDecimal suggestion, OffsetDateTime suggestedAt, BigDecimal our,
+                       BigDecimal today, LocalDate todayDate) {}
 }

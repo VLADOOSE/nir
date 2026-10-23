@@ -28,4 +28,11 @@ class MailFileLineTest {
                 .contains("и ещё 1");
         assertThat(MailIngestWriter.fileLine(booklet(List.of()))).isEqualTo("Файл «ПроСкан-2000.docx» не разобран — введите цены вручную");
     }
+
+    @Test
+    void ourRate_withToday() {
+        var o = new ReplyOutcome(List.of(1L), "КП руб.xlsx", "КП руб.xlsx", 3, 3, 0, null, false, false, null, false,
+                new BigDecimal("6"), null, List.of(), true, new BigDecimal("5.48"));
+        assertThat(MailIngestWriter.fileLine(o)).isEqualTo("💡 Цены из файла «КП руб.xlsx»: подставлено 3 из 3 по нашему курсу 6 (сегодня 5,48) — сверьте");
+    }
 }
