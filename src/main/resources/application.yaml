@@ -263,3 +263,8 @@ chats:
       status-refresh-ms: 60000
       inbox-done-days: 7
       inbox-dropped-days: 30
+rates:
+  nbrk:
+    enabled: ${RATES_NBRK_ENABLED:false}    # курс НБ РК сегодня; в .env пустым не оставлять — пустой булев флаг роняет старт
+    cron: ${RATES_NBRK_CRON:}               # пусто — раз в 3 часа в :07 по Уральску; «-» выключает расписание
+    base-url: ${RATES_NBRK_BASE_URL:https://nationalbank.kz}

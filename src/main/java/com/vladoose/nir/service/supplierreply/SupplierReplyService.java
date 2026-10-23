@@ -6,6 +6,7 @@ import com.vladoose.nir.dto.request.ReplyColumnRole;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.service.rates.RateMath;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
@@ -34,7 +35,6 @@ public class SupplierReplyService {
     static final Set<String> CLOSED = Set.of("ACCEPTED", "REJECTED", "CLOSED");
     static final Set<String> RESPONDABLE = Set.of("CREATED", "SENT", "DECLINED", "RESPONDED");
     /** Курс — не больше 100 000 валюты запроса за единицу валюты файла (USD → KZT ≈ 500; колонка — NUMERIC(14,6)). */
-    static final BigDecimal MAX_RATE = new BigDecimal("100000");
 
     /** Курс файла к валюте запроса: 1 currency = rate валюты рынка. */
     public record FileRate(String currency, BigDecimal rate) {}
@@ -247,11 +247,7 @@ public class SupplierReplyService {
         if (MoneyText.MIXED.equals(cur)) {
             throw new BadRequestException("Валюта цен в файле не ясна — сначала укажите её над таблицей файла");
         }
-        if (rate != null) {
-            if (rate.signum() <= 0) throw new BadRequestException("Курс — число больше нуля");
-            if (rate.compareTo(MAX_RATE) > 0) throw new BadRequestException("Курс слишком большой — не больше 100 000");
-            if (rate.stripTrailingZeros().scale() > 6) throw new BadRequestException("Курс — не больше 6 знаков после запятой");
-        }
+        RateMath.check(rate);
         FileRate old = fileRate(f.getRate(), f.getRateCurrency(), cur, market);
         f.setRate(rate);
         f.setRateCurrency(rate == null ? null : cur);
@@ -475,13 +471,12 @@ public class SupplierReplyService {
 
     /** Цена × курс до тиына / копейки (HALF_UP); не помещается в NUMERIC(15,2) — null (не подставлять). */
     static BigDecimal convert(BigDecimal price, BigDecimal rate) {
-        BigDecimal v = price.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        return v.precision() - v.scale() > 13 ? null : v;
+        return RateMath.convert(price, rate);
     }
 
     /** «6», «5,85555» — курс без лишних нулей. */
     public static String rateText(BigDecimal rate) {
-        return rate.stripTrailingZeros().toPlainString().replace('.', ',');
+        return RateMath.text(rate);
     }
 
     private static String unit(String code) {
