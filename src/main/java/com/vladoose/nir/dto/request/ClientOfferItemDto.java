@@ -67,6 +67,13 @@ public class ClientOfferItemDto {
      * позиции этой строки и с ценой, иначе 400; пусто — ссылки нет; ручная правка закупки на экране её снимает.
      */
     private Long priceRequestItemId;
+    /** Строка прайса, из которой закупка (спека 2026-10-23 §6.3; решение плана 17 — либо она, либо ответ поставщика). */
+    private Long priceListItemId;
+    /** Только для чтения: прайс строки и подпись «Аксион от 01.09.2026» (метка «📒 из прайса», «Подробнее»). */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long priceListId;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String priceListLabel;
     /** Поставщик ответа — выводит сервер из priceRequestItemId; с клиента не принимается. */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long distributorId;

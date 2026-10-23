@@ -12,6 +12,7 @@ import com.vladoose.nir.entity.PriceRequestItem;
 import com.vladoose.nir.entity.Tender;
 import com.vladoose.nir.repository.ClientOfferFileRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
+import com.vladoose.nir.repository.PriceListItemRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
@@ -20,6 +21,9 @@ import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.rates.CurrencyRates;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -31,14 +35,16 @@ public class ClientOfferMapper {
     private final PriceRequestItemRepository priceItems;
     private final ClientOfferFileRepository files;
     private final CurrencyRates rates;
+    private final PriceListItemRepository priceListItems;
 
     public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry, PriceRequestItemRepository priceItems,
-                             ClientOfferFileRepository files, CurrencyRates rates) {
+                             ClientOfferFileRepository files, CurrencyRates rates, PriceListItemRepository priceListItems) {
         this.tenders = tenders;
         this.registry = registry;
         this.priceItems = priceItems;
         this.files = files;
         this.rates = rates;
+        this.priceListItems = priceListItems;
     }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
@@ -88,6 +94,11 @@ public class ClientOfferMapper {
                 .collect(Collectors.toSet());
         Map<Long, PriceRequestItem> answers = new HashMap<>();
         if (!links.isEmpty()) for (PriceRequestItem pi : priceItems.findAllById(links)) answers.put(pi.getId(), pi);
+        // строки прайсов, из которых закупка: подпись «Аксион от 01.09.2026» — одним запросом
+        Set<Long> listRows = o.getItems().stream().map(ClientOfferItem::getPriceListItemId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Object[]> listLabels = new HashMap<>();
+        if (!listRows.isEmpty()) for (Object[] x : priceListItems.findLabels(listRows)) listLabels.put(((Number) x[0]).longValue(), x);
         List<ClientOfferItemDto> items = new ArrayList<>();
         for (int i = 0; i < o.getItems().size(); i++) {
             ClientOfferItem it = o.getItems().get(i);
@@ -97,6 +108,12 @@ public class ClientOfferMapper {
             PriceRequestItem pi = it.getPriceRequestItemId() == null ? null : answers.get(it.getPriceRequestItemId());
             d.setPurchaseUnverified(pi != null && pi.isResponseAuto());
             d.setReplyRequestId(pi == null ? null : pi.getPriceRequest().getId());
+            Object[] pl = it.getPriceListItemId() == null ? null : listLabels.get(it.getPriceListItemId());
+            if (pl != null) {
+                LocalDate date = pl[3] != null ? (LocalDate) pl[3] : ((OffsetDateTime) pl[4]).toLocalDate();
+                d.setPriceListId(((Number) pl[1]).longValue());
+                d.setPriceListLabel(pl[2] + " от " + date.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+            }
             items.add(d);
         }
         r.setItems(items);
@@ -129,6 +146,7 @@ public class ClientOfferMapper {
         d.setPurchaseCurrency(it.getPurchaseCurrency());
         d.setPurchaseOriginal(it.getPurchaseOriginal());
         d.setPurchaseRate(it.getPurchaseRate());
+        d.setPriceListItemId(it.getPriceListItemId());
         d.setPurchaseVatSame(it.isPurchaseVatSame());
         d.setPurchaseVatRate(it.getPurchaseVatRate());
         d.setSupplierName(it.getSupplierName());

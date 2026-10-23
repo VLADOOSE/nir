@@ -167,6 +167,25 @@ public class PriceHints {
         return out;
     }
 
+    /** Строка того же товара в самом новом действующем прайсе того же поставщика (та же комплектация, иначе первая). */
+    @Transactional(readOnly = true)
+    public Optional<PriceHintRow> latestOfSameSupplier(Market m, Long rowId) {
+        PriceListItem r = items.findById(rowId).orElse(null);
+        if (r == null || r.getPriceList().getMarket() != m) return Optional.empty();
+        List<String> keys = PriceListKeys.of(r);
+        if (keys.isEmpty()) return Optional.empty();
+        Long supplier = r.getPriceList().getDistributor().getId();
+        List<PriceListItem> same = find(m, new LinkedHashSet<>(keys)).stream()
+                .filter(x -> x.getPriceList().getDistributor().getId().equals(supplier) && PriceListKeys.same(PriceListKeys.of(x), keys))
+                .toList();
+        if (same.isEmpty()) return Optional.empty();
+        PriceList newest = same.stream().map(PriceListItem::getPriceList).sorted(PriceListOrder.NEWER).findFirst().orElseThrow();
+        PriceListItem pick = same.stream().filter(x -> x.getPriceList().getId().equals(newest.getId()))
+                .min(Comparator.comparing((PriceListItem x) -> !sameName(x, r)).thenComparingInt(PriceListItem::getLineNo))
+                .orElseThrow();
+        return Optional.of(row(pick, m, rates(m), regs(List.of(pick))));
+    }
+
     /** Кандидаты связи строки прайса (спека §5.3): наши товары (только KZ) и позиции каталога рынка. */
     @Transactional(readOnly = true)
     public PriceLinkCandidates linkCandidates(String q) {

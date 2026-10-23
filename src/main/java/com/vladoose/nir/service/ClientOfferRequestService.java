@@ -1,6 +1,8 @@
 package com.vladoose.nir.service;
 
 import com.vladoose.nir.dto.response.NewPricesResponse;
+import com.vladoose.nir.dto.response.PriceHint;
+import com.vladoose.nir.dto.response.PriceHintRow;
 import com.vladoose.nir.dto.response.SupplierOfferResponse;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.exception.BadRequestException;
@@ -11,7 +13,9 @@ import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.offer.PurchaseOffer;
 import com.vladoose.nir.service.offer.PurchaseOffers;
+import com.vladoose.nir.service.pricelist.PriceHints;
 import com.vladoose.nir.util.RegistrationText;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +55,14 @@ public class ClientOfferRequestService {
         this.registry = registry;
     }
 
+    private PriceHints priceHints;
+
+    /** Строки прайсов в «Поставщик ▾», КП из заявки и «Пришли новые цены» (спека 2026-10-23 §6.3); нет бина — без прайсов. */
+    @Autowired(required = false)
+    public void setPriceHints(PriceHints priceHints) {
+        this.priceHints = priceHints;
+    }
+
     @Transactional
     public ClientOffer createFromPrivateRequest(Long tenderId, String author) {
         Tender t = privateRequests.findById(tenderId);   // гард: только частная заявка своего рынка, иначе 404
@@ -61,10 +73,22 @@ public class ClientOfferRequestService {
         o.setTenderId(t.getId());
         Map<Long, List<PurchaseOffer>> byLot = offersByLot(t.getId());
         Map<String, MedRegistry> records = records(t.getLots());
+        List<TenderLot> sorted = t.getLots().stream().sorted(BY_LINE).toList();
+        // позиции, у которых нет ответа поставщика, — закупка по прайсу («📒 из прайса, не запрашивали», спека §6.3)
+        List<PriceHint> fromLists = priceHints == null ? List.of() : priceHints.hints(o.getMarket(), sorted.stream()
+                .map(l -> PriceHints.Target.text(Objects.toString(l.getEquipName(), "") + " " + Objects.toString(l.getManufact(), "")))
+                .toList());
         int lineNo = 0;
-        for (TenderLot lot : t.getLots().stream().sorted(BY_LINE).toList()) {
+        for (int i = 0; i < sorted.size(); i++) {
+            TenderLot lot = sorted.get(i);
             ClientOfferItem it = item(o, ++lineNo, lot, p, lot.getRegNumber() == null ? null : records.get(lot.getRegNumber().trim()));
-            PurchaseOffers.best(byLot.getOrDefault(lot.getId(), List.of())).ifPresent(best -> link(it, best));
+            Optional<PurchaseOffer> best = PurchaseOffers.best(byLot.getOrDefault(lot.getId(), List.of()));
+            if (best.isPresent()) {
+                link(it, best.get());
+            } else if (!fromLists.isEmpty()) {
+                fromLists.get(i).rows().stream().filter(r -> r.converted() != null).findFirst()
+                        .ifPresent(r -> linkPriceList(it, r, o.getMarket()));
+            }
             o.getItems().add(it);
         }
         OfferCalculation calc = offers.calculate(o);
@@ -75,23 +99,57 @@ public class ClientOfferRequestService {
         return o;
     }
 
-    /** «Поставщик ▾» (спека §8): ответы с ценой на позицию строки — по последнему от поставщика, от дешёвого. */
+    /**
+     * «Поставщик ▾» (спека 2026-10-12 §8; 2026-10-23 §6.3): ответы с ценой на позицию строки — по последнему от поставщика,
+     * от дешёвого; затем строки текущих прайсов поставщиков (у любой строки, не только из заявки).
+     */
     @Transactional(readOnly = true)
     public List<SupplierOfferResponse> offers(Long offerId, Long itemId) {
         ClientOffer o = offers.get(offerId);
         ClientOfferItem it = o.getItems().stream().filter(i -> itemId.equals(i.getId())).findFirst()
                 .orElseThrow(() -> new NotFoundException("Строка КП не найдена: id=" + itemId));
-        if (o.getTenderId() == null || it.getTenderLotId() == null) return List.of();
-        List<PurchaseOffer> current = offersByLot(o.getTenderId()).getOrDefault(it.getTenderLotId(), List.of());
-        if (current.isEmpty()) return List.of();
-        BigDecimal min = current.get(0).price();
-        return current.stream().map(c -> new SupplierOfferResponse(c.priceRequestItemId(), c.supplierName(), c.price(),
-                c.respondedOn(), "ACCEPTED".equals(c.status()), c.price().compareTo(min) == 0,
-                Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()), c.priceRequestId(), c.auto())).toList();
+        List<SupplierOfferResponse> out = new ArrayList<>();
+        if (o.getTenderId() != null && it.getTenderLotId() != null) {
+            for (PurchaseOffer c : offersByLot(o.getTenderId()).getOrDefault(it.getTenderLotId(), List.of())) {
+                out.add(new SupplierOfferResponse(c.priceRequestItemId(), c.supplierName(), c.price(), c.respondedOn(),
+                        "ACCEPTED".equals(c.status()), false, Objects.equals(c.priceRequestItemId(), it.getPriceRequestItemId()),
+                        c.priceRequestId(), c.auto(), null, null, c.currency(), c.original(), c.rate(), null, false));
+            }
+        }
+        if (priceHints != null && it.getKind() == ClientOfferItemKind.ITEM) {
+            for (PriceHintRow r : priceHints.hint(o.getMarket(), target(it)).rows()) {
+                out.add(SupplierOfferResponse.fromPriceList(r, Objects.equals(r.rowId(), it.getPriceListItemId())));
+            }
+        }
+        BigDecimal min = out.stream().map(SupplierOfferResponse::price).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+        return out.stream().map(x -> x.withCheapest(min != null && x.price() != null && x.price().compareTo(min) == 0)).toList();
     }
 
-    /** Что подставить строке: цена и ответ, из которого она. */
-    private record Update(ClientOfferItem item, PurchaseOffer offer, BigDecimal price) {}
+    /** Цель подсказки строки КП (спека §6.1): позиция каталога и текст — наименование, модель, производитель. */
+    static PriceHints.Target target(ClientOfferItem it) {
+        return new PriceHints.Target(String.join(" ", Objects.toString(it.getName(), ""), Objects.toString(it.getModel(), ""),
+                Objects.toString(it.getManufacturer(), "")), null, it.getMedEquipmentId(), null);
+    }
+
+    /** Закупка из строки прайса: цена в валюте рынка по нашему курсу, исходная цена и курс, поставщик; ответ снимается. */
+    static void linkPriceList(ClientOfferItem it, PriceHintRow r, Market m) {
+        boolean foreign = !m.currencyCode().equals(r.currency());
+        it.setPurchasePrice(r.converted().setScale(2, RoundingMode.HALF_UP));
+        it.setPurchaseCurrency(foreign ? r.currency() : null);
+        it.setPurchaseOriginal(foreign ? r.price() : null);
+        it.setPurchaseRate(foreign ? r.ourRate() : null);
+        it.setSupplierName(cut(r.supplierName(), 255));
+        it.setDistributorId(r.distributorId());
+        it.setPriceRequestItemId(null);
+        it.setPriceListItemId(r.rowId());
+    }
+
+    /** Что подставить строке: ответ (offer) или строка прайса (row) и цена в валюте рынка. */
+    private record Update(ClientOfferItem item, PurchaseOffer offer, PriceHintRow row, BigDecimal price) {
+        String supplierName() {
+            return offer != null ? offer.supplierName() : row.supplierName();
+        }
+    }
 
     /**
      * Строки черновика из заявки, которым есть что подставить (спека §8): пустая закупка, а для позиции теперь есть цена по
@@ -99,30 +157,62 @@ public class ClientOfferRequestService {
      * ценой и ручная закупка (без ссылки) не трогаются; строка без позиции (позицию удалили) — тоже.
      */
     private List<Update> updates(ClientOffer o) {
-        if (o.getStatus() != ClientOfferStatus.DRAFT || o.getTenderId() == null) return List.of();
-        Map<Long, List<PurchaseOffer>> byLot = offersByLot(o.getTenderId());
-        Map<Long, PurchaseOffer> byAnswer = new HashMap<>();
-        byLot.values().forEach(list -> list.forEach(c -> byAnswer.put(c.priceRequestItemId(), c)));
-        Set<Long> linked = o.getItems().stream().map(ClientOfferItem::getPriceRequestItemId).filter(Objects::nonNull)
-                .filter(id -> !byAnswer.containsKey(id)).collect(Collectors.toSet());
-        for (PriceRequestItem i : priceItems.findAllById(linked)) {
-            if (i.getResponsePrice() != null && i.getTenderLot() != null) byAnswer.put(i.getId(), PurchaseOffer.of(i));
-        }
+        if (o.getStatus() != ClientOfferStatus.DRAFT) return List.of();
         List<Update> out = new ArrayList<>();
-        for (ClientOfferItem it : o.getItems()) {
-            if (it.getKind() != ClientOfferItemKind.ITEM) continue;
-            if (it.getPurchasePrice() == null) {
-                if (it.getTenderLotId() == null) continue;
-                PurchaseOffers.best(byLot.getOrDefault(it.getTenderLotId(), List.of()))
-                        .ifPresent(best -> out.add(new Update(it, best, scaled(best.price()))));
-            } else if (it.getPriceRequestItemId() != null) {
-                PurchaseOffer answer = byAnswer.get(it.getPriceRequestItemId());
-                if (answer != null && scaled(answer.price()).compareTo(it.getPurchasePrice()) != 0) {
-                    out.add(new Update(it, answer, scaled(answer.price())));
+        if (o.getTenderId() != null) {
+            Map<Long, List<PurchaseOffer>> byLot = offersByLot(o.getTenderId());
+            Map<Long, PurchaseOffer> byAnswer = new HashMap<>();
+            byLot.values().forEach(list -> list.forEach(c -> byAnswer.put(c.priceRequestItemId(), c)));
+            Set<Long> linked = o.getItems().stream().map(ClientOfferItem::getPriceRequestItemId).filter(Objects::nonNull)
+                    .filter(id -> !byAnswer.containsKey(id)).collect(Collectors.toSet());
+            for (PriceRequestItem i : priceItems.findAllById(linked)) {
+                if (i.getResponsePrice() != null && i.getTenderLot() != null) byAnswer.put(i.getId(), PurchaseOffer.of(i));
+            }
+            for (ClientOfferItem it : o.getItems()) {
+                if (it.getKind() != ClientOfferItemKind.ITEM) continue;
+                if (it.getPurchasePrice() == null) {
+                    if (it.getTenderLotId() == null) continue;
+                    PurchaseOffers.best(byLot.getOrDefault(it.getTenderLotId(), List.of()))
+                            .ifPresent(best -> out.add(new Update(it, best, null, scaled(best.price()))));
+                } else if (it.getPriceRequestItemId() != null) {
+                    PurchaseOffer answer = byAnswer.get(it.getPriceRequestItemId());
+                    if (answer != null && scaled(answer.price()).compareTo(it.getPurchasePrice()) != 0) {
+                        out.add(new Update(it, answer, null, scaled(answer.price())));
+                    }
                 }
             }
         }
+        // строки прайсов (спека 2026-10-23 §6.3) — у любого черновика: новый прайс того же поставщика, закупка по прайсу
+        // строке без закупки; строки, которым уже нашёлся ответ поставщика, второй раз не попадают
+        if (priceHints == null) return out;
+        Set<ClientOfferItem> taken = Collections.newSetFromMap(new IdentityHashMap<>());
+        out.forEach(u -> taken.add(u.item()));
+        List<ClientOfferItem> empty = new ArrayList<>();
+        for (ClientOfferItem it : o.getItems()) {
+            if (it.getKind() != ClientOfferItemKind.ITEM || taken.contains(it)) continue;
+            if (it.getPriceListItemId() != null && it.getPurchasePrice() != null) {
+                // более новый прайс того же поставщика — другая цена (сравниваем исходные цены: курс меняет «Пересчитать»)
+                priceHints.latestOfSameSupplier(o.getMarket(), it.getPriceListItemId())
+                        .filter(r -> r.converted() != null && original(it).compareTo(r.price()) != 0)
+                        .ifPresent(r -> out.add(new Update(it, null, r, scaled(r.converted()))));
+            } else if (it.getPurchasePrice() == null) {
+                empty.add(it);
+            }
+        }
+        if (!empty.isEmpty()) {
+            List<PriceHint> found = priceHints.hints(o.getMarket(), empty.stream().map(ClientOfferRequestService::target).toList());
+            for (int i = 0; i < empty.size(); i++) {
+                ClientOfferItem it = empty.get(i);
+                found.get(i).rows().stream().filter(r -> r.converted() != null).findFirst()
+                        .ifPresent(r -> out.add(new Update(it, null, r, scaled(r.converted()))));
+            }
+        }
         return out;
+    }
+
+    /** Исходная цена закупки строки: в чужой валюте — она, иначе закупка. */
+    private static BigDecimal original(ClientOfferItem it) {
+        return it.getPurchaseOriginal() != null ? it.getPurchaseOriginal() : it.getPurchasePrice();
     }
 
     @Transactional(readOnly = true)
@@ -130,7 +220,7 @@ public class ClientOfferRequestService {
         ClientOffer o = offers.get(offerId);
         return new NewPricesResponse(updates(o).stream().map(u -> new NewPricesResponse.Line(u.item().getId(),
                 u.item().getLineNo(), u.item().getName(), u.item().getPurchasePrice(), u.price(),
-                u.offer().supplierName())).toList());
+                u.supplierName())).toList());
     }
 
     /** «Подставить»: цены из плашки — в строки черновика; версия растёт, вторая вкладка получит 409 (решение плана 8). */
@@ -138,8 +228,10 @@ public class ClientOfferRequestService {
     public ClientOffer applyNewPrices(Long offerId) {
         ClientOffer o = offers.get(offerId);
         if (o.getStatus() != ClientOfferStatus.DRAFT) throw new BadRequestException("Новые цены подставляются только в черновик");
-        if (o.getTenderId() == null) throw new BadRequestException("КП не из заявки — подставлять нечего");
-        for (Update u : updates(o)) link(u.item(), u.offer());
+        for (Update u : updates(o)) {
+            if (u.offer() != null) link(u.item(), u.offer());
+            else linkPriceList(u.item(), u.row(), o.getMarket());
+        }
         OfferCalculation calc = offers.calculate(o);
         ClientOfferService.checkAmounts(o, calc);
         o.setTotalAmount(calc.totals().sum());

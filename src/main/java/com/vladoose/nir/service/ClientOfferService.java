@@ -13,6 +13,7 @@ import com.vladoose.nir.repository.ClientOfferRepository;
 import com.vladoose.nir.repository.FacilityRepository;
 import com.vladoose.nir.repository.MedEquipmentRepository;
 import com.vladoose.nir.repository.MedRegistryRepository;
+import com.vladoose.nir.repository.PriceListItemRepository;
 import com.vladoose.nir.repository.PriceRequestItemRepository;
 import com.vladoose.nir.service.document.*;
 import com.vladoose.nir.service.offer.ClientOfferCalculator;
@@ -84,15 +85,17 @@ public class ClientOfferService {
     private final MedRegistryRepository registry;
     private final MedEquipmentRepository equipment;
     private final CurrencyRates rates;
+    private final PriceListItemRepository priceListItems;
 
     public ClientOfferService(ClientOfferRepository repository, CompanyProfileService profiles,
                               FacilityRepository facilities, ClientOfferCalculator calculator, KpDocumentBuilder builder,
                               KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer preview, KpDocxRenderer docx,
                               PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems,
                               MedRegistryRepository registry, MedEquipmentRepository equipment,
-                              DealEventService dealEvents, CurrencyRates rates) {
+                              DealEventService dealEvents, CurrencyRates rates, PriceListItemRepository priceListItems) {
         this.dealEvents = dealEvents;
         this.rates = rates;
+        this.priceListItems = priceListItems;
         this.repository = repository;
         this.profiles = profiles;
         this.facilities = facilities;
@@ -495,11 +498,17 @@ public class ClientOfferService {
         }
         BigDecimal storedRate = stored != null && cur.equals(stored.getPurchaseCurrency()) ? stored.getPurchaseRate() : null;
         BigDecimal ours = rates.our(o.getMarket(), cur).orElse(null);
+        // курс ответа поставщика, на который строка теперь ссылается («Поставщик ▾»): иначе выбор ответа, пересчитанного
+        // по прежнему нашему курсу, давал бы 400, а закупка в КП расходилась бы с показанной в списке
+        String code = cur;
+        BigDecimal linked = dto.getPriceRequestItemId() == null ? null : priceRequestItems.findById(dto.getPriceRequestItemId())
+                .filter(a -> code.equals(a.getResponseCurrency())).map(PriceRequestItem::getResponseRate).orElse(null);
         BigDecimal rate = dto.getPurchaseRate();
         if (rate == null) {
             rate = storedRate != null ? storedRate : ours;
             if (rate == null) throw new BadRequestException("Впишите наш курс для " + label + " в «Система → Курсы валют» — позиция " + row);
-        } else if (!(storedRate != null && storedRate.compareTo(rate) == 0) && !(ours != null && ours.compareTo(rate) == 0)) {
+        } else if (!(storedRate != null && storedRate.compareTo(rate) == 0) && !(ours != null && ours.compareTo(rate) == 0)
+                && !(linked != null && linked.compareTo(rate) == 0)) {
             throw new BadRequestException("Курс строки — только наш курс" + (ours == null ? "" : " (" + RateMath.text(ours) + ")")
                     + " — позиция " + row);
         }
@@ -509,10 +518,13 @@ public class ClientOfferService {
         return new Purchase(cur, original, rate);
     }
 
-    /** Ссылка строки на ответ после проверки (решение плана 5): keep — та, что сохранена; иначе — новые id ответа и поставщика. */
-    private record Link(boolean keep, Long priceRequestItemId, Long distributorId) {
-        static final Link NONE = new Link(false, null, null);
-        static final Link KEEP = new Link(true, null, null);
+    /**
+     * Ссылка строки после проверки (решение плана 5): keep — та, что сохранена; иначе — ответ поставщика или строка прайса
+     * (спека 2026-10-23 §6.3) и их поставщик.
+     */
+    private record Link(boolean keep, Long priceRequestItemId, Long priceListItemId, Long distributorId) {
+        static final Link NONE = new Link(false, null, null, null);
+        static final Link KEEP = new Link(true, null, null, null);
     }
 
     private record Checked(List<ClientOfferItem> stored, List<Link> links, List<Reg> regs, List<Long> catalog,
@@ -524,6 +536,11 @@ public class ClientOfferService {
      * ценой, иначе 400. Строки ответа нет (удалена вместе с запросом) — ссылка молча снимается: автосохранение не падает.
      */
     private Link checkLink(ClientOffer o, ClientOfferItemDto dto, ClientOfferItem stored, String row) {
+        Long listRow = dto.getPriceListItemId();
+        if (listRow != null && dto.getPriceRequestItemId() != null) {
+            throw new BadRequestException("У строки — либо ответ поставщика, либо строка прайса — позиция " + row);
+        }
+        if (listRow != null) return checkPriceListLink(o, listRow, stored, row);
         Long id = dto.getPriceRequestItemId();
         if (id == null) return Link.NONE;
         if (stored != null && id.equals(stored.getPriceRequestItemId())) return Link.KEEP;
@@ -535,7 +552,23 @@ public class ClientOfferService {
                 && pr.getTender() != null && o.getTenderId().equals(pr.getTender().getId())
                 && answer.getTenderLot() != null && lotId.equals(answer.getTenderLot().getId());
         if (!ours) throw new BadRequestException("Ответ поставщика не относится к этой позиции заявки — позиция " + row);
-        return new Link(false, id, pr.getDistributor().getId());
+        return new Link(false, id, null, pr.getDistributor().getId());
+    }
+
+    /**
+     * Ссылка на строку прайса (спека 2026-10-23 §6.3): та же, что сохранена, — не перепроверяется; новая — строка
+     * действующего прайса рынка КП, иначе 400; строки нет (прайс удалили) — ссылка молча снимается. Поставщик — поставщик
+     * прайса.
+     */
+    private Link checkPriceListLink(ClientOffer o, Long id, ClientOfferItem stored, String row) {
+        if (stored != null && id.equals(stored.getPriceListItemId())) return Link.KEEP;
+        PriceListItem r = priceListItems.findById(id).orElse(null);
+        if (r == null) return Link.NONE;
+        PriceList p = r.getPriceList();
+        if (p.getMarket() != o.getMarket() || p.getStatus() != PriceListStatus.ACTIVE) {
+            throw new BadRequestException("Строка прайса не найдена — позиция " + row);
+        }
+        return new Link(false, null, id, p.getDistributor().getId());
     }
 
     /** Регистрация строки после проверки (спека 2026-10-13 §4): keep — сохранённая не меняется (снимок). */
@@ -712,6 +745,7 @@ public class ClientOfferService {
             it.setRegNumber(null);
             it.setSuggestionScore(null);
             it.setPriceRequestItemId(null);
+            it.setPriceListItemId(null);
             it.setDistributorId(null);
             it.setMedEquipmentId(null);
             return;
@@ -740,6 +774,7 @@ public class ClientOfferService {
         it.setMedEquipmentId(catalogId);
         if (!link.keep()) {
             it.setPriceRequestItemId(link.priceRequestItemId());
+            it.setPriceListItemId(link.priceListItemId());
             it.setDistributorId(link.distributorId());
         }
     }
@@ -759,7 +794,8 @@ public class ClientOfferService {
                 .purchaseCurrency(it.getPurchaseCurrency()).purchaseOriginal(it.getPurchaseOriginal()).purchaseRate(it.getPurchaseRate())
                 .purchaseVatRate(it.getPurchaseVatRate()).supplierName(it.getSupplierName())
                 .distributorId(it.getDistributorId()).tenderLotId(it.getTenderLotId())
-                .priceRequestItemId(it.getPriceRequestItemId()).medEquipmentId(it.getMedEquipmentId())
+                .priceRequestItemId(it.getPriceRequestItemId()).priceListItemId(it.getPriceListItemId())
+                .medEquipmentId(it.getMedEquipmentId())
                 .markupPct(it.getMarkupPct()).priceOverride(it.getPriceOverride()).vatRate(it.getVatRate())
                 .registrationStatus(it.getRegistrationStatus()).registrationText(it.getRegistrationText())
                 .regNumber(it.getRegNumber()).suggestionScore(it.getSuggestionScore()).note(it.getNote())
