@@ -51,7 +51,7 @@ public record OfferHeader(Integer number, LocalDate date) {
         return new OfferHeader(number, date);
     }
 
-    static LocalDate date(String s) {
+    public static LocalDate date(String s) {
         try {
             Matcher n = NUMERIC.matcher(s);
             if (n.find()) return LocalDate.of(Integer.parseInt(n.group(3)), Integer.parseInt(n.group(2)), Integer.parseInt(n.group(1)));

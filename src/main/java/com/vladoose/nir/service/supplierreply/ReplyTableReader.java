@@ -85,8 +85,12 @@ public final class ReplyTableReader {
     static final int TEXT_ROWS = 10;
 
     static Document document(byte[] content, ReplyFileKind kind) throws IOException {
+        return document(content, kind, false);
+    }
+
+    static Document document(byte[] content, ReplyFileKind kind, boolean expandVertical) throws IOException {
         return switch (kind) {
-            case EXCEL -> new Document(excel(content), List.of());
+            case EXCEL -> new Document(excel(content, expandVertical), List.of());
             case WORD -> ole2(content) ? doc(content) : docx(content);
             default -> new Document(List.of(), List.of());
         };
@@ -115,7 +119,16 @@ public final class ReplyTableReader {
      * Word той же ширины без своей шапки — продолжение предыдущей (как в read) и отдельной таблицей не считается.
      */
     public static List<ReadTable> readAll(byte[] content, ReplyFileKind kind, Map<String, LineField> learned) throws IOException {
-        List<Grid> grids = document(content, kind).grids();
+        return readAll(content, kind, learned, false);
+    }
+
+    /**
+     * expandVertical — объединённые по вертикали ячейки Excel (одна колонка, несколько строк: «РУ» на два варианта модели)
+     * получают текст во всех строках, а не только в шапке; прайсы (спека 2026-10-23 §5.2). Ответы поставщиков — как раньше.
+     */
+    public static List<ReadTable> readAll(byte[] content, ReplyFileKind kind, Map<String, LineField> learned, boolean expandVertical)
+            throws IOException {
+        List<Grid> grids = document(content, kind, expandVertical).grids();
         List<ReadTable> out = new ArrayList<>();
         for (int i = 0; i < grids.size(); i++) {
             Grid acc = grids.get(i);
@@ -171,6 +184,10 @@ public final class ReplyTableReader {
     // ---- Excel ----------------------------------------------------------------------------------------------------
 
     static List<Grid> excel(byte[] content) throws IOException {
+        return excel(content, false);
+    }
+
+    static List<Grid> excel(byte[] content, boolean expandVertical) throws IOException {
         List<Grid> out = new ArrayList<>();
         try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(content))) {
             for (int s = 0; s < wb.getNumberOfSheets(); s++) {
@@ -187,9 +204,12 @@ public final class ReplyTableReader {
                     }
                     rows.add(cells);
                 }
-                // объединённые ячейки шапки: текст — во все ячейки области («Цена, тг» над «за ед. | сумма»)
+                // объединённые ячейки шапки: текст — во все ячейки области («Цена, тг» над «за ед. | сумма»); у прайса — ещё
+                // вертикальные в строках данных («РУ» на две комплектации)
                 for (CellRangeAddress m : sheet.getMergedRegions()) {
-                    if (m.getFirstRow() > HEADER_SCAN + 1 || m.getFirstRow() >= rows.size()) continue;
+                    boolean vertical = m.getFirstColumn() == m.getLastColumn() && m.getLastRow() > m.getFirstRow();
+                    boolean header = m.getFirstRow() <= HEADER_SCAN + 1;
+                    if (!(header || (expandVertical && vertical)) || m.getFirstRow() >= rows.size()) continue;
                     String v = get(rows, m.getFirstRow(), m.getFirstColumn());
                     for (int r = m.getFirstRow(); r <= Math.min(m.getLastRow(), rows.size() - 1); r++) {
                         for (int c = m.getFirstColumn(); c <= Math.min(m.getLastColumn(), MAX_COLS - 1); c++) set(rows, r, c, v);
@@ -572,7 +592,7 @@ public final class ReplyTableReader {
     }
 
     /** Ячейки строки через пробел; объединённые (тот же текст подряд) — один раз. */
-    private static String joined(List<String> row) {
+    public static String joined(List<String> row) {
         StringBuilder b = new StringBuilder();
         String prev = null;
         for (String c : row) {

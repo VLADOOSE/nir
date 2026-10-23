@@ -127,7 +127,7 @@ public class SupplierReplyFiles {
      * Текст первых {@link ReplyPdfPages#MAX_PAGES} страниц PDF построчно (скан — пусто): столько же показывает экран сверки,
      * а каталог на сотни страниц не держит единственный поток приёма почты zakup@.
      */
-    static List<String> pdfLines(byte[] bytes) {
+    public static List<String> pdfLines(byte[] bytes) {
         String t = PdfTextExtractor.firstPages(bytes, ReplyPdfPages.MAX_PAGES);
         return t == null ? List.of() : List.of(t.split("\\R"));
     }
