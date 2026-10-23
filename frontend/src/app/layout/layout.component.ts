@@ -117,6 +117,9 @@ import { filter } from 'rxjs/operators';
             <a routerLink="/distributors" routerLinkActive="active">
               <svg lucideIcon="truck" [size]="16"></svg> Дистрибьюторы
             </a>
+            <a routerLink="/price-lists" routerLinkActive="active">
+              <svg lucideIcon="receipt-text" [size]="16"></svg> Прайсы поставщиков
+            </a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Заявки</span>

@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
+import { AuthService } from '../../services/auth.service';
+import { errorText } from '../../shared/error-text';
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
 import { mailPollToast } from '../../shared/mail-poll-toast';
@@ -51,6 +53,7 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
                   class="muted kp-ref"> · <a class="xref" [routerLink]="['/price-requests', r.matchedPriceRequestId]"
                   [attr.aria-label]="'Открыть запрос цен КП #' + r.matchedPriceRequestId">КП #{{ r.matchedPriceRequestId }}</a></span>
             <span class="muted files" *ngIf="r.files?.length"> · 📎 {{ r.files.join(', ') }}</span>
+            <span class="muted pl-like" *ngIf="hasPriceLike(r)"> · 📒 похоже на прайс</span>
             <span class="muted box-ref" *ngIf="r.mailbox"> · {{ boxLabel(r.mailbox) }}</span>
           </td>
           <td data-label="Статус">{{ r.status==='PROCESSED' ? 'Обработано' : 'Новое' }}</td>
@@ -60,6 +63,11 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
             <!-- сверка ответа — действие строки: на телефоне справа в строке типа, как «Импортировать» -->
             <a *ngIf="r.type==='SUPPLIER_RESPONSE' && r.matchedPriceRequestId" class="btn-line-solid reply-link"
                [routerLink]="['/price-requests', r.matchedPriceRequestId]">Сверить ›</a>
+            <!-- файлы письма «прочее» — в прайсы поставщиков (спека 2026-10-23 §5.1) -->
+            <ng-container *ngIf="auth.isAdmin()">
+              <button *ngFor="let f of r.priceFiles" type="button" class="btn-line-solid" [disabled]="pricing"
+                      (click)="toPriceList(f)" [attr.title]="f.name">Занести как прайс<ng-container *ngIf="r.priceFiles.length > 1"> · {{ f.name }}</ng-container></button>
+            </ng-container>
           </td>
         </tr>
       </tbody>
@@ -67,6 +75,22 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
     <!-- сервер отдаёт не больше LIST_LIMIT последних писем: ровно столько — значит, старые не показаны -->
     <p class="list-cap" *ngIf="rows.length >= LIST_LIMIT">Показаны последние {{ LIST_LIMIT }} писем</p>
     <p class="empty" *ngIf="!rows.length && !loading">Писем пока нет. Нажмите «Проверить почту».</p>
+
+    <!-- «Чей это прайс?» — по адресу отправителя поставщик не нашёлся -->
+    <div class="overlay" *ngIf="pickFile" (click)="pickFile = null">
+      <div class="modal" role="dialog" aria-label="Поставщик прайса" (click)="$event.stopPropagation()">
+        <h3>Чей это прайс?</h3>
+        <p class="muted">По адресу отправителя поставщик не нашёлся — выберите его.</p>
+        <select [(ngModel)]="pickSupplier" aria-label="Поставщик">
+          <option [ngValue]="null">Поставщик…</option>
+          <option *ngFor="let d of suppliers" [ngValue]="d.id">{{ d.name }}</option>
+        </select>
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" [disabled]="!pickSupplier || pricing" (click)="toPriceList(pickFile, pickSupplier)">Занести</button>
+          <button type="button" class="btn btn-cancel" (click)="pickFile = null">Отмена</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Импорт письма клиники через грид D1 -->
     <div class="import-panel" *ngIf="importEmailId !== null">
@@ -114,6 +138,17 @@ import { mailPollToast } from '../../shared/mail-poll-toast';
   </div>
   `,
   styles: [`
+    .overlay { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); z-index: 1100; display: flex; align-items: center;
+               justify-content: center; padding: 16px; }
+    .modal { background: var(--surface); color: var(--text); border-radius: 12px; box-shadow: var(--shadow-lg); width: 100%;
+             max-width: 460px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; }
+    .modal h3 { margin: 0; }
+    .modal select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    @media (max-width: 900px) {
+      .overlay { padding: 0; align-items: flex-end; }
+      .modal { max-width: none; border-radius: 12px 12px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+      .modal select { font-size: 16px; min-height: 40px; }
+    }
     .page { padding: 20px; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
     .head h1 { margin: 0; }
@@ -280,8 +315,14 @@ export class InboundComponent {
   newClientMode = false;
   newClientName = '';
 
+  /** «Занести как прайс»: идёт запрос; окно выбора поставщика, когда по адресу он не нашёлся. */
+  pricing = false;
+  pickFile: { id: number; name: string } | null = null;
+  pickSupplier: number | null = null;
+  suppliers: { id: number; name: string }[] = [];
+
   constructor(private api: ApiService, private cdr: ChangeDetectorRef,
-              private notify: NotificationService, private router: Router) {
+              private notify: NotificationService, private router: Router, public auth: AuthService) {
     this.api.getFacilities().subscribe({ next: d => { this.facilities = d; this.cdr.detectChanges(); } });
     this.api.getInboundMailboxes().subscribe({ next: d => { this.mailboxes = d || []; this.cdr.detectChanges(); }, error: () => {} });
     this.load();
@@ -297,6 +338,28 @@ export class InboundComponent {
   }
 
   setMailbox(b: string) { this.mailbox = b; this.load(); }
+
+  hasPriceLike(r: any): boolean { return (r.priceFiles || []).some((f: any) => f.priceLike); }
+
+  toPriceList(f: { id: number; name: string }, distributorId?: number | null) {
+    this.pricing = true;
+    this.api.priceListFromInbound(f.id, distributorId).subscribe({
+      next: v => { this.pricing = false; this.pickFile = null; this.router.navigate(['/price-lists', v.id]); },
+      error: e => {
+        this.pricing = false;
+        if (e?.status === 400 && String(errorText(e)).startsWith('Выберите поставщика')) {
+          this.pickFile = f;
+          this.pickSupplier = null;
+          if (!this.suppliers.length) {
+            this.api.getDistributors().subscribe(d => { this.suppliers = d.map(x => ({ id: x.id, name: x.name })); this.cdr.detectChanges(); });
+          }
+        } else {
+          this.notify.error(errorText(e));
+        }
+        this.cdr.detectChanges();
+      },
+    });
+  }
 
   /** «zakup@westmed.kz» → «zakup@». */
   boxLabel(b: string | null): string { return b ? b.split('@')[0] + '@' : '—'; }

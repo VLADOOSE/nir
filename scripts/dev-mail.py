@@ -11,6 +11,7 @@
   python3 scripts/dev-mail.py answer <адрес>        — наш ответ клиенту «из веб-почты»: в «Отправленные» info@ (IMAP APPEND)
   python3 scripts/dev-mail.py kp <адрес> <файл>     — наш ответ клиенту с КП во вложении: в «Отправленные» info@ (IMAP APPEND)
   python3 scripts/dev-mail.py newsletter|service|site|colleague — рассылка / служебное / уведомление сайта / свой домен на info@
+  python3 scripts/dev-mail.py price <файл>          — прайс поставщика без метки КП (прочее) на zakup@: «Занести как прайс»
 """
 import base64
 import imaplib
@@ -196,6 +197,19 @@ def kp(address, path):
     print("в «Отправленные»:", m["Subject"], "—", name)
 
 
+def price(path):
+    # прайс без метки [КП-…]: строка «Прочее» во «Входящих» zakup@ с кнопкой «Занести как прайс»
+    m = EmailMessage()
+    m["From"] = "Отдел продаж ZZ <zz-prices@example.kz>"
+    m["To"] = TO
+    m["Subject"] = "Прайс-лист на ноябрь"
+    m.set_content("Добрый день!\nВысылаем актуальный прайс-лист.\n\nС уважением, отдел продаж")
+    name = os.path.basename(path)
+    with open(path, "rb") as f:
+        m.add_attachment(f.read(), maintype="application", subtype="octet-stream", filename=name)
+    send(m)
+
+
 def info_letter(sender, subject, text, **headers):
     m = EmailMessage()
     m["From"] = sender
@@ -219,6 +233,8 @@ if __name__ == "__main__":
         {"client": client, "client-plain": client_plain, "answer": answer}[cmd](sys.argv[2])
     elif cmd == "kp" and len(sys.argv) > 3:
         kp(sys.argv[2], sys.argv[3])
+    elif cmd == "price" and len(sys.argv) > 2:
+        price(sys.argv[2])
     elif cmd == "newsletter":
         info_letter("Медтехника <news@medshop.kz>", "Скидки недели", "Скидки до 30%", List_Unsubscribe="<mailto:unsubscribe@medshop.kz>")
     elif cmd == "service":

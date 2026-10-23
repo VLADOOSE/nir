@@ -7,11 +7,12 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { AuthService } from '../../services/auth.service';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-distributors',
   standalone: true,
-  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, LucideDynamicIcon],
+  imports: [NgFor, NgIf, ReactiveFormsModule, FormsModule, LucideDynamicIcon, RouterLink],
   template: `
     <h2>Дистрибьюторы</h2>
     <p class="subtitle">Поставщики медицинского оборудования</p>
@@ -80,7 +81,9 @@ import { AuthService } from '../../services/auth.service';
                (.brands-col), таблица там остаётся прежней. Бренды уже приходят в
                ответе списка (DistributorResponse.brands) — это тот же массив, что
                показывает форма редактирования. -->
-          <td data-label="Название">{{ d.name }} <span class="flag" *ngIf="d.manufacturer">производитель</span> <span class="flag" *ngIf="d.trusted">доверенный</span></td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
+          <td data-label="Название">{{ d.name }} <span class="flag" *ngIf="d.manufacturer">производитель</span> <span class="flag" *ngIf="d.trusted">доверенный</span>
+            <a class="xref pl-link" *ngIf="priceCounts[d.id]; else plAdd" [routerLink]="['/price-lists']" [queryParams]="{ supplier: d.id }">Прайсы: {{ priceCounts[d.id] }} ›</a>
+            <ng-template #plAdd><a class="xref pl-link" *ngIf="auth.isAdmin()" [routerLink]="['/price-lists']" [queryParams]="{ supplier: d.id }">+ прайс ›</a></ng-template></td><td class="brands-col" data-label="Бренды"><span class="brand-chip" *ngFor="let b of d.brands">{{ b }}</span></td><td data-label="ИНН">{{ d.inn }}</td>
           <td data-label="Контактное лицо">{{ d.lastName }} {{ d.firstName }}</td><td data-label="Телефон">{{ d.phone }}</td><td data-label="Эл. почта">{{ d.email }}</td>
           <td data-label="Специализация">
             <span *ngIf="!d.equipmentTypes || d.equipmentTypes.length === 0" class="tag tag-all">Все типы</span>
@@ -95,6 +98,7 @@ import { AuthService } from '../../services/auth.service';
     </table>
   `,
   styles: [`
+    .pl-link { margin-left: 6px; font-size: 12px; font-weight: 400; }
     h2 { margin: 0; font-size: 20px; }
     .search-input { width: 100%; max-width: 400px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
     .search-input:focus { outline: none; border-color: var(--accent); }
@@ -264,11 +268,15 @@ export class DistributorsComponent {
   }
   removeBrand(i: number) { this.brands.splice(i, 1); }
 
+  /** Сколько прайсов у поставщика — «Прайсы: N ›» (спека 2026-10-23 §5.1). */
+  priceCounts: Record<number, number> = {};
+
   loadData() {
     this.api.getDistributors().subscribe({
       next: data => { this.distributors = data; this.applyFilter(); this.cdr.detectChanges(); },
       error: err => this.notify.error('Ошибка загрузки дистрибьюторов: ' + (err.error?.message || err.message))
     });
+    this.api.getPriceListCounts().subscribe({ next: c => { this.priceCounts = c; this.cdr.detectChanges(); }, error: () => {} });
   }
 
   applyFilter() {

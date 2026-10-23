@@ -16,6 +16,8 @@ import type { AiAnswerResult } from '../shared/ai-answer';
 import type { CustomerContacts, CustomerHistory, LotResultView, ResultsCheck } from '../shared/tender-results';
 import type { MarketHint, MarketPrice, MarketQuery } from '../shared/market-price';
 import type { RatesView } from '../shared/rates';
+import type { PriceHint, PriceHintRow, PriceHistoryEntry } from '../shared/price-hint';
+import type { PriceLinkCandidates, PriceListField, PriceListListItem, PriceListView, PriceRowField } from '../shared/price-list';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -802,6 +804,59 @@ export class ApiService {
   }
   saveCurrencyRates(rates: { currency: string; ourRate: number | null }[]): Observable<RatesView> {
     return this.http.put<RatesView>(`${this.base}/currency-rates`, { rates });
+  }
+
+  // === Прайсы поставщиков (спека 2026-10-23 §5–7) ===
+  getPriceLists(supplier?: number | null): Observable<PriceListListItem[]> {
+    return this.http.get<PriceListListItem[]>(`${this.base}/price-lists`, { params: supplier ? { supplier } : {} });
+  }
+  uploadPriceList(distributorId: number, file: File): Observable<PriceListView> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('distributorId', String(distributorId));
+    return this.http.post<PriceListView>(`${this.base}/price-lists`, fd);
+  }
+  getPriceList(id: number): Observable<PriceListView> {
+    return this.http.get<PriceListView>(`${this.base}/price-lists/${id}`);
+  }
+  patchPriceList(id: number, field: PriceListField, value: string | null): Observable<PriceListView> {
+    return this.http.patch<PriceListView>(`${this.base}/price-lists/${id}`, { field, value });
+  }
+  activatePriceList(id: number): Observable<PriceListView> {
+    return this.http.post<PriceListView>(`${this.base}/price-lists/${id}/activate`, {});
+  }
+  deletePriceList(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/price-lists/${id}`);
+  }
+  addPriceListRow(id: number): Observable<PriceListView> {
+    return this.http.post<PriceListView>(`${this.base}/price-lists/${id}/rows`, {});
+  }
+  patchPriceListRow(id: number, rowId: number, field: PriceRowField, value: string | null): Observable<PriceListView> {
+    return this.http.patch<PriceListView>(`${this.base}/price-lists/${id}/rows/${rowId}`, { field, value });
+  }
+  deletePriceListRow(id: number, rowId: number): Observable<PriceListView> {
+    return this.http.delete<PriceListView>(`${this.base}/price-lists/${id}/rows/${rowId}`);
+  }
+  downloadPriceListFile(id: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.base}/price-lists/${id}/file`, { responseType: 'blob', observe: 'response' });
+  }
+  searchPriceLists(q: string): Observable<PriceHintRow[]> {
+    return this.http.get<PriceHintRow[]>(`${this.base}/price-lists/search`, { params: { q, limit: 50 } });
+  }
+  priceHints(texts: string[]): Observable<PriceHint[]> {
+    return this.http.post<PriceHint[]>(`${this.base}/price-lists/hints`, { texts });
+  }
+  getPriceHistory(rowId: number): Observable<PriceHistoryEntry[]> {
+    return this.http.get<PriceHistoryEntry[]>(`${this.base}/price-lists/rows/${rowId}/history`);
+  }
+  getPriceLinkCandidates(q: string): Observable<PriceLinkCandidates> {
+    return this.http.get<PriceLinkCandidates>(`${this.base}/price-lists/link-candidates`, { params: { q } });
+  }
+  priceListFromInbound(fileId: number, distributorId?: number | null): Observable<PriceListView> {
+    return this.http.post<PriceListView>(`${this.base}/price-lists/from-inbound/${fileId}`, distributorId ? { distributorId } : {});
+  }
+  getPriceListCounts(): Observable<Record<number, number>> {
+    return this.http.get<Record<number, number>>(`${this.base}/price-lists/counts`);
   }
 
   // === Готовое КП (спека 2026-10-19) ===
