@@ -227,6 +227,10 @@ public class ClientOfferRequestService {
         it.setSupplierName(cut(offer.supplierName(), 255));
         it.setPriceRequestItemId(offer.priceRequestItemId());
         it.setDistributorId(offer.distributorId());
+        it.setPurchaseCurrency(offer.currency());
+        it.setPurchaseOriginal(offer.original());
+        it.setPurchaseRate(offer.rate());
+        it.setPriceListItemId(null);
     }
 
     static String cut(String s, int max) {

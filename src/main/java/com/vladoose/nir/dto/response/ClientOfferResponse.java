@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class ClientOfferResponse {
@@ -51,4 +52,9 @@ public class ClientOfferResponse {
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private OffsetDateTime sentAt;
+    /** Наш курс по валютам рынка и курс сегодня (спека 2026-10-23 §4.5): переключатель валюты закупки, плашка «Пересчитать». */
+    private Map<String, BigDecimal> ourRates;
+    private Map<String, TodayRate> todayRates;
+
+    public record TodayRate(BigDecimal rate, LocalDate date) {}
 }

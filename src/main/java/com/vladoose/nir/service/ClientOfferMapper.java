@@ -17,6 +17,7 @@ import com.vladoose.nir.repository.TenderRepository;
 import com.vladoose.nir.service.privaterequest.PrivateRequestViewBuilder;
 import com.vladoose.nir.service.offer.ItemCalc;
 import com.vladoose.nir.service.offer.OfferCalculation;
+import com.vladoose.nir.service.rates.CurrencyRates;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -29,13 +30,15 @@ public class ClientOfferMapper {
     private final MedRegistryRepository registry;
     private final PriceRequestItemRepository priceItems;
     private final ClientOfferFileRepository files;
+    private final CurrencyRates rates;
 
     public ClientOfferMapper(TenderRepository tenders, MedRegistryRepository registry, PriceRequestItemRepository priceItems,
-                             ClientOfferFileRepository files) {
+                             ClientOfferFileRepository files, CurrencyRates rates) {
         this.tenders = tenders;
         this.registry = registry;
         this.priceItems = priceItems;
         this.files = files;
+        this.rates = rates;
     }
 
     public ClientOfferResponse toResponse(ClientOffer o, OfferCalculation calc, String fileBaseName) {
@@ -103,6 +106,10 @@ public class ClientOfferMapper {
         r.setCreatedAt(o.getCreatedAt());
         r.setUpdatedAt(o.getUpdatedAt());
         r.setSentAt(o.getSentAt());
+        r.setOurRates(rates.ours(o.getMarket()));
+        Map<String, ClientOfferResponse.TodayRate> today = new LinkedHashMap<>();
+        rates.today(o.getMarket()).forEach((c, t) -> today.put(c, new ClientOfferResponse.TodayRate(t.rate(), t.date())));
+        r.setTodayRates(today);
         return r;
     }
 
@@ -119,6 +126,9 @@ public class ClientOfferMapper {
         d.setUnit(it.getUnit());
         d.setQuantity(it.getQuantity());
         d.setPurchasePrice(it.getPurchasePrice());
+        d.setPurchaseCurrency(it.getPurchaseCurrency());
+        d.setPurchaseOriginal(it.getPurchaseOriginal());
+        d.setPurchaseRate(it.getPurchaseRate());
         d.setPurchaseVatSame(it.isPurchaseVatSame());
         d.setPurchaseVatRate(it.getPurchaseVatRate());
         d.setSupplierName(it.getSupplierName());

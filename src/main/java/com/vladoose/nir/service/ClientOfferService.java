@@ -19,6 +19,9 @@ import com.vladoose.nir.service.offer.ClientOfferCalculator;
 import com.vladoose.nir.service.offer.OfferCalculation;
 import com.vladoose.nir.service.offer.OfferLabels;
 import com.vladoose.nir.service.offer.OfferSettingsValidator;
+import com.vladoose.nir.service.rates.CurrencyRates;
+import com.vladoose.nir.service.rates.RateMath;
+import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.util.DocFormat;
 import com.vladoose.nir.util.RegistrationText;
 import org.slf4j.Logger;
@@ -80,14 +83,16 @@ public class ClientOfferService {
     private final PriceRequestItemRepository priceRequestItems;
     private final MedRegistryRepository registry;
     private final MedEquipmentRepository equipment;
+    private final CurrencyRates rates;
 
     public ClientOfferService(ClientOfferRepository repository, CompanyProfileService profiles,
                               FacilityRepository facilities, ClientOfferCalculator calculator, KpDocumentBuilder builder,
                               KpHtmlRenderer html, KpPdfRenderer pdf, KpPreviewRenderer preview, KpDocxRenderer docx,
                               PlatformTransactionManager transactions, PriceRequestItemRepository priceRequestItems,
                               MedRegistryRepository registry, MedEquipmentRepository equipment,
-                              DealEventService dealEvents) {
+                              DealEventService dealEvents, CurrencyRates rates) {
         this.dealEvents = dealEvents;
+        this.rates = rates;
         this.repository = repository;
         this.profiles = profiles;
         this.facilities = facilities;
@@ -315,8 +320,11 @@ public class ClientOfferService {
         repository.delete(o);
     }
 
+    /** Расчёт для ответа экрану: с курсами сегодня (итоги «по курсу сегодня»); документ считает без них. */
     public OfferCalculation calculate(ClientOffer o) {
-        return calculator.calculate(o);
+        Map<String, BigDecimal> today = new HashMap<>();
+        rates.today(o.getMarket()).forEach((c, t) -> today.put(c, t.rate()));
+        return calculator.calculate(o, today);
     }
 
     public OfferFile pdf(Long id) {
@@ -435,6 +443,7 @@ public class ClientOfferService {
         List<Link> links = new ArrayList<>(dtos.size());
         List<Reg> regs = new ArrayList<>(dtos.size());
         List<Long> catalog = new ArrayList<>(dtos.size());
+        List<Purchase> purchases = new ArrayList<>(dtos.size());
         int itemNo = 0;
         for (int i = 0; i < dtos.size(); i++) {
             ClientOfferItemDto dto = dtos.get(i);
@@ -448,8 +457,10 @@ public class ClientOfferService {
             Link link = Link.NONE;
             Reg reg = null;
             Long catalogId = null;
+            Purchase purchase = Purchase.NONE;
             if (dto.getKind() == ClientOfferItemKind.ITEM) {
                 String row = "№ " + (++itemNo) + quotedName(dto.getName());
+                purchase = checkPurchase(o, dto, it, row);
                 checkItem(dto, it, profile, row);
                 link = checkLink(o, dto, it, row);
                 reg = checkRegistration(o, dto, it, row);
@@ -459,8 +470,43 @@ public class ClientOfferService {
             links.add(link);
             regs.add(reg);
             catalog.add(catalogId);
+            purchases.add(purchase);
         }
-        return new Checked(stored, links, regs, catalog);
+        return new Checked(stored, links, regs, catalog, purchases);
+    }
+
+    /** Закупка строки после проверки: валюта не рынка — исходная цена и курс (решение плана 6); NONE — в валюте рынка. */
+    private record Purchase(String currency, BigDecimal original, BigDecimal rate) {
+        static final Purchase NONE = new Purchase(null, null, null);
+    }
+
+    /**
+     * Валюта не рынка: исходная цена ≥ 0, курс — сохранённый курс строки (та же валюта) или текущий наш курс, пусто —
+     * сохранённый, иначе наш; закупку в валюте рынка считает сервер (присланная не читается). Иначе — NONE.
+     */
+    private Purchase checkPurchase(ClientOffer o, ClientOfferItemDto dto, ClientOfferItem stored, String row) {
+        String cur = trim(dto.getPurchaseCurrency());
+        cur = cur == null ? null : cur.toUpperCase(Locale.ROOT);
+        if (cur == null || cur.equals(o.getMarket().currencyCode())) return Purchase.NONE;
+        String label = MoneyText.label(cur);
+        BigDecimal original = scaled(dto.getPurchaseOriginal(), MONEY_SCALE);
+        if (original == null || original.signum() < 0) {
+            throw new BadRequestException("Цена закупки в " + label + " — число не меньше нуля — позиция " + row);
+        }
+        BigDecimal storedRate = stored != null && cur.equals(stored.getPurchaseCurrency()) ? stored.getPurchaseRate() : null;
+        BigDecimal ours = rates.our(o.getMarket(), cur).orElse(null);
+        BigDecimal rate = dto.getPurchaseRate();
+        if (rate == null) {
+            rate = storedRate != null ? storedRate : ours;
+            if (rate == null) throw new BadRequestException("Впишите наш курс для " + label + " в «Система → Курсы валют» — позиция " + row);
+        } else if (!(storedRate != null && storedRate.compareTo(rate) == 0) && !(ours != null && ours.compareTo(rate) == 0)) {
+            throw new BadRequestException("Курс строки — только наш курс" + (ours == null ? "" : " (" + RateMath.text(ours) + ")")
+                    + " — позиция " + row);
+        }
+        BigDecimal price = RateMath.convert(original, rate);
+        if (price == null) throw new BadRequestException("Цена закупки слишком большая — позиция " + row);
+        dto.setPurchasePrice(price);   // дальше проверки checkItem — как у обычной закупки
+        return new Purchase(cur, original, rate);
     }
 
     /** Ссылка строки на ответ после проверки (решение плана 5): keep — та, что сохранена; иначе — новые id ответа и поставщика. */
@@ -469,7 +515,8 @@ public class ClientOfferService {
         static final Link KEEP = new Link(true, null, null);
     }
 
-    private record Checked(List<ClientOfferItem> stored, List<Link> links, List<Reg> regs, List<Long> catalog) {}
+    private record Checked(List<ClientOfferItem> stored, List<Link> links, List<Reg> regs, List<Long> catalog,
+                           List<Purchase> purchases) {}
 
     /**
      * Ссылка строки на ответ поставщика (решение плана 5). Та же, что сохранена, — не перепроверяется: КП — снимок, запрос
@@ -622,7 +669,8 @@ public class ClientOfferService {
                 it = ClientOfferItem.builder().offer(o).build();
                 o.getItems().add(it);
             }
-            applyItem(it, dtos.get(i), checked.links().get(i), checked.regs().get(i), checked.catalog().get(i));
+            applyItem(it, dtos.get(i), checked.links().get(i), checked.regs().get(i), checked.catalog().get(i),
+                    checked.purchases().get(i));
             it.setLineNo(i + 1);
             ordered.add(it);
         }
@@ -636,7 +684,8 @@ public class ClientOfferService {
      * Перенос строки — уже проверенной (checkItems). Ссылка на ответ и поставщик — из checkLink, регистрация — из
      * checkRegistration, позиция каталога — из checkCatalog; позиция заявки с клиента не меняется.
      */
-    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto, Link link, Reg reg, Long catalogId) {
+    private static void applyItem(ClientOfferItem it, ClientOfferItemDto dto, Link link, Reg reg, Long catalogId,
+                                  Purchase purchase) {
         ClientOfferItemKind kind = dto.getKind();
         it.setKind(kind);
         it.setName(dto.getName() == null ? "" : dto.getName().trim());
@@ -649,6 +698,9 @@ public class ClientOfferService {
             it.setUnit("шт");
             it.setQuantity(null);
             it.setPurchasePrice(null);
+            it.setPurchaseCurrency(null);
+            it.setPurchaseOriginal(null);
+            it.setPurchaseRate(null);
             it.setPurchaseVatSame(true);
             it.setPurchaseVatRate(null);
             it.setSupplierName(null);
@@ -670,6 +722,9 @@ public class ClientOfferService {
         it.setUnit(trim(dto.getUnit()) == null ? "шт" : dto.getUnit().trim());
         it.setQuantity(dto.getQuantity());
         it.setPurchasePrice(dto.getPurchasePrice());
+        it.setPurchaseCurrency(purchase.currency());
+        it.setPurchaseOriginal(purchase.original());
+        it.setPurchaseRate(purchase.rate());
         it.setPurchaseVatSame(dto.getPurchaseVatSame() == null || dto.getPurchaseVatSame());
         it.setPurchaseVatRate(dto.getPurchaseVatRate());
         it.setSupplierName(trim(dto.getSupplierName()));
@@ -701,6 +756,7 @@ public class ClientOfferService {
                 .offer(offer).lineNo(it.getLineNo()).kind(it.getKind()).name(it.getName())
                 .model(it.getModel()).manufacturer(it.getManufacturer()).country(it.getCountry()).unit(it.getUnit())
                 .quantity(it.getQuantity()).purchasePrice(it.getPurchasePrice()).purchaseVatSame(it.isPurchaseVatSame())
+                .purchaseCurrency(it.getPurchaseCurrency()).purchaseOriginal(it.getPurchaseOriginal()).purchaseRate(it.getPurchaseRate())
                 .purchaseVatRate(it.getPurchaseVatRate()).supplierName(it.getSupplierName())
                 .distributorId(it.getDistributorId()).tenderLotId(it.getTenderLotId())
                 .priceRequestItemId(it.getPriceRequestItemId()).medEquipmentId(it.getMedEquipmentId())

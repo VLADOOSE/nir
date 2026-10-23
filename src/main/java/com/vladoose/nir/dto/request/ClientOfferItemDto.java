@@ -39,6 +39,10 @@ public class ClientOfferItemDto {
     /** Расчёт с 2026-10-05 не читает (НДС поставщика не учитывается, спека §5.1); поля — для совместимости. */
     private Boolean purchaseVatSame;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchaseVatRate;
+    /** Закупка в чужой валюте (спека 2026-10-23 §4.5): исходная цена и курс; purchasePrice тогда считает сервер. */
+    @Size(max = 5) private String purchaseCurrency;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchaseOriginal;
+    @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal purchaseRate;
     @Size(max = 255) private String supplierName;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal markupPct;
     @Digits(integer = 15, fraction = 10, message = DIGITS) private BigDecimal priceOverride;

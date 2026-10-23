@@ -6,6 +6,7 @@ import com.vladoose.nir.entity.ClientOfferItemKind;
 import com.vladoose.nir.entity.ClientOfferOrigin;
 import com.vladoose.nir.entity.OfferRegistrationStatus;
 import com.vladoose.nir.entity.OfferRounding;
+import com.vladoose.nir.service.rates.RateMath;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -32,10 +33,18 @@ public class ClientOfferCalculator {
     private static final BigDecimal TEN = BigDecimal.TEN;
 
     public OfferCalculation calculate(ClientOffer offer) {
+        return calculate(offer, Map.of());
+    }
+
+    /** today — курс сегодня по валютам (1 единица = курс в валюте рынка); пусто — итогов «сегодня» нет. */
+    public OfferCalculation calculate(ClientOffer offer, Map<String, BigDecimal> today) {
         List<ItemCalc> items = new ArrayList<>(offer.getItems().size());
         Map<BigDecimal, BigDecimal> vatByRate = new TreeMap<>();
         BigDecimal sum = zero(), vatTotal = zero(), purchase = zero(), revenueNet = zero(), profit = zero();
         BigDecimal markedSum = zero(), markedPurchase = zero();
+        BigDecimal purchaseToday = zero(), profitToday = zero();
+        boolean foreign = false, missingToday = false;
+        String marketCode = offer.getMarket() == null ? null : offer.getMarket().currencyCode();
         int itemCount = 0, noPurchase = 0, unconfirmed = 0;
 
         for (ClientOfferItem item : offer.getItems()) {
@@ -66,6 +75,24 @@ public class ClientOfferCalculator {
                     markedSum = markedSum.add(c.sum());
                     markedPurchase = markedPurchase.add(c.costTotal());
                 }
+                // по курсу сегодня (спека 2026-10-23 §4.5): чужая валюта — исходная цена × курс сегодня, остальное — как есть
+                String cur = item.getPurchaseCurrency();
+                BigDecimal net = c.sumNet() == null ? zero() : c.sumNet();
+                if (cur != null && !cur.equals(marketCode) && item.getPurchaseOriginal() != null) {
+                    foreign = true;
+                    BigDecimal rate = today.get(cur);
+                    BigDecimal unit = rate == null ? null : RateMath.convert(item.getPurchaseOriginal(), rate);
+                    if (unit == null) {
+                        missingToday = true;
+                    } else {
+                        BigDecimal costToday = unit.multiply(qty(item)).setScale(2, RoundingMode.HALF_UP);
+                        purchaseToday = purchaseToday.add(costToday);
+                        profitToday = profitToday.add(net.subtract(costToday));
+                    }
+                } else {
+                    purchaseToday = purchaseToday.add(c.costTotal());
+                    profitToday = profitToday.add(c.profit());
+                }
             }
         }
 
@@ -75,9 +102,10 @@ public class ClientOfferCalculator {
         BigDecimal markupAvg = markedPurchase.signum() > 0
                 ? markedSum.subtract(markedPurchase).multiply(HUNDRED).divide(markedPurchase, 2, RoundingMode.HALF_UP)
                 : null;
+        boolean showToday = foreign && !missingToday;
         // cost (себестоимость) = purchase: НДС поставщика не вычитается; поле оставлено для совместимости API
         OfferTotals totals = new OfferTotals(sum, vat, vatTotal, purchase, purchase, revenueNet, profit, markupAvg,
-                itemCount, noPurchase, unconfirmed);
+                itemCount, noPurchase, unconfirmed, showToday ? purchaseToday : null, showToday ? profitToday : null);
         return new OfferCalculation(items, totals);
     }
 
