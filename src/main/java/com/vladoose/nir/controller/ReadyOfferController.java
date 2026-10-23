@@ -108,7 +108,7 @@ public class ReadyOfferController {
     }
 
     /** Тип — только из белого списка; остальное — octet-stream (и всегда attachment + nosniff). */
-    static String contentType(ReplyFileKind kind, String name) {
+    public static String contentType(ReplyFileKind kind, String name) {
         String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
         return switch (kind) {
             case PDF -> "application/pdf";

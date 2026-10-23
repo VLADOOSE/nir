@@ -24,6 +24,11 @@ public interface MedRegistryRepository extends JpaRepository<MedRegistry, Long> 
 
     List<MedRegistry> findByRegNumberIn(Collection<String> regNumbers);
 
+    /** То же, что findByNormalizedRegNumber, для многих номеров сразу (строки прайса): один проход по реестру. */
+    @Query(value = "SELECT * FROM med_registry WHERE upper(btrim(regexp_replace(reg_number, '\\s+', ' ', 'g'))) IN (:ns)",
+            nativeQuery = true)
+    List<MedRegistry> findByNormalizedRegNumberIn(@Param("ns") Collection<String> normalized);
+
     /**
      * Кандидаты по нечёткой триграммной похожести: производитель (0.6) + наименование (0.4).
      * Алиасы в camelCase без подчёркиваний → проекция матчится case-insensitive.
