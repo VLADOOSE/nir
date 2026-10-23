@@ -172,10 +172,13 @@ export interface ColumnInfo { key: string; label: string; labelNoVat?: string; v
 
 /** Ответ поставщика с ценой на позицию строки — пункт «Поставщик ▾» (спека 2026-10-12 §8). */
 export interface SupplierOffer {
-  priceRequestItemId: number; supplierName: string; price: number; respondedOn: string | null;
+  priceRequestItemId: number | null; supplierName: string; price: number | null; respondedOn: string | null;
   accepted: boolean; cheapest: boolean; selected: boolean;
   /** запрос ответа — ссылка на экран сверки; auto — 💡 цена ещё не сверена */
   priceRequestId?: number | null; auto?: boolean;
+  /** строка прайса (спека 2026-10-23 §6.3); currency / original / rate — исходная цена в чужой валюте */
+  priceListItemId?: number | null; priceListId?: number | null; currency?: string | null; original?: number | null;
+  rate?: number | null; listDate?: string | null; expired?: boolean;
 }
 
 /** Строка плашки «Пришли новые цены». */

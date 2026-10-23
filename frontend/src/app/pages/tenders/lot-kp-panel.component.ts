@@ -60,8 +60,9 @@ import { forkJoin, Observable } from 'rxjs';
             </span>
             <span class="sup-reasons">
               <span class="reason-chip" *ngFor="let r of e.reasons"
-                    [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'" [class.reason-maker]="r.kind === 'MAKER'">
-                {{ r.kind === 'TYPE' ? '✓ ' : r.kind === 'MAKER' ? '' : 'возит ' }}{{ r.label }}
+                    [class.reason-type]="r.kind === 'TYPE'" [class.reason-brand]="r.kind === 'BRAND'" [class.reason-maker]="r.kind === 'MAKER'"
+                    [class.reason-price]="r.kind === 'PRICE_LIST'">
+                {{ r.kind === 'TYPE' ? '✓ ' : r.kind === 'MAKER' || r.kind === 'PRICE_LIST' ? '' : 'возит ' }}{{ r.label }}
               </span>
             </span>
           </span>
@@ -161,6 +162,7 @@ import { forkJoin, Observable } from 'rxjs';
     .reason-type { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
     .reason-brand { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .reason-maker { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-text); }
+    .reason-price { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .sup-client { margin: -4px 0 6px 30px; font-size: 13px; }
     .sup-client label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
     .zero-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 6px 0; }

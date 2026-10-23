@@ -17,6 +17,8 @@ import { MODEL_SOURCE, regShort } from '../../shared/lot-model';
 import { aiLotLine } from '../../shared/ai-answer';
 import { LotResultPanelComponent } from './lot-result-panel.component';
 import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
+import { PriceHintComponent } from '../../shared/price-hint.component';
+import { hintLine } from '../../shared/price-hint';
 import { resultTone } from '../../shared/tender-results';
 import type { LotProductMatch } from '../../shared/product-watch';
 
@@ -33,7 +35,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
   selector: 'app-tender-lots',
   standalone: true,
   imports: [NgFor, NgIf, ReactiveFormsModule, MarketMoneyPipe, LotRegistryPanelComponent, LotKpPanelComponent, LotFitComponent, LotResultPanelComponent, MarketPricePanelComponent,
-            LotModelFitComponent, LotModelDialogComponent],
+            LotModelFitComponent, LotModelDialogComponent, PriceHintComponent],
   template: `
     <div class="lots-toolbar">
       <!-- пока форма открыта, кнопки нет: клик по ней сбрасывал форму в режим создания и терял правки -->
@@ -155,6 +157,9 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
           <!-- итог на площадке (спека 2026-10-22-tender-results-market-prices §11): видно и у свёрнутого лота, по нажатию — панель -->
           <div *ngIf="l.result" [class]="'lot-res lot-res-' + resTone(l)" (click)="openResult(l, $event)" title="Итог лота — подробно">🏁 {{ l.result.text }}</div>
           <div class="lot-mkt" *ngIf="l.market" (click)="openMarket(l, $event)" title="Цены договоров goszakup за 2 года — подробно">📊 {{ l.market.text }}</div>
+          <!-- закупка по прайсам поставщиков (спека 2026-10-23 §6.2 п. 3): у свёрнутого лота — строка, по нажатию — панель -->
+          <div class="lot-price" *ngIf="l.priceList?.rows?.length" (click)="openPrice(l, $event)" title="Цены из прайсов поставщиков — подробно">
+            {{ priceLine(l) }}</div>
         </div>
       </div>
 
@@ -194,6 +199,10 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
         }
         @defer (when marketOpen.has(l.id)) {
           <app-market-price-panel *ngIf="marketOpen.has(l.id)" [lotId]="l.id" (close)="marketOpen.delete(l.id)"></app-market-price-panel>
+        }
+        @defer (when priceOpen.has(l.id)) {
+          <app-price-hint *ngIf="priceOpen.has(l.id)" [hint]="l.priceList" [marketCurrency]="cur()" [open]="true"
+                          (closed)="priceOpen.delete(l.id)"></app-price-hint>
         }
 
         <!-- сверка ТЗ с нашим товаром и «Требования ТЗ» (спека 2026-10-20-product-spec-fit §8.1) — отдельным чанком -->
@@ -273,7 +282,7 @@ export interface LotStage { label: string; tone: 'muted' | 'accent' | 'warn' | '
     .lot-res-success { color: var(--success-text); }
     .lot-res-danger { color: var(--danger-text); }
     .lot-res-muted { color: var(--text-muted); }
-    .lot-mkt { margin-top: 3px; font-size: 13px; color: var(--text-muted); cursor: pointer; overflow-wrap: anywhere; }
+    .lot-mkt, .lot-price { margin-top: 3px; font-size: 13px; color: var(--text-muted); cursor: pointer; overflow-wrap: anywhere; }
     .x-mini { background: none; border: none; color: var(--danger-text); cursor: pointer; font-size: 13px; margin-left: 4px; }
 
     .stage-chip { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -397,6 +406,28 @@ export class TenderLotsComponent implements OnChanges {
     this.cdr.detectChanges();
   }
 
+  /** Лоты, у которых открыта панель цен из прайсов. */
+  priceOpen = new Set<number>();
+
+  cur(): string { return this.isKz() ? 'KZT' : 'RUB'; }
+
+  /** «📒 закупка по прайсу: Аксион · прайс 01.09: 150 000 руб. → 900 000 тг · 83 % бюджета». */
+  priceLine(l: any): string {
+    const line = hintLine(l.priceList, this.cur()) || '';
+    return line.replace('📒 ', '📒 закупка по прайсу: ') + (l.priceBudgetPct != null ? ` · ${l.priceBudgetPct} % бюджета` : '');
+  }
+
+  openPrice(l: any, e?: Event) {
+    e?.stopPropagation();
+    if (this.expandedLotId !== l.id) {
+      if (this.expandedLotId !== null) this.closePanelsOf(this.expandedLotId);
+      this.expandedLotId = l.id;
+      this.priceOpen.add(l.id);
+    } else if (this.priceOpen.has(l.id)) this.priceOpen.delete(l.id);
+    else this.priceOpen.add(l.id);
+    this.cdr.detectChanges();
+  }
+
   /** Лоты, у которых открыта панель итога. */
   resultOpen = new Set<number>();
 
@@ -494,6 +525,7 @@ export class TenderLotsComponent implements OnChanges {
     for (const id of Array.from(this.lotSel)) if (!alive.has(id)) this.lotSel.delete(id);
     for (const id of Array.from(this.resultOpen)) if (!alive.has(id)) this.resultOpen.delete(id);
     for (const id of Array.from(this.marketOpen)) if (!alive.has(id)) this.marketOpen.delete(id);
+    for (const id of Array.from(this.priceOpen)) if (!alive.has(id)) this.priceOpen.delete(id);
     if (this.registryLot && !alive.has(this.registryLot.id)) this.registryLot = null;
     if (this.expandedLotId !== null && !alive.has(this.expandedLotId)) this.expandedLotId = null;
     if (this.specOpenLotId !== null && !alive.has(this.specOpenLotId)) this.specOpenLotId = null;
@@ -527,6 +559,7 @@ export class TenderLotsComponent implements OnChanges {
     if (this.specOpenLotId === lotId) this.specOpenLotId = null;
     this.resultOpen.delete(lotId);
     this.marketOpen.delete(lotId);
+    this.priceOpen.delete(lotId);
   }
 
   specOpenLotId: number | null = null;

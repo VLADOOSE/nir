@@ -12,6 +12,7 @@ import { canShareFiles, openShareSheet, responseFile } from '../../shared/share'
 import { readWithDocument, storeWithDocument, todayIso } from '../../shared/rfq-options';
 import { saveBlob } from '../../shared/client-offer';
 import { errorText } from '../../shared/error-text';
+import { hintLine } from '../../shared/price-hint';
 
 type Reason = 'MANUFACTURER' | 'BRAND' | 'TYPE';
 
@@ -104,6 +105,10 @@ interface DlgPreview {
         <div class="mkt" *ngIf="hints.length">
           <div class="mkt-title">Госзакуп по позициям</div>
           <div class="mkt-row" *ngFor="let h of hints"><span class="mkt-name">{{ h.name }}</span> — {{ h.line }}</div>
+        </div>
+        <div class="mkt" *ngIf="priceRows().length">
+          <div class="mkt-title">По прайсам поставщиков</div>
+          <div class="mkt-row" *ngFor="let h of priceRows()"><span class="mkt-name">{{ h.name }}</span> — {{ h.line }}</div>
         </div>
 
         <div class="sup" *ngFor="let s of suppliers; trackBy: trackSupplier" [class.on]="isOn(s)">
@@ -321,6 +326,12 @@ export class PrRfqDialogComponent implements OnInit {
   hints: { name: string; line: string }[] = [];
   unmatched: { lotId: number; name: string }[] = [];
   loading = true;
+
+  /** Позиция → лучшая строка прайса (спека 2026-10-23 §6.2 п. 2) — из вида заявки, без запроса. */
+  priceRows(): { name: string; line: string }[] {
+    const cur = this.marketSvc.value === 'KZ' ? 'KZT' : 'RUB';
+    return this.lines.map(l => ({ name: l.name, line: hintLine(l.priceList, cur) || '' })).filter(h => !!h.line);
+  }
   error = '';
   sending = false;
   /** Идёт предпросмотр письма или сборка документа. */

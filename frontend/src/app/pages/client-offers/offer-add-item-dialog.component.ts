@@ -9,8 +9,11 @@ import type { RegistryRecord } from '../../shared/private-request';
 import type { EquipmentHit } from '../../shared/client-offer';
 import { regExpired } from '../../shared/registry';
 import { marketToday } from '../../shared/deadline';
+import { hintMoney } from '../../shared/price-hint';
+import type { PriceHintRow } from '../../shared/price-hint';
 
-export type AddPick = { kind: 'registry'; record: RegistryRecord } | { kind: 'catalog'; item: EquipmentHit };
+export type AddPick = { kind: 'registry'; record: RegistryRecord } | { kind: 'catalog'; item: EquipmentHit }
+  | { kind: 'price'; row: PriceHintRow };
 
 /** «Из реестра и каталога» (спека 2026-10-13 §2.4): поиск — две группы, выбор добавляет позицию в конец КП. */
 @Component({
@@ -25,9 +28,18 @@ export type AddPick = { kind: 'registry'; record: RegistryRecord } | { kind: 'ca
         <button type="button" class="btn btn-line" (click)="close.emit()" aria-label="Закрыть">✕</button>
       </div>
       <input type="search" [(ngModel)]="query" (input)="onQuery()" placeholder="Название, модель или производитель"
-             aria-label="Поиск в реестре и каталоге" />
+             aria-label="Поиск в реестре, каталоге и прайсах" />
       <p class="hint" *ngIf="loading">Ищу…</p>
-      <p class="hint" *ngIf="!loading && searched && !catalog.length && !registry.length">Ничего не нашлось</p>
+      <p class="hint" *ngIf="!loading && searched && !catalog.length && !registry.length && !prices.length">Ничего не нашлось</p>
+      <!-- прайсы поставщиков (спека 2026-10-23 §6.3): закупка по нашему курсу и ссылка на строку прайса -->
+      <div class="group" *ngIf="prices.length">
+        <div class="g-title">Прайсы поставщиков</div>
+        <button type="button" class="hit" *ngFor="let r of prices" (click)="picked.emit({ kind: 'price', row: r })">
+          <span class="h-name">{{ r.name }}</span>
+          <span class="h-meta">{{ r.supplierName }} · прайс {{ r.listDate ? r.listDate.slice(8, 10) + '.' + r.listDate.slice(5, 7) : '' }}
+            · {{ money(r.price, r.currency) }}<ng-container *ngIf="r.converted != null && r.currency !== marketCurrency"> → {{ money(r.converted, marketCurrency) }}</ng-container><span class="expired" *ngIf="r.expired"> · прайс истёк</span></span>
+        </button>
+      </div>
       <div class="group" *ngIf="catalog.length">
         <div class="g-title">Каталог</div>
         <button type="button" class="hit" *ngFor="let e of catalog" (click)="picked.emit({ kind: 'catalog', item: e })">
@@ -63,7 +75,7 @@ export type AddPick = { kind: 'registry'; record: RegistryRecord } | { kind: 'ca
     .hit:hover { background: var(--surface-2); }
     .h-name { font-size: 13px; overflow-wrap: anywhere; }
     .h-meta { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
-    .h-meta.expired { color: var(--danger-text); }
+    .h-meta.expired, .h-meta .expired { color: var(--danger-text); }
     @media (max-width: 900px) {
       .dlg { top: 0; left: 0; transform: none; width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
       input[type="search"] { font-size: 16px; min-height: 40px; }
@@ -79,6 +91,7 @@ export class OfferAddItemDialogComponent implements OnDestroy {
   query = '';
   catalog: EquipmentHit[] = [];
   registry: RegistryRecord[] = [];
+  prices: PriceHintRow[] = [];
   loading = false;
   searched = false;
   error = '';
@@ -98,8 +111,12 @@ export class OfferAddItemDialogComponent implements OnDestroy {
 
   /** На РФ реестра нет — только каталог (спека 2026-10-13 §3). */
   title() {
-    return this.kz ? 'Из реестра и каталога' : 'Из каталога';
+    return this.kz ? 'Из реестра, каталога и прайсов' : 'Из каталога и прайсов';
   }
+
+  get marketCurrency(): string { return this.kz ? 'KZT' : 'RUB'; }
+
+  money(v: number | null, c: string | null) { return hintMoney(v, c); }
 
   validity(r: RegistryRecord) {
     return regValidity(r);
@@ -119,16 +136,20 @@ export class OfferAddItemDialogComponent implements OnDestroy {
     this.sub?.unsubscribe();
     this.error = '';
     // запрос в полёте отменён — «Ищу…» снимаем вместе с ним (ревью ветки, M2)
-    if (q.length < 2) { this.catalog = []; this.registry = []; this.searched = false; this.loading = false; this.cdr.markForCheck(); return; }
+    if (q.length < 2) {
+      this.catalog = []; this.registry = []; this.prices = []; this.searched = false; this.loading = false; this.cdr.markForCheck(); return;
+    }
     this.loading = true;
     let failed = '';
     const fail = (what: string) => catchError(() => { failed = what; return of([]); });
     this.sub = forkJoin({
       catalog: this.api.searchEquipment(q, 8).pipe(fail('каталог')),
       registry: this.kz ? this.api.searchRegistry(q, 8).pipe(fail('реестр')) : of([] as RegistryRecord[]),
+      prices: this.api.searchPriceLists(q).pipe(fail('прайсы')),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(r => {
       this.catalog = r.catalog as EquipmentHit[];
       this.registry = r.registry as RegistryRecord[];
+      this.prices = r.prices as PriceHintRow[];
       this.loading = false;
       this.searched = true;
       this.error = failed ? `Поиск не ответил: ${failed} — повторите` : '';

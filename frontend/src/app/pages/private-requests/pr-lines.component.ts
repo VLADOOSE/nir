@@ -11,6 +11,7 @@ import { SiteProductSearchComponent } from '../../shared/site-product-search.com
 import { ImportGridComponent } from '../../shared/import-grid.component';
 import { buildImportLines } from '../../shared/import-lines';
 import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
+import { PriceHintComponent } from '../../shared/price-hint.component';
 import {
   LineInput, LinesMode, ParsedLine, PrLine, PrLineField, PrView, SaveState, SiteProduct, UNIT_SUGGESTIONS, nextSaveSeq,
 } from '../../shared/private-request';
@@ -26,7 +27,8 @@ interface ParsedRow extends ParsedLine { on: boolean; }
 @Component({
   selector: 'app-pr-lines',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, RegistryChipComponent, SiteProductSearchComponent, ImportGridComponent, MarketPricePanelComponent],
+  imports: [NgIf, NgFor, FormsModule, RegistryChipComponent, SiteProductSearchComponent, ImportGridComponent, MarketPricePanelComponent,
+            PriceHintComponent],
   template: `
     <section class="card">
       <div class="sec-head">
@@ -68,6 +70,7 @@ interface ParsedRow extends ParsedLine { on: boolean; }
             <button type="button" class="btn btn-more" (click)="toggle(l)" [attr.aria-expanded]="openId === l.lotId"
                     [attr.aria-label]="'Подробнее: ' + l.name">⋯</button>
           </div>
+          <app-price-hint *ngIf="l.priceList?.rows?.length" class="pr-price" [hint]="l.priceList" [marketCurrency]="marketCurrency"></app-price-hint>
           <div class="details" *ngIf="openId === l.lotId">
             <label class="spec">Характеристики
               <textarea rows="3" maxlength="10000" [value]="l.spec || ''" [disabled]="readonly"
@@ -168,6 +171,7 @@ interface ParsedRow extends ParsedLine { on: boolean; }
     .ro { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
     .f-reg { display: flex; justify-content: flex-end; }
     .details { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 10px 12px; padding: 8px 0 6px 36px; }
+    .pr-price { padding: 0 8px 6px 36px; }
     .details label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
     .details textarea, .details input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
                                          background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
@@ -222,6 +226,7 @@ interface ParsedRow extends ParsedLine { on: boolean; }
       .row input { font-size: 16px; min-height: 40px; border-color: var(--border); background: var(--surface); }
       .f-qty input { width: 80px; }
       .details { grid-template-columns: 1fr; padding-left: 0; }
+      .pr-price { padding-left: 8px; }
       .details textarea, .details input { font-size: 16px; min-height: 40px; }
       .sec-actions .btn, .detail-actions .btn { min-height: 40px; }
       .overlay { padding: 0; align-items: stretch; }
@@ -234,6 +239,8 @@ export class PrLinesComponent {
   @Input() view!: PrView;
   @Input() readonly = false;
   @Input() isKz = true;
+  /** Валюта рынка — для пересчёта «📒 по прайсу». */
+  get marketCurrency(): string { return this.isKz ? 'KZT' : 'RUB'; }
   /** Позиция, у которой открыта панель цен рынка (спека 2026-10-22-tender-results-market-prices §10). */
   marketFor: number | null = null;
   @Output() viewChange = new EventEmitter<PrView>();

@@ -6,8 +6,9 @@ import { NotificationService } from '../../services/notification.service';
 import { errorText } from '../../shared/error-text';
 import { whenText } from '../../shared/product-watch-pages';
 import type { ProductCatalogItem, ProductCatalogState } from '../../shared/product-watch';
+import { PriceHintComponent } from '../../shared/price-hint.component';
 
-type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
+type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU' | 'NO_PRICE';
 
 /**
  * «Наша продукция → Товары» (спека 2026-10-20-product-spec-fit §8.2): товары westmed.kz, их РУ по ndda.kz и число
@@ -16,7 +17,7 @@ type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
 @Component({
   selector: 'app-product-catalog',
   standalone: true,
-  imports: [NgIf, NgFor],
+  imports: [NgIf, NgFor, PriceHintComponent],
   template: `
     <p class="pc-note" *ngIf="loading">Загружаю…</p>
     <p class="pc-note" *ngIf="state && !state.kz">Только для Казахстана — переключите рынок на West-Med (KZ).</p>
@@ -42,6 +43,9 @@ type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
             <span class="pc-ru" [class]="'pc-' + ruTone(p)" [title]="p.regNumber ? 'РУ ' + p.regNumber : 'Номер РУ на сайте не указан'">РУ {{ ruText(p) }}</span>
             <span class="pc-attr" [class.pc-attr-none]="!p.attributesCount">{{ p.attributesCount ? 'характеристик: ' + p.attributesCount : 'нет характеристик' }}</span>
           </div>
+          <!-- закупка по прайсам поставщиков (спека 2026-10-23 §6.2 п. 5): разворот — все поставщики и история цен -->
+          <app-price-hint class="pc-price" *ngIf="p.priceList?.rows?.length; else noPrice" [hint]="p.priceList" marketCurrency="KZT"></app-price-hint>
+          <ng-template #noPrice><span class="pc-buy-none">нет в прайсах</span></ng-template>
         </div>
       </div>
     </ng-container>
@@ -69,6 +73,8 @@ type Filter = 'ALL' | 'NO_ATTR' | 'BAD_RU';
     .pc-muted { border: 1px solid var(--border); color: var(--text-muted); }
     .pc-attr { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
     .pc-attr.pc-attr-none { color: var(--warn-text); }
+    .pc-price, .pc-buy-none { grid-column: 1 / -1; }
+    .pc-buy-none { font-size: 12px; color: var(--text-muted); }
     @media (max-width: 900px) {
       .pc-row { grid-template-columns: 1fr; }
       .pc-meta { justify-content: flex-start; }
@@ -82,6 +88,7 @@ export class ProductCatalogComponent implements OnInit {
   filter: Filter = 'ALL';
   readonly filters: { key: Filter; label: string }[] = [
     { key: 'ALL', label: 'Все' }, { key: 'NO_ATTR', label: 'Без характеристик' }, { key: 'BAD_RU', label: 'РУ истекло или не найдено' },
+    { key: 'NO_PRICE', label: 'Без прайса' },
   ];
   readonly when = whenText;
 
@@ -110,6 +117,7 @@ export class ProductCatalogComponent implements OnInit {
   private passes(p: ProductCatalogItem, f: Filter): boolean {
     if (f === 'NO_ATTR') return !p.attributesCount;
     if (f === 'BAD_RU') return p.regStatus === 'EXPIRED' || p.regStatus === 'NOT_FOUND';
+    if (f === 'NO_PRICE') return !p.priceList?.rows?.length;
     return true;
   }
 

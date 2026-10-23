@@ -16,7 +16,7 @@ import { AddPick, OfferAddItemDialogComponent } from './offer-add-item-dialog.co
 import { MarketPricePanelComponent } from '../../shared/market-price-panel.component';
 import type { RegAction, RegistryRecord } from '../../shared/private-request';
 import {
-  ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, money, newItem, numText, parseNum, uid, vatLabel,
+  ClientOffer, ItemKind, OfferItem, RegStatus, SupplierOffer, UNIT_SUGGESTIONS, dateText, money, newItem, numText, parseNum, uid, vatLabel,
 } from '../../shared/client-offer';
 import { errorText } from '../../shared/error-text';
 import { curShort, priceCurrencies, rateText } from '../../shared/rates';
@@ -137,10 +137,11 @@ function rowKey(it: OfferItem): string {
                 <!-- 💡 внутри поля справа: в широкой раскладке подпись скрыта, а значок после поля перенёс бы ряд -->
                 <span class="buy-row"><span class="buy-wrap"><input inputmode="decimal" [value]="numText(isForeign(it) ? it.purchaseOriginal : it.purchasePrice)"
                        (change)="setPurchase(it, $event)" [disabled]="readonly"
-                       placeholder="—" [class.with-unv]="it.purchaseUnverified"
+                       placeholder="—" [class.with-unv]="it.purchaseUnverified || it.priceListItemId"
                        [attr.title]="it.purchaseUnverified ? UNV_HINT : null"
                        [attr.aria-label]="'Цена закупки за единицу, как в счёте поставщика, строка ' + (i + 1) + (it.purchaseUnverified ? ', не сверена' : '')" />
-                  <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span></span>
+                  <span class="unv" *ngIf="it.purchaseUnverified" aria-hidden="true">💡</span>
+                  <span class="unv pl-mark" *ngIf="it.priceListItemId && !it.purchaseUnverified" title="Закупка из прайса поставщика — запроса цен не было" aria-hidden="true">📒</span></span>
                   <!-- валюта закупки: валюта рынка и валюты с нашим курсом (спека 2026-10-23 §4.5) -->
                   <select class="buy-cur" *ngIf="!readonly && curs().length > 1" [value]="curOf(it)" (change)="setPurchaseCur(it, $event)"
                           [attr.aria-label]="'Валюта закупки, строка ' + (i + 1)">
@@ -209,16 +210,20 @@ function rowKey(it: OfferItem): string {
             <button type="button" class="btn btn-line pick" *ngIf="canPick(it)" [attr.aria-expanded]="offersFor === it.key"
                     (click)="toggleOffers(it); $event.stopPropagation()">Поставщик ▾</button>
             <a class="reply-link" *ngIf="it.replyRequestId" [routerLink]="['/price-requests', it.replyRequestId]">Ответ поставщика ›</a>
+            <a class="reply-link" *ngIf="it.priceListId" [routerLink]="['/price-lists', it.priceListId]">📒 из прайса {{ it.priceListLabel }} ›</a>
             <div class="offers" *ngIf="offersFor === it.key" (click)="$event.stopPropagation()">
-              <div class="muted" *ngIf="offersLoading">Загружаю ответы…</div>
+              <div class="muted" *ngIf="offersLoading">Загружаю ответы и прайсы…</div>
               <div class="err" *ngIf="offersError">{{ offersError }}</div>
-              <div class="muted" *ngIf="!offersLoading && !offersError && !offersList.length">Ответов с ценой по этой позиции нет</div>
-              <button type="button" class="offer" *ngFor="let s of offersList" [class.on]="s.priceRequestItemId === it.priceRequestItemId"
+              <div class="muted" *ngIf="!offersLoading && !offersError && !offersList.length">Ответов и строк прайсов по этой позиции нет</div>
+              <button type="button" class="offer" *ngFor="let s of offersList" [class.on]="isPicked(it, s)" [disabled]="s.price == null"
                       (click)="pickOffer(it, s)">
-                <span class="ok" aria-hidden="true">{{ s.priceRequestItemId === it.priceRequestItemId ? '✓' : '' }}</span>
-                <span class="nm">{{ s.supplierName }}</span>
-                <span class="pr">{{ money(s.price) }}<span *ngIf="s.auto" title="не сверено"> 💡</span></span>
-                <span class="wh" *ngIf="s.respondedOn">ответил {{ dayMonth(s.respondedOn) }}</span>
+                <span class="ok" aria-hidden="true">{{ isPicked(it, s) ? '✓' : '' }}</span>
+                <span class="nm">{{ s.priceListItemId ? '📒 ' : '' }}{{ s.supplierName }}</span>
+                <span class="pr" *ngIf="s.priceListItemId; else replyPrice">
+                  <ng-container *ngIf="s.original != null">{{ numText(s.original) }} {{ short(s.currency ?? '') }} × {{ rateText(s.rate ?? null) }} = </ng-container>{{ s.price == null ? 'впишите наш курс' : money(s.price) }}</span>
+                <ng-template #replyPrice><span class="pr">{{ money(s.price) }}<span *ngIf="s.auto" title="не сверено"> 💡</span></span></ng-template>
+                <span class="wh" *ngIf="s.priceListItemId">прайс {{ s.listDate ? dayMonth(s.listDate) : '' }}<ng-container *ngIf="s.expired"> · истёк</ng-container></span>
+                <span class="wh" *ngIf="!s.priceListItemId && s.respondedOn">ответил {{ dayMonth(s.respondedOn) }}</span>
                 <span class="tag" *ngIf="s.cheapest">дешевле всех</span>
                 <span class="tag" *ngIf="s.accepted">принято</span>
               </button>
@@ -515,12 +520,39 @@ export class ClientOfferItemsComponent {
     if (p.kind === 'registry') {
       it.name = cutWords(p.record.name, 500);
       confirm(p.record);
-    } else {
+    } else if (p.kind === 'catalog') {
       it.name = p.item.name;
       it.manufacturer = p.item.manufact ?? null;
       it.medEquipmentId = p.item.id;
       // реестр РУ — только Казахстан: на РФ подтверждение из реестра сервер не принимает (ревью ветки, M1)
       if (p.item.registry && this.isKz) confirm(p.item.registry);
+    } else if (p.kind === 'price') {
+      // строка прайса (спека 2026-10-23 §6.3): наименование, модель, закупка по нашему курсу, ссылка на строку прайса
+      const r = p.row;
+      it.name = cutWords(r.name, 500);
+      it.model = r.model ?? null;
+      it.manufacturer = r.manufacturer ? r.supplierName.slice(0, 500) : null;   // поставщик-завод; иначе производитель пуст
+      const foreign = r.currency !== this.offer.currency;
+      if (!foreign || r.converted != null) {
+        it.purchasePrice = foreign ? r.converted : r.price;
+        it.purchaseCurrency = foreign ? r.currency : null;
+        it.purchaseOriginal = foreign ? r.price : null;
+        it.purchaseRate = foreign ? r.ourRate : null;
+        it.priceListItemId = r.rowId;
+        it.priceListId = r.priceListId;
+        it.priceListLabel = `${r.supplierName} от ${r.listDate ? dateText(r.listDate) : ''}`;
+        it.supplierName = r.supplierName;
+      } else {
+        this.notify.error(`Нашего курса ${r.currency} нет — закупку впишите сами или задайте курс в «Система → Курсы валют»`);
+      }
+      // РУ: номер есть в реестре — «РУ ✓» (только KZ); «нет РУ» в прайсе — «РУ не найдено»; иначе «не проверено»
+      if (this.isKz && r.regNumber && (r.regStatus === 'ACTIVE' || r.regStatus === 'EXPIRED')) {
+        it.registrationStatus = 'CONFIRMED';
+        it.regNumber = r.regNumber;
+        if (this.offer.vatEnabled && prof && 'vatRegistered' in prof) it.vatRate = prof.vatRegistered;
+      } else if (this.isKz && r.regStatus === 'NONE') {
+        it.registrationStatus = 'NOT_FOUND';
+      }
     }
     this.offer.items.push(it);
     this.addOpen = false;
@@ -651,9 +683,15 @@ export class ClientOfferItemsComponent {
     this.offersFor = null;
   }
 
-  /** «Поставщик ▾» — у сохранённой строки из позиции заявки (решение плана 7: у новой строки позиции нет). */
+  /** «Поставщик ▾» — у любой сохранённой позиции: ответы на запросы цен (строки заявки) и строки прайсов (спека 2026-10-23 §6.3). */
   canPick(it: OfferItem): boolean {
-    return !this.readonly && !!this.offer.tenderId && !!it.tenderLotId && !!it.id;
+    return !this.readonly && !!it.id && it.kind === 'ITEM';
+  }
+
+  /** Выбранный пункт «Поставщик ▾» — по ссылкам самой строки (сервер узнает о выборе только после автосохранения). */
+  isPicked(it: OfferItem, s: SupplierOffer): boolean {
+    return s.priceListItemId != null ? s.priceListItemId === it.priceListItemId
+      : s.priceRequestItemId != null && s.priceRequestItemId === it.priceRequestItemId;
   }
 
   toggleOffers(it: OfferItem) {
@@ -668,11 +706,20 @@ export class ClientOfferItemsComponent {
     });
   }
 
-  /** Выбор ответа: цена, поставщик и ссылка на ответ → автосохранение (сервер выведет поставщика сам). */
+  /** Выбор ответа или строки прайса: цена, поставщик, исходная цена и ссылка → автосохранение (поставщика выведет сервер). */
   pickOffer(it: OfferItem, s: SupplierOffer) {
+    if (s.price == null) return;
+    const foreign = !!s.currency && s.currency !== this.offer.currency && s.original != null;
     it.purchasePrice = s.price;
+    it.purchaseCurrency = foreign ? s.currency! : null;
+    it.purchaseOriginal = foreign ? s.original! : null;
+    it.purchaseRate = foreign ? s.rate ?? null : null;
+    it._cur = null;
     it.supplierName = s.supplierName;
-    it.priceRequestItemId = s.priceRequestItemId;
+    it.priceRequestItemId = s.priceRequestItemId ?? null;
+    it.priceListItemId = s.priceListItemId ?? null;
+    it.priceListId = s.priceListId ?? null;
+    it.priceListLabel = s.priceListItemId ? `${s.supplierName} от ${s.listDate ? dateText(s.listDate) : ''}` : null;
     it.purchaseUnverified = !!s.auto;
     it.replyRequestId = s.priceRequestId ?? null;
     this.offersFor = null;

@@ -5,6 +5,7 @@
 
 import type { DealProgress } from './deal';
 import type { DealExecution } from './deal-execution';
+import type { PriceHint } from './price-hint';
 
 export type PrStatus = 'NEW' | 'WON' | 'LOST' | 'CANCELLED';
 export type RegStatus = 'SUGGESTED' | 'CONFIRMED' | 'NOT_FOUND' | 'NOT_REQUIRED' | null;
@@ -36,6 +37,8 @@ export interface PrLine {
   regStatus: RegStatus;
   registry: RegistryRecord | null;
   requested: boolean;
+  /** «📒 по прайсу» — строки текущих прайсов поставщиков (спека 2026-10-23 §6.2). */
+  priceList?: PriceHint | null;
 }
 
 /** Обращение-источник заявки; chatId — его переписка (WhatsApp или почта), без переписки — null. */

@@ -1,3 +1,5 @@
+import type { PriceHint } from './price-hint';
+
 /** «Наша продукция в тендерах» (спека 2026-10-19-product-watch): типы и помощники экранов. */
 export type MatchLevel = 'TYPE' | 'FITS' | 'NAMED' | 'COPIED';
 export type FitVerdict = 'FITS' | 'FITS_NO_RU' | 'PARTIAL' | 'NOT_FIT' | 'NO_REQUIREMENTS';
@@ -40,6 +42,8 @@ export interface ProbeResult { found: number; passed: number; lots: ProbeLot[]; 
 export interface ProductCatalogItem {
   id: number; name: string; brand: string | null; url: string | null; regNumber: string | null; regStatus: string;
   regExpires: string | null; regUnlimited: boolean; attributesCount: number;
+  /** Закупка по прайсам поставщиков (спека 2026-10-23 §6.2 п. 5). */
+  priceList?: PriceHint | null;
 }
 export interface ProductCatalogState { kz: boolean; checkedAt: string | null; items: ProductCatalogItem[]; }
 
