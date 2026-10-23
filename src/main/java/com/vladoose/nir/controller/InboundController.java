@@ -7,6 +7,7 @@ import com.vladoose.nir.entity.InboundEmail;
 import com.vladoose.nir.entity.InboundStatus;
 import com.vladoose.nir.entity.InboundType;
 import com.vladoose.nir.exception.NotFoundException;
+import com.vladoose.nir.repository.InboundEmailFileRepository;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.SupplierReplyFileRepository;
 import com.vladoose.nir.service.MailPollScheduler;
@@ -29,15 +30,18 @@ public class InboundController {
     private final MailPollScheduler scheduler;
     private final PrivateRequestImportService importService;
     private final SupplierReplyFileRepository replyFiles;
+    private final InboundEmailFileRepository inboundFiles;
 
     public InboundController(InboundEmailRepository repository,
                              MailPollScheduler scheduler,
                              PrivateRequestImportService importService,
-                             SupplierReplyFileRepository replyFiles) {
+                             SupplierReplyFileRepository replyFiles,
+                             InboundEmailFileRepository inboundFiles) {
         this.repository = repository;
         this.scheduler = scheduler;
         this.importService = importService;
         this.replyFiles = replyFiles;
+        this.inboundFiles = inboundFiles;
     }
 
     /** Последние 300 писем рынка, или одного ящика (страница покажет, что список обрезан). */
@@ -54,9 +58,19 @@ public class InboundController {
                 names.computeIfAbsent(((Number) r[0]).longValue(), k -> new ArrayList<>()).add((String) r[1]);
             }
         }
+        // файлы писем «прочее» — «Занести как прайс» (спека 2026-10-23 §5.1), одним запросом
+        Map<Long, List<InboundEmailResponse.PriceFile>> price = new HashMap<>();
+        List<Long> other = rows.stream().filter(e -> e.getType() == InboundType.UNMATCHED).map(InboundEmail::getId).toList();
+        if (!other.isEmpty()) {
+            for (Object[] r : inboundFiles.findInfoByInboundIds(other)) {
+                price.computeIfAbsent(((Number) r[1]).longValue(), k -> new ArrayList<>())
+                        .add(new InboundEmailResponse.PriceFile(((Number) r[0]).longValue(), (String) r[2], Boolean.TRUE.equals(r[3])));
+            }
+        }
         return rows.stream().map(e -> {
             InboundEmailResponse r = toResponse(e);
             r.setFiles(names.getOrDefault(e.getId(), List.of()));
+            r.setPriceFiles(price.getOrDefault(e.getId(), List.of()));
             return r;
         }).toList();
     }

@@ -20,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /** «Прайсы поставщиков» (спека §5, §9): читать — все, загружать и править — администратор. */
 @RestController
@@ -61,6 +62,19 @@ public class PriceListController {
     @GetMapping("/link-candidates")
     public PriceLinkCandidates linkCandidates(@RequestParam(required = false) String q) {
         return hints.linkCandidates(q);
+    }
+
+    public record FromInbound(Long distributorId) {}
+
+    @PostMapping("/from-inbound/{fileId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PriceListView fromInbound(@PathVariable Long fileId, @RequestBody(required = false) FromInbound in) {
+        return views.view(service.fromInbound(fileId, in == null ? null : in.distributorId(), CurrentUser.name()));
+    }
+
+    @GetMapping("/counts")
+    public Map<Long, Long> counts() {
+        return service.counts();
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

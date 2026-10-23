@@ -3,6 +3,7 @@ package com.vladoose.nir.service.mail;
 import com.vladoose.nir.context.MarketContext;
 import com.vladoose.nir.entity.*;
 import com.vladoose.nir.integration.telegram.TelegramSettings;
+import com.vladoose.nir.repository.InboundEmailFileRepository;
 import com.vladoose.nir.repository.InboundEmailRepository;
 import com.vladoose.nir.repository.MailCursorRepository;
 import com.vladoose.nir.repository.PriceRequestRepository;
@@ -10,9 +11,11 @@ import com.vladoose.nir.service.execution.ExecutionTexts;
 import com.vladoose.nir.service.rates.RateMath;
 import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.service.supplierreply.PreparedFile;
+import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
 import com.vladoose.nir.service.supplierreply.SupplierReplyService;
 import com.vladoose.nir.util.SupplierReplyDeclineDetector;
 import com.vladoose.nir.util.SupplierReplyPriceParser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,9 +24,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Запись письма (спека §3.3): классификация, правки запроса КП, строка «Входящих» с готовым текстом уведомления и
@@ -36,6 +41,35 @@ public class MailIngestWriter {
 
     /** Итог записи: вид письма, что сделано с запросом КП, id строки «Входящих»; у дубля всё null, кроме duplicate. */
     public record WriteResult(MailClass mailClass, KpOutcome outcome, Long inboundId, boolean duplicate) {}
+
+    /** Файлы писем «прочее» до 15 МБ — «Занести как прайс» (спека 2026-10-23 §5.1). */
+    static final long PRICE_FILE_MAX = 15L * 1024 * 1024;
+    private static final Pattern PRICE_WORDS = Pattern.compile("(?iu)прайс|прейскурант|price");
+    public static final String PRICE_LINE = "📒 Похоже на прайс-лист — «Занести как прайс» во «Входящих»";
+
+    private InboundEmailFileRepository inboundFiles;
+
+    /** Нет бина (тесты, собранные руками) — файлы писем «прочее» не хранятся. */
+    @Autowired(required = false)
+    public void setInboundFiles(InboundEmailFileRepository inboundFiles) {
+        this.inboundFiles = inboundFiles;
+    }
+
+    /** Excel, Word, PDF письма с байтами, не больше 15 МБ; «похоже на прайс» — по имени файла или теме письма. */
+    public static List<InboundEmailFile> priceFiles(ParsedMail m) {
+        boolean subject = m.subject() != null && PRICE_WORDS.matcher(m.subject()).find();
+        List<InboundEmailFile> out = new ArrayList<>();
+        for (MailFile f : m.files()) {
+            if (!f.stored() || f.content().length > PRICE_FILE_MAX) continue;
+            ReplyFileKind kind = SupplierReplyFiles.kind(f.name(), f.mimeType(), f.content());
+            if (kind != ReplyFileKind.EXCEL && kind != ReplyFileKind.WORD && kind != ReplyFileKind.PDF) continue;
+            String name = SupplierReplyFiles.fileName(f.name());
+            out.add(InboundEmailFile.builder().fileName(name).mimeType(cut(f.mimeType(), 100)).sizeBytes((long) f.content().length)
+                    .sha256(SupplierReplyFiles.sha256(f.content())).data(f.content())
+                    .priceLike(subject || PRICE_WORDS.matcher(name).find()).build());
+        }
+        return out;
+    }
 
     private final InboundEmailRepository inboundRepo;
     private final PriceRequestRepository priceRequestRepo;
@@ -129,12 +163,20 @@ public class MailIngestWriter {
                 .excerpt(cut(m.body(), 2000))
                 .status(InboundStatus.NEW)
                 .build();
+        // файлы письма «прочее» — «Занести как прайс» во «Входящих»; у похожих на прайс — строка «📒» в уведомлении
+        List<InboundEmailFile> priceFiles = c.mailClass() == MailClass.UNMATCHED && inboundFiles != null ? priceFiles(m) : List.of();
+        String extra = c.mailClass() == MailClass.SUPPLIER_RESPONSE ? fileLine(fileOutcome)
+                : priceFiles.stream().anyMatch(InboundEmailFile::isPriceLike) ? PRICE_LINE : null;
         if (c.mailClass() != MailClass.OWN && telegram.isConfigured()) {
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
             queue(e, MailNotificationComposer.compose(m, c, pr == null ? null : snapshot(pr), outcome,
-                    fileLine(fileOutcome), context(now, pr)), now);
+                    extra, context(now, pr)), now);
         }
         inboundRepo.save(e);                                   // @PrePersist стампит market ящика из MarketContext
+        for (InboundEmailFile f : priceFiles) {
+            f.setInboundEmailId(e.getId());
+            inboundFiles.save(f);
+        }
         if (fileOutcome != null && !fileOutcome.fileIds().isEmpty()) replies.linkInbound(fileOutcome.fileIds(), e.getId());
         moveCursor(uidValidity, m.uid());
         return new WriteResult(c.mailClass(), outcome, e.getId(), false);

@@ -21,4 +21,8 @@ public class InboundEmailResponse {
     private String status;
     /** Файлы ответа поставщика из этого письма (supplier_reply_file) — во «Входящих» рядом с «Сверить». */
     private List<String> files = List.of();
+    /** Файлы письма «прочее» для «Занести как прайс» (спека 2026-10-23 §5.1): без байтов. */
+    private List<PriceFile> priceFiles = List.of();
+
+    public record PriceFile(Long id, String name, boolean priceLike) {}
 }

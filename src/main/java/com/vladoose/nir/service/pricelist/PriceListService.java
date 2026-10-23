@@ -8,6 +8,7 @@ import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.supplierreply.MoneyText;
 import com.vladoose.nir.service.supplierreply.SupplierReplyFiles;
+import com.vladoose.nir.util.EmailAddresses;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Прайсы поставщиков (спека 2026-10-23 §5): загрузка — разбор вне транзакции и черновик; правка шапки и строк по полю;
@@ -36,9 +39,12 @@ public class PriceListService {
     private final PriceListReader reader;
     private final PriceListWriter writer;
     private final PriceListLinker linker;
+    private final InboundEmailFileRepository inboundFiles;
+    private final InboundEmailRepository inbound;
 
     public PriceListService(PriceListRepository lists, DistributorRepository distributors, SiteProductRepository products,
-                            MedEquipmentRepository equipment, PriceListReader reader, PriceListWriter writer, PriceListLinker linker) {
+                            MedEquipmentRepository equipment, PriceListReader reader, PriceListWriter writer, PriceListLinker linker,
+                            InboundEmailFileRepository inboundFiles, InboundEmailRepository inbound) {
         this.lists = lists;
         this.distributors = distributors;
         this.products = products;
@@ -46,6 +52,8 @@ public class PriceListService {
         this.reader = reader;
         this.writer = writer;
         this.linker = linker;
+        this.inboundFiles = inboundFiles;
+        this.inbound = inbound;
     }
 
     /** Закупка строки: цена нашей колонки × (100 − скидка) / 100 одной дробью до 0,01; цены нет — null. */
@@ -84,6 +92,45 @@ public class PriceListService {
         if (same.isPresent()) return same.get().getId();
         ParsedPriceList parsed = reader.read(name, kind, bytes);
         return writer.create(d, name, mime, bytes, sha, kind, parsed, inboundEmailId, user);
+    }
+
+    /** «Занести как прайс» (спека §5.1): файл письма своего рынка; поставщик — выбранный, иначе по адресу отправителя. */
+    public Long fromInbound(Long fileId, Long distributorId, String user) {
+        InboundEmailFile f = inboundFiles.findById(fileId).orElseThrow(() -> new NotFoundException("Файл письма не найден: " + fileId));
+        InboundEmail e = inbound.findById(f.getInboundEmailId()).orElse(null);
+        if (e == null || e.getMarket() != MarketContext.get()) throw new NotFoundException("Файл письма не найден: " + fileId);
+        Distributor d = distributorId != null ? supplier(distributorId) : bySender(e.getFromAddress());
+        return create(d, f.getFileName(), f.getMimeType(), f.getData(), e.getId(), user);
+    }
+
+    private static final Pattern ADDRESS = Pattern.compile("[^\\s<>\"',;]+@[^\\s<>\"',;]+");
+
+    /** Поставщик рынка, у которого среди адресов карточки есть адрес отправителя; не один или ни одного — 400. */
+    private Distributor bySender(String from) {
+        Matcher m = ADDRESS.matcher(from == null ? "" : from);
+        String addr = m.find() ? m.group().toLowerCase(Locale.ROOT) : null;
+        if (addr != null) {
+            List<Distributor> found = distributors.findAll().stream().filter(d -> d.getMarket() == MarketContext.get())
+                    .filter(d -> addresses(d.getEmail()).contains(addr)).toList();
+            if (found.size() == 1) return found.get(0);
+        }
+        throw new BadRequestException("Выберите поставщика — по адресу отправителя он не нашёлся");
+    }
+
+    private static List<String> addresses(String field) {
+        try {
+            return EmailAddresses.parse(field).stream().map(a -> a.toLowerCase(Locale.ROOT)).toList();
+        } catch (BadRequestException e) {
+            return List.of();                                   // старый кривой адрес в карточке — не наш отправитель
+        }
+    }
+
+    /** Сколько прайсов у поставщиков рынка — ссылка «Прайсы: N ›» в «Дистрибьюторах». */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> counts() {
+        Map<Long, Long> out = new HashMap<>();
+        for (Object[] r : lists.countByDistributor()) out.put(((Number) r[0]).longValue(), ((Number) r[1]).longValue());
+        return out;
     }
 
     @Transactional

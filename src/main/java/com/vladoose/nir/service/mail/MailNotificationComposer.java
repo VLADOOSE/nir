@@ -50,7 +50,7 @@ public final class MailNotificationComposer {
             case BOUNCE, DELAYED -> bounce(m, kp, ctx);
             case AUTO_REPLY -> autoReply(m, kp, ctx);
             // своё письмо и уведомление сайта MailIngestWriter сюда не передаёт — уведомлений у них нет
-            case CLIENT_REQUEST, UNMATCHED, OWN, SITE_NOTIFICATION -> other(m, ctx);
+            case CLIENT_REQUEST, UNMATCHED, OWN, SITE_NOTIFICATION -> other(m, fileLine, ctx);
         };
     }
 
@@ -138,11 +138,13 @@ public final class MailNotificationComposer {
         return new MailNotification(finish(head, MailText.replyText(m), AUTO_EXCERPT, link), true);
     }
 
-    private static MailNotification other(ParsedMail m, ComposeContext ctx) {
+    /** fileLine — строка «📒 похоже на прайс-лист» (MailIngestWriter.PRICE_LINE); null — нет. */
+    private static MailNotification other(ParsedMail m, String fileLine, ComposeContext ctx) {
         StringBuilder head = new StringBuilder("✉️ Письмо на ").append(line(ctx.mailbox(), 200)).append(" · ")
                 .append(blankTo(line(m.from(), 200), "отправитель не указан")).append('\n');
         head.append("Тема: ").append(blankTo(line(m.subject(), 300), "(без темы)")).append('\n');
         if (!m.attachmentNames().isEmpty()) head.append("Вложения: ").append(attachments(m.attachmentNames())).append('\n');
+        if (fileLine != null && !fileLine.isBlank()) head.append(line(fileLine, 300)).append('\n');
         receivedLate(head, m.receivedAt(), ctx);
         return new MailNotification(finish(head, MailText.replyText(m), EXCERPT, link(ctx, "/inbound")), true);
     }
