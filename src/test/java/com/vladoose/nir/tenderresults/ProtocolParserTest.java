@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -182,9 +183,12 @@ class ProtocolParserTest {
         assertThat(l.failReason()).isEqualTo(FailReason.NO_BIDS);
     }
 
-    /** Цена конкурса — за лот: за единицу делится на количество из перечня лотов (Review Focus 4). */
+    /**
+     * «Цена поставщика» конкурса — за единицу (сверено 2026-10-24 с договорами площадки: 46 лотов больше 1 шт., у всех цена договора
+     * за единицу без НДС = цене протокола); сумма заявки — цена × количество из перечня лотов, количества нет — суммы нет.
+     */
     @Test
-    void konkurs_unitPriceDividedByQuantity() {
+    void konkurs_supplierPricePerUnit_totalByQuantity() {
         ProtocolResult r = ProtocolParser.parseLines(List.of(
                 "Протокол об итогах государственных закупок способом конкурса № 1-ОК1",
                 "1 | 5-ОК1 | Насос | 2 | 100 | 200",
@@ -192,19 +196,92 @@ class ProtocolParserTest {
                 "Информация о представленных заявках на участие в конкурсе (лоте): 1",
                 "1 | Поставщик 1 | 900000000001 | 01.10.2026 10:00:00.000",
                 "Расчет условных цен участников конкурса:",
-                "1 | Поставщик 1 | 900000000001 | 200 | 180 | 0 | 0 | 180 | 1 | 0 | 0 | 01.10.2026 10:00:00",
+                "1 | Поставщик 1 | 900000000001 | 200 | 90 | 0 | 0 | 180 | 1 | 0 | 0 | 01.10.2026 10:00:00",
                 "1. Определить победителем по лоту №5-ОК1:",
                 "1 | Поставщик 1 | 900000000001 | Владелец"));
         LotProtocol l = r.lots().get("5-ОК1");
-        assertThat(l.bids().get(0).unitPrice()).isEqualByComparingTo("90.00");
+        assertThat(l.bids().get(0).unitPrice()).isEqualByComparingTo("90");
+        assertThat(l.bids().get(0).total()).isEqualByComparingTo("180");
         assertThat(l.winnerBin()).isEqualTo("900000000001");
         LotProtocol noQty = ProtocolParser.parseLines(List.of(
                 "Протокол об итогах государственных закупок способом конкурса № 1-ОК1",
                 "№ лота 6-ОК1",
                 "Расчет условных цен участников конкурса:",
-                "1 | Поставщик 1 | 900000000001 | 200 | 180 | 0 | 0 | 180 | 1 | 0 | 0 | 01.10.2026 10:00:00")).lots().get("6-ОК1");
-        assertThat(noQty.bids().get(0).unitPrice()).as("количества нет — цены за единицу нет").isNull();
-        assertThat(noQty.bids().get(0).total()).isEqualByComparingTo("180");
+                "1 | Поставщик 1 | 900000000001 | 200 | 90 | 0 | 0 | 180 | 1 | 0 | 0 | 01.10.2026 10:00:00")).lots().get("6-ОК1");
+        assertThat(noQty.bids().get(0).unitPrice()).as("цена за единицу — из протокола и без количества").isEqualByComparingTo("90");
+        assertThat(noQty.bids().get(0).total()).as("количества нет — суммы нет").isNull();
+    }
+
+    /**
+     * Одна заявка (живой протокол 17604518-1, насос, 2 шт.): строки «Определить победителем» нет — победитель тот, с кем «заключить
+     * договор о государственных закупках с …»; цена — за единицу (6 700 000 ₸, как в договоре площадки), сумма — на 2 шт.
+     */
+    @Test
+    void konkurs_singleBid_unitPrice_winnerFromContractLine() throws IOException {
+        ProtocolResult r = ProtocolParser.parse(bytes("konkurs-single-bid.html"));
+        assertThat(r.format()).isEqualTo(ProtocolFormat.KONKURS);
+        LotProtocol pump = r.lots().get("87829972-ОК1");
+        assertThat(pump.bids()).hasSize(1);
+        assertThat(pump.bids().get(0).unitPrice()).isEqualByComparingTo("6700000");
+        assertThat(pump.bids().get(0).total()).isEqualByComparingTo("13400000");
+        assertThat(pump.winnerBin()).isEqualTo("900000000001");
+        assertThat(pump.failReason()).isNull();
+    }
+
+    /**
+     * Под «Определить победителем» — таблица бенефициарного владельца (живой протокол 17604410-1, планшеты, 10 шт.): его ИИН —
+     * не победитель; победитель — из «заключить договор … с», второе место — из своей таблицы; цены — за единицу.
+     */
+    @Test
+    void konkurs_beneficiaryTable_isNotWinner() throws IOException {
+        LotProtocol l = ProtocolParser.parse(bytes("konkurs-beneficiary.html")).lots().get("87170063-ОК1");
+        assertThat(l.bids()).extracting(ProtocolBid::bin).containsExactly("900000000001", "900000000002");
+        assertThat(l.bids()).extracting(ProtocolBid::unitPrice).usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .containsExactly(new BigDecimal("333925"), new BigDecimal("344470"));
+        assertThat(l.bids().get(0).total()).isEqualByComparingTo("3339250");
+        assertThat(l.winnerBin()).isEqualTo("900000000001");
+        assertThat(l.secondBin()).isEqualTo("900000000002");
+    }
+
+    /**
+     * Заявок несколько, а «Определить победителем» нет (живой протокол 17604971-1, мотовездеходы): победитель — тот, с кем
+     * «заключить договор», название сверяется без учёта вида кавычек; строки цен без номера (отклонённые) — не участники.
+     */
+    @Test
+    void konkurs_noWinnerCaption_severalBids_winnerByContractLine() {
+        LotProtocol l = ProtocolParser.parseLines(List.of(
+                "Протокол об итогах государственных закупок способом конкурса № 1-ОК1",
+                "1 | 7-ОК1 | Мотовездеход | 16 | 7413793.1 | 118620689.6",
+                "№ лота 7-ОК1",
+                "Расчет условных цен участников конкурса:",
+                "1 | ИП «Поставщик 1» | 900000000001 | 118620689.6 | 5370000 | 1302413.79 | 3 | 83342400 | 78.73 | 0 | 0 | 24.09.2026 02:38:45",
+                "2 | ТОО \"Поставщик 2\" | 900000000002 | 118620689.6 | 5800000 | 872413.79 | 2.7 | 90294400 | 38.84 | 0 | 0 | 22.09.2026 14:35:47",
+                " | ТОО \"Поставщик 3\" | 900000000003 | 118620689.6 | 6200000 | 0 | 3 | 96224000 | 90 | 0 | 0 | 23.09.2026 23:38:25",
+                "Потенциальный поставщик, занявший второе место:",
+                "1 | ТОО \"Поставщик 2\" | 900000000002",
+                "1. Заказчику ГУ «Войсковая часть» в сроки, установленные Законом, заключить договор о государственных закупках с ИП \"Поставщик 1\"."))
+                .lots().get("7-ОК1");
+        assertThat(l.bids()).extracting(ProtocolBid::bin).containsExactly("900000000001", "900000000002");
+        assertThat(l.winnerBin()).isEqualTo("900000000001");
+        assertThat(l.secondBin()).isEqualTo("900000000002");
+        assertThat(l.bids().get(0).total()).isEqualByComparingTo("85920000");
+    }
+
+    /** Таблица бенефициара и строки «заключить договор» нет — победителя нет: чужой ИИН победителем не становится. */
+    @Test
+    void konkurs_beneficiaryWithoutContractLine_noWinner() {
+        LotProtocol l = ProtocolParser.parseLines(List.of(
+                "Протокол об итогах государственных закупок способом конкурса № 1-ОК1",
+                "1 | 8-ОК1 | Планшет | 10 | 351500 | 3515000",
+                "№ лота 8-ОК1",
+                "Расчет условных цен участников конкурса:",
+                "1 | ТОО \"Поставщик 1\" | 900000000001 | 3515000 | 333925 | 0 | 0.5 | 3322553.75 | 27.52 | 0 | 0 | 21.09.2026 16:52:07",
+                "1. Определить победителем по лоту №8-ОК1:",
+                "1 | Владелец 1 | 800000000001 | 000000000 РК | 100",
+                "1. Заказчику ГУ «Управление» в сроки, установленные Законом, заключить договор о государственных закупках с ТОО \"Другой\"."))
+                .lots().get("8-ОК1");
+        assertThat(l.winnerBin()).as("ни таблица (ИИН бенефициара), ни название из договора — не участник").isNull();
+        assertThat(l.bids()).hasSize(1);
     }
 
     /** Файл PDF целиком (а не текст) — через PDFBox; название, перенесённое на следующую строку, склеивается. */
