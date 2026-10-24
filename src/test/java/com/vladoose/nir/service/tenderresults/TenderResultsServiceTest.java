@@ -344,6 +344,9 @@ class TenderResultsServiceTest {
         assertThat(failed.getWinnerBin()).isNull();
         assertThat(failed.getFailText()).contains("не предоставил в установленный срок ответ");
         assertThat(fake.calls.stream().filter(c -> c.startsWith("file:")).count()).isEqualTo(1);
+        // в тексте итога — форма собственности коротко, как у обычных итогов (прод 2026-10-24: «у Товарищества с ограниченной …»)
+        assertThat(events.findByTenderIdOrderByIdAsc(t.getId())).filteredOn(e -> e.getKind() == ResultEventKind.OI_DONE).hasSize(6)
+                .extracting(TenderResultEvent::getText).containsOnly("из одного источника у ТОО \"Поставщик 1\" — состоялся");
     }
 
     /**

@@ -387,7 +387,8 @@ public class TenderResultsWriter {
                     : ResultTexts.oneBid(oiSupplierAfterOwn(r, lot), null, unit);
             case FAILED_OTHER -> ResultTexts.failedOther(r.getFailText(), r.getProtocolStatus());
             case CANCELLED -> ResultTexts.cancelled();
-            case OI_DONE -> ResultTexts.oiDone(r.getWinnerName() != null ? r.getWinnerName() : r.getWinnerBin() == null ? null : name(r.getWinnerBin()));
+            case OI_DONE -> ResultTexts.oiDone(r.getWinnerName() != null && !r.getWinnerName().isBlank() ? ResultTexts.shortName(r.getWinnerName())
+                    : r.getWinnerBin() == null ? null : name(r.getWinnerBin()));
             case OI_FAILED -> ResultTexts.oiFailed(first == null ? null : ResultTexts.who(first.getSupplierName(), first.getSupplierBin()));
             default -> kind.name();
         };
