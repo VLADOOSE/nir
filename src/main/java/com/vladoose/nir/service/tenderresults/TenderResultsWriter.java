@@ -5,6 +5,7 @@ import com.vladoose.nir.exception.BadRequestException;
 import com.vladoose.nir.exception.NotFoundException;
 import com.vladoose.nir.integration.ImportDeadline;
 import com.vladoose.nir.integration.goszakup.dto.*;
+import com.vladoose.nir.integration.telegram.TelegramText;
 import com.vladoose.nir.repository.*;
 import com.vladoose.nir.service.tenderresults.protocol.LotProtocol;
 import com.vladoose.nir.service.tenderresults.protocol.ProtocolBid;
@@ -195,8 +196,9 @@ public class TenderResultsWriter {
     }
 
     /**
-     * Переразбор (V45): лот нашёлся в протоколе — итог из него; не нашёлся или файл не получен (parsed пусто) — прежний итог
-     * остаётся. Пометка снимается в любом случае — файл не качается каждый час; события второй раз не заводятся.
+     * Переразбор (V45, V46): лот нашёлся в протоколе — итог из него, у заведённого события итога — новый текст («История»);
+     * не нашёлся или файл не получен (parsed пусто) — прежний итог остаётся. Пометка снимается в любом случае — файл не качается
+     * каждый час; события второй раз не заводятся и не отправляются.
      */
     @Transactional
     public void applyReparse(ProtocolJob job, ProtocolResult parsed, String ourBin) {
@@ -205,8 +207,20 @@ public class TenderResultsWriter {
             if (parsed == null || parsed.format() == ProtocolFormat.UNKNOWN) continue;
             TenderLot lot = lots.findById(r.getTenderLotId()).orElse(null);
             LotProtocol lp = lot == null || lot.getSourceLotCode() == null ? null : parsed.lots().get(lot.getSourceLotCode().trim());
-            if (lp != null) write(r, lot, lp, ourBin);
+            if (lp == null) continue;
+            write(r, lot, lp, ourBin);
+            refreshEventText(r, lot);
         }
+    }
+
+    /** Текст заведённого события итога того же вида — по новому разбору; отметки отправки и сводки не трогаются. */
+    private void refreshEventText(TenderLotResult r, TenderLot lot) {
+        if (r.getOutcome() == LotOutcome.PENDING) return;
+        ResultEventKind kind = kind(r, lot);
+        eventRepo.findFirstByTenderLotIdAndKindAndRefKeyIsNull(lot.getId(), kind).ifPresent(e -> {
+            String unit = ResultTexts.unit(lot.getPlanUnit(), lot.getUnit());
+            e.setText(TelegramText.safeCut(text(kind, r, lot, unit, bids.findByResultIdOrderByPlaceAscIdAsc(r.getId())), 500));
+        });
     }
 
     private void write(TenderLotResult r, TenderLot lot, LotProtocol lp, String ourBin) {

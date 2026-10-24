@@ -91,21 +91,43 @@ class TenderResultsSchemaTest {
             results.saveAndFlush(TenderLotResult.builder().tenderLotId(t.getLots().get(i).getId()).tenderId(t.getId())
                     .outcome(LotOutcome.DONE).protocolStatus(status[i]).protocolUrl(i == 3 ? null : ResultsFixtures.URL + i).build());
         }
-        jdbc.update(v45Update());
+        jdbc.update(migrationUpdate("V45__protocol_reparse.sql"));
         em.clear();
         assertThat(t.getLots().stream().map(l -> results.findByTenderLotId(l.getId()).orElseThrow().isProtocolReparse()))
                 .containsExactly(true, true, false, false, false);
     }
 
-    /** UPDATE из V45 — тот, что выполнил Flyway (колонка в nirdb уже есть). */
-    private String v45Update() throws IOException {
+    /**
+     * V46 помечает к переразбору итоги лотов конкурса («ОК», «ОЛ-ОК») с файлом, разобранные или «лота нет / вид не знаком»: прежний
+     * разбор делил цену за единицу на количество и брал ИИН бенефициара за победителя. Запрос цен, ОИ, рейтингово-балльный конкурс,
+     * конкурс без файла и не скачанный — нет.
+     */
+    @Test
+    void v46_marksRecordedKonkursProtocolsOnly() throws Exception {
+        Tender t = ResultsFixtures.tender(tenders, 970000013L, NOW.minusDays(5), "1-ОК1", "Конкурс разобран", "2-ОЛ-ОК1",
+                "Конкурс ОЛ — лота нет", "3-ЗЦП1", "Запрос цен", "4-ОИ2", "ОИ", "5-ОК1", "Конкурс — файла нет", "6-ОК1",
+                "Конкурс — не скачан", "7-КРБС1", "Рейтингово-балльный");
+        ProtocolStatus[] status = {ProtocolStatus.PARSED, ProtocolStatus.UNKNOWN_FORMAT, ProtocolStatus.PARSED, ProtocolStatus.PARSED,
+                ProtocolStatus.NO_FILE, ProtocolStatus.FAILED, ProtocolStatus.PARSED};
+        for (int i = 0; i < status.length; i++) {
+            results.saveAndFlush(TenderLotResult.builder().tenderLotId(t.getLots().get(i).getId()).tenderId(t.getId())
+                    .outcome(LotOutcome.DONE).protocolStatus(status[i]).protocolUrl(i == 4 ? null : ResultsFixtures.URL + i).build());
+        }
+        jdbc.update(migrationUpdate("V46__konkurs_protocol_reparse.sql"));
+        em.clear();
+        assertThat(t.getLots().stream().map(l -> results.findByTenderLotId(l.getId()).orElseThrow().isProtocolReparse()))
+                .containsExactly(true, true, false, false, false, false, false);
+    }
+
+    /** UPDATE миграции — тот, что выполнил Flyway (колонки в nirdb уже есть). */
+    private String migrationUpdate(String file) throws IOException {
         String sql;
-        try (InputStream in = getClass().getResourceAsStream("/db/migration/V45__protocol_reparse.sql")) {
+        try (InputStream in = getClass().getResourceAsStream("/db/migration/" + file)) {
             sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
-        return Arrays.stream(sql.split(";"))
-                .map(s -> s.lines().filter(l -> !l.strip().startsWith("--")).collect(Collectors.joining("\n")).strip())
-                .filter(s -> s.startsWith("UPDATE")).findFirst().orElseThrow();
+        // сначала без комментариев: в них бывает «;»
+        String code = sql.lines().filter(l -> !l.strip().startsWith("--")).collect(Collectors.joining("\n"));
+        return Arrays.stream(code.split(";")).map(String::strip).filter(s -> s.startsWith("UPDATE")).findFirst().orElseThrow();
     }
 
     /** Кандидаты прохода: срок прошёл не раньше 45 дней назад, есть лот без окончательного итога (нет строки итога или она не окончательная); частные заявки и будущие — нет. */

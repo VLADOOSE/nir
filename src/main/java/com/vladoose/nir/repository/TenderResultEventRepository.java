@@ -32,6 +32,8 @@ public interface TenderResultEventRepository extends JpaRepository<TenderResultE
 
     Optional<TenderResultEvent> findFirstByTenderLotIdAndKindAndRefKey(Long tenderLotId, ResultEventKind kind, String refKey);
 
+    Optional<TenderResultEvent> findFirstByTenderLotIdAndKindAndRefKeyIsNull(Long tenderLotId, ResultEventKind kind);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update TenderResultEvent e set e.notifiedAt = :at where e.id in :ids")
     int markNotified(@Param("ids") Collection<Long> ids, @Param("at") OffsetDateTime at);

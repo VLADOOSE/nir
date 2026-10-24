@@ -447,6 +447,66 @@ class TenderResultsServiceTest {
         assertThat(results.findByTenderId(t.getId())).allSatisfy(r -> assertThat(r.isProtocolReparse()).isFalse());
     }
 
+    /** Конкурс на один лот: количество и бюджет за единицу — как в протоколе; объявление и файл (обезличенный живой HTML) — у фейка. */
+    private Tender konkurs(long buyId, String code, String name, int qty, String budget, String protocol) throws Exception {
+        Tender t = ResultsFixtures.tender(tenders, buyId, NOW.minusDays(8), code, name);
+        t.getLots().get(0).setQuantity(qty);
+        t.getLots().get(0).setMaxCost(new BigDecimal(budget));
+        t = tenders.saveAndFlush(t);
+        fake.buys.put(buyId, buy(buyId, "2026-10-21 12:54:49", URL + buyId, lot(43700000L + buyId % 1000, code, 360, 88200000L + buyId % 1000)));
+        fake.files.put(URL + buyId, getClass().getResourceAsStream("/goszakup/protocols/" + protocol).readAllBytes());
+        return t;
+    }
+
+    /** Конкурс с одной заявкой (насос, 2 шт.): победитель — из «заключить договор … с», цена — за единицу, как в договоре площадки. */
+    @Test
+    void konkursSingleBid_winnerAndUnitPrice() throws Exception {
+        notFirst();
+        Tender t = konkurs(970001021L, "87829972-ОК1", "Насос", 2, "7000000", "konkurs-single-bid.html");
+        check(t);
+        TenderLotResult r = result(t);
+        assertThat(r.getProtocolStatus()).isEqualTo(ProtocolStatus.PARSED);
+        assertThat(r.getWinnerBin()).isEqualTo("900000000001");
+        assertThat(r.getWinnerName()).isEqualTo("ИП \"Поставщик 1\"");
+        assertThat(r.getWinnerPrice()).isEqualByComparingTo("6700000");
+        assertThat(bids.findByResultIdOrderByPlaceAscIdAsc(r.getId())).extracting(TenderLotBid::getTotal)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class).containsExactly(new BigDecimal("13400000"));
+        assertThat(events.findByTenderIdOrderByIdAsc(t.getId())).extracting(TenderResultEvent::getText)
+                .singleElement().asString().startsWith("победил ИП \"Поставщик 1\" — " + ResultTexts.money(new BigDecimal("6700000")) + " за шт");
+    }
+
+    /**
+     * V46: итог конкурса, записанный прежним разбором, как на проде (победитель — ИИН бенефициара, цена — поделённая на количество,
+     * событие «Итоги» заведено), переразбирается: победитель и цена — из протокола, текст события в «Истории» — новый, второго нет.
+     */
+    @Test
+    void reparse_recordedKonkurs_winnerPriceFixed_eventTextRefreshed() throws Exception {
+        notFirst();
+        Tender t = konkurs(970001022L, "87170063-ОК1", "Планшет", 10, "351500", "konkurs-beneficiary.html");
+        TenderLot lot = t.getLots().get(0);
+        OffsetDateTime at = OffsetDateTime.now(CLOCK).minusDays(1);
+        results.saveAndFlush(TenderLotResult.builder().tenderLotId(lot.getId()).tenderId(t.getId()).outcome(LotOutcome.DONE)
+                .protocolUrl(URL + 970001022L).protocolStatus(ProtocolStatus.PARSED).winnerBin("800000000001")
+                .winnerPrice(new BigDecimal("33392.50")).bidsCount(2).finalAt(at).eventAt(at).protocolReparse(true).build());
+        events.saveAndFlush(TenderResultEvent.builder().tenderId(t.getId()).tenderLotId(lot.getId()).kind(ResultEventKind.DONE)
+                .occurredAt(at.toLocalDateTime()).text("победил БИН 800000000001 — 33 392,50 ₸ за шт · 2 заявки").urgent(false)
+                .topic(ResultTopic.NONE).createdAt(at).notifiedAt(at).digestedAt(at).build());
+        ImportSummary sum = check(t);
+        assertThat(sum.getErrors()).isZero();
+        TenderLotResult r = result(t);
+        assertThat(r.isProtocolReparse()).isFalse();
+        assertThat(r.getWinnerBin()).isEqualTo("900000000001");
+        assertThat(r.getWinnerName()).isEqualTo("ТОО \"Поставщик 1\"");
+        assertThat(r.getWinnerPrice()).isEqualByComparingTo("333925");
+        assertThat(r.getSecondBin()).isEqualTo("900000000002");
+        List<TenderResultEvent> ev = events.findByTenderIdOrderByIdAsc(t.getId());
+        assertThat(ev).as("событие уже было — второе не заводится").hasSize(1);
+        assertThat(ev.get(0).getText()).startsWith("победил ТОО \"Поставщик 1\" — " + ResultTexts.money(new BigDecimal("333925")) + " за шт")
+                .doesNotContain("800000000001");
+        assertThat(ev.get(0).getNotifiedAt()).as("сообщение не повторяется").isNotNull();
+        assertThat(ev.get(0).getDigestedAt()).isNotNull();
+    }
+
     /** Проход по расписанию: свежий срок — в работе; итог, ждущий дольше 30 дней от срока, — закрыт. */
     @Test
     void run_processesFreshAndClosesStale() throws Exception {
